@@ -1,21 +1,20 @@
-# Oculide v1 - Laboratory Monitoring & AI Proctoring System (LMS)
+# 📂 Cấu Trúc Thư Mục Khung Dự Án Oculide v1 (IEEE 830 Specification)
 
-Dự án chính thức hệ thống giám sát phòng thực hành lập trình trực tuyến & gác thi bằng AI (**Oculide v1**).  
-Thiết kế theo tài liệu chuẩn **IEEE 830-1998 Specification**.
+Tài liệu này mô tả chi tiết vị trí và chức năng của từng thư mục trong hệ thống **Oculide v1** (`d:\oculide-v1`).
 
 ---
 
-## 📁 Cấu Trúc Thư Mục Dự Án Chuyên Nghiệp (Standard Directory Architecture)
+## 🌳 Sơ Đồ Thư Mục Dự Án
 
 ```text
 oculide-v1/
 ├── 📂 backend/                      # Backend Core API (FastAPI, Python 3.11)
-│   ├── 📂 api/                      # REST API Routers (auth, admin, rooms, sessions, questions, submissions, violations, chat, livekit)
-│   ├── 📂 core/                     # JWT Authentication, Config, RBAC Permissions Middleware
-│   ├── 📂 models/                   # SQLAlchemy ORM Data Models (Db Entities)
+│   ├── 📂 api/                      # REST API Endpoints (auth, admin, rooms, sessions, questions, submissions, violations, chat, livekit)
+│   ├── 📂 core/                     # Security, JWT Authentication, RBAC Middleware
+│   ├── 📂 models/                   # SQLAlchemy ORM Entities (User, Room, Question, Submission, Violation...)
 │   ├── 📂 schemas/                  # Pydantic Request/Response DTO Validation Schemas
 │   ├── 📂 database/                 # Layer thao tác CSDL PostgreSQL (Repositories / DAL)
-│   ├── 📂 services/                 # Business logic services (LiveKit Integration, Docker SDK, etc.)
+│   ├── 📂 services/                 # Business logic services (LiveKit Integration, Docker SDK)
 │   ├── 📂 tasks/                    # Celery Async Background Tasks (AI proctoring, Auto-grading)
 │   ├── 📂 websocket/                # WebSocket Connection Manager & Real-time Handlers
 │   └── 📂 tests/                    # Backend Unit & Integration Tests
@@ -66,10 +65,6 @@ oculide-v1/
 │   ├── 📂 diagrams/                 # Architecture, BFD, Context & ERD Diagrams
 │   └── 📂 api/                      # OpenAPI / Swagger Specifications
 │
-├── 📂 .github/
-│   └── 📂 workflows/                # CI/CD Automated Testing & Deployment Pipelines
-│
-├── .env.example                     # File cấu hình mẫu biến môi trường
-├── .gitignore                       # Git ignore list
-└── docker-compose.yml               # Multi-container Orchestration Configuration
+└── 📂 .github/
+    └── 📂 workflows/                # CI/CD Automated Testing & Deployment Pipelines
 ```

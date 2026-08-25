@@ -1,0 +1,188 @@
+services:
+
+  # ─── SQL Server ───────────────────────────────────────────────────────────────
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: exam-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}"
+      MSSQL_MEMORY_LIMIT_MB: 512
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+      # Auto-init: schema.sql runs once on first start via entrypoint wrapper
+      - ./database/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+      - ./database/schema.sql:/schema.sql:ro
+    networks:
+      - exam-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/opt/mssql-tools18/bin/sqlcmd",
+          "-S",
+          "localhost",
+          "-U",
+          "sa",
+          "-P",
+          "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}",
+          "-No", # trust server cert (new flag in mssql-tools18)
+          "-Q",
+          "SELECT 1"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # ─── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: exam-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - exam-network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ─── Backend API ──────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile # Lean image: no ML deps
+    container_name: exam-backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_SERVER: sqlserver
+      DATABASE_NAME: ExamSystem
+      DATABASE_USERNAME: sa
+      DATABASE_PASSWORD: "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LIVEKIT_URL: wss://oculide-exam-4eu7af2s.livekit.cloud
+      LIVEKIT_API_KEY: APIYsZcXomYALVS
+      LIVEKIT_API_SECRET: H1lgQ7E9lv8f7G5g7DaaAD70Svg4qn7JvEPmFWjXcqV
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:-change-me-in-production}"
+      DOCKER_HOST: "unix:///var/run/docker.sock"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - exam-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ─── Celery Worker — Code Grading ────────────────────────────────────────────
+  celery-grading:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile # Lean image (no ML) — grading uses Docker SDK
+    container_name: exam-celery-grading
+    command: celery -A celery_app worker -Q grading --loglevel=info --concurrency=4
+    environment:
+      DATABASE_SERVER: sqlserver
+      DATABASE_NAME: ExamSystem
+      DATABASE_USERNAME: sa
+      DATABASE_PASSWORD: "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Docker sandbox settings
+      SANDBOX_MEM_LIMIT: "128m"
+      SANDBOX_TIME_LIMIT_S: "10"
+      SANDBOX_NANO_CPUS: "500000000"
+      # Allow worker to call Docker daemon on the host
+      DOCKER_HOST: "unix:///var/run/docker.sock"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      # Mount Docker socket so worker can spin up sandbox containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - exam-network
+
+  # ─── Celery Worker — AI Proctoring ───────────────────────────────────────────
+  celery-proctoring:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.celery # Heavy image: torch + ultralytics + mediapipe
+    container_name: exam-celery-proctoring
+    command: celery -A celery_app worker -Q proctoring --loglevel=info --concurrency=2
+    environment:
+      DATABASE_SERVER: sqlserver
+      DATABASE_NAME: ExamSystem
+      DATABASE_USERNAME: sa
+      DATABASE_PASSWORD: "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./ai_workers:/app/ai_workers
+      # Cache YOLO weights across restarts
+      - yolo_weights:/root/.config/ultralytics
+    networks:
+      - exam-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.oculide.id.vn
+        NEXT_PUBLIC_WS_URL: wss://api.oculide.id.vn
+        NEXT_PUBLIC_LIVEKIT_URL: wss://oculide-exam-4eu7af2s.livekit.cloud
+    container_name: exam-frontend
+    ports:
+      - "3001:3000" # Đổi sang 3001 để không xung đột với npm run dev (port 3000)
+    environment:
+      NEXT_PUBLIC_API_URL: https://api.oculide.id.vn
+      NEXT_PUBLIC_WS_URL: wss://api.oculide.id.vn
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - exam-network
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# ─── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  sqlserver_data:
+  redis_data:
+  yolo_weights:
+    # persistent cache for YOLO model weights
+
+    # ─── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  exam-network:
+    driver: bridge

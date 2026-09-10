@@ -1,0 +1,1171 @@
+openapi: 3.0.3
+info:
+  title: Oculide Core REST API
+  description: >
+    Hệ thống API RESTful và WebSocket phục vụ Giám sát phòng thực hành lập trình & Gác thi bằng AI (Oculide v1).
+    Được thiết kế theo tiêu chuẩn IEEE 830-1998 Specification.
+  version: 1.0.0
+  contact:
+    name: Oculide Development Team
+    email: lean80469@gmail.com
+servers:
+  - url: https://api.oculide.id.vn/api/v1
+    description: Production API Server
+  - url: http://localhost:8000/api/v1
+    description: Local Development Server
+
+paths:
+  # ==========================================
+  # AUTHENTICATION
+  # ==========================================
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Đăng ký tài khoản người dùng mới
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegisterRequest'
+      responses:
+        '201':
+          description: Đăng ký thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/400Error'
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Đăng nhập hệ thống lấy JWT Access Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Đăng nhập thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Sai tên đăng nhập hoặc mật khẩu
+
+  /auth/me:
+    get:
+      tags: [Authentication]
+      summary: Lấy thông tin tài khoản đang đăng nhập
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Thông tin người dùng hiện tại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/401Error'
+
+  /auth/join:
+    post:
+      tags: [Authentication]
+      summary: Sinh viên tham gia phòng nhanh bằng mã phòng và mã PIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinRoomRequest'
+      responses:
+        '200':
+          description: Cấp token truy cập phòng thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '404':
+          description: Không tìm thấy phòng hoặc phòng đã kết thúc
+
+  /auth/profile:
+    put:
+      tags: [Authentication]
+      summary: Cập nhật thông tin tài khoản cá nhân
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileUpdateRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /auth/change-password:
+    put:
+      tags: [Authentication]
+      summary: Đổi mật khẩu
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Đổi mật khẩu thành công
+
+  # ==========================================
+  # ROOMS
+  # ==========================================
+  /rooms:
+    get:
+      tags: [Rooms]
+      summary: Lấy danh sách các phòng học/phòng thi
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: room_type
+          in: query
+          schema:
+            type: string
+            enum: [exam, classroom]
+        - name: skip
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Danh sách phòng
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoomResponse'
+
+    post:
+      tags: [Rooms]
+      summary: Tạo mới một phòng thi hoặc phòng thực hành
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomCreateRequest'
+      responses:
+        '201':
+          description: Phòng được tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomResponse'
+
+  /rooms/public/{room_code}:
+    get:
+      tags: [Rooms]
+      summary: Lấy thông tin công khai của phòng thi để sinh viên kiểm tra trước khi vào
+      parameters:
+        - name: room_code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Thông tin phòng
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicRoomResponse'
+        '404':
+          description: Không tìm thấy mã phòng
+
+  /rooms/{room_id}:
+    get:
+      tags: [Rooms]
+      summary: Lấy chi tiết cấu hình phòng
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Chi tiết phòng
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomResponse'
+
+    put:
+      tags: [Rooms]
+      summary: Chỉnh sửa cấu hình phòng
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomUpdateRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomResponse'
+
+    delete:
+      tags: [Rooms]
+      summary: Xóa phòng
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Đã xóa phòng
+
+  /rooms/{room_id}/dashboard:
+    get:
+      tags: [Rooms]
+      summary: Dữ liệu Lưới giám sát Panoptic Grid View thời gian thực
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Thông tin các sinh viên đang online, vi phạm và stream
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomDashboardResponse'
+
+  /rooms/{room_id}/scoreboard:
+    get:
+      tags: [Rooms]
+      summary: Bảng điểm thời gian thực toàn bộ sinh viên trong phòng
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Danh sách điểm bài thi của các sinh viên
+
+  # ==========================================
+  # QUESTIONS & TEST CASES
+  # ==========================================
+  /questions:
+    post:
+      tags: [Questions]
+      summary: Tạo mới đề bài / câu hỏi trong phòng
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionCreateRequest'
+      responses:
+        '201':
+          description: Tạo câu hỏi thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionResponse'
+
+  /questions/room/{room_id}:
+    get:
+      tags: [Questions]
+      summary: Lấy danh sách toàn bộ câu hỏi trong phòng
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Danh sách câu hỏi
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QuestionResponse'
+
+  /questions/{question_id}:
+    get:
+      tags: [Questions]
+      summary: Lấy chi tiết đề bài câu hỏi
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: question_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Chi tiết câu hỏi và sample test cases
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionResponse'
+
+    put:
+      tags: [Questions]
+      summary: Cập nhật đề bài
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: question_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionUpdateRequest'
+      responses:
+        '200':
+          description: Đã cập nhật câu hỏi
+
+    delete:
+      tags: [Questions]
+      summary: Xóa câu hỏi
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: question_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Đã xóa câu hỏi
+
+  /questions/{question_id}/test-cases:
+    get:
+      tags: [Questions]
+      summary: Lấy danh sách test cases của câu hỏi
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: question_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Danh sách test cases
+
+    post:
+      tags: [Questions]
+      summary: Thêm test case cho câu hỏi
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: question_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestCaseCreateRequest'
+      responses:
+        '201':
+          description: Đã tạo test case
+
+  # ==========================================
+  # SUBMISSIONS & AUTO-GRADER
+  # ==========================================
+  /submissions:
+    post:
+      tags: [Submissions]
+      summary: Nộp bài làm chính thức để chấm điểm tự động bằng Docker Sandbox
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionCreateRequest'
+      responses:
+        '201':
+          description: Bài nộp đã được tiếp nhận và đưa vào hàng đợi chấm
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionResponse'
+
+  /submissions/run:
+    post:
+      tags: [Submissions]
+      summary: Chạy thử nghiệm code với Custom Input (không lưu điểm)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CodeRunRequest'
+      responses:
+        '200':
+          description: Kết quả thực thi trong Sandbox
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeRunResponse'
+
+  /submissions/{submission_id}:
+    get:
+      tags: [Submissions]
+      summary: Lấy chi tiết bài nộp và trạng thái chấm
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: submission_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Chi tiết bài nộp
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionResponse'
+
+  /submissions/{submission_id}/results:
+    get:
+      tags: [Submissions]
+      summary: Lấy kết quả chi tiết từng test case của bài nộp
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: submission_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Danh sách kết quả test cases
+
+  # ==========================================
+  # SESSIONS
+  # ==========================================
+  /sessions:
+    post:
+      tags: [Sessions]
+      summary: Khởi tạo phiên thi khi sinh viên bắt đầu làm bài
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCreateRequest'
+      responses:
+        '201':
+          description: Đã tạo phiên thi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+
+  /sessions/{session_id}/end:
+    post:
+      tags: [Sessions]
+      summary: Kết thúc phiên thi
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Phiên thi đã kết thúc
+
+  # ==========================================
+  # VIOLATIONS & AI PROCTORING
+  # ==========================================
+  /violations:
+    post:
+      tags: [Violations]
+      summary: Ghi nhận sự kiện vi phạm
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ViolationCreateRequest'
+      responses:
+        '201':
+          description: Ghi nhận vi phạm thành công
+
+  /violations/analyze:
+    post:
+      tags: [Violations]
+      summary: Gửi ảnh chụp webcam vào AI Worker để phân tích bất thường
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnapshotAnalyzeRequest'
+      responses:
+        '202':
+          description: Đã tiếp nhận ảnh vào hàng đợi phân tích
+
+  /violations/{violation_id}/review:
+    patch:
+      tags: [Violations]
+      summary: Giảng viên duyệt hoặc bỏ qua cảnh báo vi phạm
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: violation_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Đã cập nhật trạng thái duyệt
+
+  # ==========================================
+  # LIVEKIT STREAMING
+  # ==========================================
+  /livekit/tokens:
+    post:
+      tags: [LiveKit]
+      summary: Tạo access token kết nối LiveKit SFU Server
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiveKitTokenRequest'
+      responses:
+        '200':
+          description: Token kết nối LiveKit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveKitTokenResponse'
+
+  # ==========================================
+  # CHAT
+  # ==========================================
+  /chat:
+    post:
+      tags: [Chat]
+      summary: Gửi tin nhắn chat trong phòng
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessageRequest'
+      responses:
+        '201':
+          description: Đã gửi tin nhắn
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessageResponse'
+
+  /chat/room/{room_id}:
+    get:
+      tags: [Chat]
+      summary: Lấy lịch sử chat trong phòng
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lịch sử tin nhắn
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    400Error:
+      description: Yêu cầu không hợp lệ
+    401Error:
+      description: Chưa xác thực danh tính
+    403Error:
+      description: Không có quyền truy cập
+    404Error:
+      description: Không tìm thấy tài nguyên
+
+  schemas:
+    UserResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [admin, instructor, student]
+        student_id:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    UserRegisterRequest:
+      type: object
+      required: [username, password, email, full_name, role]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [instructor, student]
+        student_id:
+          type: string
+          nullable: true
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          default: bearer
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    JoinRoomRequest:
+      type: object
+      required: [room_code]
+      properties:
+        room_code:
+          type: string
+        passcode:
+          type: string
+          nullable: true
+        full_name:
+          type: string
+          nullable: true
+        student_id:
+          type: string
+          nullable: true
+
+    UserProfileUpdateRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+        email:
+          type: string
+        student_id:
+          type: string
+
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+
+    RoomResponse:
+      type: object
+      properties:
+        room_id:
+          type: integer
+        room_code:
+          type: string
+        room_name:
+          type: string
+        room_type:
+          type: string
+          enum: [exam, classroom]
+        instructor_id:
+          type: integer
+        description:
+          type: string
+          nullable: true
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        duration_minutes:
+          type: integer
+        max_attempts:
+          type: integer
+        is_active:
+          type: boolean
+        livekit_room_name:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    PublicRoomResponse:
+      type: object
+      properties:
+        room_id:
+          type: integer
+        room_code:
+          type: string
+        room_name:
+          type: string
+        room_type:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        duration_minutes:
+          type: integer
+        requires_passcode:
+          type: boolean
+
+    RoomCreateRequest:
+      type: object
+      required: [room_code, room_name, start_time, end_time, duration_minutes]
+      properties:
+        room_code:
+          type: string
+        room_name:
+          type: string
+        room_type:
+          type: string
+          default: exam
+          enum: [exam, classroom]
+        description:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        duration_minutes:
+          type: integer
+        max_attempts:
+          type: integer
+          default: 1
+        passcode:
+          type: string
+          nullable: true
+
+    RoomUpdateRequest:
+      type: object
+      properties:
+        room_name:
+          type: string
+        description:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        duration_minutes:
+          type: integer
+        max_attempts:
+          type: integer
+        is_active:
+          type: boolean
+        passcode:
+          type: string
+
+    RoomDashboardResponse:
+      type: object
+      properties:
+        room_id:
+          type: integer
+        room_code:
+          type: string
+        active_count:
+          type: integer
+        students:
+          type: array
+          items:
+            type: object
+            properties:
+              student_id:
+                type: integer
+              student_name:
+                type: string
+              status:
+                type: string
+              violation_count:
+                type: integer
+              last_snapshot:
+                type: string
+
+    QuestionResponse:
+      type: object
+      properties:
+        question_id:
+          type: integer
+        room_id:
+          type: integer
+        question_order:
+          type: integer
+        question_title:
+          type: string
+        question_description:
+          type: string
+        question_type:
+          type: string
+          enum: [coding, multiple_choice, essay]
+        programming_language:
+          type: string
+        max_points:
+          type: number
+        time_limit_minutes:
+          type: integer
+        memory_limit_mb:
+          type: integer
+
+    QuestionCreateRequest:
+      type: object
+      required: [room_id, question_order, question_title, question_description, question_type]
+      properties:
+        room_id:
+          type: integer
+        question_order:
+          type: integer
+        question_title:
+          type: string
+        question_description:
+          type: string
+        question_type:
+          type: string
+          enum: [coding, multiple_choice, essay]
+        programming_language:
+          type: string
+        max_points:
+          type: number
+          default: 10.0
+        time_limit_minutes:
+          type: integer
+        memory_limit_mb:
+          type: integer
+
+    QuestionUpdateRequest:
+      type: object
+      properties:
+        question_title:
+          type: string
+        question_description:
+          type: string
+        max_points:
+          type: number
+
+    TestCaseCreateRequest:
+      type: object
+      required: [input_data, expected_output]
+      properties:
+        input_data:
+          type: string
+        expected_output:
+          type: string
+        is_hidden:
+          type: boolean
+          default: false
+        points:
+          type: number
+          default: 0.0
+
+    SubmissionCreateRequest:
+      type: object
+      required: [room_id, question_id, code_content, language]
+      properties:
+        room_id:
+          type: integer
+        question_id:
+          type: integer
+        code_content:
+          type: string
+        language:
+          type: string
+          enum: [python, cpp, java, c]
+        attempt_number:
+          type: integer
+          default: 1
+
+    SubmissionResponse:
+      type: object
+      properties:
+        submission_id:
+          type: integer
+        room_id:
+          type: integer
+        student_id:
+          type: integer
+        question_id:
+          type: integer
+        attempt_number:
+          type: integer
+        code_content:
+          type: string
+        language:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, grading, completed, failed, saved]
+        total_points:
+          type: number
+          nullable: true
+        max_points:
+          type: number
+          nullable: true
+
+    CodeRunRequest:
+      type: object
+      required: [code_content, language]
+      properties:
+        code_content:
+          type: string
+        language:
+          type: string
+        custom_input:
+          type: string
+          default: ''
+
+    CodeRunResponse:
+      type: object
+      properties:
+        stdout:
+          type: string
+        error:
+          type: string
+          nullable: true
+        execution_ms:
+          type: integer
+
+    SessionCreateRequest:
+      type: object
+      required: [room_id]
+      properties:
+        room_id:
+          type: integer
+        browser_fingerprint:
+          type: string
+          nullable: true
+
+    SessionResponse:
+      type: object
+      properties:
+        session_id:
+          type: integer
+        room_id:
+          type: integer
+        student_id:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [active, completed, terminated, abandoned]
+
+    ViolationCreateRequest:
+      type: object
+      required: [session_id, violation_type]
+      properties:
+        session_id:
+          type: integer
+        violation_type:
+          type: string
+          enum: [tab_switch, copy_paste, no_face_detected, multiple_faces, phone_detected, suspicious_object, fullscreen_exit, camera_blocked, time_exceeded, inactive_30s, multiple_people]
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          default: warning
+        description:
+          type: string
+          nullable: true
+        snapshot_url:
+          type: string
+          nullable: true
+
+    SnapshotAnalyzeRequest:
+      type: object
+      required: [session_id, snapshot_data]
+      properties:
+        session_id:
+          type: integer
+        snapshot_data:
+          type: string
+          description: Base64-encoded webcam frame JPEG/PNG
+
+    LiveKitTokenRequest:
+      type: object
+      required: [room_id]
+      properties:
+        room_id:
+          type: integer
+
+    LiveKitTokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        server_url:
+          type: string
+        participant_name:
+          type: string
+
+    ChatMessageRequest:
+      type: object
+      required: [room_id, message_content]
+      properties:
+        room_id:
+          type: integer
+        message_content:
+          type: string
+        recipient_id:
+          type: integer
+          nullable: true
+
+    ChatMessageResponse:
+      type: object
+      properties:
+        message_id:
+          type: integer
+        room_id:
+          type: integer
+        sender_id:
+          type: integer
+        sender_name:
+          type: string
+        message_content:
+          type: string
+        sent_at:
+          type: string
+          format: date-time

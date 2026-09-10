@@ -1,0 +1,62 @@
+# ==============================================================================
+# Dockerfile.celery - Oculide AI Proctoring Celery Worker (Computer Vision Image)
+# Base: Python 3.11 Slim Bookworm + Microsoft ODBC Driver 18 + PyTorch + YOLOv8 + MediaPipe
+# ==============================================================================
+
+FROM python:3.11-slim-bookworm AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+# 1. Cài đặt các thư viện hệ thống cho đồ họa, OpenCV, FFmpeg và Microsoft ODBC Driver 18
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gnupg2 \
+    apt-transport-https \
+    ca-certificates \
+    gcc \
+    g++ \
+    unixodbc-dev \
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    ffmpeg \
+    && mkdir -p /etc/apt/keyrings \
+    # Thêm Microsoft Package Signing Key cho Debian 12
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends \
+    msodbcsql18 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Cài đặt Python Dependencies cơ bản
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# 3. Cài đặt các thư viện Deep Learning & Computer Vision chuyên dụng
+# Cài đặt PyTorch CPU (hoặc tương thích CUDA), Ultralytics YOLOv8, MediaPipe và OpenCV
+RUN pip install --no-cache-dir \
+    torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir \
+    ultralytics \
+    mediapipe==0.10.18 \
+    opencv-python-headless
+
+# 4. Tải trước trọng số mô hình YOLOv8n để worker có thể chạy offline hoàn toàn
+RUN mkdir -p /root/.config/ultralytics && \
+    python -c "from ultralytics import YOLO; model = YOLO('yolov8n.pt')" || true
+
+# 5. Sao chép mã nguồn backend
+COPY . /app
+
+# Khởi chạy Celery Worker lắng nghe hàng đợi 'proctoring'
+CMD ["celery", "-A", "celery_app", "worker", "-Q", "proctoring", "--loglevel=info", "--concurrency=2"]

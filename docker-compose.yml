@@ -96,7 +96,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile # Lean image (no ML) — grading uses Docker SDK
     container_name: exam-celery-grading
-    command: celery -A celery_app worker -Q grading --loglevel=info --concurrency=4
+    command: celery -A celery_app worker -B -Q grading,maintenance,default --loglevel=info --concurrency=4
     environment:
       DATABASE_SERVER: sqlserver
       DATABASE_NAME: ExamSystem

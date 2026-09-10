@@ -65,6 +65,11 @@ oculide-v1/
 │   ├── 📂 diagrams/                 # Architecture, BFD, Context & ERD Diagrams
 │   └── 📂 api/                      # OpenAPI / Swagger Specifications
 │
+├── 📂 changelogs/                # Nhật ký phát triển (bổ sung, sửa đổi, thêm/xóa file)
+│
 └── 📂 .github/
     └── 📂 workflows/                # CI/CD Automated Testing & Deployment Pipelines
+
+├── CHANGELOG.md                     # Tổng kết phiên bản theo chuẩn Keep a Changelog
 ```
+

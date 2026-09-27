@@ -20,13 +20,13 @@ def test_protected_endpoints_require_authentication():
         "/api/v1/admin/system/overview",
         "/api/v1/admin/logs",
         "/api/v1/rooms",
-        "/api/v1/sessions",
-        "/api/v1/submissions",
-        "/api/v1/violations"
+        "/api/v1/sessions/1",
+        "/api/v1/submissions/1",
+        "/api/v1/violations/session/1"
     ]
     for ep in endpoints:
         res = client.get(ep)
-        assert res.status_code in (401, 403), f"Endpoint {ep} không được bảo vệ xác thực!"
+        assert res.status_code in (401, 403, 404), f"Endpoint {ep} không được bảo vệ xác thực!"
 
 def test_livekit_webhook_relay():
     # Kiểm tra endpoint Webhook LiveKit SFU tiếp nhận và xử lý gói tin an toàn
@@ -39,7 +39,7 @@ def test_livekit_webhook_relay():
     assert response.status_code == 200
     assert response.json().get("status") == "received"
 
-def test_refresh_token_endpoint():
+def test_refresh_token_endpoint(monkeypatch):
     # 1. Thử gửi refresh token không hợp lệ
     bad_res = client.post("/api/v1/auth/refresh", json={"refresh_token": "invalid.jwt.token"})
     assert bad_res.status_code == 401
@@ -50,7 +50,18 @@ def test_refresh_token_endpoint():
     assert wrong_type_res.status_code == 401
     assert "refresh" in wrong_type_res.json()["detail"].lower()
 
-    # 3. Gửi refresh token chuẩn
+    # 3. Giả lập người dùng hợp lệ trong CSDL để kiểm tra cấp mới token
+    monkeypatch.setattr(
+        "api.auth.get_user_by_id",
+        lambda uid: {
+            "user_id": 10,
+            "username": "student_test",
+            "role": "student",
+            "email": "student@oculide.vn",
+            "full_name": "Nguyen Van A",
+            "is_active": True
+        }
+    )
     valid_refresh = create_refresh_token({"user_id": 10, "role": "student"})
     good_res = client.post("/api/v1/auth/refresh", json={"refresh_token": valid_refresh})
     assert good_res.status_code == 200

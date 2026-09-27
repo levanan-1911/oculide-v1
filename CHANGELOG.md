@@ -4,6 +4,22 @@ Tất cả các thay đổi lớn trong dự án **Oculide v1** được ghi nh�
 
 Thư mục chi tiết từng đợt cập nhật: [changelogs/](file:///d:/oculide-v1/changelogs)
 
+## [1.4.0] - 2026-09-27
+
+### 🟢 Added (Thêm mới)
+- **Containerization & Docker Packaging (Phase 7)**:
+  - [backend/Dockerfile](file:///d:/oculide-v1/backend/Dockerfile): Image tinh giản cho FastAPI Core API và Celery Grading Worker (Debian 12 Bookworm, Python 3.11, Microsoft ODBC Driver 18 `msodbcsql18`, Docker CLI giao tiếp qua `/var/run/docker.sock`).
+  - [backend/Dockerfile.celery](file:///d:/oculide-v1/backend/Dockerfile.celery): Image chuyên biệt cho AI Proctoring Worker với đầy đủ thư viện Deep Learning và Computer Vision (PyTorch, Ultralytics YOLOv8, MediaPipe, OpenCV, FFmpeg, ODBC Driver 18), đóng gói sẵn pre-trained model `yolov8n.pt`.
+- **Nâng cấp DevOps & Tự Động Hóa Vận Hành**:
+  - Module [docker-compose.yml](file:///d:/oculide-v1/docker-compose.yml): Kích hoạt Celery Beat Scheduler (`-B`) và mở rộng lắng nghe các hàng đợi `maintenance`, `default` trên container `celery-grading`, đảm bảo các cron job bảo trì CSDL và đóng phòng thi tự động chạy chuẩn xác.
+- **Bộ Kiểm Thử Toàn Trình (Full End-to-End Test Suite)**:
+  - [backend/tests/test_api_endpoints_and_logic.py](file:///d:/oculide-v1/backend/tests/test_api_endpoints_and_logic.py): 5 test cases bao quát `/health`, cơ chế bảo vệ phân quyền trên các route nhạy cảm, tiếp nhận Webhook LiveKit SFU, và xác thực cấp mới Refresh Token.
+  - Tổng số lượng test tự động nâng lên **21/21 passed (100%)**.
+- **Nhật ký Chi tiết**:
+  - Biên bản [changelogs/2026-09-27_phase7_containerization_and_devops.md](file:///d:/oculide-v1/changelogs/2026-09-27_phase7_containerization_and_devops.md).
+
+---
+
 ## [1.3.0] - 2026-09-27
 
 ### 🟢 Added (Thêm mới)

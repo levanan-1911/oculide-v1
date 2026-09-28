@@ -91,6 +91,7 @@ def test_reap_stuck_submissions_redispatch():
     with patch("database.submission_db.get_stuck_submissions", return_value=mock_stuck), \
          patch("database.submission_db.update_submission_status") as mock_update_status, \
          patch("tasks.grading_tasks.grade_submission.delay") as mock_delay, \
+         patch("tasks.cleanup_tasks.create_system_log") as mock_log, \
          patch("redis.Redis") as mock_redis_cls:
         
         mock_redis = MagicMock()
@@ -99,6 +100,7 @@ def test_reap_stuck_submissions_redispatch():
         
         reaped = reap_stuck_submissions(timeout_seconds=120, max_retries=2)
         assert reaped == 1
+        assert mock_log.called
         mock_update_status.assert_called_with(9999, "pending")
         mock_delay.assert_called_once_with(
             submission_id=9999,
@@ -121,6 +123,7 @@ def test_reap_stuck_submissions_max_retries_fail():
     ]
     with patch("database.submission_db.get_stuck_submissions", return_value=mock_stuck), \
          patch("database.submission_db.mark_submission_failed") as mock_mark_failed, \
+         patch("tasks.cleanup_tasks.create_system_log") as mock_log, \
          patch("redis.Redis") as mock_redis_cls:
         
         mock_redis = MagicMock()
@@ -130,4 +133,5 @@ def test_reap_stuck_submissions_max_retries_fail():
         reaped = reap_stuck_submissions(timeout_seconds=120, max_retries=2)
         assert reaped == 1
         assert mock_mark_failed.called
+        assert mock_log.called
         assert mock_redis.publish.called  # Bắn event thông báo failed qua ws_updates

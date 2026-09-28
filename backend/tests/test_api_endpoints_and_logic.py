@@ -1,5 +1,6 @@
 import pytest
 import os
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from main import app
 from core.security import create_access_token, create_refresh_token
@@ -7,12 +8,14 @@ from core.security import create_access_token, create_refresh_token
 client = TestClient(app)
 
 def test_health_check_endpoint():
-    response = client.get("/health")
-    assert response.status_code in (200, 503)
-    data = response.json()
-    assert data["status"] in ("healthy", "degraded", "unhealthy")
-    assert "version" in data
-    assert "app" in data
+    with patch("core.database.ping_database", return_value={"status": "up", "latency_ms": 1.0}), \
+         patch("redis.asyncio.Redis.ping", return_value=True):
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] in ("healthy", "degraded", "unhealthy")
+        assert "version" in data
+        assert "app" in data
 
 
 
@@ -37,9 +40,12 @@ def test_livekit_webhook_relay():
         "room": {"name": "room_test_123"},
         "participant": {"identity": "user_99"}
     }
-    response = client.post("/api/v1/livekit/webhook", json=payload)
-    assert response.status_code == 200
-    assert response.json().get("status") == "received"
+    with patch("api.livekit._get_redis_client") as mock_redis_getter:
+        mock_redis = MagicMock()
+        mock_redis_getter.return_value = mock_redis
+        response = client.post("/api/v1/livekit/webhook", json=payload)
+        assert response.status_code == 200
+        assert response.json().get("status") == "received"
 
 def test_refresh_token_endpoint(monkeypatch):
     # 1. Thử gửi refresh token không hợp lệ

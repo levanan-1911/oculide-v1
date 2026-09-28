@@ -154,8 +154,111 @@ class AIProctorDetector:
         pitch, yaw, roll = euler_angles.flatten()[:3]
         return float(pitch), float(yaw), float(roll)
 
+    def estimate_iris_gaze(self, landmarks, frame_shape: Tuple[int, int]) -> Dict[str, Any]:
+        """
+        Ước lượng hướng nhìn của con ngươi mắt (Iris Tracking) qua các điểm mốc tinh chỉnh 468-477.
+        - Mắt trái: Tâm con ngươi (468), Khóe trong (133), Khóe ngoài (33)
+        - Mắt phải: Tâm con ngươi (473), Khóe trong (362), Khóe ngoài (263)
+        """
+        if len(landmarks) < 478:
+            return {
+                "gaze_direction": "center",
+                "horizontal_ratio": 0.5,
+                "is_deviated": False
+            }
+
+        h, w = frame_shape
+
+        # Tọa độ 2D mống mắt và khóe mắt
+        iris_left = np.array([landmarks[468].x * w, landmarks[468].y * h])
+        corner_left_inner = np.array([landmarks[133].x * w, landmarks[133].y * h])
+        corner_left_outer = np.array([landmarks[33].x * w, landmarks[33].y * h])
+
+        iris_right = np.array([landmarks[473].x * w, landmarks[473].y * h])
+        corner_right_inner = np.array([landmarks[362].x * w, landmarks[362].y * h])
+        corner_right_outer = np.array([landmarks[263].x * w, landmarks[263].y * h])
+
+        # Tỷ lệ khoảng cách từ con ngươi đến khóe ngoài so với bề rộng mắt
+        d_left_outer = np.linalg.norm(iris_left - corner_left_outer)
+        d_left_total = np.linalg.norm(corner_left_inner - corner_left_outer) + 1e-6
+        ratio_left = d_left_outer / d_left_total
+
+        d_right_inner = np.linalg.norm(iris_right - corner_right_inner)
+        d_right_total = np.linalg.norm(corner_right_outer - corner_right_inner) + 1e-6
+        ratio_right = d_right_inner / d_right_total
+
+        avg_ratio = float((ratio_left + ratio_right) / 2.0)
+
+        # Phân loại hướng nhìn:
+        # Bình thường nhìn thẳng: 0.38 <= avg_ratio <= 0.62
+        # Liếc sang trái: avg_ratio < 0.35
+        # Liếc sang phải: avg_ratio > 0.65
+        gaze_direction = "center"
+        is_deviated = False
+        if avg_ratio < 0.35:
+            gaze_direction = "left"
+            is_deviated = True
+        elif avg_ratio > 0.65:
+            gaze_direction = "right"
+            is_deviated = True
+
+        return {
+            "gaze_direction": gaze_direction,
+            "horizontal_ratio": round(avg_ratio, 3),
+            "is_deviated": is_deviated
+        }
+
+    @staticmethod
+    def calculate_ear(landmarks, frame_shape: Tuple[int, int]) -> Tuple[float, bool]:
+        """
+        Tính toán Tỷ số khép mở mắt (Eye Aspect Ratio - EAR) theo công thức Soukupová và Čech:
+        EAR = (||p2 - p6|| + ||p3 - p5||) / (2 * ||p1 - p4||)
+        Dùng để phát hiện chớp mắt tự nhiên và kiểm tra thực thể sống (Liveness / Anti-spoofing).
+        """
+        if len(landmarks) < 468:
+            return 0.30, False
+
+        h, w = frame_shape
+
+        def _get_pt(idx):
+            return np.array([landmarks[idx].x * w, landmarks[idx].y * h])
+
+        # Mắt trái: 33 (p1), 160 (p2), 158 (p3), 133 (p4), 153 (p5), 144 (p6)
+        p1_l, p2_l, p3_l = _get_pt(33), _get_pt(160), _get_pt(158)
+        p4_l, p5_l, p6_l = _get_pt(133), _get_pt(153), _get_pt(144)
+        ear_left = (np.linalg.norm(p2_l - p6_l) + np.linalg.norm(p3_l - p5_l)) / (2.0 * np.linalg.norm(p1_l - p4_l) + 1e-6)
+
+        # Mắt phải: 362 (p1), 385 (p2), 387 (p3), 263 (p4), 373 (p5), 380 (p6)
+        p1_r, p2_r, p3_r = _get_pt(362), _get_pt(385), _get_pt(387)
+        p4_r, p5_r, p6_r = _get_pt(263), _get_pt(373), _get_pt(380)
+        ear_right = (np.linalg.norm(p2_r - p6_r) + np.linalg.norm(p3_r - p5_r)) / (2.0 * np.linalg.norm(p1_r - p4_r) + 1e-6)
+
+        avg_ear = float((ear_left + ear_right) / 2.0)
+        eyes_closed = bool(avg_ear < 0.18)
+        return round(avg_ear, 3), eyes_closed
+
+    @staticmethod
+    def check_illumination_and_quality(frame: np.ndarray) -> Dict[str, Any]:
+        """
+        Kiểm tra độ sáng và chất lượng ảnh phòng thi:
+        - Độ sáng trung bình (Mean Brightness)
+        - Cảnh báo phòng quá tối hoặc bị lóa
+        """
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        mean_brightness = float(np.mean(gray))
+        
+        is_too_dark = mean_brightness < 35.0
+        is_overexposed = mean_brightness > 230.0
+        
+        return {
+            "mean_brightness": round(mean_brightness, 1),
+            "is_too_dark": is_too_dark,
+            "is_overexposed": is_overexposed,
+            "lighting_ok": (not is_too_dark and not is_overexposed)
+        }
+
     def detect_faces(self, frame: np.ndarray) -> Dict[str, Any]:
-        """Phát hiện khuôn mặt, đếm số lượng và xác định hướng nhìn"""
+        """Phát hiện khuôn mặt, đếm số lượng, phân tích hướng đầu và ánh mắt"""
         h, w = frame.shape[:2]
         
         # 1. Thử nghiệm qua MediaPipe FaceMesh nếu khả dụng
@@ -166,14 +269,27 @@ class AIProctorDetector:
                 face_count = len(results.multi_face_landmarks)
                 primary_face = results.multi_face_landmarks[0]
                 pitch, yaw, roll = self.estimate_head_pose(primary_face.landmark, (h, w))
+                gaze = self.estimate_iris_gaze(primary_face.landmark, (h, w))
+                ear, eyes_closed = self.calculate_ear(primary_face.landmark, (h, w))
                 
-                # Tiêu chí nhìn màn hình: Yaw trong khoảng [-25°, 25°] và Pitch không cúi gục quá mức
-                looking_at_screen = (abs(yaw) <= 25.0 and -22.0 <= pitch <= 25.0)
+                # Tiêu chí nhìn màn hình:
+                # 1. Đầu hướng về màn hình (Yaw [-25°, 25°] và Pitch [-22°, 25°])
+                head_on_screen = (abs(yaw) <= 25.0 and -22.0 <= pitch <= 25.0)
+                # 2. Mắt không bị liếc lệch hẳn ra ngoài
+                gaze_on_screen = not gaze["is_deviated"]
+                
+                looking_at_screen = (head_on_screen and gaze_on_screen)
                 
                 return {
                     "face_detected": True,
                     "face_count": face_count,
                     "looking_at_screen": looking_at_screen,
+                    "head_on_screen": head_on_screen,
+                    "gaze": gaze,
+                    "liveness": {
+                        "ear": ear,
+                        "eyes_closed": eyes_closed
+                    },
                     "head_pose": {"pitch": round(pitch, 2), "yaw": round(yaw, 2), "roll": round(roll, 2)},
                     "method": "mediapipe_facemesh"
                 }
@@ -191,6 +307,9 @@ class AIProctorDetector:
                     "face_detected": True,
                     "face_count": face_count,
                     "looking_at_screen": True,
+                    "head_on_screen": True,
+                    "gaze": {"gaze_direction": "center", "horizontal_ratio": 0.5, "is_deviated": False},
+                    "liveness": {"ear": 0.30, "eyes_closed": False},
                     "head_pose": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
                     "method": "opencv_cascade"
                 }
@@ -200,6 +319,9 @@ class AIProctorDetector:
             "face_detected": False,
             "face_count": 0,
             "looking_at_screen": False,
+            "head_on_screen": False,
+            "gaze": {"gaze_direction": "center", "horizontal_ratio": 0.5, "is_deviated": False},
+            "liveness": {"ear": 0.0, "eyes_closed": True},
             "head_pose": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
             "method": "none"
         }
@@ -256,6 +378,7 @@ class AIProctorDetector:
 
         face_res = self.detect_faces(frame)
         objects = self.detect_prohibited_objects(frame)
+        lighting = self.check_illumination_and_quality(frame)
 
         violations = []
         # 1. Kiểm tra vi phạm vắng mặt / không nhận diện được khuôn mặt
@@ -272,15 +395,32 @@ class AIProctorDetector:
                 "severity": "high",
                 "description": f"Phát hiện {face_res['face_count']} khuôn mặt trong vùng quan sát camera"
             })
-        # 3. Kiểm tra thí sinh ngoảnh mặt rời màn hình
+        # 3. Kiểm tra thí sinh ngoảnh mặt hoặc liếc mắt rời màn hình
         elif not face_res["looking_at_screen"]:
+            gaze_info = face_res.get("gaze", {})
+            head_info = face_res.get("head_pose", {})
+            if not face_res.get("head_on_screen", True) and gaze_info.get("is_deviated"):
+                desc = f"Thí sinh quay đầu và liếc mắt rời màn hình (Yaw: {head_info.get('yaw')}°, Hướng mắt: {gaze_info.get('gaze_direction')})"
+            elif not face_res.get("head_on_screen", True):
+                desc = f"Thí sinh quay đầu rời màn hình (Góc lệch Yaw: {head_info.get('yaw')}°)"
+            else:
+                desc = f"Thí sinh liếc mắt rời màn hình (Hướng: {gaze_info.get('gaze_direction')}, Tỷ lệ: {gaze_info.get('horizontal_ratio')})"
+
             violations.append({
                 "type": "suspicious_object",
                 "severity": "low",
-                "description": f"Thí sinh quay đầu rời màn hình (Góc lệch Yaw: {face_res['head_pose']['yaw']}°)"
+                "description": desc
             })
 
-        # 4. Kiểm tra các thiết bị cấm phát hiện qua YOLO
+        # 4. Kiểm tra chất lượng ánh sáng camera
+        if lighting.get("is_too_dark"):
+            violations.append({
+                "type": "camera_blocked",
+                "severity": "medium",
+                "description": "Ánh sáng phòng thi quá tối, camera không thể quan sát rõ thí sinh"
+            })
+
+        # 5. Kiểm tra các thiết bị cấm phát hiện qua YOLO
         for obj in objects:
             c_name = obj["class_name"].lower()
             if "phone" in c_name:
@@ -314,7 +454,11 @@ class AIProctorDetector:
             "face_detected": face_res["face_detected"],
             "face_count": face_res["face_count"],
             "looking_at_screen": face_res["looking_at_screen"],
+            "head_on_screen": face_res.get("head_on_screen", face_res["looking_at_screen"]),
             "head_pose": face_res["head_pose"],
+            "gaze": face_res.get("gaze", {"gaze_direction": "center", "horizontal_ratio": 0.5, "is_deviated": False}),
+            "liveness": face_res.get("liveness", {"ear": 0.3, "eyes_closed": False}),
+            "lighting": lighting,
             "detected_objects": objects,
             "violations": violations,
             "confidence_score": confidence_score

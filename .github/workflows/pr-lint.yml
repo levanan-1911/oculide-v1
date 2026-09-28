@@ -38,8 +38,3 @@ jobs:
             security
           # Yêu cầu có phạm vi (scope) ví dụ: feat(auth): ..., fix(grader): ...
           requireScope: false
-          # Cho phép commit có cờ đập vỡ tương thích BREAKING CHANGE (!)
-          allowBreakingChanges: true
-          # Hướng dẫn chi tiết khi dev viết sai format
-          errorTitle: "❌ Tiêu đề PR không đúng chuẩn Conventional Commits!"
-          errorDescription: "Tiêu đề PR phải có dạng 'type(scope): description'. Ví dụ: 'feat(auth): add JWT validation' hoặc 'fix(sandbox): resolve memory limit crash'."

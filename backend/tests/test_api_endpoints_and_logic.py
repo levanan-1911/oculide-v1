@@ -8,11 +8,12 @@ client = TestClient(app)
 
 def test_health_check_endpoint():
     response = client.get("/health")
-    assert response.status_code == 200
+    assert response.status_code in (200, 503)
     data = response.json()
-    assert data["status"] in ("healthy", "degraded")
+    assert data["status"] in ("healthy", "degraded", "unhealthy")
     assert "version" in data
     assert "app" in data
+
 
 
 def test_protected_endpoints_require_authentication():

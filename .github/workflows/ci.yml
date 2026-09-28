@@ -40,7 +40,8 @@ jobs:
       - name: Install System Dependencies (ODBC & Compilers)
         run: |
           sudo apt-get update
-          sudo apt-get install -y unixodbc-dev g++
+          sudo apt-get install -y unixodbc-dev g++ libgl1 libglib2.0-0
+
 
       - name: Install Python Dependencies
         run: |

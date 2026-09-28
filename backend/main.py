@@ -9,9 +9,13 @@ from fastapi.staticfiles import StaticFiles
 import redis.asyncio as redis_async
 
 from core.config import settings, get_cors_origins
+from core.security import decode_access_token
 from api import auth, admin, rooms, questions, submissions, sessions, violations, chat, livekit
 from websocket.connection_manager import manager
 from database.chat_db import create_message
+from database.room_db import get_room_by_id
+from database.enrollment_db import is_student_enrolled
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

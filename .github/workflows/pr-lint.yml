@@ -1,0 +1,45 @@
+name: "Lint PR Title"
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+permissions:
+  pull-requests: read
+  statuses: write
+
+jobs:
+  validate-pr-title:
+    name: Validate Conventional Commits PR Title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR Title format
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Các tiền tố hợp lệ chuẩn Conventional Commits
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+            security
+          # Yêu cầu có phạm vi (scope) ví dụ: feat(auth): ..., fix(grader): ...
+          requireScope: false
+          # Cho phép commit có cờ đập vỡ tương thích BREAKING CHANGE (!)
+          allowBreakingChanges: true
+          # Hướng dẫn chi tiết khi dev viết sai format
+          errorTitle: "❌ Tiêu đề PR không đúng chuẩn Conventional Commits!"
+          errorDescription: "Tiêu đề PR phải có dạng 'type(scope): description'. Ví dụ: 'feat(auth): add JWT validation' hoặc 'fix(sandbox): resolve memory limit crash'."

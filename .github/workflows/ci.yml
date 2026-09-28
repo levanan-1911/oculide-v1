@@ -1,0 +1,100 @@
+name: "Continuous Integration (CI)"
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── 1. BACKEND TEST & CODE COVERAGE JOB ─────────────────────────────────────
+  backend-ci:
+    name: Backend Tests & Coverage
+    runs-on: ubuntu-22.04
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install System Dependencies (ODBC & Compilers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unixodbc-dev g++
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-cov flake8
+
+      - name: Syntax & Lint Verification (Flake8)
+        run: |
+          # Dừng build ngay lập tức nếu phát hiện lỗi cú pháp nghiêm trọng
+          flake8 backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Execute Pytest Suite with Coverage
+        env:
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          DATABASE_SERVER: localhost
+          DATABASE_NAME: ExamSystem
+          JWT_SECRET_KEY: test-secret-key-for-continuous-integration-pipeline-32chars
+        run: |
+          cd backend
+          pytest tests/ --cov=. --cov-report=xml:coverage.xml --cov-report=term
+
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: backend/coverage.xml
+          flags: backend
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  # ─── 2. FRONTEND LINT & BUILD JOB ────────────────────────────────────────────
+  frontend-ci:
+    name: Frontend Lint & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify Frontend Package & Execute Checks
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "📦 Phát hiện frontend/package.json, bắt đầu cài đặt và kiểm thử..."
+            cd frontend
+            npm ci || npm install
+            npm run lint --if-present
+            npm run type-check --if-present
+            npm run build --if-present
+          else
+            echo "ℹ️ Frontend chưa khởi tạo package.json. Bỏ qua bước build cho đến khi frontend được nạp mã nguồn."
+          fi

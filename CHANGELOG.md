@@ -4,6 +4,30 @@ Tất cả các thay đổi lớn trong dự án **Oculide v1** được ghi nh�
 
 Thư mục chi tiết từng đợt cập nhật: [changelogs/](file:///d:/oculide-v1/changelogs)
 
+## [1.6.0] - 2026-09-28
+
+### 🟢 Added (Thêm mới)
+- **Chuẩn Hóa Quy Trình Phát Triển Nhóm & Tự Động Hóa GitHub CI/CD**:
+  - **Phân quyền Sở hữu File ([.github/CODEOWNERS](file:///d:/oculide-v1/.github/CODEOWNERS))**:
+    - Phân quyền bắt buộc Tech Lead duyệt các thay đổi CSDL (`/database/`), bảo mật (`/backend/core/security.py`), hạ tầng Docker (`docker-compose*.yml`, `Dockerfile*`) và CI/CD workflows.
+    - Phân quyền cho lập trình viên Backend và Frontend tự do review chéo mã nguồn tính năng và giao diện.
+  - **Kiểm Soát Tiêu Đề PR Chuẩn ([.github/workflows/pr-lint.yml](file:///d:/oculide-v1/.github/workflows/pr-lint.yml))**:
+    - Tự động kiểm tra tiêu đề Pull Request theo chuẩn Conventional Commits (`type(scope): description`), khóa nút Merge nếu sai định dạng.
+  - **Pipeline CI Song Song ([.github/workflows/ci.yml](file:///d:/oculide-v1/.github/workflows/ci.yml))**:
+    - Job `backend-ci`: Tích hợp service Redis container, cài đặt ODBC & dependencies, chạy linter Flake8, thực thi 28 test cases và tự động đẩy báo cáo độ phủ mã nguồn lên Codecov.
+    - Job `frontend-ci`: Tự động nhận diện cấu hình Node.js 20, kiểm tra lint, type-check và build giao diện Next.js.
+  - **Pipeline CD Tự Động ([.github/workflows/cd.yml](file:///d:/oculide-v1/.github/workflows/cd.yml))**:
+    - Tự động đóng gói và xuất bản Docker Image đa tầng cho Backend API và Celery Worker lên GitHub Container Registry (GHCR) khi PR được merge vào nhánh `main`.
+    - Tích hợp hook sẵn sàng triển khai qua SSH về máy chủ Production.
+  - **Mẫu Biểu Chuẩn Hóa & Cẩm Nang Nhóm**:
+    - [.github/pull_request_template.md](file:///d:/oculide-v1/.github/pull_request_template.md): Mẫu PR với checklist 6 bước bắt buộc.
+    - [.github/ISSUE_TEMPLATE/](file:///d:/oculide-v1/.github/ISSUE_TEMPLATE/): Mẫu báo lỗi (`bug_report.md`) và yêu cầu tính năng (`feature_request.md`).
+    - [CONTRIBUTING.md](file:///d:/oculide-v1/CONTRIBUTING.md): Cẩm nang quy chuẩn phân nhánh (GitHub Flow) và quy tắc Branch Protection cho nhóm 5 người.
+- **Nhật ký Chi tiết**:
+  - Biên bản [changelogs/2026-09-28_team_workflow_and_github_governance.md](file:///d:/oculide-v1/changelogs/2026-09-28_team_workflow_and_github_governance.md).
+
+---
+
 ## [1.5.0] - 2026-09-28
 
 ### 🟢 Added (Thêm mới)

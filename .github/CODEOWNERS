@@ -1,0 +1,62 @@
+# ==============================================================================
+# GITHUB CODEOWNERS - OCULIDE V1
+# ==============================================================================
+# Tài liệu này định nghĩa quyền sở hữu mã nguồn và tự động chỉ định người Review
+# khi một Pull Request (PR) có chỉnh sửa các thư mục/tập tin tương ứng.
+#
+# CÁCH HOẠT ĐỘNG:
+# 1. Khi một lập trình viên tạo PR, GitHub tự động thêm các Code Owners vào mục Reviewers.
+# 2. Khi bật "Require review from Code Owners" trong Branch Protection (nhánh main),
+#    PR bắt buộc phải có sự chấp thuận (Approve) từ chủ sở hữu tương ứng mới được merge.
+# 3. Thay thế '@techlead-username' và '@dev-username' bằng GitHub username thực tế của team.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. QUY TẮC MẶC ĐỊNH (DEFAULT OWNER)
+# Mọi tập tin không được chỉ định riêng biệt sẽ do toàn bộ nhóm phát triển chịu trách nhiệm
+# ------------------------------------------------------------------------------
+*       @techlead-username @backend-dev1 @backend-dev2 @frontend-dev1 @frontend-dev2
+
+# ------------------------------------------------------------------------------
+# 2. VÙNG DỮ LIỆU & KIẾN TRÚC CỐT LÕI (CRITICAL ARCHITECTURE - CHỈ TECH LEAD DUYỆT)
+# Bất kỳ thay đổi nào liên quan đến CSDL, Bảo mật, hoặc Điều phối Container
+# BẮT BUỘC phải có sự phê duyệt đích danh từ Tech Lead / Solution Architect.
+# ------------------------------------------------------------------------------
+/database/                          @techlead-username
+/database/schema.sql                @techlead-username
+/backend/core/security.py           @techlead-username
+/backend/core/database.py           @techlead-username
+/backend/celery_app.py              @techlead-username
+/docker-compose*.yml                @techlead-username
+/backend/Dockerfile*                @techlead-username
+/.github/workflows/                 @techlead-username
+/.github/CODEOWNERS                 @techlead-username
+
+# ------------------------------------------------------------------------------
+# 3. VÙNG XỬ LÝ NỀN & AUTO-GRADER DOCKER SANDBOX (BACKEND / DEVOPS)
+# ------------------------------------------------------------------------------
+/backend/services/docker_sandbox_service.py   @techlead-username @backend-dev1
+/backend/tasks/grading_tasks.py              @techlead-username @backend-dev1
+/backend/tasks/cleanup_tasks.py              @techlead-username @backend-dev2
+
+# ------------------------------------------------------------------------------
+# 4. VÙNG AI PROCTORING & WEBRTC LIVEKIT (AI / STREAMING BACKEND)
+# ------------------------------------------------------------------------------
+/ai_workers/                                 @techlead-username @backend-dev2
+/backend/tasks/ai_proctoring_tasks.py        @techlead-username @backend-dev2
+/backend/api/livekit.py                      @techlead-username @backend-dev2
+
+# ------------------------------------------------------------------------------
+# 5. VÙNG API ENDPOINTS & DATA ACCESS LAYERS (BACKEND DEVS REVIEW CHÉO ĐƯỢC)
+# ------------------------------------------------------------------------------
+/backend/api/                                @backend-dev1 @backend-dev2 @techlead-username
+/backend/database/                           @backend-dev1 @backend-dev2 @techlead-username
+/backend/models/                             @backend-dev1 @backend-dev2 @techlead-username
+
+# ------------------------------------------------------------------------------
+# 6. GIAO DIỆN NGƯỜI DÙNG & FRONTEND (FRONTEND DEVS TỰ REVIEW CHÉO NHAU)
+# Các bạn lập trình viên giao diện có toàn quyền xét duyệt chéo các PR giao diện.
+# ------------------------------------------------------------------------------
+/frontend/                                   @frontend-dev1 @frontend-dev2
+/frontend/src/                               @frontend-dev1 @frontend-dev2
+/frontend/public/                            @frontend-dev1 @frontend-dev2

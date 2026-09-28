@@ -89,14 +89,61 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Health Check
+# Health Checks (Deep Component Probes & Docker/K8s Self-Healing)
 @app.get("/health", tags=["Health"])
 async def health_check():
-    return {
-        "status": "healthy",
+    from core.database import ping_database
+    db_status = ping_database()
+    
+    redis_status = {"status": "unknown"}
+    try:
+        r = redis_async.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None,
+            db=settings.REDIS_DB,
+            socket_timeout=1
+        )
+        pong = await r.ping()
+        await r.aclose()
+        redis_status = {"status": "up" if pong else "down"}
+    except Exception as e:
+        redis_status = {"status": "down", "error": str(e)}
+
+    is_db_up = db_status.get("status") == "up"
+    is_redis_up = redis_status.get("status") == "up"
+    
+    overall_status = "healthy" if (is_db_up and is_redis_up) else ("degraded" if is_db_up else "unhealthy")
+    
+    content = {
+        "status": overall_status,
         "app": settings.APP_NAME,
-        "version": settings.APP_VERSION
+        "version": settings.APP_VERSION,
+        "components": {
+            "database": db_status,
+            "redis": redis_status
+        }
     }
+    status_code = status.HTTP_200_OK if is_db_up else status.HTTP_503_SERVICE_UNAVAILABLE
+    return JSONResponse(status_code=status_code, content=content)
+
+@app.get("/health/liveness", tags=["Health"])
+async def health_liveness():
+    """Liveness probe: Xác nhận tiến trình Web Server không bị treo/deadlock"""
+    return {"status": "alive"}
+
+@app.get("/health/readiness", tags=["Health"])
+async def health_readiness():
+    """Readiness probe: Kiểm tra kết nối CSDL để sẵn sàng nhận request từ Reverse Proxy/Load Balancer"""
+    from core.database import ping_database
+    db_status = ping_database()
+    if db_status.get("status") != "up":
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "not_ready", "error": db_status.get("error")}
+        )
+    return {"status": "ready"}
+
 
 # Include all routers under /api/v1
 app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["Authentication"])

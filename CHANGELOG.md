@@ -4,6 +4,32 @@ Tất cả các thay đổi lớn trong dự án **Oculide v1** được ghi nh�
 
 Thư mục chi tiết từng đợt cập nhật: [changelogs/](file:///d:/oculide-v1/changelogs)
 
+## [1.5.0] - 2026-09-28
+
+### 🟢 Added (Thêm mới)
+- **Hệ Thống Tự Động Phục Hồi & Tự Hàn Gắn (Self-Healing Architecture)**:
+  - **Worker Watchdog** ([backend/tasks/cleanup_tasks.py](file:///d:/oculide-v1/backend/tasks/cleanup_tasks.py)):
+    - Quét định kỳ mỗi 60 giây qua Celery Beat giải cứu các bài nộp bị kẹt ở trạng thái `grading` >120s khi worker bị `OOMKilled` hoặc host restart.
+    - Cơ chế Retry có kiểm soát qua Redis key (`watchdog:retry:{sub_id}`, tối đa 2 lần). Quá 2 lần sẽ tự động chuyển sang `failed`, ghi nhận nguyên nhân vào `GradingResults` và bắn event WebSocket thông báo cho sinh viên để không bị treo giao diện thi.
+  - **Sandbox Orphan Reaper** ([backend/services/docker_sandbox_service.py](file:///d:/oculide-v1/backend/services/docker_sandbox_service.py)):
+    - Đánh dấu mọi container sandbox với nhãn `labels={"app": "oculide-grader", "created_at": ...}`.
+    - Quét định kỳ mỗi 120 giây qua Celery Beat, tự động tiêu diệt và dọn dẹp các container sandbox mồ côi/rác sống quá 30 giây hoặc đã `exited`, giải phóng RAM, Inodes và CPU của Host.
+  - **Deep Health Probes & Tự Khởi Động Lại Container** ([backend/main.py](file:///d:/oculide-v1/backend/main.py) & [docker-compose.yml](file:///d:/oculide-v1/docker-compose.yml)):
+    - Nâng cấp `/health` kiểm tra đồng thời liveness và readiness của SQL Server (`SELECT 1`) và Redis (`ping()`), trả về mã 503 khi CSDL bị gián đoạn.
+    - Bổ sung `/health/liveness` và `/health/readiness` phục vụ Reverse Proxy và Load Balancer.
+    - Cấu hình chính sách `restart: unless-stopped` cho toàn bộ 6 dịch vụ trong `docker-compose.yml`.
+    - Bổ sung cờ chống rò rỉ RAM `--max-memory-per-child` và `--max-tasks-per-child` cho các Celery worker cùng script probe healthcheck tự động.
+- **Bộ Kiểm Thử Tự Động Mới**:
+  - [backend/tests/test_self_healing.py](file:///d:/oculide-v1/backend/tests/test_self_healing.py): 7 test cases bao quát liveness, readiness, deep health, sandbox reaper, và watchdog retry/failover.
+  - Tổng số lượng test tự động nâng lên **28/28 passed (100%)**.
+- **Nhật ký Chi tiết**:
+  - Biên bản [changelogs/2026-09-28_self_healing_watchdog_reaper_and_healthchecks.md](file:///d:/oculide-v1/changelogs/2026-09-28_self_healing_watchdog_reaper_and_healthchecks.md).
+
+### 🐛 Fixed & Hardened (Sửa lỗi & Gia cố)
+- **Compile Timeout Buffer**: Bổ sung bộ đệm thời gian biên dịch `compile_timeout = max(time_limit, 15)` cho C++ và Java trong `_run_in_subprocess`, triệt tiêu hoàn toàn hiện tượng TLE giả khi CPU máy chủ bị chiếm dụng cao.
+
+---
+
 ## [1.4.0] - 2026-09-27
 
 ### 🟢 Added (Thêm mới)

@@ -49,7 +49,7 @@ celery_app.conf.update(
     result_expires=3600,                  # Kết quả lưu trữ trong Redis 1 giờ
     broker_connection_retry_on_startup=True,
     
-    # Tác vụ bảo trì định kỳ (Celery Beat Schedule)
+    # Tác vụ bảo trì & Tự phục hồi định kỳ (Celery Beat Self-Healing Schedule)
     beat_schedule={
         "auto-close-expired-rooms-every-minute": {
             "task": "tasks.cleanup_tasks.auto_close_expired_rooms",
@@ -62,6 +62,14 @@ celery_app.conf.update(
         "prune-old-snapshots-daily": {
             "task": "tasks.cleanup_tasks.prune_old_snapshots",
             "schedule": 86400.0,          # Chạy mỗi 24 giờ
+        },
+        "reap-stuck-submissions-every-minute": {
+            "task": "tasks.cleanup_tasks.reap_stuck_submissions",
+            "schedule": 60.0,             # Worker Watchdog: Quét giải cứu bài nộp kẹt mỗi 60 giây
+        },
+        "reap-orphaned-containers-every-2-mins": {
+            "task": "tasks.cleanup_tasks.reap_orphaned_sandbox_containers",
+            "schedule": 120.0,            # Sandbox Reaper: Dọn container rác mỗi 2 phút
         },
     }
 )

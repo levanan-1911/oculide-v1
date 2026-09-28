@@ -10,9 +10,10 @@ def test_health_check_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "healthy"
+    assert data["status"] in ("healthy", "degraded")
     assert "version" in data
     assert "app" in data
+
 
 def test_protected_endpoints_require_authentication():
     # Kiểm tra các endpoint quản trị và tài nguyên không cho phép truy cập vô danh (Anonymous)

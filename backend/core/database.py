@@ -122,3 +122,18 @@ def row_to_dict(cursor, row) -> Optional[Dict[str, Any]]:
         return None
     columns = [col[0] for col in cursor.description]
     return dict(zip(columns, row))
+
+def ping_database(timeout_seconds: float = 2.0) -> Dict[str, Any]:
+    """Kiểm tra sức khỏe kết nối CSDL nhanh (Liveness / Readiness Probe)"""
+    import time
+    start = time.perf_counter()
+    try:
+        with get_db_cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        latency_ms = round((time.perf_counter() - start) * 1000, 2)
+        return {"status": "up", "latency_ms": latency_ms}
+    except Exception as e:
+        latency_ms = round((time.perf_counter() - start) * 1000, 2)
+        return {"status": "down", "error": str(e), "latency_ms": latency_ms}
+

@@ -4,6 +4,7 @@ services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: exam-sqlserver
+    restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
       SA_PASSWORD: "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}"
@@ -41,6 +42,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: exam-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -59,6 +61,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile # Lean image: no ML deps
     container_name: exam-backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -85,8 +88,8 @@ services:
       - exam-network
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 30s
-      timeout: 10s
+      interval: 20s
+      timeout: 5s
       retries: 3
       start_period: 40s
 
@@ -96,7 +99,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile # Lean image (no ML) — grading uses Docker SDK
     container_name: exam-celery-grading
-    command: celery -A celery_app worker -B -Q grading,maintenance,default --loglevel=info --concurrency=4
+    restart: unless-stopped
+    command: celery -A celery_app worker -B -Q grading,maintenance,default --loglevel=info --concurrency=4 --max-memory-per-child=300000 --max-tasks-per-child=500
     environment:
       DATABASE_SERVER: sqlserver
       DATABASE_NAME: ExamSystem
@@ -121,6 +125,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - exam-network
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c 'from celery_app import celery_app; res = celery_app.control.ping(timeout=2.0); exit(0 if res else 1)'" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   # ─── Celery Worker — AI Proctoring ───────────────────────────────────────────
   celery-proctoring:
@@ -128,7 +138,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile.celery # Heavy image: torch + ultralytics + mediapipe
     container_name: exam-celery-proctoring
-    command: celery -A celery_app worker -Q proctoring --loglevel=info --concurrency=2
+    restart: unless-stopped
+    command: celery -A celery_app worker -Q proctoring --loglevel=info --concurrency=2 --max-memory-per-child=400000 --max-tasks-per-child=200
     environment:
       DATABASE_SERVER: sqlserver
       DATABASE_NAME: ExamSystem
@@ -148,6 +159,12 @@ services:
       - yolo_weights:/root/.config/ultralytics
     networks:
       - exam-network
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c 'from celery_app import celery_app; res = celery_app.control.ping(timeout=2.0); exit(0 if res else 1)'" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   frontend:
     build:
@@ -158,6 +175,7 @@ services:
         NEXT_PUBLIC_WS_URL: wss://api.oculide.id.vn
         NEXT_PUBLIC_LIVEKIT_URL: wss://oculide-exam-4eu7af2s.livekit.cloud
     container_name: exam-frontend
+    restart: unless-stopped
     ports:
       - "3001:3000" # Đổi sang 3001 để không xung đột với npm run dev (port 3000)
     environment:
@@ -182,7 +200,7 @@ volumes:
   yolo_weights:
     # persistent cache for YOLO model weights
 
-    # ─── Networks ─────────────────────────────────────────────────────────────────
+# ─── Networks ─────────────────────────────────────────────────────────────────
 networks:
   exam-network:
     driver: bridge

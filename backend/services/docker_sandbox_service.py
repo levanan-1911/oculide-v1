@@ -154,7 +154,8 @@ class DockerSandboxService:
                     cap_drop=["ALL"],                            # Tước sạch Linux capabilities
                     security_opt=["no-new-privileges:true"],     # Chặn leo thang đặc quyền
                     user="1001:1001",                            # Thực thi dưới tài khoản không đặc quyền
-                    volumes={temp_dir: {"bind": "/workspace", "mode": "ro"}}
+                    volumes={temp_dir: {"bind": "/workspace", "mode": "ro"}},
+                    labels={"app": "oculide-grader", "created_at": str(int(time.time()))}
                 )
 
                 container.start()
@@ -237,6 +238,7 @@ class DockerSandboxService:
                 f.write(code)
 
             try:
+                compile_timeout = max(time_limit, 15)
                 # Nếu là C++ hoặc Java, cần biên dịch trước
                 if language in ("cpp", "c++"):
                     compile_res = subprocess.run(
@@ -244,7 +246,7 @@ class DockerSandboxService:
                         cwd=temp_dir,
                         capture_output=True,
                         text=True,
-                        timeout=time_limit
+                        timeout=compile_timeout
                     )
                     if compile_res.returncode != 0:
                         elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -267,7 +269,7 @@ class DockerSandboxService:
                         cwd=temp_dir,
                         capture_output=True,
                         text=True,
-                        timeout=time_limit
+                        timeout=compile_timeout
                     )
                     if compile_res.returncode != 0:
                         elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -339,5 +341,52 @@ class DockerSandboxService:
                     "memory_mb": 0.0
                 }
 
+    def cleanup_orphaned_containers(self, max_age_seconds: int = 30) -> int:
+        """
+        Quét và dọn dẹp triệt để các container sandbox bị kẹt/mồ côi (Sandbox Orphan Reaper).
+        Bất kỳ container nào có nhãn app=oculide-grader sống quá max_age_seconds
+        hoặc đã ở trạng thái 'exited'/'dead' nhưng chưa được thu hồi sẽ bị force remove.
+        """
+        if self.docker_client is None:
+            self._init_docker_client()
+            if self.docker_client is None:
+                return 0
+
+        cleaned_count = 0
+        now = time.time()
+        try:
+            # Lấy toàn bộ containers có nhãn app=oculide-grader (kể cả running lẫn exited)
+            containers = self.docker_client.containers.list(
+                all=True,
+                filters={"label": "app=oculide-grader"}
+            )
+            for c in containers:
+                try:
+                    c_status = getattr(c, "status", "").lower()
+                    labels = getattr(c, "labels", {}) or {}
+                    created_at_str = labels.get("created_at")
+                    age = None
+                    if created_at_str and str(created_at_str).isdigit():
+                        age = now - int(created_at_str)
+
+                    should_kill = False
+                    if c_status in ("exited", "dead"):
+                        should_kill = True
+                    elif age is not None and age > max_age_seconds:
+                        should_kill = True
+                    elif age is None and c_status == "running":
+                        should_kill = True
+
+                    if should_kill:
+                        c.remove(force=True)
+                        cleaned_count += 1
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"Warning: Lỗi khi quét dọn container rác: {e}")
+
+        return cleaned_count
+
 # Singleton instance sẵn sàng sử dụng
 sandbox_service = DockerSandboxService()
+

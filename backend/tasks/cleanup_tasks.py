@@ -84,3 +84,149 @@ def prune_old_snapshots(retention_days: int = 30) -> int:
             message=f"Lỗi khi dọn dẹp snapshot cũ: {str(e)}"
         )
         return 0
+
+@celery_app.task(name="tasks.cleanup_tasks.reap_stuck_submissions")
+def reap_stuck_submissions(timeout_seconds: int = 120, max_retries: int = 2) -> int:
+    """
+    Worker Watchdog: Tự động phát hiện và giải cứu các bài nộp bị kẹt ở trạng thái 'grading'
+    khi worker bị crash đột tử (OOMKilled, Network Partition, Host Reboot).
+    """
+    import redis
+    from core.config import settings
+    from database.submission_db import get_stuck_submissions, mark_submission_failed, update_submission_status
+    from tasks.grading_tasks import grade_submission
+
+    stuck_list = []
+    try:
+        stuck_list = get_stuck_submissions(older_than_seconds=timeout_seconds)
+    except Exception as e:
+        create_system_log(
+            log_level="error",
+            module="WorkerWatchdog",
+            message=f"Lỗi khi truy vấn bài nộp kẹt: {str(e)}"
+        )
+        return 0
+
+    if not stuck_list:
+        return 0
+
+    # Kết nối Redis để theo dõi số lần retry của Watchdog và phát WebSocket event
+    r = None
+    try:
+        if settings.REDIS_PASSWORD:
+            r = redis.Redis(
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                password=settings.REDIS_PASSWORD,
+                db=settings.REDIS_DB,
+                socket_timeout=2
+            )
+        else:
+            r = redis.Redis(
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                db=settings.REDIS_DB,
+                socket_timeout=2
+            )
+    except Exception:
+        r = None
+
+    reaped_count = 0
+    for sub in stuck_list:
+        sub_id = sub["submission_id"]
+        room_id = sub.get("room_id")
+        student_id = sub.get("student_id")
+
+        retry_count = 1
+        if r:
+            try:
+                retry_key = f"watchdog:retry:{sub_id}"
+                retry_count = r.incr(retry_key)
+                r.expire(retry_key, 3600)
+            except Exception:
+                retry_count = 1
+
+        if retry_count <= max_retries:
+            # Re-dispatch tác vụ chấm bài
+            try:
+                update_submission_status(sub_id, "pending")
+                grade_submission.delay(
+                    submission_id=sub_id,
+                    question_id=sub["question_id"],
+                    code_content=sub["code_content"],
+                    language=sub["language"]
+                )
+                create_system_log(
+                    log_level="warning",
+                    module="WorkerWatchdog",
+                    message=f"Phát hiện bài nộp ID {sub_id} bị kẹt >{timeout_seconds}s. Đã tự động re-dispatch (Lần {retry_count}/{max_retries})",
+                    extra_data={"submission_id": sub_id, "retry_count": retry_count}
+                )
+                reaped_count += 1
+            except Exception as re_err:
+                create_system_log(
+                    log_level="error",
+                    module="WorkerWatchdog",
+                    message=f"Lỗi khi re-dispatch bài nộp ID {sub_id}: {str(re_err)}"
+                )
+        else:
+            # Đã vượt quá số lần retry cho phép -> Đánh dấu failed để không làm treo sinh viên
+            err_msg = (
+                f"Hệ thống tự phục hồi: Bài nộp bị gián đoạn quá trình chấm sau {max_retries} lần thử lại. "
+                "Có thể do mã nguồn gây tràn bộ nhớ worker hoặc sự cố hệ thống đột ngột."
+            )
+            mark_submission_failed(sub_id, err_msg)
+            create_system_log(
+                log_level="error",
+                module="WorkerWatchdog",
+                message=f"Bài nộp ID {sub_id} kẹt quá {max_retries} lần. Đã tự động đánh dấu failed để bảo vệ hệ thống.",
+                extra_data={"submission_id": sub_id, "retry_count": retry_count}
+            )
+            if r:
+                try:
+                    event = {
+                        "type": "submission_result",
+                        "room_id": room_id,
+                        "student_id": student_id,
+                        "submission_id": sub_id,
+                        "status": "failed",
+                        "error_message": err_msg
+                    }
+                    r.publish("ws_updates", json.dumps(event))
+                except Exception:
+                    pass
+            reaped_count += 1
+
+    if r:
+        try:
+            r.close()
+        except Exception:
+            pass
+
+    return reaped_count
+
+@celery_app.task(name="tasks.cleanup_tasks.reap_orphaned_sandbox_containers")
+def reap_orphaned_sandbox_containers(max_age_seconds: int = 30) -> int:
+    """
+    Sandbox Orphan Reaper: Quét và tiêu diệt các container sandbox quá hạn hoặc mồ côi
+    để giải phóng tài nguyên CPU, RAM và Inodes của máy chủ Host.
+    """
+    from services.docker_sandbox_service import sandbox_service
+    try:
+        killed_count = sandbox_service.cleanup_orphaned_containers(max_age_seconds=max_age_seconds)
+        if killed_count > 0:
+            create_system_log(
+                log_level="info",
+                module="SandboxReaper",
+                message=f"Đã tiêu diệt và dọn dẹp {killed_count} container sandbox rác/mồ côi (> {max_age_seconds}s)",
+                extra_data={"killed_containers": killed_count}
+            )
+        return killed_count
+    except Exception as e:
+        create_system_log(
+            log_level="error",
+            module="SandboxReaper",
+            message=f"Lỗi khi dọn dẹp container sandbox mồ côi: {str(e)}"
+        )
+        return 0
+

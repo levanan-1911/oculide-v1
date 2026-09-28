@@ -187,3 +187,46 @@ def save_grading_results(submission_id: int, results: List[Dict], final_status: 
         cursor.execute("UPDATE Submissions SET status = ? WHERE submission_id = ?", (final_status, submission_id))
         return True
 
+def get_stuck_submissions(older_than_seconds: int = 120) -> List[Dict]:
+    """
+    Truy vấn các bài nộp đang ở trạng thái 'grading' nhưng đã quá thời gian quy định
+    (do worker bị crash đột ngột hoặc mất kết nối).
+    """
+    from core.database import get_db_cursor, rows_to_dicts
+    sql = """
+        SELECT submission_id, room_id, student_id, question_id, attempt_number,
+               code_content, language, submitted_at, status
+        FROM Submissions
+        WHERE status = 'grading' AND DATEDIFF(second, submitted_at, GETDATE()) > ?
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute(sql, (older_than_seconds,))
+        rows = cursor.fetchall()
+        return rows_to_dicts(cursor, rows)
+
+def mark_submission_failed(submission_id: int, error_message: str = "Hệ thống tự phục hồi: Quá thời gian chấm bài do sự cố worker") -> bool:
+    """
+    Cập nhật trạng thái bài nộp thành 'failed' và lưu bản ghi giải thích lý do
+    để giao diện sinh viên không bị treo vô hạn.
+    """
+    from core.database import get_db_cursor
+    with get_db_cursor(commit=True) as cursor:
+        cursor.execute("UPDATE Submissions SET status = 'failed' WHERE submission_id = ?", (submission_id,))
+        cursor.execute("SELECT COUNT(*) FROM GradingResults WHERE submission_id = ?", (submission_id,))
+        count = cursor.fetchone()[0]
+        if count == 0:
+            cursor.execute("""
+                SELECT TOP 1 tc.test_case_id 
+                FROM TestCases tc
+                JOIN Submissions s ON tc.question_id = s.question_id
+                WHERE s.submission_id = ?
+            """, (submission_id,))
+            tc_row = cursor.fetchone()
+            if tc_row:
+                cursor.execute("""
+                    INSERT INTO GradingResults (submission_id, test_case_id, is_passed, error_message)
+                    VALUES (?, ?, 0, ?)
+                """, (submission_id, tc_row[0], error_message))
+        return True
+
+

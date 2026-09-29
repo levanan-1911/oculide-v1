@@ -12,7 +12,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # 1. Cài đặt các công cụ hệ thống cần thiết và Microsoft ODBC Driver 18 cho SQL Server
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::http::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries \
+    && apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg2 \
     apt-transport-https \

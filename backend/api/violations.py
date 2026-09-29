@@ -68,7 +68,10 @@ async def analyze_webcam_snapshot(
         from celery_app import celery_app
         celery_app.send_task(
             "tasks.ai_proctoring_tasks.analyze_frame",
-            args=[session["room_id"], session["student_id"], data.session_id, data.snapshot_data],
+            args=[
+                session["room_id"], session["student_id"], data.session_id,
+                data.snapshot_data, data.is_typing, data.client_event
+            ],
             queue="proctoring"
         )
         return {"status": "queued", "message": "Ảnh đã được đưa vào hàng đợi phân tích"}

@@ -11,8 +11,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# 1. Cài đặt các thư viện hệ thống cho đồ họa, OpenCV, FFmpeg và Microsoft ODBC Driver 18
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 1. Cài đặt các thư viện hệ thống cần thiết (glib, OpenMP cho headless CV) và Microsoft ODBC Driver 18
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
+    && echo 'Acquire::http::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries \
+    && apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg2 \
     apt-transport-https \
@@ -20,13 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     unixodbc-dev \
-    libgl1 \
     libglib2.0-0 \
     libgomp1 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    ffmpeg \
     && mkdir -p /etc/apt/keyrings \
     # Thêm Microsoft Package Signing Key cho Debian 12
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \

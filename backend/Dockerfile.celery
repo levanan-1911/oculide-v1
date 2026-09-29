@@ -22,6 +22,7 @@ RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
     gcc \
     g++ \
     unixodbc-dev \
+    libgl1 \
     libglib2.0-0 \
     libgomp1 \
     && mkdir -p /etc/apt/keyrings \

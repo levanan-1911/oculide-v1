@@ -46,8 +46,9 @@ async def register(user_data: UserRegisterRequest):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(credentials: LoginRequest):
-    """Đăng nhập hệ thống bằng username/password nhận cặp Access + Refresh JWT token"""
-    user = get_user_by_username(credentials.username)
+    """Đăng nhập hệ thống bằng username/email và password nhận cặp Access + Refresh JWT token"""
+    identifier = credentials.username.strip()
+    user = get_user_by_username(identifier) or get_user_by_email(identifier)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

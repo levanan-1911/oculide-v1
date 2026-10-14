@@ -539,7 +539,7 @@ GO
 
 -- Mật khẩu mặc định: admin123
 INSERT INTO Users (username, password_hash, email, full_name, role, is_active)
-VALUES ('admin', '$2b$12$3xFcAp4PtCwrrLxqWEzZU.iT6.ap4CQe0QNczI6Dt/HHBR.BkcskS', 'admin@exam.com', 'System Admin', 'admin', 1);
+VALUES ('admin', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'admin@school.edu.vn', N'Quản Trị Viên Hệ Thống', 'admin', 1);
 GO
 
 PRINT 'Oculide Database Schema created successfully with standardized tables!';

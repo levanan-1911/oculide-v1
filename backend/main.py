@@ -6,7 +6,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-import redis.asyncio as redis_async
+try:
+    import redis.asyncio as redis_async
+except ImportError:
+    redis_async = None
 
 from core.config import settings, get_cors_origins
 from core.security import decode_access_token
@@ -25,42 +28,44 @@ async def lifespan(app: FastAPI):
     
     redis_client = None
     listener_task = None
-    try:
-        redis_client = redis_async.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None,
-            db=settings.REDIS_DB,
-            socket_timeout=5
-        )
-        
-        async def redis_listener():
-            while True:
-                try:
-                    pubsub = redis_client.pubsub()
-                    await pubsub.subscribe("ws_updates")
-                    async for message in pubsub.listen():
-                        if message["type"] == "message":
-                            try:
-                                data = json.loads(message["data"])
-                                room_id = data.get("room_id")
-                                if room_id:
-                                    await manager.broadcast_json(int(room_id), data)
-                                elif data.get("type") == "livekit_stream_event":
-                                    # Chuyển tiếp sự kiện stream LiveKit tới tất cả phòng đang mở
-                                    for r_id in list(manager.active_connections.keys()):
-                                        await manager.broadcast_json(r_id, data)
-                            except (json.JSONDecodeError, Exception):
-                                pass
-                except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    print(f"Redis listener warning ({e}), thử kết nối lại sau 3 giây...")
-                    await asyncio.sleep(3)
-                
-        listener_task = asyncio.create_task(redis_listener())
-    except Exception as e:
-        print(f"Lưu ý: Redis chưa sẵn sàng ({e}). Chạy chế độ độc lập.")
+    if redis_async is not None:
+        try:
+            redis_client = redis_async.Redis(
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None,
+                db=settings.REDIS_DB,
+                socket_timeout=5
+            )
+            
+            async def redis_listener():
+                while True:
+                    try:
+                        pubsub = redis_client.pubsub()
+                        await pubsub.subscribe("ws_updates")
+                        async for message in pubsub.listen():
+                            if message["type"] == "message":
+                                try:
+                                    data = json.loads(message["data"])
+                                    room_id = data.get("room_id")
+                                    if room_id:
+                                        await manager.broadcast_json(int(room_id), data)
+                                    elif data.get("type") == "livekit_stream_event":
+                                        for r_id in list(manager.active_connections.keys()):
+                                            await manager.broadcast_json(r_id, data)
+                                except (json.JSONDecodeError, Exception):
+                                    pass
+                    except asyncio.CancelledError:
+                        break
+                    except Exception as e:
+                        print(f"Redis listener warning ({e}), thử kết nối lại sau 3 giây...")
+                        await asyncio.sleep(3)
+                    
+            listener_task = asyncio.create_task(redis_listener())
+        except Exception as e:
+            print(f"Lưu ý: Redis chưa sẵn sàng ({e}). Chạy chế độ độc lập.")
+    else:
+        print("Lưu ý: Thư viện redis chưa cài đặt. Chạy chế độ độc lập.")
         
     yield
     

@@ -1,13 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
+import AuthBrandPanel from '@/components/auth/AuthBrandPanel';
 import { 
   Eye, 
   EyeOff, 
-  ShieldCheck, 
   AlertCircle, 
-  CheckCircle2, 
-  Sparkles
+  CheckCircle2
 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -50,7 +49,7 @@ export default function LoginPage() {
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(data.detail || 'Email/tài khoản hoặc mật khẩu không chính xác.');
@@ -60,12 +59,24 @@ export default function LoginPage() {
       if (data.access_token) {
         localStorage.setItem('oculide_token', data.access_token);
         localStorage.setItem('oculide_user', JSON.stringify(data.user));
+        if (data.refresh_token) {
+          localStorage.setItem('oculide_refresh_token', data.refresh_token);
+        }
       }
 
-      setSuccessMessage('Đăng nhập thành công! Đang chuyển hướng...');
+      const requiresPasswordChange = Boolean(data.user?.must_change_password);
+      setSuccessMessage(
+        requiresPasswordChange
+          ? 'Mật khẩu tạm hợp lệ. Đang chuyển đến bước đặt mật khẩu mới...'
+          : 'Đăng nhập thành công! Đang chuyển hướng...',
+      );
 
       // Hệ thống tự động điều hướng theo Role (Admin, Giảng viên, Sinh viên)
       setTimeout(() => {
+        if (requiresPasswordChange) {
+          window.location.href = '/reset-password';
+          return;
+        }
         const role = data.user?.role;
         if (role === 'admin') {
           window.location.href = '/admin';
@@ -84,85 +95,15 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen w-full flex flex-col lg:flex-row font-sans bg-[#f4f7f9] text-slate-800">
+    <main className="flex min-h-screen w-full flex-col bg-[#f4f7f9] font-sans text-slate-800 lg:flex-row">
       
-      {/* ── CỘT TRÁI: 40% DESKTOP (Navy Dark Theme + Oculide Branding) ── */}
-      <section className="w-full lg:w-[40%] bg-[#1a253a] text-white flex flex-col justify-between p-8 sm:p-12 relative overflow-hidden shrink-0">
-        
-        {/* Hiệu ứng ánh sáng mờ trang trí nền */}
-        <div 
-          aria-hidden="true" 
-          className="absolute -top-32 -left-32 w-80 h-80 bg-blue-600/15 rounded-full blur-3xl pointer-events-none" 
-        />
-        <div 
-          aria-hidden="true" 
-          className="absolute -bottom-32 -right-32 w-96 h-96 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" 
-        />
-
-        {/* 1. Logo Oculide & Nhãn nhận diện (Biểu tượng con mắt công nghệ AI) */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/30 ring-1 ring-white/20">
-            <Eye className="w-6 h-6 text-white" strokeWidth={2.2} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-black tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
-                Oculide
-              </span>
-              <span className="text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                v1.0
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 font-medium">AI Proctoring & Lab LMS</p>
-          </div>
-        </div>
-
-        {/* 2. Hero Content: Slogan & Giới thiệu tính năng (Căn giữa) */}
-        <div className="relative z-10 my-8 lg:my-auto text-center lg:text-left">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-xs text-blue-300 mb-6 backdrop-blur-sm">
-            <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-            <span>Chuẩn đặc tả IEEE 830-1998</span>
-          </div>
-
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold leading-snug tracking-tight text-white mb-4">
-            Giám sát phòng thi &<br className="hidden sm:inline" />
-            <span className="bg-gradient-to-r from-blue-400 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
-              {' '}Thực hành lập trình AI
-            </span>
-          </h1>
-
-          <p className="text-sm sm:text-base text-slate-300/90 leading-relaxed max-w-md mx-auto lg:mx-0 font-normal">
-            Minh bạch, trực quan và bảo mật. Tự động hóa đánh giá năng lực lập trình và phát hiện bất thường bằng Trí tuệ Nhân tạo.
-          </p>
-
-          {/* Micro-features Checklist */}
-          <div className="mt-8 space-y-3 hidden sm:block text-left max-w-sm mx-auto lg:mx-0">
-            <div className="flex items-center gap-3 text-xs text-slate-300">
-              <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">✓</div>
-              <span>Giám sát đa luồng qua LiveKit WebRTC SFU</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-slate-300">
-              <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">✓</div>
-              <span>Chấm điểm code tự động trong Docker Sandbox cô lập</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-slate-300">
-              <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">✓</div>
-              <span>Phát hiện gian lận bằng YOLOv8 & MediaPipe</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. Footer bên trái */}
-        <div className="relative z-10 text-xs text-slate-400 border-t border-slate-800/80 pt-4 hidden lg:block">
-          <p>© 2026 Oculide System. Nghiên cứu khoa học & Ứng dụng.</p>
-        </div>
-      </section>
+      <AuthBrandPanel variant="detailed" />
 
       {/* ── CỘT PHẢI: 60% DESKTOP (Light Grey Background + Centered Card) ── */}
-      <section className="w-full lg:w-[60%] flex items-center justify-center p-4 sm:p-8 lg:p-12 relative min-h-screen lg:min-h-0">
+      <section className="relative flex min-h-[620px] w-full items-center justify-center p-4 sm:p-8 lg:min-h-screen lg:w-[60%] lg:p-12">
         
         {/* Thẻ Form Đăng Nhập (Card Container chuẩn Wireframe) */}
-        <div className="w-full max-w-[440px] bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/60 p-8 sm:p-10 transition-all">
+        <div className="w-full max-w-[440px] rounded-3xl border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/60 transition-all sm:min-h-[662px] sm:p-10">
           
           {/* Header của Form: Form chữ thanh lịch, rõ nét */}
           <div className="mb-7 text-left">
@@ -205,7 +146,7 @@ export default function LoginPage() {
                 type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@school.edu.vn"
+                placeholder="abcd@school.edu.vn"
                 disabled={isLoading}
                 autoComplete="username"
                 className="w-full bg-white text-slate-800 text-sm px-4 py-3 rounded-xl border border-slate-200 placeholder-slate-400 
@@ -256,7 +197,7 @@ export default function LoginPage() {
                   href="/forgot-password" 
                   className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline transition-colors"
                 >
-                  Quên mật khẩu?
+                  <b>Quên mật khẩu?</b>
                 </a>
               </div>
             </div>

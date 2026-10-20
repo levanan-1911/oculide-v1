@@ -94,7 +94,9 @@ def analyze_frame(
     room_id: int,
     student_id: int,
     session_id: int,
-    snapshot_data: str
+    snapshot_data: str,
+    is_typing: bool = False,
+    client_event: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Tác vụ Celery xử lý và phân tích hình ảnh giám sát webcam:
@@ -162,6 +164,22 @@ def analyze_frame(
     lighting = result.get("lighting", {})
     liveness = result.get("liveness", {})
 
+    # ─── 0. SỰ KIỆN TỪ PHÍA CLIENT (Chuyển tab, thoát toàn màn hình) ───────────
+    if client_event == "tab_switch":
+        confirmed_violations.append({
+            "type": "tab_switch",
+            "severity": "high",
+            "description": "Thí sinh chuyển sang tab hoặc cửa sổ ứng dụng khác ngoài trang thi"
+        })
+        attention_status = "violation"
+    elif client_event == "fullscreen_exit":
+        confirmed_violations.append({
+            "type": "fullscreen_exit",
+            "severity": "medium",
+            "description": "Thí sinh thoát chế độ làm bài toàn màn hình"
+        })
+        attention_status = "violation"
+
     # A. Thiết bị cấm (YOLO) - Điện thoại xử lý ngay lập tức
     for obj in result.get("detected_objects", []):
         c_name = obj.get("class_name", "").lower()
@@ -186,8 +204,17 @@ def analyze_frame(
                 session_state[obj_key] = None
 
     # B. Quay đầu / Liếc mắt rời màn hình (Ngưỡng Dwell Time >= 7s)
+    # TƯƠNG QUAN GÕ PHÍM & ÁNH MẮT:
+    # Nếu thí sinh cúi đầu xuống (Pitch < -15°) NHƯNG đang gõ phím liên tục (is_typing = True)
+    # -> AI nhận diện đây là hành vi nhìn bàn phím gõ code, BỎ QUA KHÔNG TÍNH VI PHẠM!
+    is_typing_looking_at_keyboard = (
+        is_typing and
+        result.get("head_pose", {}).get("pitch", 0.0) < -15.0 and
+        abs(result.get("head_pose", {}).get("yaw", 0.0)) <= 25.0
+    )
+
     if face_count == 1:
-        if not looking_at_screen:
+        if not looking_at_screen and not is_typing_looking_at_keyboard:
             start_off = session_state.get("off_screen_start")
             if not start_off:
                 session_state["off_screen_start"] = now

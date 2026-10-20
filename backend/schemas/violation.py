@@ -12,6 +12,8 @@ class ViolationCreateRequest(BaseModel):
 class SnapshotAnalyzeRequest(BaseModel):
     session_id: int
     snapshot_data: str  # Base64 string
+    is_typing: Optional[bool] = False
+    client_event: Optional[str] = None  # tab_switch, fullscreen_exit, blur, periodic
 
 class ViolationResponse(BaseModel):
     violation_id: int

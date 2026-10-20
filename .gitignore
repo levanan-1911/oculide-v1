@@ -23,6 +23,8 @@ wheels/
 .installed.cfg
 *.egg
 .pytest_cache/
+celerybeat-schedule*
+*.pt
 
 # Virtual Environment & Secret Envs
 venv/

@@ -107,10 +107,13 @@ async def get_student_violations(
 @router.patch("/{violation_id}/review", response_model=ViolationResponse)
 async def review_violation(
     violation_id: int,
+    review_status: str = "confirmed",
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
-    """Giảng viên duyệt hoặc xác nhận sự kiện vi phạm"""
-    updated = update_violation_review(violation_id, reviewed_by=current_user["user_id"])
+    """Giảng viên duyệt hoặc xác nhận sự kiện vi phạm (confirmed hoặc rejected)"""
+    if review_status not in ["confirmed", "rejected"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Trạng thái duyệt phải là confirmed hoặc rejected")
+    updated = update_violation_review(violation_id, reviewed_by=current_user["user_id"], review_status=review_status)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bản ghi vi phạm")
     return updated

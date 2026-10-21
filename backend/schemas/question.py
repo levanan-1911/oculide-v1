@@ -28,7 +28,7 @@ class QuestionCreateRequest(BaseModel):
     question_order: int = Field(..., ge=1)
     question_title: str = Field(..., min_length=1, max_length=200)
     question_description: str
-    question_type: str = Field("coding", pattern="^(coding|multiple_choice|essay)$")
+    question_type: str = Field("coding", pattern="^(coding|essay)$")
     programming_language: Optional[str] = Field("python", max_length=20)
     max_points: float = Field(default=10.0, gt=0)
     time_limit_minutes: Optional[int] = None

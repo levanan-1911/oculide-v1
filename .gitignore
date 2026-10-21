@@ -54,3 +54,10 @@ frontend/.next/
 *.log
 backend_logs.txt
 temp_docx/
+
+# AI Assistant & Analysis Dumps
+.gemini/
+docs/srs_content.txt
+docs/srs_tables_extracted.txt
+docs/citations.txt
+docs/domain_classes.txt

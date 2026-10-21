@@ -25,6 +25,7 @@ class ViolationResponse(BaseModel):
     snapshot_url: Optional[str] = None
     detected_at: datetime
     is_reviewed: bool = False
+    review_status: str = 'pending'
     reviewed_by: Optional[int] = None
     reviewed_at: Optional[datetime] = None
 

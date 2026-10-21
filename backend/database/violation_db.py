@@ -17,7 +17,7 @@ def create_violation(
             INSERT INTO Violations (session_id, student_id, violation_type, severity, description, snapshot_url)
             OUTPUT inserted.violation_id, inserted.session_id, inserted.student_id, inserted.violation_type, 
                    inserted.severity, inserted.description, inserted.snapshot_url, inserted.detected_at, 
-                   inserted.is_reviewed, inserted.reviewed_by, inserted.reviewed_at
+                   inserted.is_reviewed, inserted.review_status, inserted.reviewed_by, inserted.reviewed_at
             VALUES (?, ?, ?, ?, ?, ?)
         """, (session_id, student_id, violation_type, severity, description, snapshot_url))
         row = cursor.fetchone()
@@ -36,7 +36,7 @@ def get_violations_by_session(session_id: int) -> List[Dict]:
     try:
         cursor.execute("""
             SELECT violation_id, session_id, student_id, violation_type, severity,
-                   description, snapshot_url, detected_at, is_reviewed, reviewed_by, reviewed_at
+                   description, snapshot_url, detected_at, is_reviewed, review_status, reviewed_by, reviewed_at
             FROM Violations 
             WHERE session_id = ?
             ORDER BY detected_at DESC
@@ -64,7 +64,7 @@ def get_violations_by_student(student_id: int, room_id: Optional[int] = None) ->
         else:
             cursor.execute("""
                 SELECT violation_id, session_id, student_id, violation_type, severity,
-                       description, snapshot_url, detected_at, is_reviewed, reviewed_by, reviewed_at
+                       description, snapshot_url, detected_at, is_reviewed, review_status, reviewed_by, reviewed_at
                 FROM Violations 
                 WHERE student_id = ?
                 ORDER BY detected_at DESC
@@ -76,18 +76,18 @@ def get_violations_by_student(student_id: int, room_id: Optional[int] = None) ->
         cursor.close()
         conn.close()
 
-def update_violation_review(violation_id: int, reviewed_by: int) -> Optional[Dict]:
+def update_violation_review(violation_id: int, reviewed_by: int, review_status: str = "confirmed") -> Optional[Dict]:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("""
             UPDATE Violations 
-            SET is_reviewed = 1, reviewed_by = ?, reviewed_at = GETDATE()
+            SET is_reviewed = 1, review_status = ?, reviewed_by = ?, reviewed_at = GETDATE()
             OUTPUT inserted.violation_id, inserted.session_id, inserted.student_id, inserted.violation_type,
                    inserted.severity, inserted.description, inserted.snapshot_url, inserted.detected_at,
-                   inserted.is_reviewed, inserted.reviewed_by, inserted.reviewed_at
+                   inserted.is_reviewed, inserted.review_status, inserted.reviewed_by, inserted.reviewed_at
             WHERE violation_id = ?
-        """, (reviewed_by, violation_id))
+        """, (review_status, reviewed_by, violation_id))
         row = cursor.fetchone()
         conn.commit()
         if row:

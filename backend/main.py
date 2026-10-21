@@ -13,7 +13,7 @@ except ImportError:
 
 from core.config import settings, get_cors_origins
 from core.security import decode_access_token
-from api import auth, admin, rooms, questions, submissions, sessions, violations, chat, livekit
+from api import auth, admin, rooms, questions, submissions, sessions, violations, chat, livekit, drafts, device_checks, support, classes
 from websocket.connection_manager import manager
 from database.chat_db import create_message
 from database.room_db import get_room_by_id
@@ -164,6 +164,10 @@ app.include_router(sessions.router, prefix=f"{settings.API_V1_PREFIX}/sessions",
 app.include_router(violations.router, prefix=f"{settings.API_V1_PREFIX}/violations", tags=["Violations & AI Proctoring"])
 app.include_router(chat.router, prefix=f"{settings.API_V1_PREFIX}/chat", tags=["Chat"])
 app.include_router(livekit.router, prefix=f"{settings.API_V1_PREFIX}/livekit", tags=["LiveKit Streaming"])
+app.include_router(drafts.router, prefix=f"{settings.API_V1_PREFIX}/drafts", tags=["Code Drafts"])
+app.include_router(device_checks.router, prefix=f"{settings.API_V1_PREFIX}/device-checks", tags=["Device Checks"])
+app.include_router(support.router, prefix=f"{settings.API_V1_PREFIX}/support", tags=["Support Requests"])
+app.include_router(classes.router, prefix=f"{settings.API_V1_PREFIX}/classes", tags=["Classes"])
 
 # Tương thích ngược với tiền tố cũ /api/...
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication (Legacy)"], include_in_schema=False)

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Search, ChevronDown, UserPlus, Shield } from 'lucide-react';
+import { ChevronDown, UserPlus, Shield } from 'lucide-react';
+import AdminUserCreateView from './AdminUserCreateView';
 
 export interface UserItem {
   id: number;
@@ -64,13 +65,16 @@ const INITIAL_USERS: UserItem[] = [
 ];
 
 export default function AdminUsersView() {
+  const [subView, setSubView] = useState<'list' | 'create'>('list');
+  const [userList, setUserList] = useState<UserItem[]>(INITIAL_USERS);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRole, setSelectedRole] = useState<'all' | 'instructor' | 'student'>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'locked'>('all');
 
   // Lọc dữ liệu theo tìm kiếm, vai trò, trạng thái
   const filteredUsers = useMemo(() => {
-    return INITIAL_USERS.filter((user) => {
+    return userList.filter((user) => {
       const matchSearch =
         searchTerm.trim() === '' ||
         user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -85,8 +89,42 @@ export default function AdminUsersView() {
 
       return matchSearch && matchRole && matchStatus;
     });
-  }, [searchTerm, selectedRole, selectedStatus]);
+  }, [userList, searchTerm, selectedRole, selectedStatus]);
 
+  // Xử lý khi thêm tài khoản mới từ form Tạo tài khoản
+  const handleUserCreated = (newUser: {
+    fullName: string;
+    email: string;
+    userCode: string;
+    role: 'instructor' | 'student';
+    departmentOrClass: string;
+    status: 'active' | 'locked';
+  }) => {
+    const item: UserItem = {
+      id: Date.now(),
+      userCode: newUser.userCode,
+      fullName: newUser.fullName,
+      email: newUser.email,
+      role: newUser.role,
+      roleDisplay: newUser.role === 'instructor' ? 'Giảng viên' : 'Sinh viên',
+      status: newUser.status,
+      statusDisplay: newUser.status === 'active' ? 'Hoạt động' : 'Bị khóa',
+      lastLogin: 'Vừa tạo (Chưa đăng nhập)',
+    };
+    setUserList((prev) => [item, ...prev]);
+  };
+
+  // Nếu đang ở màn hình Tạo tài khoản
+  if (subView === 'create') {
+    return (
+      <AdminUserCreateView
+        onBackToList={() => setSubView('list')}
+        onUserCreated={handleUserCreated}
+      />
+    );
+  }
+
+  // Màn hình Danh sách Người dùng
   return (
     <div className="mx-auto max-w-[1440px] font-sans text-slate-800">
       {/* ── TIÊU ĐỀ TRANG VÀ 2 NÚT HÀNH ĐỘNG ── */}
@@ -111,6 +149,7 @@ export default function AdminUsersView() {
 
           <button
             type="button"
+            onClick={() => setSubView('create')}
             className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#2563eb] px-5 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition-colors hover:bg-blue-700 cursor-pointer"
           >
             <UserPlus className="h-4 w-4" />
@@ -177,7 +216,7 @@ export default function AdminUsersView() {
               <button
                 type="button"
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 ✕
               </button>
@@ -237,7 +276,7 @@ export default function AdminUsersView() {
       </div>
 
       {/* ── BẢNG DANH SÁCH NGƯỜI DÙNG ── */}
-      <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200/75 bg-white shadow-[0_2px_10px_rgba(15,23_42,0.02)]">
+      <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200/75 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.02)]">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] border-collapse text-left">
             <thead>
@@ -315,4 +354,3 @@ export default function AdminUsersView() {
     </div>
   );
 }
-

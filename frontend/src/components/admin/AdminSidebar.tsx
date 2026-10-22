@@ -34,7 +34,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'overview',
         label: 'Tổng quan',
-        href: '/admin',
+        href: '/dashboard',
         icon: LayoutGrid,
       },
     ],
@@ -45,25 +45,25 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'users',
         label: 'Người dùng & phân quyền',
-        href: '/admin?module=users',
+        href: '/dashboard?module=users',
         icon: UserCheck,
       },
       {
         id: 'classes',
         label: 'Lớp & sinh viên',
-        href: '/admin?module=classes',
+        href: '/dashboard?module=classes',
         icon: Table2,
       },
       {
         id: 'questions',
         label: 'Đề & câu hỏi',
-        href: '/admin?module=questions',
+        href: '/dashboard?module=questions',
         icon: FileCode2,
       },
       {
         id: 'schedules',
         label: 'Lịch & phiên kiểm tra',
-        href: '/admin?module=schedules',
+        href: '/dashboard?module=schedules',
         icon: Clock,
       },
     ],
@@ -74,13 +74,13 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'monitoring',
         label: 'Giám sát & hỗ trợ',
-        href: '/admin?module=monitoring',
+        href: '/dashboard?module=monitoring',
         icon: Flag,
       },
       {
         id: 'reports',
         label: 'Kết quả & báo cáo',
-        href: '/admin?module=reports',
+        href: '/dashboard?module=reports',
         icon: BookOpen,
       },
     ],
@@ -91,7 +91,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'system',
         label: 'Hệ thống & nhật ký',
-        href: '/admin?module=system',
+        href: '/dashboard?module=system',
         icon: Settings,
       },
     ],
@@ -115,7 +115,7 @@ export default function AdminSidebar({
       <div className="flex flex-col overflow-y-auto px-4 pt-5 pb-4">
         {/* Brand Header: Icon mắt tròn trắng trên nền xanh + chữ OCLIDE */}
         <Link
-          href="/admin"
+          href="/dashboard"
           onClick={(e) => {
             if (onSelectModule) {
               e.preventDefault();
@@ -210,4 +210,3 @@ export default function AdminSidebar({
     </aside>
   );
 }
-

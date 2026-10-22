@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { Suspense, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AdminSidebar, { ADMIN_NAV_GROUPS } from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
 import {
@@ -216,8 +218,22 @@ const TODAY_SESSIONS = [
   },
 ];
 
-export default function AdminDashboardPage() {
-  const [activeModule, setActiveModule] = useState<string>('overview');
+function AdminDashboardContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const moduleParam = searchParams.get('module');
+
+  // Xác định module đang hoạt động dựa trên tham số query module của URL
+  const validModuleIds = ADMIN_NAV_GROUPS.flatMap((g) => g.items).map((item) => item.id);
+  const activeModule =
+    moduleParam && validModuleIds.includes(moduleParam) ? moduleParam : 'overview';
+
+  useEffect(() => {
+    // Nếu truy cập vào /admin?module=classes thì chuyển sang /class-manager
+    if (moduleParam === 'classes') {
+      router.replace('/class-manager');
+    }
+  }, [moduleParam, router]);
 
   // Tìm tên module hiện tại để hiển thị trên Topbar khi chuyển tab
   const currentModuleItem = ADMIN_NAV_GROUPS.flatMap((g) => g.items).find(
@@ -240,10 +256,7 @@ export default function AdminDashboardPage() {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] font-sans text-slate-800">
       {/* ── CỘT TRÁI: SIDEBAR ĐIỀU HƯỚNG CÁC MODULE ── */}
-      <AdminSidebar
-        activeModule={activeModule}
-        onSelectModule={(modId) => setActiveModule(modId)}
-      />
+      <AdminSidebar activeModule={activeModule} />
 
       {/* ── KHỐI BÊN PHẢI: TOPBAR + NỘI DUNG TRANG ── */}
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -644,13 +657,12 @@ export default function AdminDashboardPage() {
                 <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
                   Khung điều hướng cho phân hệ này đã sẵn sàng. Giao diện chi tiết và kết nối dữ liệu sẽ được triển khai ở bước tiếp theo.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setActiveModule('overview')}
+                <Link
+                  href="/admin"
                   className="mt-5 inline-flex items-center justify-center rounded-xl bg-[#2563eb] px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 cursor-pointer"
                 >
                   Quay lại trang Tổng quan
-                </button>
+                </Link>
               </div>
             </div>
           )}
@@ -660,3 +672,11 @@ export default function AdminDashboardPage() {
   );
 }
 
+
+export default function AdminDashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminDashboardContent />
+    </Suspense>
+  );
+}

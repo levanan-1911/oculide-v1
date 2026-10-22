@@ -51,7 +51,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'classes',
         label: 'Lớp & sinh viên',
-        href: '/admin?module=classes',
+        href: '/class-manager',
         icon: Table2,
       },
       {
@@ -104,10 +104,17 @@ interface AdminSidebarProps {
 }
 
 export default function AdminSidebar({
-  activeModule = 'overview',
+  activeModule,
   onSelectModule,
 }: AdminSidebarProps) {
   const pathname = usePathname();
+  const currentActiveModule =
+    activeModule ??
+    (pathname === '/class-manager'
+      ? 'classes'
+      : pathname === '/admin'
+      ? 'overview'
+      : '');
 
   return (
     <aside className="flex h-screen w-[256px] shrink-0 flex-col justify-between border-r border-slate-200/80 bg-white select-none">
@@ -116,9 +123,8 @@ export default function AdminSidebar({
         {/* Brand Header: Icon mắt tròn trắng trên nền xanh + chữ OCLIDE */}
         <Link
           href="/admin"
-          onClick={(e) => {
+          onClick={() => {
             if (onSelectModule) {
-              e.preventDefault();
               onSelectModule('overview');
             }
           }}
@@ -157,28 +163,36 @@ export default function AdminSidebar({
               <div className="space-y-1">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const isActive = onSelectModule
-                    ? activeModule === item.id
-                    : pathname === item.href;
-
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => onSelectModule?.(item.id)}
-                      className={` flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] transition-all cursor-pointer ${
-                        isActive
-                          ? 'bg-[#eff6ff] font-semibold text-[#2563eb]'
-                          : 'font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                      }`}
-                    >
+                  const isActive = currentActiveModule === item.id;
+                  const itemClassName = `flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-[#eff6ff] font-semibold text-[#2563eb]'
+                      : 'font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`;
+                  const itemContents = (
+                    <>
                       <Icon
                         className={`h-4 w-4 shrink-0 ${
                           isActive ? 'text-[#2563eb]' : 'text-slate-400'
                         }`}
                       />
                       <span className="truncate">{item.label}</span>
-                    </button>
+                    </>
+                  );
+
+                  return (
+                    <Link
+                      key={item.id}
+                      href={item.href}
+                      onClick={() => {
+                        if (onSelectModule) {
+                          onSelectModule(item.id);
+                        }
+                      }}
+                      className={itemClassName}
+                    >
+                      {itemContents}
+                    </Link>
                   );
                 })}
               </div>
@@ -210,4 +224,3 @@ export default function AdminSidebar({
     </aside>
   );
 }
-

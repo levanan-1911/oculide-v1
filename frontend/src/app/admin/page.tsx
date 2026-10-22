@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AdminSidebar, { ADMIN_NAV_GROUPS } from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
+import AdminUsersView from '@/components/admin/AdminUsersView';
 import {
   Table2,
   Clock,
@@ -219,6 +220,17 @@ const TODAY_SESSIONS = [
 export default function AdminDashboardPage() {
   const [activeModule, setActiveModule] = useState<string>('overview');
 
+  // Lắng nghe URL params ?module=...
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const mod = params.get('module');
+      if (mod) {
+        setActiveModule(mod);
+      }
+    }
+  }, []);
+
   // Tìm tên module hiện tại để hiển thị trên Topbar khi chuyển tab
   const currentModuleItem = ADMIN_NAV_GROUPS.flatMap((g) => g.items).find(
     (item) => item.id === activeModule
@@ -250,7 +262,7 @@ export default function AdminDashboardPage() {
         <AdminTopbar title={topbarTitle} />
 
         <main className="flex-1 overflow-y-auto px-6 py-6 lg:px-8 lg:py-7">
-          {activeModule === 'overview' ? (
+          {activeModule === 'overview' && (
             <div className="mx-auto max-w-[1440px]">
               {/* ── TIÊU ĐỀ TRANG & BỘ LỌC THỜI GIAN ── */}
               <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -321,7 +333,7 @@ export default function AdminDashboardPage() {
               {/* ── HÀNG 2: BIỂU ĐỒ HOẠT ĐỘNG & CẢNH BÁO ── */}
               <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-12">
                 {/* Cột trái (8/12): Hoạt động theo thời gian */}
-                <div className=" rounded-2xl border border-slate-200/75 bg-white p-6 shadow-[0_2px_10px_rgba(15,23,42,0.02)] xl:col-span-8">
+                <div className="rounded-2xl border border-slate-200/75 bg-white p-6 shadow-[0_2px_10px_rgba(15,23,42,0.02)] xl:col-span-8">
                   <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                     <div>
                       <h3 className="text-[16px] font-bold text-slate-900">
@@ -634,8 +646,13 @@ export default function AdminDashboardPage() {
                 Dữ liệu minh họa để duyệt bố cục dashboard Admin • Tất cả chức năng sẽ được đặc tả theo quyền và trạng thái.
               </p>
             </div>
-          ) : (
-            /* Khung chờ khi người dùng bấm thử sang các module khác trên Sidebar */
+          )}
+
+          {/* ── MODULE 2: NGƯỜI DÙNG & PHÂN QUYỀN ── */}
+          {activeModule === 'users' && <AdminUsersView />}
+
+          {/* ── CÁC MODULE CHƯA TRIỂN KHAI ── */}
+          {activeModule !== 'overview' && activeModule !== 'users' && (
             <div className="mx-auto max-w-[1440px]">
               <div className="rounded-2xl border border-slate-200/80 bg-white p-10 text-center shadow-sm">
                 <h2 className="text-xl font-bold text-slate-900">
@@ -659,4 +676,3 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
-

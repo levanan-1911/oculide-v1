@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { ChevronDown, UserPlus, Shield } from 'lucide-react';
 import AdminUserCreateView from './AdminUserCreateView';
 import AdminUserBulkImportView from './AdminUserBulkImportView';
+import AdminUserDetailView from './AdminUserDetailView';
 
 export interface UserItem {
   id: number;
@@ -66,7 +67,8 @@ const INITIAL_USERS: UserItem[] = [
 ];
 
 export default function AdminUsersView() {
-  const [subView, setSubView] = useState<'list' | 'create' | 'bulk-import'>('list');
+  const [subView, setSubView] = useState<'list' | 'create' | 'bulk-import' | 'detail'>('list');
+  const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
   const [userList, setUserList] = useState<UserItem[]>(INITIAL_USERS);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -115,6 +117,38 @@ export default function AdminUsersView() {
     setUserList((prev) => [item, ...prev]);
   };
 
+  // Xử lý đổi trạng thái Khóa / Mở khóa
+  const handleToggleStatus = (userId: number, newStatus: 'active' | 'locked') => {
+    setUserList((prev) =>
+      prev.map((u) =>
+        u.id === userId
+          ? {
+              ...u,
+              status: newStatus,
+              statusDisplay: newStatus === 'active' ? 'Hoạt động' : 'Bị khóa',
+            }
+          : u
+      )
+    );
+    if (selectedUser && selectedUser.id === userId) {
+      setSelectedUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: newStatus,
+              statusDisplay: newStatus === 'active' ? 'Hoạt động' : 'Bị khóa',
+            }
+          : null
+      );
+    }
+  };
+
+  // Mở màn hình Chi tiết
+  const handleOpenDetail = (user: UserItem) => {
+    setSelectedUser(user);
+    setSubView('detail');
+  };
+
   // Màn hình 1: Tạo nhanh 1 tài khoản
   if (subView === 'create') {
     return (
@@ -134,6 +168,17 @@ export default function AdminUsersView() {
         onImportSuccess={(count) => {
           console.log(`Đã phân tích thành công ${count} tài khoản`);
         }}
+      />
+    );
+  }
+
+  // Màn hình 3: Chi tiết tài khoản
+  if (subView === 'detail' && selectedUser) {
+    return (
+      <AdminUserDetailView
+        user={selectedUser}
+        onBackToList={() => setSubView('list')}
+        onToggleStatus={handleToggleStatus}
       />
     );
   }
@@ -332,7 +377,15 @@ export default function AdminUsersView() {
 
                     {/* Cột 4: Trạng thái */}
                     <td className="py-4 px-4 font-semibold text-slate-800">
-                      {user.statusDisplay}
+                      <span
+                        className={
+                          user.status === 'active'
+                            ? 'text-slate-800'
+                            : 'text-red-600 font-bold'
+                        }
+                      >
+                        {user.statusDisplay}
+                      </span>
                     </td>
 
                     {/* Cột 5: Đăng nhập gần nhất */}
@@ -344,6 +397,7 @@ export default function AdminUsersView() {
                     <td className="py-4 pl-4 pr-6 text-right">
                       <button
                         type="button"
+                        onClick={() => handleOpenDetail(user)}
                         className="inline-flex items-center justify-center rounded-xl border border-slate-200/90 bg-white px-4 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
                       >
                         Chi tiết

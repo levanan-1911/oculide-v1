@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { ChevronDown, UserPlus, Shield } from 'lucide-react';
 import AdminUserCreateView from './AdminUserCreateView';
+import AdminUserBulkImportView from './AdminUserBulkImportView';
 
 export interface UserItem {
   id: number;
@@ -65,7 +66,7 @@ const INITIAL_USERS: UserItem[] = [
 ];
 
 export default function AdminUsersView() {
-  const [subView, setSubView] = useState<'list' | 'create'>('list');
+  const [subView, setSubView] = useState<'list' | 'create' | 'bulk-import'>('list');
   const [userList, setUserList] = useState<UserItem[]>(INITIAL_USERS);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -114,17 +115,30 @@ export default function AdminUsersView() {
     setUserList((prev) => [item, ...prev]);
   };
 
-  // Nếu đang ở màn hình Tạo tài khoản
+  // Màn hình 1: Tạo nhanh 1 tài khoản
   if (subView === 'create') {
     return (
       <AdminUserCreateView
         onBackToList={() => setSubView('list')}
+        onOpenBulkImport={() => setSubView('bulk-import')}
         onUserCreated={handleUserCreated}
       />
     );
   }
 
-  // Màn hình Danh sách Người dùng
+  // Màn hình 2: Nhập hàng loạt bằng Excel / CSV
+  if (subView === 'bulk-import') {
+    return (
+      <AdminUserBulkImportView
+        onBackToList={() => setSubView('list')}
+        onImportSuccess={(count) => {
+          console.log(`Đã phân tích thành công ${count} tài khoản`);
+        }}
+      />
+    );
+  }
+
+  // Màn hình chính: Danh sách Người dùng
   return (
     <div className="mx-auto max-w-[1440px] font-sans text-slate-800">
       {/* ── TIÊU ĐỀ TRANG VÀ 2 NÚT HÀNH ĐỘNG ── */}

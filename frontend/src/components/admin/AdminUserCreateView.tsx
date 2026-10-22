@@ -5,6 +5,7 @@ import { ArrowLeft, ChevronDown, CheckCircle2 } from 'lucide-react';
 
 interface AdminUserCreateViewProps {
   onBackToList: () => void;
+  onOpenBulkImport?: () => void;
   onUserCreated?: (newUser: {
     fullName: string;
     email: string;
@@ -17,6 +18,7 @@ interface AdminUserCreateViewProps {
 
 export default function AdminUserCreateView({
   onBackToList,
+  onOpenBulkImport,
   onUserCreated,
 }: AdminUserCreateViewProps) {
   // Trạng thái các trường trong Form
@@ -250,6 +252,7 @@ export default function AdminUserCreateView({
         <div className="lg:col-span-3">
           <button
             type="button"
+            onClick={onOpenBulkImport}
             className="w-full rounded-xl border border-blue-500 bg-white px-5 py-3 text-xs sm:text-sm font-semibold text-blue-600 shadow-sm transition-colors hover:bg-blue-50/60 cursor-pointer text-center"
           >
             Nhập hàng loạt Excel / CSV
@@ -259,4 +262,3 @@ export default function AdminUserCreateView({
     </div>
   );
 }
-

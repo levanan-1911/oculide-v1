@@ -45,25 +45,25 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'users',
         label: 'Người dùng & phân quyền',
-        href: '/dashboard?module=users',
+        href: '/dashboard/users',
         icon: UserCheck,
       },
       {
         id: 'classes',
         label: 'Lớp & sinh viên',
-        href: '/dashboard?module=classes',
+        href: '/dashboard/classes',
         icon: Table2,
       },
       {
         id: 'questions',
         label: 'Đề & câu hỏi',
-        href: '/dashboard?module=questions',
+        href: '/dashboard/questions',
         icon: FileCode2,
       },
       {
         id: 'schedules',
         label: 'Lịch & phiên kiểm tra',
-        href: '/dashboard?module=schedules',
+        href: '/dashboard/schedules',
         icon: Clock,
       },
     ],
@@ -74,13 +74,13 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'monitoring',
         label: 'Giám sát & hỗ trợ',
-        href: '/dashboard?module=monitoring',
+        href: '/dashboard/monitoring',
         icon: Flag,
       },
       {
         id: 'reports',
         label: 'Kết quả & báo cáo',
-        href: '/dashboard?module=reports',
+        href: '/dashboard/reports',
         icon: BookOpen,
       },
     ],
@@ -91,22 +91,14 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'system',
         label: 'Hệ thống & nhật ký',
-        href: '/dashboard?module=system',
+        href: '/dashboard/system',
         icon: Settings,
       },
     ],
   },
 ];
 
-interface AdminSidebarProps {
-  activeModule?: string;
-  onSelectModule?: (moduleId: string) => void;
-}
-
-export default function AdminSidebar({
-  activeModule = 'overview',
-  onSelectModule,
-}: AdminSidebarProps) {
+export default function AdminSidebar() {
   const pathname = usePathname();
 
   return (
@@ -114,16 +106,7 @@ export default function AdminSidebar({
       {/* Phần trên: Logo + Danh sách Module */}
       <div className="flex flex-col overflow-y-auto px-4 pt-5 pb-4">
         {/* Brand Header: Icon mắt tròn trắng trên nền xanh + chữ OCLIDE */}
-        <Link
-          href="/dashboard"
-          onClick={(e) => {
-            if (onSelectModule) {
-              e.preventDefault();
-              onSelectModule('overview');
-            }
-          }}
-          className="mb-6 flex items-center gap-3 px-2"
-        >
+        <Link href="/dashboard" className="mb-6 flex items-center gap-3 px-2">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#2563eb] shadow-sm shadow-blue-500/20">
             <svg
               className="h-6 w-6 text-white"
@@ -157,16 +140,16 @@ export default function AdminSidebar({
               <div className="space-y-1">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const isActive = onSelectModule
-                    ? activeModule === item.id
-                    : pathname === item.href;
+                  const isActive =
+                    item.href === '/dashboard'
+                      ? pathname === '/dashboard'
+                      : pathname.startsWith(item.href);
 
                   return (
-                    <button
+                    <Link
                       key={item.id}
-                      type="button"
-                      onClick={() => onSelectModule?.(item.id)}
-                      className={` flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] transition-all cursor-pointer ${
+                      href={item.href}
+                      className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] transition-all cursor-pointer ${
                         isActive
                           ? 'bg-[#eff6ff] font-semibold text-[#2563eb]'
                           : 'font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900'
@@ -178,7 +161,7 @@ export default function AdminSidebar({
                         }`}
                       />
                       <span className="truncate">{item.label}</span>
-                    </button>
+                    </Link>
                   );
                 })}
               </div>

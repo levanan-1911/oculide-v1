@@ -16,6 +16,7 @@ export interface UserItem {
   status: 'active' | 'locked';
   statusDisplay: string;
   lastLogin: string;
+  department?: string;
 }
 
 // Dữ liệu mẫu tĩnh theo đúng 100% hình ảnh thiết kế
@@ -30,6 +31,7 @@ const INITIAL_USERS: UserItem[] = [
     status: 'active',
     statusDisplay: 'Hoạt động',
     lastLogin: '16/10/2026 19:42',
+    department: 'Khoa Kỹ thuật phần mềm',
   },
   {
     id: 2,
@@ -41,6 +43,7 @@ const INITIAL_USERS: UserItem[] = [
     status: 'active',
     statusDisplay: 'Hoạt động',
     lastLogin: '16/10/2026 19:37',
+    department: 'Lớp SE1848 - Khoa CNTT',
   },
   {
     id: 3,
@@ -52,6 +55,7 @@ const INITIAL_USERS: UserItem[] = [
     status: 'locked',
     statusDisplay: 'Bị khóa',
     lastLogin: '15/10/2026 08:21',
+    department: 'Bộ môn An toàn thông tin',
   },
   {
     id: 4,
@@ -63,6 +67,7 @@ const INITIAL_USERS: UserItem[] = [
     status: 'active',
     statusDisplay: 'Hoạt động',
     lastLogin: '16/10/2026 18:56',
+    department: 'Lớp SE1848 - Khoa CNTT',
   },
 ];
 
@@ -143,6 +148,14 @@ export default function AdminUsersView() {
     }
   };
 
+  // Xử lý cập nhật thông tin tài khoản từ màn hình chi tiết
+  const handleUpdateUser = (updatedUser: UserItem) => {
+    setUserList((prev) =>
+      prev.map((u) => (u.id === updatedUser.id ? updatedUser : u))
+    );
+    setSelectedUser(updatedUser);
+  };
+
   // Mở màn hình Chi tiết
   const handleOpenDetail = (user: UserItem) => {
     setSelectedUser(user);
@@ -179,6 +192,7 @@ export default function AdminUsersView() {
         user={selectedUser}
         onBackToList={() => setSubView('list')}
         onToggleStatus={handleToggleStatus}
+        onUpdateUser={handleUpdateUser}
       />
     );
   }

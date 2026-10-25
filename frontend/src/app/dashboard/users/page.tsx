@@ -1,9 +1,5 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import React from 'react';
-import AdminUsersView from '@/components/admin/AdminUsersView';
-
-export default function DashboardUsersPage() {
-  return <AdminUsersView />;
+export default function DashboardUsersRedirect() {
+  redirect('/user-manager');
 }
-

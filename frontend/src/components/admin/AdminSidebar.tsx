@@ -45,25 +45,25 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'users',
         label: 'Người dùng & phân quyền',
-        href: '/dashboard/users',
+        href: '/user-manager',
         icon: UserCheck,
       },
       {
         id: 'classes',
         label: 'Lớp & sinh viên',
-        href: '/dashboard/classes',
+        href: '/class-manager',
         icon: Table2,
       },
       {
         id: 'questions',
         label: 'Đề & câu hỏi',
-        href: '/dashboard/questions',
+        href: '/question-manager',
         icon: FileCode2,
       },
       {
         id: 'schedules',
         label: 'Lịch & phiên kiểm tra',
-        href: '/dashboard/schedules',
+        href: '/schedule-manager',
         icon: Clock,
       },
     ],
@@ -74,13 +74,13 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'monitoring',
         label: 'Giám sát & hỗ trợ',
-        href: '/dashboard/monitoring',
+        href: '/monitoring-manager',
         icon: Flag,
       },
       {
         id: 'reports',
         label: 'Kết quả & báo cáo',
-        href: '/dashboard/reports',
+        href: '/report-manager',
         icon: BookOpen,
       },
     ],
@@ -91,22 +91,56 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'system',
         label: 'Hệ thống & nhật ký',
-        href: '/dashboard/system',
+        href: '/system-manager',
         icon: Settings,
       },
     ],
   },
 ];
 
-export default function AdminSidebar() {
+interface AdminSidebarProps {
+  activeModule?: string;
+  onSelectModule?: (moduleId: string) => void;
+}
+
+export default function AdminSidebar({
+  activeModule,
+  onSelectModule,
+}: AdminSidebarProps = {}) {
   const pathname = usePathname();
+
+  const currentActiveModule =
+    activeModule ??
+    (pathname === '/user-manager'
+      ? 'users'
+      : pathname === '/class-manager'
+      ? 'classes'
+      : pathname === '/question-manager'
+      ? 'questions'
+      : pathname === '/schedule-manager'
+      ? 'schedules'
+      : pathname === '/monitoring-manager'
+      ? 'monitoring'
+      : pathname === '/report-manager'
+      ? 'reports'
+      : pathname === '/system-manager'
+      ? 'system'
+      : pathname === '/dashboard' || pathname === '/admin'
+      ? 'overview'
+      : '');
 
   return (
     <aside className="flex h-screen w-[256px] shrink-0 flex-col justify-between border-r border-slate-200/80 bg-white select-none">
       {/* Phần trên: Logo + Danh sách Module */}
       <div className="flex flex-col overflow-y-auto px-4 pt-5 pb-4">
         {/* Brand Header: Icon mắt tròn trắng trên nền xanh + chữ OCLIDE */}
-        <Link href="/dashboard" className="mb-6 flex items-center gap-3 px-2">
+        <Link
+          href="/dashboard"
+          onClick={() => {
+            if (onSelectModule) onSelectModule('overview');
+          }}
+          className="mb-6 flex items-center gap-3 px-2"
+        >
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#2563eb] shadow-sm shadow-blue-500/20">
             <svg
               className="h-6 w-6 text-white"
@@ -141,14 +175,17 @@ export default function AdminSidebar() {
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const isActive =
-                    item.href === '/dashboard'
-                      ? pathname === '/dashboard'
-                      : pathname.startsWith(item.href);
+                    currentActiveModule !== ''
+                      ? currentActiveModule === item.id
+                      : pathname === item.href;
 
                   return (
                     <Link
                       key={item.id}
                       href={item.href}
+                      onClick={() => {
+                        if (onSelectModule) onSelectModule(item.id);
+                      }}
                       className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] transition-all cursor-pointer ${
                         isActive
                           ? 'bg-[#eff6ff] font-semibold text-[#2563eb]'

@@ -1,7 +1,7 @@
 export type ClassStatus = 'Chưa mở' | 'Hoạt động' | 'Đã kết thúc';
 export type StudentStatus = 'Đang học' | 'Tạm dừng';
 
-export type LabStatus = 'Đang mở' | 'Đã kết thúc';
+export type LabStatus = 'Đang mở' | 'Đã đóng' | 'Đã kết thúc';
 
 export interface StudentRow {
   id: string;

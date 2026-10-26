@@ -38,6 +38,7 @@ import {
   ClassStatus,
   ExamStatus,
   INITIAL_CLASSES,
+  LabStatus,
   QuestionTemplate,
   SAMPLE_QUESTION_TEMPLATES,
   StudentRow,
@@ -140,7 +141,7 @@ function ClassManagerContent() {
   const [editLabEndTime, setEditLabEndTime] = useState('');
   const [editLabDuration, setEditLabDuration] = useState(120);
   const [editLabProctored, setEditLabProctored] = useState(true);
-  const [editLabStatus, setEditLabStatus] = useState<'Đang mở' | 'Đã đóng'>('Đang mở');
+  const [editLabStatus, setEditLabStatus] = useState<LabStatus>('Đang mở');
   const [editLabError, setEditLabError] = useState('');
 
   // Giảng viên chỉnh sửa bài thi trong lớp
@@ -2781,7 +2782,7 @@ function ClassManagerContent() {
                 </label>
                 <select
                   value={editLabStatus}
-                  onChange={(e) => setEditLabStatus(e.target.value as 'Đang mở' | 'Đã đóng')}
+                  onChange={(e) => setEditLabStatus(e.target.value as LabStatus)}
                   className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="Đang mở">Đang mở (Sinh viên nộp bài)</option>

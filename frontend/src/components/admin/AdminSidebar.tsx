@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutGrid,
   UserCheck,
@@ -13,6 +13,8 @@ import {
   BookOpen,
   Settings,
   ChevronRight,
+  User,
+  LogOut,
 } from 'lucide-react';
 
 export interface AdminNavItem {
@@ -108,6 +110,65 @@ export default function AdminSidebar({
   onSelectModule,
 }: AdminSidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const [currentUser, setCurrentUser] = useState<{
+    name: string;
+    email: string;
+    role: string;
+  }>({
+    name: 'Long Phạm',
+    email: 'long.pham@school.edu.vn',
+    role: 'Quản trị viên',
+  });
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('oculide_user');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setCurrentUser({
+          name: parsed.name || parsed.username || 'Long Phạm',
+          email: parsed.email || 'long.pham@school.edu.vn',
+          role:
+            parsed.role === 'admin'
+              ? 'Quản trị viên'
+              : parsed.role === 'instructor'
+              ? 'Giảng viên'
+              : 'Người dùng',
+        });
+      }
+    } catch {
+      // ignore
+    }
+
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  function handleLogout() {
+    localStorage.removeItem('oculide_token');
+    localStorage.removeItem('oculide_user');
+    localStorage.removeItem('oculide_refresh_token');
+    router.push('/login');
+  }
+
+  const initials =
+    currentUser.name
+      .split(' ')
+      .filter(Boolean)
+      .slice(-2)
+      .map((w) => w[0]?.toUpperCase())
+      .join('') || 'LP';
+
   const currentActiveModule =
     activeModule ??
     (pathname === '/class-manager'
@@ -117,9 +178,9 @@ export default function AdminSidebar({
       : '');
 
   return (
-    <aside className="flex h-screen w-[256px] shrink-0 flex-col justify-between border-r border-slate-200/80 bg-white select-none">
-      {/* Phần trên: Logo + Danh sách Module */}
-      <div className="flex flex-col overflow-y-auto px-4 pt-5 pb-4">
+    <aside className="sticky top-0 flex h-screen w-[256px] shrink-0 flex-col justify-between border-r border-slate-200/80 bg-white select-none z-30">
+      {/* Phần trên: Logo + Danh sách Module cuộn độc lập */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-5 pb-4">
         {/* Brand Header: Icon mắt tròn trắng trên nền xanh + chữ OCLIDE */}
         <Link
           href="/admin"
@@ -201,24 +262,73 @@ export default function AdminSidebar({
         </nav>
       </div>
 
-      {/* Phần dưới: Thẻ thông tin Quản trị viên */}
-      <div className="p-4">
+      {/* Phần dưới: Thẻ thông tin Quản trị viên (Luôn luôn ghim ở góc dưới cùng bên trái màn hình) */}
+      <div ref={userMenuRef} className="relative shrink-0 p-4 border-t border-slate-100 bg-white">
+        {isMenuOpen && (
+          <div className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-50 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-xl shadow-slate-900/10">
+            <div className="px-3 py-2 border-b border-slate-100">
+              <p className="text-xs font-bold text-slate-900 truncate">{currentUser.name}</p>
+              <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
+              <span className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                {currentUser.role}
+              </span>
+            </div>
+
+            <div className="mt-1.5 space-y-0.5 text-xs font-medium text-slate-700">
+              <Link
+                href="/admin?module=users"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600"
+              >
+                <User className="h-4 w-4 text-slate-400" />
+                Hồ sơ & Phân quyền
+              </Link>
+              <Link
+                href="/reset-password"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600"
+              >
+                <Settings className="h-4 w-4 text-slate-400" />
+                Đổi mật khẩu
+              </Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-red-600 transition hover:bg-red-50 cursor-pointer"
+              >
+                <LogOut className="h-4 w-4" />
+                Đăng xuất
+              </button>
+            </div>
+          </div>
+        )}
+
         <button
           type="button"
-          className="flex w-full items-center justify-between rounded-2xl border border-blue-200/90 bg-[#f8faff] px-3.5 py-3 text-left transition-colors hover:bg-blue-50/60 cursor-pointer"
+          onClick={() => setIsMenuOpen((prev) => !prev)}
+          title="Tài khoản cá nhân"
+          className={`flex w-full items-center justify-between rounded-2xl border px-3.5 py-3 text-left transition-all cursor-pointer ${
+            isMenuOpen
+              ? 'border-blue-500 bg-blue-50/80 ring-2 ring-blue-100'
+              : 'border-blue-200/90 bg-[#f8faff] hover:bg-blue-50/60'
+          }`}
         >
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100/90 text-xs font-bold text-[#2563eb]">
-              LP
+              {initials}
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-slate-900">
-                Long Phạm
+                {currentUser.name}
               </p>
-              <p className="truncate text-xs text-slate-400">Quản trị viên</p>
+              <p className="truncate text-xs text-slate-400">{currentUser.role}</p>
             </div>
           </div>
-          <ChevronRight className="h-4 w-4 shrink-0 text-[#2563eb]" />
+          <ChevronRight
+            className={`h-4 w-4 shrink-0 text-[#2563eb] transition-transform duration-200 ${
+              isMenuOpen ? '-rotate-90' : ''
+            }`}
+          />
         </button>
       </div>
     </aside>

@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -12,6 +11,7 @@ import {
   Settings,
   ShieldCheck,
   UserRound,
+  AlertTriangle,
 } from "lucide-react";
 
 const navigation = [
@@ -21,7 +21,7 @@ const navigation = [
     icon: LayoutDashboard,
   },
   {
-    label: "Lịch thi",
+    label: "Lịch thi & Lab",
     href: "/student/schedule",
     icon: CalendarDays,
   },
@@ -31,14 +31,14 @@ const navigation = [
     icon: BookOpen,
   },
   {
-    label: "Bài nộp",
-    href: "/student/submissions",
-    icon: ClipboardCheck,
+    label: "Tham gia phòng",
+    href: "/student/join",
+    icon: Code2,
   },
   {
-    label: "Trình lập trình",
-    href: "/student/workspace",
-    icon: Code2,
+    label: "Báo cáo vi phạm AI",
+    href: "/student/violations",
+    icon: AlertTriangle,
   },
 ];
 
@@ -83,7 +83,7 @@ export default function StudentSidebar() {
                 href={item.href}
                 className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${
                   active
-                    ? "bg-blue-50 text-blue-700"
+                    ? "bg-blue-50 text-blue-700 font-bold"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
@@ -110,25 +110,16 @@ export default function StudentSidebar() {
         </div>
 
         <Link
-          href="/student/profile"
+          href="/profile"
           className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${
-            pathname.startsWith("/student/profile")
-              ? "bg-blue-50 text-blue-700"
+            pathname.startsWith("/profile")
+              ? "bg-blue-50 text-blue-700 font-bold"
               : "text-slate-600 hover:bg-slate-50"
           }`}
         >
           <UserRound size={19} />
           Hồ sơ cá nhân
         </Link>
-
-        <button
-          type="button"
-          onClick={() => alert("Cài đặt sẽ được phát triển ở bước sau.")}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm text-slate-600 transition hover:bg-slate-50"
-        >
-          <Settings size={19} />
-          Cài đặt
-        </button>
       </div>
     </aside>
   );

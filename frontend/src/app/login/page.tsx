@@ -81,9 +81,9 @@ export default function LoginPage() {
         if (role === 'admin') {
           window.location.href = '/dashboard';
         } else if (role === 'instructor') {
-          window.location.href = '/instructor';
+          window.location.href = '/instructor/dashboard';
         } else {
-          window.location.href = '/join'; // Sinh viên vào màn hình tham gia phòng
+          window.location.href = '/student/dashboard';
         }
       }, 1000);
 

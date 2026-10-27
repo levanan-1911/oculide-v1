@@ -440,9 +440,7 @@ export default function UserManagerPage() {
     const userCode = String(formData.get('userCode') ?? '').trim().toUpperCase();
     const fullName = String(formData.get('fullName') ?? '').trim();
     const email = String(formData.get('email') ?? '').trim();
-    const phone = String(formData.get('phone') ?? '').trim();
     const role = String(formData.get('role') ?? 'student') as UserRole;
-    const department = String(formData.get('department') ?? '').trim();
     const status = String(formData.get('status') ?? 'active') as UserStatus;
 
     if (!userCode || !fullName || !email) {
@@ -460,10 +458,10 @@ export default function UserManagerPage() {
       userCode,
       fullName,
       email,
-      phone: phone || 'Chưa cập nhật',
+      phone: 'Chưa cập nhật',
       role,
       status,
-      department: department || (role === 'instructor' ? 'Khoa CNTT' : 'Lớp mới'),
+      department: role === 'instructor' ? 'Khoa CNTT' : 'Chưa phân lớp',
       lastLogin: 'Chưa đăng nhập',
       lastLoginIp: 'Chưa ghi nhận',
       lastPasswordChange: 'Hôm nay',
@@ -485,9 +483,7 @@ export default function UserManagerPage() {
     const userCode = String(formData.get('userCode') ?? '').trim().toUpperCase();
     const fullName = String(formData.get('fullName') ?? '').trim();
     const email = String(formData.get('email') ?? '').trim();
-    const phone = String(formData.get('phone') ?? '').trim();
     const role = String(formData.get('role') ?? 'student') as UserRole;
-    const department = String(formData.get('department') ?? '').trim();
     const status = String(formData.get('status') ?? 'active') as UserStatus;
 
     if (!userCode || !fullName || !email) {
@@ -508,9 +504,7 @@ export default function UserManagerPage() {
       userCode,
       fullName,
       email,
-      phone: phone || editingUser.phone,
       role,
-      department: department || editingUser.department,
       status,
     };
 
@@ -880,31 +874,81 @@ export default function UserManagerPage() {
                           <span className="font-bold text-slate-800">{selectedUser.userCode}</span>
                         </div>
                         <div className="flex justify-between py-1 border-b border-slate-50">
-                          <span className="text-slate-500">Số điện thoại</span>
-                          <span className="font-semibold text-slate-700">{selectedUser.phone || 'Chưa có'}</span>
+                          <span className="text-slate-500">Email trường</span>
+                          <span className="font-medium text-slate-700">{selectedUser.email}</span>
                         </div>
                         <div className="flex justify-between py-1">
-                          <span className="text-slate-500">Khoa / Đơn vị</span>
-                          <span className="font-semibold text-slate-800 text-right">{selectedUser.department}</span>
+                          <span className="text-slate-500">Vai trò</span>
+                          <span className="font-semibold text-slate-800">
+                            {selectedUser.role === 'instructor'
+                              ? 'Giảng viên'
+                              : selectedUser.role === 'admin'
+                              ? 'Quản trị viên'
+                              : 'Sinh viên'}
+                          </span>
                         </div>
                       </div>
 
                       <div className="rounded-xl border border-slate-100 bg-white p-3.5 space-y-2.5">
-                        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                          Bảo mật &amp; Đăng nhập
-                        </p>
-                        <div className="flex justify-between py-1 border-b border-slate-50">
-                          <span className="text-slate-500">Lần đăng nhập cuối</span>
-                          <span className="font-semibold text-slate-700">{selectedUser.lastLogin}</span>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                            Hoạt động &amp; Giám sát thi
+                          </p>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                            <ShieldCheck className="h-3 w-3" />
+                            <span>AI Proctoring</span>
+                          </span>
                         </div>
-                        <div className="flex justify-between py-1 border-b border-slate-50">
-                          <span className="text-slate-500">Địa chỉ IP</span>
-                          <span className="font-mono text-[11px] text-slate-600">{selectedUser.lastLoginIp || 'N/A'}</span>
-                        </div>
-                        <div className="flex justify-between py-1">
-                          <span className="text-slate-500">Đổi mật khẩu lần cuối</span>
-                          <span className="font-semibold text-slate-700">{selectedUser.lastPasswordChange || 'Chưa ghi nhận'}</span>
-                        </div>
+
+                        {selectedUser.role === 'student' ? (
+                          <>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Số bài thi tham gia</span>
+                              <span className="font-bold text-slate-800">4 / 5 ca thi</span>
+                            </div>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Chỉ số liêm chính AI</span>
+                              <span className="font-semibold text-emerald-600 inline-flex items-center gap-1">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                                100% (An toàn)
+                              </span>
+                            </div>
+                            <div className="flex justify-between py-1">
+                              <span className="text-slate-500">Trạng thái thiết bị</span>
+                              <span className="font-semibold text-slate-700">Camera &amp; Mic sẵn sàng</span>
+                            </div>
+                          </>
+                        ) : selectedUser.role === 'instructor' ? (
+                          <>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Ca thi phụ trách</span>
+                              <span className="font-bold text-slate-800">3 ca thi đang mở</span>
+                            </div>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Đề thi trong ngân hàng</span>
+                              <span className="font-semibold text-blue-600">12 bộ đề</span>
+                            </div>
+                            <div className="flex justify-between py-1">
+                              <span className="text-slate-500">Phiên giám sát gần nhất</span>
+                              <span className="font-semibold text-slate-700">Phòng SE1848 - LAB 02</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Phạm vi giám sát</span>
+                              <span className="font-bold text-slate-800">Toàn bộ hệ thống</span>
+                            </div>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Quyền hạn khảo thí</span>
+                              <span className="font-semibold text-indigo-600">Quản trị đề &amp; Phân quyền</span>
+                            </div>
+                            <div className="flex justify-between py-1">
+                              <span className="text-slate-500">Trạng thái điều phối</span>
+                              <span className="font-semibold text-emerald-600">Sẵn sàng vận hành</span>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -1047,26 +1091,6 @@ export default function UserManagerPage() {
                     type="email"
                     required
                     placeholder="VD: an.nv@oclide.edu.vn"
-                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </label>
-
-                <label className="block text-xs font-semibold text-slate-700">
-                  Số điện thoại
-                  <input
-                    name="phone"
-                    placeholder="VD: 0912 345 678"
-                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </label>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Khoa / Lớp phụ trách
-                  <input
-                    name="department"
-                    placeholder="VD: Khoa Kỹ thuật phần mềm"
                     className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   />
                 </label>
@@ -1398,26 +1422,6 @@ export default function UserManagerPage() {
                     type="email"
                     required
                     defaultValue={editingUser.email}
-                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </label>
-
-                <label className="block text-xs font-semibold text-slate-700">
-                  Số điện thoại
-                  <input
-                    name="phone"
-                    defaultValue={editingUser.phone}
-                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </label>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Khoa / Lớp phụ trách
-                  <input
-                    name="department"
-                    defaultValue={editingUser.department}
                     className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   />
                 </label>

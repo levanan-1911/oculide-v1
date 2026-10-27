@@ -19,7 +19,7 @@ export default function InstructorLayout({
       : pathname.startsWith(item.href)
   );
 
-  const title = currentItem ? currentItem.label : 'Không gian Giảng viên';
+  const title = currentItem ? currentItem.label : pathname.startsWith('/instructor/profile') ? 'Hồ sơ cá nhân Giảng viên' : 'Không gian Giảng viên';
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] font-sans text-slate-800">

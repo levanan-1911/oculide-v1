@@ -733,7 +733,7 @@ export function ClassManagerContent({
               </div>
               <div>
                 <Link
-                  href="/admin/classes/create"
+                  href={role === 'instructor' ? '/instructor/classes/create' : '/admin/classes/create'}
                   className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -1532,7 +1532,7 @@ export function ClassManagerContent({
                               </span>
                               <span className="text-slate-300">•</span>
                               <Link
-                                href={`/admin?module=questions&templateId=${encodeURIComponent(
+                                href={`/${role === 'instructor' ? 'instructor' : 'admin'}/questions?templateId=${encodeURIComponent(
                                   lab.templateId || 'TPL-LAB-01'
                                 )}`}
                                 className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline"
@@ -1751,7 +1751,7 @@ export function ClassManagerContent({
                               </span>
                               <span className="text-slate-300">•</span>
                               <Link
-                                href={`/admin?module=questions&templateId=${encodeURIComponent(
+                                href={`/${role === 'instructor' ? 'instructor' : 'admin'}/questions?templateId=${encodeURIComponent(
                                   exam.templateId || 'TPL-EXAM-01'
                                 )}`}
                                 className="inline-flex items-center gap-1 font-semibold text-purple-600 hover:underline"
@@ -1987,7 +1987,7 @@ export function ClassManagerContent({
                     CHỌN BỘ ĐỀ TỪ MODULE &quot;ĐỀ & CÂU HỎI&quot;
                   </label>
                   <Link
-                    href="/admin?module=questions"
+                    href={`/${role === 'instructor' ? 'instructor' : 'admin'}/questions`}
                     className="text-[11px] font-semibold text-blue-600 hover:underline inline-flex items-center gap-0.5"
                     target="_blank"
                   >
@@ -2321,7 +2321,7 @@ export function ClassManagerContent({
                     CHỌN ĐỀ THI TỪ NGÂN HÀNG &quot;ĐỀ & CÂU HỎI&quot;
                   </label>
                   <Link
-                    href="/admin?module=questions"
+                    href={`/${role === 'instructor' ? 'instructor' : 'admin'}/questions`}
                     className="text-[11px] font-semibold text-purple-600 hover:underline inline-flex items-center gap-0.5"
                     target="_blank"
                   >
@@ -2538,7 +2538,7 @@ export function ClassManagerContent({
                     CHỌN BỘ ĐỀ TỪ NGÂN HÀNG ĐỀ & CÂU HỎI
                   </label>
                   <Link
-                    href={`/admin?module=questions&templateId=${encodeURIComponent(editLabTemplateId || 'TPL-LAB-01')}`}
+                    href={`/${role === 'instructor' ? 'instructor' : 'admin'}/questions?templateId=${encodeURIComponent(editLabTemplateId || 'TPL-LAB-01')}`}
                     className="text-[11px] font-semibold text-blue-600 hover:underline inline-flex items-center gap-0.5"
                     target="_blank"
                   >
@@ -2873,7 +2873,7 @@ export function ClassManagerContent({
                     CHỌN BỘ ĐỀ THI TỪ NGÂN HÀNG ĐỀ & CÂU HỎI
                   </label>
                   <Link
-                    href={`/admin?module=questions&templateId=${encodeURIComponent(editExamTemplateId || 'TPL-EXAM-01')}`}
+                    href={`/${role === 'instructor' ? 'instructor' : 'admin'}/questions?templateId=${encodeURIComponent(editExamTemplateId || 'TPL-EXAM-01')}`}
                     className="text-[11px] font-semibold text-purple-600 hover:underline inline-flex items-center gap-0.5"
                     target="_blank"
                   >

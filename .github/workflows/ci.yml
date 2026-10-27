@@ -92,7 +92,11 @@ jobs:
           if [ -f frontend/package.json ]; then
             echo "📦 Phát hiện frontend/package.json, bắt đầu cài đặt và kiểm thử..."
             cd frontend
-            npm ci || npm install
+            if [ -f package-lock.json ]; then
+              npm ci
+            else
+              npm install
+            fi
             npm run lint --if-present
             npm run type-check --if-present
             npm run build --if-present

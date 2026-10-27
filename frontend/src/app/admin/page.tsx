@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AdminSidebar, { ADMIN_NAV_GROUPS } from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
+import QuestionsManagerView from '@/components/admin/QuestionsManagerView';
 import {
   Table2,
   Clock,
@@ -647,6 +648,9 @@ function AdminDashboardContent() {
                 Dữ liệu minh họa để duyệt bố cục dashboard Admin • Tất cả chức năng sẽ được đặc tả theo quyền và trạng thái.
               </p>
             </div>
+          ) : activeModule === 'questions' ? (
+            /* Phân hệ Ngân hàng Đề & Câu hỏi (Quản lý bài lab, đề thi & test cases) */
+            <QuestionsManagerView />
           ) : (
             /* Khung chờ khi người dùng bấm thử sang các module khác trên Sidebar */
             <div className="mx-auto max-w-[1440px]">

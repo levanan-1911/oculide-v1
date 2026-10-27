@@ -395,7 +395,7 @@ export default function UserManagerPage() {
     });
   }
 
-  // Kiểm tra 3 trường bắt buộc (Mã SV/GV, Họ và tên, Email) và ghi nhận cảnh báo chi tiết nhưng vẫn cho phép nhập
+  // Kiểm tra 4 trường bắt buộc (Mã SV/GV, Họ và tên, Email, Vai trò) và ghi nhận cảnh báo chi tiết nhưng vẫn cho phép nhập
   function evaluateExtractedRows(rows: string[][]) {
     if (rows.length === 0) {
       setImportError('Tệp rỗng hoặc không có dòng dữ liệu nào.');
@@ -423,7 +423,7 @@ export default function UserManagerPage() {
     let codeIdx = 0;
     let nameIdx = 1;
     let emailIdx = 2;
-    let roleIdx = -1;
+    let roleIdx = 3;
 
     if (isHeaderRow) {
       const foundCodeIdx = firstRow.findIndex(
@@ -443,14 +443,15 @@ export default function UserManagerPage() {
       const foundEmailIdx = firstRow.findIndex(
         (c) => c.includes('email') || c.includes('mail') || c.includes('thư')
       );
-      roleIdx = firstRow.findIndex(
-        (c) => c.includes('vai trò') || c.includes('role') || c.includes('chức vụ')
+      const foundRoleIdx = firstRow.findIndex(
+        (c) => c.includes('vai trò') || c.includes('role') || c.includes('chức vụ') || c.includes('phân quyền')
       );
 
       const missingHeaderCols: string[] = [];
       if (foundCodeIdx === -1) missingHeaderCols.push('Mã sinh viên / Mã giảng viên');
       if (foundNameIdx === -1) missingHeaderCols.push('Họ và tên');
       if (foundEmailIdx === -1) missingHeaderCols.push('Email');
+      if (foundRoleIdx === -1) missingHeaderCols.push('Vai trò');
 
       if (missingHeaderCols.length > 0) {
         warnings.push(
@@ -461,12 +462,13 @@ export default function UserManagerPage() {
       codeIdx = foundCodeIdx;
       nameIdx = foundNameIdx;
       emailIdx = foundEmailIdx;
+      roleIdx = foundRoleIdx;
     } else {
       const maxCols = Math.max(...rows.map((r) => r.length));
-      if (maxCols < 3) {
-        const missingCount = 3 - maxCols;
+      if (maxCols < 4) {
+        const missingCount = 4 - maxCols;
         warnings.push(
-          `Tệp chỉ có ${maxCols}/3 cột (thiếu ${missingCount} cột so với chuẩn: Mã SV/GV, Họ và tên, Email).`
+          `Tệp chỉ có ${maxCols}/4 cột (thiếu ${missingCount} cột so với chuẩn: Mã SV/GV, Họ và tên, Email, Vai trò).`
         );
       }
     }
@@ -484,10 +486,11 @@ export default function UserManagerPage() {
       const rawCode = codeIdx >= 0 ? (cols[codeIdx] ?? '').trim() : '';
       const rawName = nameIdx >= 0 ? (cols[nameIdx] ?? '').trim() : '';
       const rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
-      const rawRole = roleIdx >= 0 ? (cols[roleIdx] ?? '').trim().toLowerCase() : '';
+      const rawRole = roleIdx >= 0 ? (cols[roleIdx] ?? '').trim() : '';
+      const normalizedRole = rawRole.toLowerCase();
 
       // Bỏ qua dòng hoàn toàn trống
-      if (!rawCode && !rawName && !rawEmail) return;
+      if (!rawCode && !rawName && !rawEmail && !rawRole) return;
 
       const missingFields: string[] = [];
       if (!rawCode) missingFields.push('Thiếu Mã SV/GV');
@@ -498,6 +501,37 @@ export default function UserManagerPage() {
         missingFields.push('Email sai định dạng');
       }
 
+      let role: UserRole = 'student';
+      if (!rawRole) {
+        missingFields.push('Thiếu Vai trò');
+      } else if (
+        normalizedRole.includes('giảng viên') ||
+        normalizedRole.includes('giang vien') ||
+        normalizedRole === 'gv' ||
+        normalizedRole.includes('instructor') ||
+        normalizedRole.includes('teacher') ||
+        normalizedRole.includes('lecturer')
+      ) {
+        role = 'instructor';
+      } else if (
+        normalizedRole.includes('quản trị') ||
+        normalizedRole.includes('quan tri') ||
+        normalizedRole === 'qt' ||
+        normalizedRole.includes('admin')
+      ) {
+        role = 'admin';
+      } else if (
+        normalizedRole.includes('sinh viên') ||
+        normalizedRole.includes('sinh vien') ||
+        normalizedRole === 'sv' ||
+        normalizedRole.includes('student') ||
+        normalizedRole.includes('học viên')
+      ) {
+        role = 'student';
+      } else {
+        missingFields.push(`Vai trò không hợp lệ (${rawRole})`);
+      }
+
       if (missingFields.length > 0) {
         warnings.push(`Dòng ${displayRowNum}: ${missingFields.join(', ')}`);
       }
@@ -505,21 +539,6 @@ export default function UserManagerPage() {
       const finalCode = rawCode ? rawCode.toUpperCase() : `CHUA_CO_MA_${index + 1}`;
       const finalName = rawName || 'Chưa bổ sung họ tên';
       const finalEmail = rawEmail || 'chua-bo-sung@oclide.edu.vn';
-
-      let role: UserRole = 'student';
-      if (
-        rawRole.includes('giảng viên') ||
-        rawRole.includes('instructor') ||
-        finalCode.startsWith('GV')
-      ) {
-        role = 'instructor';
-      } else if (
-        rawRole.includes('quản trị') ||
-        rawRole.includes('admin') ||
-        finalCode.startsWith('QT')
-      ) {
-        role = 'admin';
-      }
 
       parsed.push({
         id: Date.now() + index + Math.floor(Math.random() * 1000),
@@ -634,14 +653,14 @@ export default function UserManagerPage() {
     }
   }
 
-  // Tải tệp biểu mẫu chuẩn UTF-8 (Đúng 3 trường: Mã SV/GV, Họ và tên, Email)
+  // Tải tệp biểu mẫu chuẩn UTF-8 (Đúng 4 trường: Mã SV/GV, Họ và tên, Email, Vai trò)
   function handleDownloadSample() {
-    const csvHeader = 'MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL\n';
+    const csvHeader = 'MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL,VAI TRÒ\n';
     const csvRows = [
-      'GV0088,Trần Văn Hùng,hung.tv@school.edu.vn',
-      'SV184820,Ngô Phương Linh,linh.np@school.edu.vn',
-      'SV184821,Đặng Tuấn Kiệt,kiet.dt@school.edu.vn',
-      'SV184822,Bùi Hồng Ánh,anh.bh@school.edu.vn',
+      '100088,Trần Văn Hùng,hung.tv@school.edu.vn,Giảng viên',
+      '20241820,Ngô Phương Linh,linh.np@school.edu.vn,Sinh viên',
+      '20241821,Đặng Tuấn Kiệt,kiet.dt@school.edu.vn,Sinh viên',
+      'GV0092,Bùi Hồng Ánh,anh.bh@school.edu.vn,Giảng viên',
     ].join('\n');
 
     const blob = new Blob(['\uFEFF' + csvHeader + csvRows], { type: 'text/csv;charset=utf-8;' });
@@ -653,7 +672,7 @@ export default function UserManagerPage() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showToast('Đã tải xuống tệp biểu mẫu 3 cột (Mã SV/GV, Họ và tên, Email).');
+    showToast('Đã tải xuống tệp biểu mẫu 4 cột (Mã SV/GV, Họ và tên, Email, Vai trò).');
   }
 
   // Xuất danh sách tài khoản hiện tại ra file Excel/CSV chuẩn UTF-8
@@ -1520,14 +1539,14 @@ export default function UserManagerPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                      Xem trước 3 trường chuẩn ({importPreviewUsers.length} tài khoản)
+                      Xem trước 4 trường chuẩn ({importPreviewUsers.length} tài khoản)
                     </p>
                     {importWarnings.length > 0 ? (
                       <span className="text-[11px] font-semibold text-amber-600">
                         ⚠ Có trường thiếu · Vẫn có thể nhập
                       </span>
                     ) : (
-                      <span className="text-[11px] font-semibold text-emerald-600">✓ Đủ 3 trường hợp lệ</span>
+                      <span className="text-[11px] font-semibold text-emerald-600">✓ Đủ 4 trường hợp lệ</span>
                     )}
                   </div>
                   <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white">
@@ -1549,6 +1568,7 @@ export default function UserManagerPage() {
                           const isMissingEmail =
                             u.missingFields.includes('Thiếu Email') ||
                             u.missingFields.includes('Email sai định dạng');
+                          const roleErrorField = u.missingFields.find((f) => f.includes('Vai trò'));
 
                           return (
                             <tr
@@ -1585,21 +1605,27 @@ export default function UserManagerPage() {
                                 )}
                               </td>
                               <td className="px-3 py-2">
-                                <span
-                                  className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                                    u.role === 'instructor'
-                                      ? 'bg-indigo-50 text-indigo-700'
+                                {roleErrorField ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    {roleErrorField}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                      u.role === 'instructor'
+                                        ? 'bg-indigo-50 text-indigo-700'
+                                        : u.role === 'admin'
+                                        ? 'bg-amber-50 text-amber-700'
+                                        : 'bg-blue-50 text-blue-700'
+                                    }`}
+                                  >
+                                    {u.role === 'instructor'
+                                      ? 'Giảng viên'
                                       : u.role === 'admin'
-                                      ? 'bg-amber-50 text-amber-700'
-                                      : 'bg-blue-50 text-blue-700'
-                                  }`}
-                                >
-                                  {u.role === 'instructor'
-                                    ? 'Giảng viên'
-                                    : u.role === 'admin'
-                                    ? 'Quản trị viên'
-                                    : 'Sinh viên'}
-                                </span>
+                                      ? 'Quản trị viên'
+                                      : 'Sinh viên'}
+                                  </span>
+                                )}
                               </td>
                               <td className="px-3 py-2">
                                 {hasMissing ? (
@@ -1628,7 +1654,7 @@ export default function UserManagerPage() {
                   <div>
                     <p className="text-xs font-bold text-slate-800">Tệp mẫu chuẩn Oculide (CSV / Excel)</p>
                     <p className="text-[11px] text-slate-400">
-                      3 cột bắt buộc: Mã sinh viên / giảng viên, Họ và tên, Email
+                      4 cột bắt buộc: Mã sinh viên / giảng viên, Họ và tên, Email, Vai trò
                     </p>
                   </div>
                 </div>

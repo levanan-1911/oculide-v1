@@ -79,7 +79,7 @@ export default function LoginPage() {
         }
         const role = data.user?.role;
         if (role === 'admin') {
-          window.location.href = '/admin';
+          window.location.href = '/dashboard';
         } else if (role === 'instructor') {
           window.location.href = '/instructor/dashboard';
         } else {

@@ -1,6 +1,1 @@
-import { redirect } from 'next/navigation';
-
-export default function AdminClassesRedirect() {
-  redirect('/class-manager');
-}
-
+export { default } from '@/app/class-manager/page';

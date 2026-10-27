@@ -1,6 +1,1 @@
-import { redirect } from 'next/navigation';
-
-export default function StudentDashboardRedirect() {
-  redirect('/student');
-}
-
+export { default } from '../page';

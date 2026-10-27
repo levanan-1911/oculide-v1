@@ -1,6 +1,1 @@
-import { redirect } from 'next/navigation';
-
-export default function AdminSchedulesRedirect() {
-  redirect('/schedule-manager');
-}
-
+export { default } from '@/app/schedule-manager/page';

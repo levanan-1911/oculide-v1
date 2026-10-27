@@ -1,6 +1,1 @@
-import { redirect } from 'next/navigation';
-
-export default function AdminMonitoringRedirect() {
-  redirect('/monitoring-manager');
-}
-
+export { default } from '@/app/monitoring-manager/page';

@@ -1,6 +1,1 @@
-import { redirect } from 'next/navigation';
-
-export default function AdminReportsRedirect() {
-  redirect('/report-manager');
-}
-
+export { default } from '@/app/report-manager/page';

@@ -44,6 +44,7 @@ export interface UserRow {
   lastLogin: string;
   lastLoginIp?: string;
   lastPasswordChange?: string;
+  missingFields?: string[];
 }
 
 export interface ImportPreviewRow extends UserRow {
@@ -201,11 +202,13 @@ export default function UserManagerPage() {
 
   // Initials cho Avatar
   const getInitials = (name: string) => {
-    const parts = name.trim().split(/\s+/);
+    const clean = name.trim();
+    if (!clean) return '?';
+    const parts = clean.split(/\s+/);
     if (parts.length >= 2) {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
-    return name.slice(0, 2).toUpperCase();
+    return clean.slice(0, 2).toUpperCase();
   };
 
   // ── XỬ LÝ ĐỌC VÀ PHÂN TÍCH TỆP NHẬP (CSV / EXCEL .XLSX / .XLS) ──
@@ -536,9 +539,9 @@ export default function UserManagerPage() {
         warnings.push(`Dòng ${displayRowNum}: ${missingFields.join(', ')}`);
       }
 
-      const finalCode = rawCode ? rawCode.toUpperCase() : `CHUA_CO_MA_${index + 1}`;
-      const finalName = rawName || 'Chưa bổ sung họ tên';
-      const finalEmail = rawEmail || 'chua-bo-sung@oclide.edu.vn';
+      const finalCode = rawCode ? rawCode.toUpperCase() : '';
+      const finalName = rawName || '';
+      const finalEmail = rawEmail || '';
 
       parsed.push({
         id: Date.now() + index + Math.floor(Math.random() * 1000),
@@ -750,17 +753,24 @@ export default function UserManagerPage() {
     const userCode = String(formData.get('userCode') ?? '').trim().toUpperCase();
     const fullName = String(formData.get('fullName') ?? '').trim();
     const email = String(formData.get('email') ?? '').trim();
-    const role = String(formData.get('role') ?? 'student') as UserRole;
+    const rawRole = String(formData.get('role') ?? '').trim();
     const status = String(formData.get('status') ?? 'active') as UserStatus;
 
-    if (!userCode || !fullName || !email) {
-      setEditError('Mã tài khoản, họ tên và email không được để trống.');
+    if (!userCode || !fullName || !email || !rawRole) {
+      setEditError('Vui lòng điền đầy đủ các trường bắt buộc (Mã tài khoản, Vai trò, Họ tên, Email).');
       return;
     }
 
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEditError('Địa chỉ Email chưa đúng định dạng chuẩn (VD: ten@school.edu.vn).');
+      return;
+    }
+
+    const role = rawRole as UserRole;
+
     if (
       userCode.toLocaleLowerCase('vi') !== editingUser.userCode.toLocaleLowerCase('vi') &&
-      users.some((u) => u.userCode.toLocaleLowerCase('vi') === userCode.toLocaleLowerCase('vi'))
+      users.some((u) => u.userCode && u.userCode.toLocaleLowerCase('vi') === userCode.toLocaleLowerCase('vi'))
     ) {
       setEditError('Mã tài khoản này đã trùng với tài khoản khác.');
       return;
@@ -772,13 +782,15 @@ export default function UserManagerPage() {
       fullName,
       email,
       role,
+      department: role === 'instructor' ? 'Khoa CNTT' : editingUser.department || 'Chưa phân lớp',
       status,
+      missingFields: [],
     };
 
     setUsers((prev) => prev.map((u) => (u.id === editingUser.id ? updated : u)));
     setEditingUser(null);
     setEditError('');
-    showToast(`Đã cập nhật thông tin tài khoản ${updated.userCode}.`);
+    showToast(`Đã cập nhật đầy đủ thông tin tài khoản ${updated.userCode}.`);
   }
 
   // ── XỬ LÝ ĐẶT LẠI MẬT KHẨU ──
@@ -1003,22 +1015,65 @@ export default function UserManagerPage() {
                     <tbody className="divide-y divide-slate-100">
                       {filteredUsers.map((user) => {
                         const isSelected = selectedUserId === user.id;
+                        const hasMissingInfo =
+                          Boolean(user.missingFields && user.missingFields.length > 0) ||
+                          !user.userCode ||
+                          !user.fullName ||
+                          !user.email;
+                        const isRoleMissing = Boolean(
+                          user.missingFields?.some((f) => f.includes('Vai trò'))
+                        );
+
                         return (
                           <tr
                             key={user.id}
                             onClick={() => setSelectedUserId(user.id)}
                             className={`transition-colors cursor-pointer ${
-                              isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/70'
+                              isSelected
+                                ? 'bg-blue-50/60'
+                                : hasMissingInfo
+                                ? 'bg-red-50/30 hover:bg-red-50/60'
+                                : 'hover:bg-slate-50/70'
                             }`}
                           >
                             <td className="px-5 py-4">
-                              <p className="text-sm font-bold text-slate-900">{user.userCode}</p>
-                              <p className="mt-0.5 text-xs font-medium text-slate-700">{user.fullName}</p>
-                              <p className="text-[11px] text-slate-400">{user.email}</p>
+                              {user.userCode ? (
+                                <p className="text-sm font-bold text-slate-900">{user.userCode}</p>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-700">
+                                  ⚠ Thiếu Mã SV/GV
+                                </span>
+                              )}
+
+                              {user.fullName ? (
+                                <p className="mt-0.5 text-xs font-medium text-slate-700">{user.fullName}</p>
+                              ) : (
+                                <p className="mt-0.5">
+                                  <span className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-700">
+                                    ⚠ Thiếu Họ và tên
+                                  </span>
+                                </p>
+                              )}
+
+                              {user.email ? (
+                                <p className="text-[11px] text-slate-400">{user.email}</p>
+                              ) : (
+                                <p className="mt-1">
+                                  <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600">
+                                    ⚠ Thiếu Email - Cần bổ sung
+                                  </span>
+                                </p>
+                              )}
                             </td>
 
                             <td className="px-4 py-4">
-                              <UserRoleBadge role={user.role} />
+                              {isRoleMissing ? (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-600">
+                                  ⚠ Thiếu Vai trò
+                                </span>
+                              ) : (
+                                <UserRoleBadge role={user.role} />
+                              )}
                             </td>
 
                             <td className="px-4 py-4 text-xs font-medium text-slate-600">
@@ -1035,7 +1090,7 @@ export default function UserManagerPage() {
                                   type="button"
                                   onClick={() => setSelectedUserId(user.id)}
                                   title="Xem chi tiết tài khoản"
-                                  aria-label={`Xem tài khoản ${user.userCode}`}
+                                  aria-label={`Xem tài khoản ${user.userCode || user.id}`}
                                   className={`flex h-8 w-8 items-center justify-center rounded-lg transition cursor-pointer ${
                                     isSelected
                                       ? 'bg-blue-600 text-white shadow-sm'
@@ -1051,9 +1106,17 @@ export default function UserManagerPage() {
                                     setEditError('');
                                     setEditingUser(user);
                                   }}
-                                  title="Chỉnh sửa tài khoản"
-                                  aria-label={`Sửa tài khoản ${user.userCode}`}
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-amber-50 hover:text-amber-600 cursor-pointer"
+                                  title={
+                                    hasMissingInfo
+                                      ? 'Cần bổ sung thông tin còn thiếu'
+                                      : 'Chỉnh sửa tài khoản'
+                                  }
+                                  aria-label={`Sửa tài khoản ${user.userCode || user.id}`}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-lg transition cursor-pointer ${
+                                    hasMissingInfo
+                                      ? 'bg-red-100 text-red-600 ring-1 ring-red-300 hover:bg-red-200'
+                                      : 'text-slate-500 hover:bg-amber-50 hover:text-amber-600'
+                                  }`}
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </button>
@@ -1062,7 +1125,7 @@ export default function UserManagerPage() {
                                   type="button"
                                   onClick={() => openToggleStatusModal(user)}
                                   title={user.status === 'active' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
-                                  aria-label={`${user.status === 'active' ? 'Khóa' : 'Mở khóa'} ${user.userCode}`}
+                                  aria-label={`${user.status === 'active' ? 'Khóa' : 'Mở khóa'} ${user.userCode || user.id}`}
                                   className={`flex h-8 w-8 items-center justify-center rounded-lg transition cursor-pointer ${
                                     user.status === 'active'
                                       ? 'text-slate-500 hover:bg-rose-50 hover:text-rose-600'
@@ -1101,7 +1164,7 @@ export default function UserManagerPage() {
                       <h2 className="font-bold text-slate-900">Chi tiết người dùng</h2>
                       <p className="mt-0.5 text-xs text-slate-500">
                         {selectedUser
-                          ? `${selectedUser.userCode} · ${selectedUser.fullName}`
+                          ? `${selectedUser.userCode || 'Chưa có mã'} · ${selectedUser.fullName || 'Chưa có họ tên'}`
                           : 'Chọn một tài khoản để xem chi tiết'}
                       </p>
                     </div>
@@ -1111,6 +1174,37 @@ export default function UserManagerPage() {
 
                 {selectedUser ? (
                   <div className="p-5 space-y-5">
+                    {/* Cảnh báo thiếu thông tin nếu có */}
+                    {(Boolean(selectedUser.missingFields && selectedUser.missingFields.length > 0) ||
+                      !selectedUser.userCode ||
+                      !selectedUser.fullName ||
+                      !selectedUser.email) && (
+                      <div className="rounded-xl border border-red-200 bg-red-50/90 p-3 text-xs text-red-800">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                          <div>
+                            <p className="font-bold text-red-900">
+                              Tài khoản chưa đủ thông tin bắt buộc
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-red-700">
+                              Cần bổ sung:{' '}
+                              <strong>
+                                {selectedUser.missingFields && selectedUser.missingFields.length > 0
+                                  ? selectedUser.missingFields.join(', ')
+                                  : [
+                                      !selectedUser.userCode ? 'Thiếu Mã SV/GV' : '',
+                                      !selectedUser.fullName ? 'Thiếu Họ và tên' : '',
+                                      !selectedUser.email ? 'Thiếu Email' : '',
+                                    ]
+                                      .filter(Boolean)
+                                      .join(', ')}
+                              </strong>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Hero Profile */}
                     <div className="flex items-center gap-4 rounded-xl bg-slate-50/80 p-4 border border-slate-100">
                       <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-lg font-black text-white shadow-md shadow-blue-500/20">
@@ -1118,13 +1212,33 @@ export default function UserManagerPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <h3 className="truncate text-base font-bold text-slate-900">
-                            {selectedUser.fullName}
-                          </h3>
+                          {selectedUser.fullName ? (
+                            <h3 className="truncate text-base font-bold text-slate-900">
+                              {selectedUser.fullName}
+                            </h3>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">
+                              ⚠ Thiếu Họ và tên
+                            </span>
+                          )}
                         </div>
-                        <p className="text-xs text-slate-500">{selectedUser.email}</p>
+                        {selectedUser.email ? (
+                          <p className="text-xs text-slate-500">{selectedUser.email}</p>
+                        ) : (
+                          <p className="mt-1">
+                            <span className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600">
+                              ⚠ Thiếu Email - Cần bổ sung
+                            </span>
+                          </p>
+                        )}
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <UserRoleBadge role={selectedUser.role} />
+                          {selectedUser.missingFields?.some((f) => f.includes('Vai trò')) ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-bold text-red-600">
+                              ⚠ Thiếu Vai trò
+                            </span>
+                          ) : (
+                            <UserRoleBadge role={selectedUser.role} />
+                          )}
                           <UserStatusBadge status={selectedUser.status} />
                         </div>
                       </div>
@@ -1136,23 +1250,41 @@ export default function UserManagerPage() {
                         <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                           Thông tin định danh
                         </p>
-                        <div className="flex justify-between py-1 border-b border-slate-50">
+                        <div className="flex justify-between items-center py-1 border-b border-slate-50">
                           <span className="text-slate-500">Mã tài khoản</span>
-                          <span className="font-bold text-slate-800">{selectedUser.userCode}</span>
+                          {selectedUser.userCode ? (
+                            <span className="font-bold text-slate-800">{selectedUser.userCode}</span>
+                          ) : (
+                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-600">
+                              ⚠ Chưa bổ sung
+                            </span>
+                          )}
                         </div>
-                        <div className="flex justify-between py-1 border-b border-slate-50">
+                        <div className="flex justify-between items-center py-1 border-b border-slate-50">
                           <span className="text-slate-500">Email trường</span>
-                          <span className="font-medium text-slate-700">{selectedUser.email}</span>
+                          {selectedUser.email ? (
+                            <span className="font-medium text-slate-700">{selectedUser.email}</span>
+                          ) : (
+                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-600">
+                              ⚠ Bắt buộc bổ sung
+                            </span>
+                          )}
                         </div>
-                        <div className="flex justify-between py-1">
+                        <div className="flex justify-between items-center py-1">
                           <span className="text-slate-500">Vai trò</span>
-                          <span className="font-semibold text-slate-800">
-                            {selectedUser.role === 'instructor'
-                              ? 'Giảng viên'
-                              : selectedUser.role === 'admin'
-                              ? 'Quản trị viên'
-                              : 'Sinh viên'}
-                          </span>
+                          {selectedUser.missingFields?.some((f) => f.includes('Vai trò')) ? (
+                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-600">
+                              ⚠ Bắt buộc chọn vai trò
+                            </span>
+                          ) : (
+                            <span className="font-semibold text-slate-800">
+                              {selectedUser.role === 'instructor'
+                                ? 'Giảng viên'
+                                : selectedUser.role === 'admin'
+                                ? 'Quản trị viên'
+                                : 'Sinh viên'}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -1227,10 +1359,33 @@ export default function UserManagerPage() {
                           setEditError('');
                           setEditingUser(selectedUser);
                         }}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+                        className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer ${
+                          (selectedUser.missingFields && selectedUser.missingFields.length > 0) ||
+                          !selectedUser.userCode ||
+                          !selectedUser.fullName ||
+                          !selectedUser.email
+                            ? 'border border-red-300 bg-red-600 text-white shadow-sm shadow-red-500/20 hover:bg-red-700'
+                            : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                        }`}
                       >
-                        <Pencil className="h-4 w-4 text-slate-500" />
-                        <span>Chỉnh sửa thông tin</span>
+                        <Pencil
+                          className={`h-4 w-4 ${
+                            (selectedUser.missingFields && selectedUser.missingFields.length > 0) ||
+                            !selectedUser.userCode ||
+                            !selectedUser.fullName ||
+                            !selectedUser.email
+                              ? 'text-white'
+                              : 'text-slate-500'
+                          }`}
+                        />
+                        <span>
+                          {(selectedUser.missingFields && selectedUser.missingFields.length > 0) ||
+                          !selectedUser.userCode ||
+                          !selectedUser.fullName ||
+                          !selectedUser.email
+                            ? 'Bổ sung thông tin còn thiếu ngay'
+                            : 'Chỉnh sửa thông tin'}
+                        </span>
                       </button>
 
                       <button
@@ -1704,125 +1859,246 @@ export default function UserManagerPage() {
       )}
 
       {/* ── MODAL 3: CHỈNH SỬA TÀI KHOẢN ── */}
-      {editingUser && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setEditingUser(null);
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="edit-user-title"
-            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+      {editingUser && (() => {
+        const isCodeMissing =
+          !editingUser.userCode ||
+          Boolean(editingUser.missingFields?.some((f) => f.includes('Mã')));
+        const isRoleMissing = Boolean(
+          editingUser.missingFields?.some((f) => f.includes('Vai trò'))
+        );
+        const isNameMissing =
+          !editingUser.fullName ||
+          Boolean(editingUser.missingFields?.some((f) => f.includes('Họ và tên')));
+        const isEmailMissing =
+          !editingUser.email ||
+          Boolean(editingUser.missingFields?.some((f) => f.includes('Email')));
+        const hasAnyMissing =
+          isCodeMissing ||
+          isRoleMissing ||
+          isNameMissing ||
+          isEmailMissing ||
+          Boolean(editingUser.missingFields && editingUser.missingFields.length > 0);
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setEditingUser(null);
+            }}
           >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 id="edit-user-title" className="text-lg font-bold text-slate-900">
-                  Chỉnh sửa thông tin tài khoản
-                </h2>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  Cập nhật thông tin cho tài khoản <strong className="text-slate-800">{editingUser.userCode}</strong>.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingUser(null)}
-                aria-label="Đóng"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEdit} className="mt-5 space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Mã tài khoản <span className="text-red-500">*</span>
-                  <input
-                    name="userCode"
-                    required
-                    defaultValue={editingUser.userCode}
-                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </label>
-
-                <label className="block text-xs font-semibold text-slate-700">
-                  Vai trò hệ thống <span className="text-red-500">*</span>
-                  <select
-                    name="role"
-                    required
-                    defaultValue={editingUser.role}
-                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  >
-                    <option value="student">Sinh viên</option>
-                    <option value="instructor">Giảng viên</option>
-                    <option value="admin">Quản trị viên</option>
-                  </select>
-                </label>
-              </div>
-
-              <label className="block text-xs font-semibold text-slate-700">
-                Họ và tên <span className="text-red-500">*</span>
-                <input
-                  name="fullName"
-                  required
-                  defaultValue={editingUser.fullName}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
-              </label>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Địa chỉ Email <span className="text-red-500">*</span>
-                  <input
-                    name="email"
-                    type="email"
-                    required
-                    defaultValue={editingUser.email}
-                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </label>
-
-                <label className="block text-xs font-semibold text-slate-700">
-                  Trạng thái
-                  <select
-                    name="status"
-                    defaultValue={editingUser.status}
-                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  >
-                    <option value="active">Hoạt động</option>
-                    <option value="locked">Bị khóa</option>
-                  </select>
-                </label>
-              </div>
-
-              {editError && (
-                <p role="alert" className="text-xs font-medium text-red-600">
-                  {editError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-3 pt-3">
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="edit-user-title"
+              className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="edit-user-title" className="text-lg font-bold text-slate-900">
+                    Chỉnh sửa thông tin tài khoản
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Cập nhật thông tin cho tài khoản{' '}
+                    <strong className="text-slate-800">
+                      {editingUser.userCode || 'chưa có mã định danh'}
+                    </strong>
+                    .
+                  </p>
+                </div>
                 <button
                   type="button"
                   onClick={() => setEditingUser(null)}
-                  className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  aria-label="Đóng"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
                 >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
-                >
-                  Lưu thay đổi
+                  <X className="h-4 w-4" />
                 </button>
               </div>
-            </form>
-          </section>
-        </div>
-      )}
+
+              {hasAnyMissing && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-800">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                    <div>
+                      <p className="font-bold text-red-900">
+                        Tài khoản được nhập từ tệp đang thiếu thông tin bắt buộc!
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-red-700 leading-relaxed">
+                        Vui lòng điền đầy đủ các trường được <strong>khoanh đỏ cảnh báo</strong> bên dưới trước khi lưu.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveEdit} noValidate className="mt-5 space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    <span className="flex items-center justify-between">
+                      <span>
+                        Mã tài khoản <span className="text-red-500">*</span>
+                      </span>
+                      {isCodeMissing && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                          Thiếu thông tin
+                        </span>
+                      )}
+                    </span>
+                    <input
+                      name="userCode"
+                      required
+                      defaultValue={editingUser.userCode}
+                      placeholder="VD: 20241820 hoặc 100088"
+                      className={`mt-1.5 h-10 w-full rounded-xl px-3 text-xs outline-none transition ${
+                        isCodeMissing
+                          ? 'border-2 border-red-500 bg-red-50/40 text-red-900 placeholder:text-red-400 ring-2 ring-red-100 focus:border-red-600 focus:ring-red-200'
+                          : 'border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                      }`}
+                    />
+                    {isCodeMissing && (
+                      <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                        ⚠ Bắt buộc bổ sung Mã SV / Mã GV
+                      </span>
+                    )}
+                  </label>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    <span className="flex items-center justify-between">
+                      <span>
+                        Vai trò hệ thống <span className="text-red-500">*</span>
+                      </span>
+                      {isRoleMissing && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                          Cần xác nhận
+                        </span>
+                      )}
+                    </span>
+                    <select
+                      name="role"
+                      required
+                      defaultValue={isRoleMissing ? '' : editingUser.role}
+                      className={`mt-1.5 h-10 w-full rounded-xl px-3 text-xs outline-none transition ${
+                        isRoleMissing
+                          ? 'border-2 border-red-500 bg-red-50/40 font-semibold text-red-900 ring-2 ring-red-100 focus:border-red-600 focus:ring-red-200'
+                          : 'border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                      }`}
+                    >
+                      {isRoleMissing && (
+                        <option value="" disabled>
+                          — ⚠ Bắt buộc chọn vai trò —
+                        </option>
+                      )}
+                      <option value="student">Sinh viên</option>
+                      <option value="instructor">Giảng viên</option>
+                      <option value="admin">Quản trị viên</option>
+                    </select>
+                    {isRoleMissing && (
+                      <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                        ⚠ Tệp nhập thiếu hoặc sai cột Vai trò
+                      </span>
+                    )}
+                  </label>
+                </div>
+
+                <label className="block text-xs font-semibold text-slate-700">
+                  <span className="flex items-center justify-between">
+                    <span>
+                      Họ và tên <span className="text-red-500">*</span>
+                    </span>
+                    {isNameMissing && (
+                      <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                        Thiếu thông tin
+                      </span>
+                    )}
+                  </span>
+                  <input
+                    name="fullName"
+                    required
+                    defaultValue={editingUser.fullName}
+                    placeholder="Nhập đầy đủ họ và tên..."
+                    className={`mt-1.5 h-10 w-full rounded-xl px-3 text-xs outline-none transition ${
+                      isNameMissing
+                        ? 'border-2 border-red-500 bg-red-50/40 text-red-900 placeholder:text-red-400 ring-2 ring-red-100 focus:border-red-600 focus:ring-red-200'
+                        : 'border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                    }`}
+                  />
+                  {isNameMissing && (
+                    <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                      ⚠ Bắt buộc bổ sung Họ và tên
+                    </span>
+                  )}
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    <span className="flex items-center justify-between">
+                      <span>
+                        Địa chỉ Email <span className="text-red-500">*</span>
+                      </span>
+                      {isEmailMissing && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                          Bắt buộc bổ sung
+                        </span>
+                      )}
+                    </span>
+                    <input
+                      name="email"
+                      type="email"
+                      required
+                      defaultValue={editingUser.email}
+                      placeholder="Nhập email hợp lệ (VD: sv@school.edu.vn)"
+                      className={`mt-1.5 h-10 w-full rounded-xl px-3 text-xs outline-none transition ${
+                        isEmailMissing
+                          ? 'border-2 border-red-500 bg-red-50/40 text-red-900 placeholder:text-red-400 ring-2 ring-red-100 focus:border-red-600 focus:ring-red-200'
+                          : 'border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                      }`}
+                    />
+                    {isEmailMissing && (
+                      <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                        ⚠ Bắt buộc bổ sung địa chỉ Email hợp lệ
+                      </span>
+                    )}
+                  </label>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Trạng thái
+                    <select
+                      name="status"
+                      defaultValue={editingUser.status}
+                      className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    >
+                      <option value="active">Hoạt động</option>
+                      <option value="locked">Bị khóa</option>
+                    </select>
+                  </label>
+                </div>
+
+                {editError && (
+                  <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">
+                    ⚠ {editError}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(null)}
+                    className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
+                  >
+                    Lưu thay đổi
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        );
+      })()}
 
       {/* ── MODAL 4: ĐẶT LẠI MẬT KHẨU (2-STEP) ── */}
       {resettingUser && (

@@ -36,7 +36,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'overview',
         label: 'Tổng quan',
-        href: '/admin',
+        href: '/dashboard',
         icon: LayoutGrid,
       },
     ],
@@ -47,7 +47,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'users',
         label: 'Người dùng & phân quyền',
-        href: '/admin?module=users',
+        href: '/user-manager',
         icon: UserCheck,
       },
       {
@@ -59,13 +59,13 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'questions',
         label: 'Đề & câu hỏi',
-        href: '/admin?module=questions',
+        href: '/question-manager',
         icon: FileCode2,
       },
       {
         id: 'schedules',
         label: 'Lịch & phiên kiểm tra',
-        href: '/admin?module=schedules',
+        href: '/schedule-manager',
         icon: Clock,
       },
     ],
@@ -76,13 +76,13 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'monitoring',
         label: 'Giám sát & hỗ trợ',
-        href: '/admin?module=monitoring',
+        href: '/monitoring-manager',
         icon: Flag,
       },
       {
         id: 'reports',
         label: 'Kết quả & báo cáo',
-        href: '/admin?module=reports',
+        href: '/report-manager',
         icon: BookOpen,
       },
     ],
@@ -93,7 +93,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'system',
         label: 'Hệ thống & nhật ký',
-        href: '/admin?module=system',
+        href: '/system-manager',
         icon: Settings,
       },
     ],
@@ -108,7 +108,7 @@ interface AdminSidebarProps {
 export default function AdminSidebar({
   activeModule,
   onSelectModule,
-}: AdminSidebarProps) {
+}: AdminSidebarProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -171,9 +171,21 @@ export default function AdminSidebar({
 
   const currentActiveModule =
     activeModule ??
-    (pathname === '/class-manager'
+    (pathname.startsWith('/user-manager')
+      ? 'users'
+      : pathname.startsWith('/class-manager')
       ? 'classes'
-      : pathname === '/admin'
+      : pathname.startsWith('/question-manager')
+      ? 'questions'
+      : pathname.startsWith('/schedule-manager')
+      ? 'schedules'
+      : pathname.startsWith('/monitoring-manager')
+      ? 'monitoring'
+      : pathname.startsWith('/report-manager')
+      ? 'reports'
+      : pathname.startsWith('/system-manager')
+      ? 'system'
+      : pathname === '/dashboard' || pathname === '/admin'
       ? 'overview'
       : '');
 
@@ -183,7 +195,7 @@ export default function AdminSidebar({
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-5 pb-4">
         {/* Brand Header: Icon mắt tròn trắng trên nền xanh + chữ OCLIDE */}
         <Link
-          href="/admin"
+          href="/dashboard"
           onClick={() => {
             if (onSelectModule) {
               onSelectModule('overview');
@@ -224,22 +236,10 @@ export default function AdminSidebar({
               <div className="space-y-1">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const isActive = currentActiveModule === item.id;
-                  const itemClassName = `flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-[#eff6ff] font-semibold text-[#2563eb]'
-                      : 'font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`;
-                  const itemContents = (
-                    <>
-                      <Icon
-                        className={`h-4 w-4 shrink-0 ${
-                          isActive ? 'text-[#2563eb]' : 'text-slate-400'
-                        }`}
-                      />
-                      <span className="truncate">{item.label}</span>
-                    </>
-                  );
+                  const isActive =
+                    currentActiveModule !== ''
+                      ? currentActiveModule === item.id
+                      : pathname === item.href;
 
                   return (
                     <Link
@@ -250,9 +250,18 @@ export default function AdminSidebar({
                           onSelectModule(item.id);
                         }
                       }}
-                      className={itemClassName}
+                      className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-[#eff6ff] font-semibold text-[#2563eb]'
+                          : 'font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      }`}
                     >
-                      {itemContents}
+                      <Icon
+                        className={`h-4 w-4 shrink-0 ${
+                          isActive ? 'text-[#2563eb]' : 'text-slate-400'
+                        }`}
+                      />
+                      <span className="truncate">{item.label}</span>
                     </Link>
                   );
                 })}
@@ -276,7 +285,7 @@ export default function AdminSidebar({
 
             <div className="mt-1.5 space-y-0.5 text-xs font-medium text-slate-700">
               <Link
-                href="/admin?module=users"
+                href="/user-manager"
                 onClick={() => setIsMenuOpen(false)}
                 className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600"
               >

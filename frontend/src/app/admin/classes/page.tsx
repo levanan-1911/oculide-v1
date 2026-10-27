@@ -1565,7 +1565,7 @@ function ClassManagerContent() {
                                 onClick={() => {
                                   const rCode = lab.roomCode || `${lab.id}-ROOM`;
                                   const rPass = lab.roomPassword || '123456';
-                                  const joinUrl = `${window.location.origin}/join?code=${rCode}`;
+                                  const joinUrl = `${window.location.origin}/student/join?code=${rCode}`;
                                   const info = `PHÒNG LAB: ${lab.title}\nLớp: ${viewingClass.id} - ${viewingClass.name}\nMã phòng: ${rCode}\nMật khẩu: ${rPass}\nCổng vào làm bài: ${joinUrl}`;
                                   navigator.clipboard.writeText(info);
                                   alert(`Đã sao chép phòng Lab ${rCode} và mật khẩu vào Clipboard!`);
@@ -1784,7 +1784,7 @@ function ClassManagerContent() {
                                 onClick={() => {
                                   const rCode = exam.roomCode || `${exam.id}-ROOM`;
                                   const rPass = exam.roomPassword || '123456';
-                                  const joinUrl = `${window.location.origin}/join?code=${rCode}`;
+                                  const joinUrl = `${window.location.origin}/student/join?code=${rCode}`;
                                   const info = `PHÒNG THI: ${exam.title}\nLớp: ${viewingClass.id} - ${viewingClass.name}\nMã phòng thi: ${rCode}\nMật khẩu: ${rPass}\nCổng vào làm bài: ${joinUrl}`;
                                   navigator.clipboard.writeText(info);
                                   alert(`Đã sao chép phòng thi ${rCode} và mật khẩu vào Clipboard!`);

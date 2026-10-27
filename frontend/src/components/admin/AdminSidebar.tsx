@@ -170,21 +170,21 @@ export default function AdminSidebar({
 
   const currentActiveModule =
     activeModule ??
-    (pathname.startsWith('/admin/users') || pathname.startsWith('/user-manager')
+    (pathname.startsWith('/admin/users') 
       ? 'users'
       : pathname.startsWith('/admin/classes') || pathname.startsWith('/admin/classes')
       ? 'classes'
-      : pathname.startsWith('/admin/questions') || pathname.startsWith('/question-manager')
+      : pathname.startsWith('/admin/questions') 
       ? 'questions'
-      : pathname.startsWith('/admin/schedules') || pathname.startsWith('/schedule-manager')
+      : pathname.startsWith('/admin/schedules') 
       ? 'schedules'
-      : pathname.startsWith('/admin/monitoring') || pathname.startsWith('/monitoring-manager')
+      : pathname.startsWith('/admin/monitoring') 
       ? 'monitoring'
-      : pathname.startsWith('/admin/reports') || pathname.startsWith('/report-manager')
+      : pathname.startsWith('/admin/reports') 
       ? 'reports'
-      : pathname.startsWith('/admin/system') || pathname.startsWith('/system-manager')
+      : pathname.startsWith('/admin/system') 
       ? 'system'
-      : pathname.startsWith('/admin') || pathname === '/dashboard'
+      : pathname.startsWith('/admin') 
       ? 'overview'
       : '');
 

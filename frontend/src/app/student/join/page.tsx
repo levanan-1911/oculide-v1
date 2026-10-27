@@ -304,7 +304,7 @@ function JoinClassContent() {
             </Link>
             <span className="text-slate-300">•</span>
             <Link
-              href="/admin/classes"
+              href="/instructor/classes"
               className="font-semibold text-blue-600 hover:underline"
             >
               Dành cho Giảng viên
@@ -585,10 +585,10 @@ function JoinClassContent() {
                 </button>
 
                 <Link
-                  href="/admin/classes"
+                  href="/student/dashboard"
                   className="inline-flex items-center gap-1.5 rounded-xl bg-[#2563eb] px-5 py-2.5 text-xs font-bold text-white shadow-sm shadow-blue-500/20 hover:bg-blue-700 transition"
                 >
-                  <span>Xem trong trang Quản lý</span>
+                  <span>Về trang Sinh viên</span>
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </div>

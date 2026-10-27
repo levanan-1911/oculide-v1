@@ -13,4 +13,4 @@ export default function InstructorClassesPage() {
       <ClassManagerView hideLayout={true} role="instructor" />
     </Suspense>
   );
-}
+} 

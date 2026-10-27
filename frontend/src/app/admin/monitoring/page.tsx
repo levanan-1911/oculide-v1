@@ -23,10 +23,10 @@ export default function MonitoringManagerPage() {
                 Giám sát &amp; hỗ trợ
               </h2>
               <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
-                Đường dẫn chuẩn: <code className="rounded bg-slate-100 px-2 py-0.5 text-xs text-blue-600 font-mono">/monitoring-manager</code>. Khung điều hướng đã sẵn sàng để thiết kế giao diện chi tiết.
+                Đường dẫn chuẩn: <code className="rounded bg-slate-100 px-2 py-0.5 text-xs text-blue-600 font-mono">/admin/monitoring</code>. Khung điều hướng đã sẵn sàng để thiết kế giao diện chi tiết.
               </p>
               <Link
-                href="/dashboard"
+                href="/admin"
                 className="mt-6 inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 cursor-pointer"
               >
                 Quay lại trang Tổng quan

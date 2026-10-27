@@ -300,12 +300,12 @@ export default function AdminSidebar({
 
             <div className="mt-1.5 space-y-0.5 text-xs font-medium text-slate-700">
               <Link
-                href="/admin/users"
+                href="/admin/profile"
                 onClick={() => setIsMenuOpen(false)}
                 className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600"
               >
                 <User className="h-4 w-4 text-slate-400" />
-                Hồ sơ & Phân quyền
+                Hồ sơ cá nhân
               </Link>
               <Link
                 href="/reset-password"

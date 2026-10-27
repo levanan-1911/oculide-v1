@@ -36,7 +36,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'overview',
         label: 'Tổng quan',
-        href: '/dashboard',
+        href: '/admin',
         icon: LayoutGrid,
       },
     ],
@@ -47,25 +47,25 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'users',
         label: 'Người dùng & phân quyền',
-        href: '/user-manager',
+        href: '/admin/users',
         icon: UserCheck,
       },
       {
         id: 'classes',
         label: 'Lớp & sinh viên',
-        href: '/class-manager',
+        href: '/admin/classes',
         icon: Table2,
       },
       {
         id: 'questions',
         label: 'Đề & câu hỏi',
-        href: '/question-manager',
+        href: '/admin/questions',
         icon: FileCode2,
       },
       {
         id: 'schedules',
         label: 'Lịch & phiên kiểm tra',
-        href: '/schedule-manager',
+        href: '/admin/schedules',
         icon: Clock,
       },
     ],
@@ -76,13 +76,13 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'monitoring',
         label: 'Giám sát & hỗ trợ',
-        href: '/monitoring-manager',
+        href: '/admin/monitoring',
         icon: Flag,
       },
       {
         id: 'reports',
         label: 'Kết quả & báo cáo',
-        href: '/report-manager',
+        href: '/admin/reports',
         icon: BookOpen,
       },
     ],
@@ -93,7 +93,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'system',
         label: 'Hệ thống & nhật ký',
-        href: '/system-manager',
+        href: '/admin/system',
         icon: Settings,
       },
     ],
@@ -108,10 +108,9 @@ interface AdminSidebarProps {
 export default function AdminSidebar({
   activeModule,
   onSelectModule,
-}: AdminSidebarProps = {}) {
+}: AdminSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -171,31 +170,47 @@ export default function AdminSidebar({
 
   const currentActiveModule =
     activeModule ??
-    (pathname.startsWith('/user-manager')
+    (pathname.startsWith('/admin/users') 
       ? 'users'
-      : pathname.startsWith('/class-manager')
+      : pathname.startsWith('/admin/classes') || pathname.startsWith('/admin/classes')
       ? 'classes'
-      : pathname.startsWith('/question-manager')
+      : pathname.startsWith('/admin/questions') 
       ? 'questions'
-      : pathname.startsWith('/schedule-manager')
+      : pathname.startsWith('/admin/schedules') 
       ? 'schedules'
-      : pathname.startsWith('/monitoring-manager')
+      : pathname.startsWith('/admin/monitoring') 
       ? 'monitoring'
-      : pathname.startsWith('/report-manager')
+      : pathname.startsWith('/admin/reports') 
       ? 'reports'
-      : pathname.startsWith('/system-manager')
+      : pathname.startsWith('/admin/system') 
       ? 'system'
-      : pathname === '/dashboard' || pathname === '/admin'
+      : pathname.startsWith('/admin') 
       ? 'overview'
       : '');
+
+  const displayedNavGroups = ADMIN_NAV_GROUPS.map((group) => {
+    if (currentUser.role === 'Giảng viên') {
+      return {
+        ...group,
+        items: group.items
+          .filter((item) => item.id !== 'users' && item.id !== 'system')
+          .map((item) =>
+            item.id === 'overview'
+              ? { ...item, href: '/instructor/dashboard' }
+              : item
+          ),
+      };
+    }
+    return group;
+  }).filter((group) => group.items.length > 0);
 
   return (
     <aside className="sticky top-0 flex h-screen w-[256px] shrink-0 flex-col justify-between border-r border-slate-200/80 bg-white select-none z-30">
       {/* Phần trên: Logo + Danh sách Module cuộn độc lập */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-5 pb-4">
-        {/* Brand Header: Icon mắt tròn trắng trên nền xanh + chữ OCLIDE */}
+        {/* Brand Header */}
         <Link
-          href="/dashboard"
+          href={currentUser.role === 'Giảng viên' ? '/instructor/dashboard' : '/admin'}
           onClick={() => {
             if (onSelectModule) {
               onSelectModule('overview');
@@ -228,7 +243,7 @@ export default function AdminSidebar({
 
         {/* Các nhóm điều hướng */}
         <nav className="space-y-6">
-          {ADMIN_NAV_GROUPS.map((group) => (
+          {displayedNavGroups.map((group) => (
             <div key={group.groupLabel} className="space-y-1.5">
               <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 {group.groupLabel}
@@ -271,7 +286,7 @@ export default function AdminSidebar({
         </nav>
       </div>
 
-      {/* Phần dưới: Thẻ thông tin Quản trị viên (Luôn luôn ghim ở góc dưới cùng bên trái màn hình) */}
+      {/* Phần dưới: Thẻ thông tin Quản trị viên */}
       <div ref={userMenuRef} className="relative shrink-0 p-4 border-t border-slate-100 bg-white">
         {isMenuOpen && (
           <div className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-50 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-xl shadow-slate-900/10">
@@ -285,7 +300,7 @@ export default function AdminSidebar({
 
             <div className="mt-1.5 space-y-0.5 text-xs font-medium text-slate-700">
               <Link
-                href="/user-manager"
+                href="/admin/users"
                 onClick={() => setIsMenuOpen(false)}
                 className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600"
               >
@@ -315,29 +330,18 @@ export default function AdminSidebar({
         <button
           type="button"
           onClick={() => setIsMenuOpen((prev) => !prev)}
-          title="Tài khoản cá nhân"
-          className={`flex w-full items-center justify-between rounded-2xl border px-3.5 py-3 text-left transition-all cursor-pointer ${
-            isMenuOpen
-              ? 'border-blue-500 bg-blue-50/80 ring-2 ring-blue-100'
-              : 'border-blue-200/90 bg-[#f8faff] hover:bg-blue-50/60'
-          }`}
+          className="flex w-full items-center gap-3 rounded-2xl p-1.5 text-left transition hover:bg-slate-50 cursor-pointer"
         >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100/90 text-xs font-bold text-[#2563eb]">
-              {initials}
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-slate-900">
-                {currentUser.name}
-              </p>
-              <p className="truncate text-xs text-slate-400">{currentUser.role}</p>
-            </div>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-bold text-white shadow-sm">
+            {initials}
           </div>
-          <ChevronRight
-            className={`h-4 w-4 shrink-0 text-[#2563eb] transition-transform duration-200 ${
-              isMenuOpen ? '-rotate-90' : ''
-            }`}
-          />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold text-slate-900 truncate">{currentUser.name}</p>
+            <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
+          </div>
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+            <span className="text-xs font-bold">⋮</span>
+          </div>
         </button>
       </div>
     </aside>

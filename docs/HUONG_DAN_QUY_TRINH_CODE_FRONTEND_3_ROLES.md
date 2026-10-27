@@ -174,3 +174,4 @@ Hệ thống GitHub Actions sẽ tự động kiểm tra tiêu đề PR. Tiêu �
 - `chore(scope): <mo-ta>`: Khi cập nhật cấu hình, thư viện.
 
 *(Ví dụ hợp lệ: `refactor(fe-structure): clean up redundant folders and consolidate role-based routes`)*
+

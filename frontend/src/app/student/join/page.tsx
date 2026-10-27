@@ -25,7 +25,7 @@ import {
   StudentRow,
   getStoredClasses,
   saveStoredClasses,
-} from '@/app/class-manager/types';
+} from '@/app/admin/classes/types';
 
 interface JoinedSession {
   type: 'class' | 'lab' | 'exam';
@@ -304,7 +304,7 @@ function JoinClassContent() {
             </Link>
             <span className="text-slate-300">•</span>
             <Link
-              href="/class-manager"
+              href="/admin/classes"
               className="font-semibold text-blue-600 hover:underline"
             >
               Dành cho Giảng viên
@@ -585,7 +585,7 @@ function JoinClassContent() {
                 </button>
 
                 <Link
-                  href="/class-manager"
+                  href="/admin/classes"
                   className="inline-flex items-center gap-1.5 rounded-xl bg-[#2563eb] px-5 py-2.5 text-xs font-bold text-white shadow-sm shadow-blue-500/20 hover:bg-blue-700 transition"
                 >
                   <span>Xem trong trang Quản lý</span>

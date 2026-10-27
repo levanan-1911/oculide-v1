@@ -236,7 +236,7 @@ export default function CreateClassPage() {
     const currentClasses = getStoredClasses();
     saveStoredClasses([...currentClasses, newClass]);
 
-    router.push(`/class-manager?created=${encodeURIComponent(id)}`);
+    router.push(`/admin/classes?created=${encodeURIComponent(id)}`);
   }
 
   return (
@@ -254,7 +254,7 @@ export default function CreateClassPage() {
                 {/* Header: Nút mũi tên quay lại + Tiêu đề + Phụ đề */}
                 <div className="flex items-center gap-3.5">
                   <Link
-                    href="/class-manager"
+                    href="/admin/classes"
                     title="Về danh sách lớp"
                     aria-label="Về danh sách lớp"
                     className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition hover:bg-blue-100 cursor-pointer"
@@ -650,7 +650,7 @@ export default function CreateClassPage() {
                   {/* Hàng nút bấm Hủy & Tiếp tục với danh sách */}
                   <div className="mt-8 flex items-center justify-end gap-3 pt-2">
                     <Link
-                      href="/class-manager"
+                      href="/admin/classes"
                       className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 px-6 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
                     >
                       Hủy

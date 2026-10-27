@@ -79,11 +79,11 @@ export default function LoginPage() {
         }
         const role = data.user?.role;
         if (role === 'admin') {
-          window.location.href = '/dashboard';
+          window.location.href = '/admin';
         } else if (role === 'instructor') {
-          window.location.href = '/instructor';
+          window.location.href = '/instructor/dashboard';
         } else {
-          window.location.href = '/join'; // Sinh viên vào màn hình tham gia phòng
+          window.location.href = '/student/dashboard';
         }
       }, 1000);
 

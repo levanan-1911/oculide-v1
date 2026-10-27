@@ -31,7 +31,7 @@ import {
   getStoredClasses,
   syncClassesWithTemplate,
   ClassRow,
-} from '@/app/class-manager/types';
+} from '@/app/admin/classes/types';
 
 export default function QuestionsManagerView() {
   const searchParams = useSearchParams();
@@ -321,7 +321,7 @@ export default function QuestionsManagerView() {
             </div>
           </div>
           <Link
-            href="/class-manager"
+            href="/admin/classes"
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
           >
             Quay lại Lớp & sinh viên →

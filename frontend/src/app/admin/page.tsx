@@ -230,9 +230,9 @@ function AdminDashboardContent() {
     moduleParam && validModuleIds.includes(moduleParam) ? moduleParam : 'overview';
 
   useEffect(() => {
-    // Nếu truy cập vào /admin?module=classes thì chuyển sang /class-manager
+    // Nếu truy cập vào /admin?module=classes thì chuyển sang /admin/classes
     if (moduleParam === 'classes') {
-      router.replace('/class-manager');
+      router.replace('/admin/classes');
     }
   }, [moduleParam, router]);
 

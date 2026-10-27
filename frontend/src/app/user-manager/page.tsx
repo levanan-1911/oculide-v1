@@ -46,6 +46,11 @@ export interface UserRow {
   lastPasswordChange?: string;
 }
 
+export interface ImportPreviewRow extends UserRow {
+  rowNumber: number;
+  missingFields: string[];
+}
+
 const INITIAL_USERS: UserRow[] = [
   {
     id: 1,
@@ -134,7 +139,8 @@ export default function UserManagerPage() {
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [importPreviewUsers, setImportPreviewUsers] = useState<UserRow[]>([]);
+  const [importPreviewUsers, setImportPreviewUsers] = useState<ImportPreviewRow[]>([]);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [importError, setImportError] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -202,9 +208,348 @@ export default function UserManagerPage() {
     return name.slice(0, 2).toUpperCase();
   };
 
-  // ── XỬ LÝ ĐỌC VÀ PHÂN TÍCH TỆP NHẬP (CSV / EXCEL) ──
-  function processFile(file: File) {
+  // ── XỬ LÝ ĐỌC VÀ PHÂN TÍCH TỆP NHẬP (CSV / EXCEL .XLSX / .XLS) ──
+  // Giải mã trực tiếp tệp .xlsx (ZIP + XML chuẩn Office Open XML) ngay trên trình duyệt
+  async function extractRowsFromXlsxBuffer(buffer: ArrayBuffer): Promise<string[][]> {
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+
+    // Tìm End of Central Directory (0x06054b50)
+    let eocdOffset = -1;
+    for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+      if (view.getUint32(i, true) === 0x06054b50) {
+        eocdOffset = i;
+        break;
+      }
+    }
+    if (eocdOffset === -1) {
+      throw new Error('Không tìm thấy cấu trúc ZIP hợp lệ trong tệp Excel (.xlsx).');
+    }
+
+    const totalEntries = view.getUint16(eocdOffset + 10, true);
+    const cdOffset = view.getUint32(eocdOffset + 16, true);
+
+    const zipEntries = new Map<string, { method: number; data: Uint8Array }>();
+    let ptr = cdOffset;
+
+    for (let i = 0; i < totalEntries; i++) {
+      if (ptr + 46 > bytes.length || view.getUint32(ptr, true) !== 0x02014b50) break;
+      const method = view.getUint16(ptr + 10, true);
+      const compressedSize = view.getUint32(ptr + 20, true);
+      const nameLen = view.getUint16(ptr + 28, true);
+      const extraLen = view.getUint16(ptr + 30, true);
+      const commentLen = view.getUint16(ptr + 32, true);
+      const localHeaderOffset = view.getUint32(ptr + 42, true);
+
+      const entryName = new TextDecoder('utf-8').decode(bytes.subarray(ptr + 46, ptr + 46 + nameLen));
+      if (localHeaderOffset + 30 <= bytes.length) {
+        const localNameLen = view.getUint16(localHeaderOffset + 26, true);
+        const localExtraLen = view.getUint16(localHeaderOffset + 28, true);
+        const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
+        const compressedData = bytes.subarray(dataStart, dataStart + compressedSize);
+        zipEntries.set(entryName, { method, data: compressedData });
+      }
+      ptr += 46 + nameLen + extraLen + commentLen;
+    }
+
+    async function readZipEntryText(entryPath: string): Promise<string | null> {
+      const entry = zipEntries.get(entryPath);
+      if (!entry) return null;
+      if (entry.method === 0) {
+        return new TextDecoder('utf-8').decode(entry.data);
+      }
+      if (entry.method === 8) {
+        const ds = new DecompressionStream('deflate-raw');
+        const writer = ds.writable.getWriter();
+        writer.write(new Uint8Array(entry.data));
+        writer.close();
+        const decompressedBuffer = await new Response(ds.readable).arrayBuffer();
+        return new TextDecoder('utf-8').decode(decompressedBuffer);
+      }
+      return null;
+    }
+
+    const domParser = new DOMParser();
+
+    // 1. Đọc bảng chuỗi dùng chung (xl/sharedStrings.xml)
+    const sharedStrings: string[] = [];
+    const sharedStringsXml = await readZipEntryText('xl/sharedStrings.xml');
+    if (sharedStringsXml) {
+      const ssDoc = domParser.parseFromString(sharedStringsXml, 'application/xml');
+      const siNodes = Array.from(ssDoc.getElementsByTagName('si'));
+      siNodes.forEach((si) => {
+        const tNodes = Array.from(si.getElementsByTagName('t'));
+        sharedStrings.push(tNodes.map((t) => t.textContent || '').join(''));
+      });
+    }
+
+    // 2. Tìm trang tính đầu tiên (xl/worksheets/sheet1.xml)
+    let sheetPath = 'xl/worksheets/sheet1.xml';
+    if (!zipEntries.has(sheetPath)) {
+      const found = Array.from(zipEntries.keys())
+        .filter((k) => k.startsWith('xl/worksheets/sheet') && k.endsWith('.xml'))
+        .sort()[0];
+      if (found) sheetPath = found;
+    }
+
+    const sheetXml = await readZipEntryText(sheetPath);
+    if (!sheetXml) {
+      throw new Error('Không tìm thấy trang tính dữ liệu trong tệp Excel.');
+    }
+
+    const sheetDoc = domParser.parseFromString(sheetXml, 'application/xml');
+    const rowElements = Array.from(sheetDoc.getElementsByTagName('row'));
+    const extractedRows: string[][] = [];
+
+    rowElements.forEach((rowEl) => {
+      const cellElements = Array.from(rowEl.getElementsByTagName('c'));
+      const rowValues: string[] = [];
+      let nextFallbackCol = 0;
+
+      cellElements.forEach((cEl) => {
+        const ref = cEl.getAttribute('r') || '';
+        const colLetters = ref.replace(/[0-9]/g, '');
+        let colIndex = nextFallbackCol;
+        if (colLetters) {
+          let computed = 0;
+          for (let i = 0; i < colLetters.length; i++) {
+            computed = computed * 26 + (colLetters.toUpperCase().charCodeAt(i) - 64);
+          }
+          colIndex = Math.max(0, computed - 1);
+        }
+        nextFallbackCol = colIndex + 1;
+
+        while (rowValues.length <= colIndex) {
+          rowValues.push('');
+        }
+
+        const cellType = cEl.getAttribute('t');
+        let cellText = '';
+        if (cellType === 'inlineStr') {
+          const tNodes = Array.from(cEl.getElementsByTagName('t'));
+          cellText = tNodes.map((t) => t.textContent || '').join('');
+        } else {
+          const vNode = cEl.getElementsByTagName('v')[0];
+          const rawVal = vNode?.textContent ?? '';
+          if (cellType === 's') {
+            const idx = parseInt(rawVal, 10);
+            cellText = !Number.isNaN(idx) && sharedStrings[idx] !== undefined ? sharedStrings[idx] : rawVal;
+          } else {
+            cellText = rawVal;
+          }
+        }
+
+        rowValues[colIndex] = cellText.trim();
+      });
+
+      if (rowValues.some((cell) => cell !== '')) {
+        extractedRows.push(rowValues);
+      }
+    });
+
+    return extractedRows;
+  }
+
+  // Tách dòng CSV/TSV giữ nguyên cả các cột rỗng (ví dụ: "SV001,,an@school.edu.vn")
+  function parseTextToRows(text: string): string[][] {
+    const trimmedText = text.trim();
+    if (!trimmedText) return [];
+
+    // Hỗ trợ trường hợp tệp .xls được xuất dưới dạng bảng HTML/XML
+    if (trimmedText.toLowerCase().includes('<table') || trimmedText.toLowerCase().includes('<tr')) {
+      const doc = new DOMParser().parseFromString(trimmedText, 'text/html');
+      const trList = Array.from(doc.querySelectorAll('tr'));
+      if (trList.length > 0) {
+        return trList
+          .map((tr) =>
+            Array.from(tr.querySelectorAll('th, td')).map((cell) => (cell.textContent || '').trim())
+          )
+          .filter((r) => r.some((c) => c !== ''));
+      }
+    }
+
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    return lines.map((line) => {
+      const delimiter = line.includes('\t') ? '\t' : line.includes(';') ? ';' : ',';
+      const cells: string[] = [];
+      let current = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"' || ch === "'") {
+          inQuotes = !inQuotes;
+        } else if (ch === delimiter && !inQuotes) {
+          cells.push(current.trim());
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+      cells.push(current.trim());
+      return cells;
+    });
+  }
+
+  // Kiểm tra 3 trường bắt buộc (Mã SV/GV, Họ và tên, Email) và ghi nhận cảnh báo chi tiết nhưng vẫn cho phép nhập
+  function evaluateExtractedRows(rows: string[][]) {
+    if (rows.length === 0) {
+      setImportError('Tệp rỗng hoặc không có dòng dữ liệu nào.');
+      return;
+    }
+
+    const warnings: string[] = [];
+    const firstRow = rows[0].map((c) => c.trim().toLowerCase());
+
+    const isHeaderRow = firstRow.some(
+      (cell) =>
+        cell.includes('mã') ||
+        cell.includes('mssv') ||
+        cell.includes('msgv') ||
+        cell.includes('code') ||
+        cell.includes('họ') ||
+        cell.includes('tên') ||
+        cell.includes('name') ||
+        cell === 'email' ||
+        cell.includes('địa chỉ email') ||
+        cell.includes('vai trò') ||
+        cell.includes('role')
+    );
+
+    let codeIdx = 0;
+    let nameIdx = 1;
+    let emailIdx = 2;
+    let roleIdx = -1;
+
+    if (isHeaderRow) {
+      const foundCodeIdx = firstRow.findIndex(
+        (c) =>
+          c.includes('mã') ||
+          c.includes('mssv') ||
+          c.includes('msgv') ||
+          c.includes('code') ||
+          c === 'id' ||
+          c.includes('tài khoản')
+      );
+      const foundNameIdx = firstRow.findIndex(
+        (c, idx) =>
+          idx !== foundCodeIdx &&
+          (c.includes('họ') || c.includes('tên') || c.includes('name'))
+      );
+      const foundEmailIdx = firstRow.findIndex(
+        (c) => c.includes('email') || c.includes('mail') || c.includes('thư')
+      );
+      roleIdx = firstRow.findIndex(
+        (c) => c.includes('vai trò') || c.includes('role') || c.includes('chức vụ')
+      );
+
+      const missingHeaderCols: string[] = [];
+      if (foundCodeIdx === -1) missingHeaderCols.push('Mã sinh viên / Mã giảng viên');
+      if (foundNameIdx === -1) missingHeaderCols.push('Họ và tên');
+      if (foundEmailIdx === -1) missingHeaderCols.push('Email');
+
+      if (missingHeaderCols.length > 0) {
+        warnings.push(
+          `Tệp thiếu cột tiêu đề bắt buộc: [${missingHeaderCols.join(', ')}]. Các trường thiếu được đánh dấu để bổ sung sau.`
+        );
+      }
+
+      codeIdx = foundCodeIdx;
+      nameIdx = foundNameIdx;
+      emailIdx = foundEmailIdx;
+    } else {
+      const maxCols = Math.max(...rows.map((r) => r.length));
+      if (maxCols < 3) {
+        const missingCount = 3 - maxCols;
+        warnings.push(
+          `Tệp chỉ có ${maxCols}/3 cột (thiếu ${missingCount} cột so với chuẩn: Mã SV/GV, Họ và tên, Email).`
+        );
+      }
+    }
+
+    const dataRows = isHeaderRow ? rows.slice(1) : rows;
+    if (dataRows.length === 0) {
+      setImportError('Tệp chỉ có dòng tiêu đề, chưa có dữ liệu tài khoản nào.');
+      return;
+    }
+
+    const parsed: ImportPreviewRow[] = [];
+
+    dataRows.forEach((cols, index) => {
+      const displayRowNum = isHeaderRow ? index + 2 : index + 1;
+      const rawCode = codeIdx >= 0 ? (cols[codeIdx] ?? '').trim() : '';
+      const rawName = nameIdx >= 0 ? (cols[nameIdx] ?? '').trim() : '';
+      const rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
+      const rawRole = roleIdx >= 0 ? (cols[roleIdx] ?? '').trim().toLowerCase() : '';
+
+      // Bỏ qua dòng hoàn toàn trống
+      if (!rawCode && !rawName && !rawEmail) return;
+
+      const missingFields: string[] = [];
+      if (!rawCode) missingFields.push('Thiếu Mã SV/GV');
+      if (!rawName) missingFields.push('Thiếu Họ và tên');
+      if (!rawEmail) {
+        missingFields.push('Thiếu Email');
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+        missingFields.push('Email sai định dạng');
+      }
+
+      if (missingFields.length > 0) {
+        warnings.push(`Dòng ${displayRowNum}: ${missingFields.join(', ')}`);
+      }
+
+      const finalCode = rawCode ? rawCode.toUpperCase() : `CHUA_CO_MA_${index + 1}`;
+      const finalName = rawName || 'Chưa bổ sung họ tên';
+      const finalEmail = rawEmail || 'chua-bo-sung@oclide.edu.vn';
+
+      let role: UserRole = 'student';
+      if (
+        rawRole.includes('giảng viên') ||
+        rawRole.includes('instructor') ||
+        finalCode.startsWith('GV')
+      ) {
+        role = 'instructor';
+      } else if (
+        rawRole.includes('quản trị') ||
+        rawRole.includes('admin') ||
+        finalCode.startsWith('QT')
+      ) {
+        role = 'admin';
+      }
+
+      parsed.push({
+        id: Date.now() + index + Math.floor(Math.random() * 1000),
+        rowNumber: displayRowNum,
+        missingFields,
+        userCode: finalCode,
+        fullName: finalName,
+        email: finalEmail,
+        phone: 'Chưa cập nhật',
+        role,
+        status: 'active',
+        department: role === 'instructor' ? 'Khoa CNTT' : 'Chưa phân lớp',
+        lastLogin: 'Chưa đăng nhập',
+        lastLoginIp: 'Chưa ghi nhận',
+        lastPasswordChange: 'Hôm nay',
+      });
+    });
+
+    if (parsed.length === 0) {
+      setImportError('Không tìm thấy dữ liệu người dùng nào trong tệp.');
+      return;
+    }
+
+    setImportWarnings(warnings);
+    setImportPreviewUsers(parsed);
+  }
+
+  async function processFile(file: File) {
     setImportError('');
+    setImportWarnings([]);
     setImportPreviewUsers([]);
 
     const fileName = file.name.toLowerCase();
@@ -224,131 +569,33 @@ export default function UserManagerPage() {
     setImportFile(file);
     setIsParsing(true);
 
-    if (isCsv) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const text = (event.target?.result as string) || '';
-          const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const isZipSignature =
+        bytes.length >= 4 &&
+        bytes[0] === 0x50 &&
+        bytes[1] === 0x4b &&
+        bytes[2] === 0x03 &&
+        bytes[3] === 0x04;
 
-          if (lines.length === 0) {
-            setImportError('Tệp rỗng hoặc không có dữ liệu hợp lệ.');
-            setIsParsing(false);
-            return;
-          }
+      let rows: string[][] = [];
+      if (isZipSignature) {
+        rows = await extractRowsFromXlsxBuffer(buffer);
+      } else {
+        const text = new TextDecoder('utf-8').decode(buffer);
+        rows = parseTextToRows(text);
+      }
 
-          // Kiểm tra xem dòng đầu tiên có phải là header tiêu đề không
-          const firstLine = lines[0].toLowerCase();
-          const hasHeader =
-            firstLine.includes('mã') ||
-            firstLine.includes('code') ||
-            firstLine.includes('tên') ||
-            firstLine.includes('name') ||
-            firstLine.includes('email');
-
-          const dataLines = hasHeader ? lines.slice(1) : lines;
-
-          const parsed: UserRow[] = [];
-          dataLines.forEach((line, index) => {
-            const delimiter = line.includes('\t') ? '\t' : line.includes(';') ? ';' : ',';
-            const parts = line.split(delimiter).map((p) => p.replace(/^["']|["']$/g, '').trim());
-
-            if (parts.length >= 3 && parts[0] && parts[1] && parts[2]) {
-              const userCode = parts[0].toUpperCase();
-              const fullName = parts[1];
-              const email = parts[2];
-              const phone = parts[3] || 'Chưa cập nhật';
-              const rawRole = (parts[4] || '').toLowerCase();
-              const department = parts[5] || parts[4] || 'Khoa Công nghệ thông tin';
-
-              let role: UserRole = 'student';
-              if (rawRole.includes('giảng viên') || rawRole.includes('instructor') || userCode.startsWith('GV')) {
-                role = 'instructor';
-              } else if (rawRole.includes('quản trị') || rawRole.includes('admin') || userCode.startsWith('QT')) {
-                role = 'admin';
-              }
-
-              parsed.push({
-                id: Date.now() + index + Math.floor(Math.random() * 1000),
-                userCode,
-                fullName,
-                email,
-                phone,
-                role,
-                status: 'active',
-                department,
-                lastLogin: 'Chưa đăng nhập',
-                lastLoginIp: 'Chưa ghi nhận',
-                lastPasswordChange: 'Hôm nay',
-              });
-            }
-          });
-
-          if (parsed.length === 0) {
-            setImportError('Không tìm thấy dòng dữ liệu nào đúng định dạng (Cần tối thiểu: Mã, Họ tên, Email).');
-          } else {
-            setImportPreviewUsers(parsed);
-          }
-        } catch {
-          setImportError('Lỗi trong quá trình đọc nội dung tệp CSV.');
-        } finally {
-          setIsParsing(false);
-        }
-      };
-
-      reader.onerror = () => {
-        setImportError('Không thể đọc tệp. Vui lòng thử lại.');
-        setIsParsing(false);
-      };
-
-      reader.readAsText(file, 'UTF-8');
-    } else {
-      // Phân tích tệp Excel thông minh
-      setTimeout(() => {
-        const mockParsed: UserRow[] = [
-          {
-            id: Date.now() + 1,
-            userCode: 'SV184850',
-            fullName: 'Lê Hoàng Nam',
-            email: 'nam.lh@school.edu.vn',
-            phone: '0912 345 678',
-            role: 'student',
-            status: 'active',
-            department: 'Lớp SE1848 - Khoa CNTT',
-            lastLogin: 'Chưa đăng nhập',
-            lastLoginIp: 'Chưa ghi nhận',
-            lastPasswordChange: 'Hôm nay',
-          },
-          {
-            id: Date.now() + 2,
-            userCode: 'SV184851',
-            fullName: 'Trần Thị Mai',
-            email: 'mai.tt@school.edu.vn',
-            phone: '0988 776 655',
-            role: 'student',
-            status: 'active',
-            department: 'Lớp SE1848 - Khoa CNTT',
-            lastLogin: 'Chưa đăng nhập',
-            lastLoginIp: 'Chưa ghi nhận',
-            lastPasswordChange: 'Hôm nay',
-          },
-          {
-            id: Date.now() + 3,
-            userCode: 'GV0055',
-            fullName: 'Phạm Đức Dũng',
-            email: 'dung.pd@school.edu.vn',
-            phone: '0903 221 144',
-            role: 'instructor',
-            status: 'active',
-            department: 'Bộ môn Khoa học máy tính',
-            lastLogin: 'Chưa đăng nhập',
-            lastLoginIp: 'Chưa ghi nhận',
-            lastPasswordChange: 'Hôm nay',
-          },
-        ];
-        setImportPreviewUsers(mockParsed);
-        setIsParsing(false);
-      }, 500);
+      evaluateExtractedRows(rows);
+    } catch (err) {
+      setImportError(
+        err instanceof Error
+          ? err.message
+          : 'Không thể đọc nội dung tệp. Vui lòng kiểm tra lại định dạng tệp Excel / CSV.'
+      );
+    } finally {
+      setIsParsing(false);
     }
   }
 
@@ -379,6 +626,7 @@ export default function UserManagerPage() {
   function handleResetImportState() {
     setImportFile(null);
     setImportPreviewUsers([]);
+    setImportWarnings([]);
     setImportError('');
     setIsDragging(false);
     if (fileInputRef.current) {
@@ -386,14 +634,14 @@ export default function UserManagerPage() {
     }
   }
 
-  // Tải tệp biểu mẫu chuẩn UTF-8
+  // Tải tệp biểu mẫu chuẩn UTF-8 (Đúng 3 trường: Mã SV/GV, Họ và tên, Email)
   function handleDownloadSample() {
-    const csvHeader = 'MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL,SỐ ĐIỆN THOẠI,VAI TRÒ,ĐƠN VỊ / LỚP\n';
+    const csvHeader = 'MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL\n';
     const csvRows = [
-      'GV0088,Trần Văn Hùng,hung.tv@school.edu.vn,0912345678,Giảng viên,Khoa Kỹ thuật phần mềm',
-      'SV184820,Ngô Phương Linh,linh.np@school.edu.vn,0987654321,Sinh viên,Lớp SE1848 - Khoa CNTT',
-      'SV184821,Đặng Tuấn Kiệt,kiet.dt@school.edu.vn,0977889900,Sinh viên,Lớp SE1848 - Khoa CNTT',
-      'SV184822,Bùi Hồng Ánh,anh.bh@school.edu.vn,0966554433,Sinh viên,Lớp SE1848 - Khoa CNTT',
+      'GV0088,Trần Văn Hùng,hung.tv@school.edu.vn',
+      'SV184820,Ngô Phương Linh,linh.np@school.edu.vn',
+      'SV184821,Đặng Tuấn Kiệt,kiet.dt@school.edu.vn',
+      'SV184822,Bùi Hồng Ánh,anh.bh@school.edu.vn',
     ].join('\n');
 
     const blob = new Blob(['\uFEFF' + csvHeader + csvRows], { type: 'text/csv;charset=utf-8;' });
@@ -405,7 +653,7 @@ export default function UserManagerPage() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showToast('Đã tải xuống tệp biểu mẫu Oculide_Mau_Nhap_Nguoi_Dung.csv.');
+    showToast('Đã tải xuống tệp biểu mẫu 3 cột (Mã SV/GV, Họ và tên, Email).');
   }
 
   // Xuất danh sách tài khoản hiện tại ra file Excel/CSV chuẩn UTF-8
@@ -1222,7 +1470,8 @@ export default function UserManagerPage() {
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-slate-900">{importFile.name}</p>
                         <p className="text-xs text-slate-500">
-                          {(importFile.size / 1024).toFixed(1)} KB · {importPreviewUsers.length} tài khoản hợp lệ
+                          {(importFile.size / 1024).toFixed(1)} KB · Đọc được {importPreviewUsers.length} dòng dữ liệu
+                          {importWarnings.length > 0 ? ` (${importWarnings.length} cảnh báo thiếu thông tin)` : ''}
                         </p>
                       </div>
                     </div>
@@ -1238,11 +1487,31 @@ export default function UserManagerPage() {
                 </div>
               )}
 
-              {/* Thông báo lỗi phân tích nếu có */}
+              {/* Thông báo lỗi định dạng tệp không thể đọc */}
               {importError && (
                 <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
                   <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
                   <span>{importError}</span>
+                </div>
+              )}
+
+              {/* Thông báo cảnh báo chi tiết khi tệp thiếu cột hoặc dòng thiếu thông tin (Vẫn cho phép nhập) */}
+              {importWarnings.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3.5 text-xs text-amber-900 space-y-1.5">
+                  <div className="flex items-center gap-2 font-bold text-amber-800">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                    <span>
+                      Phát hiện {importWarnings.length} cảnh báo thiếu trường / cột dữ liệu (Vẫn cho phép nhập):
+                    </span>
+                  </div>
+                  <ul className="max-h-28 overflow-y-auto list-disc pl-5 space-y-0.5 text-[11.5px] font-medium text-amber-800">
+                    {importWarnings.map((warn, idx) => (
+                      <li key={idx}>{warn}</li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-amber-700 pt-0.5">
+                    * Các trường bị thiếu đã được đánh dấu bên dưới. Bạn vẫn có thể nhấn <strong>Xác nhận nhập</strong> và chỉnh sửa bổ sung sau.
+                  </p>
                 </div>
               )}
 
@@ -1251,39 +1520,101 @@ export default function UserManagerPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                      Xem trước danh sách ({importPreviewUsers.length} tài khoản)
+                      Xem trước 3 trường chuẩn ({importPreviewUsers.length} tài khoản)
                     </p>
-                    <span className="text-[11px] font-semibold text-emerald-600">✓ Sẵn sàng nhập</span>
+                    {importWarnings.length > 0 ? (
+                      <span className="text-[11px] font-semibold text-amber-600">
+                        ⚠ Có trường thiếu · Vẫn có thể nhập
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-emerald-600">✓ Đủ 3 trường hợp lệ</span>
+                    )}
                   </div>
                   <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white">
                     <table className="w-full text-left text-xs">
                       <thead className="sticky top-0 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
                         <tr>
-                          <th className="px-3 py-2.5">Mã</th>
+                          <th className="px-3 py-2.5">Mã SV / GV</th>
                           <th className="px-3 py-2.5">Họ và tên</th>
                           <th className="px-3 py-2.5">Email</th>
                           <th className="px-3 py-2.5">Vai trò</th>
-                          <th className="px-3 py-2.5">Đơn vị / Lớp</th>
+                          <th className="px-3 py-2.5">Kiểm tra</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {importPreviewUsers.map((u, i) => (
-                          <tr key={u.id || i} className="hover:bg-slate-50/60">
-                            <td className="px-3 py-2 font-bold text-slate-900">{u.userCode}</td>
-                            <td className="px-3 py-2 text-slate-700">{u.fullName}</td>
-                            <td className="px-3 py-2 text-slate-500">{u.email}</td>
-                            <td className="px-3 py-2">
-                              <span
-                                className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                                  u.role === 'instructor' ? 'bg-indigo-50 text-indigo-700' : 'bg-blue-50 text-blue-700'
-                                }`}
-                              >
-                                {u.role === 'instructor' ? 'Giảng viên' : 'Sinh viên'}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-slate-600 truncate max-w-[140px]">{u.department}</td>
-                          </tr>
-                        ))}
+                        {importPreviewUsers.map((u, i) => {
+                          const hasMissing = u.missingFields.length > 0;
+                          const isMissingCode = u.missingFields.includes('Thiếu Mã SV/GV');
+                          const isMissingName = u.missingFields.includes('Thiếu Họ và tên');
+                          const isMissingEmail =
+                            u.missingFields.includes('Thiếu Email') ||
+                            u.missingFields.includes('Email sai định dạng');
+
+                          return (
+                            <tr
+                              key={u.id || i}
+                              className={hasMissing ? 'bg-amber-50/50 hover:bg-amber-50' : 'hover:bg-slate-50/60'}
+                            >
+                              <td className="px-3 py-2 font-bold text-slate-900">
+                                {isMissingCode ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    Thiếu Mã SV/GV
+                                  </span>
+                                ) : (
+                                  u.userCode
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-slate-700">
+                                {isMissingName ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    Thiếu Họ và tên
+                                  </span>
+                                ) : (
+                                  u.fullName
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-slate-500">
+                                {isMissingEmail ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    {u.missingFields.includes('Email sai định dạng')
+                                      ? `Sai Email (${u.email})`
+                                      : 'Thiếu Email'}
+                                  </span>
+                                ) : (
+                                  u.email
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                <span
+                                  className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                    u.role === 'instructor'
+                                      ? 'bg-indigo-50 text-indigo-700'
+                                      : u.role === 'admin'
+                                      ? 'bg-amber-50 text-amber-700'
+                                      : 'bg-blue-50 text-blue-700'
+                                  }`}
+                                >
+                                  {u.role === 'instructor'
+                                    ? 'Giảng viên'
+                                    : u.role === 'admin'
+                                    ? 'Quản trị viên'
+                                    : 'Sinh viên'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2">
+                                {hasMissing ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                    ⚠ {u.missingFields.join(', ')}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                                    ✓ Đủ thông tin
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1296,7 +1627,9 @@ export default function UserManagerPage() {
                   <FileSpreadsheet className="h-5 w-5 text-emerald-600 shrink-0" />
                   <div>
                     <p className="text-xs font-bold text-slate-800">Tệp mẫu chuẩn Oculide (CSV / Excel)</p>
-                    <p className="text-[11px] text-slate-400">Các cột: Mã, Họ tên, Email, SĐT, Vai trò, Đơn vị</p>
+                    <p className="text-[11px] text-slate-400">
+                      3 cột bắt buộc: Mã sinh viên / giảng viên, Họ và tên, Email
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

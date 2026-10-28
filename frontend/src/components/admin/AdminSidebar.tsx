@@ -36,7 +36,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         id: 'overview',
         label: 'Tổng quan',
-        href: '/admin',
+        href: '/admin/dashboard',
         icon: LayoutGrid,
       },
     ],
@@ -184,7 +184,7 @@ export default function AdminSidebar({
       ? 'reports'
       : pathname.startsWith('/admin/system') 
       ? 'system'
-      : pathname.startsWith('/admin') 
+      : pathname.startsWith('/admin/dashboard') || pathname === '/admin' 
       ? 'overview'
       : '');
 
@@ -210,7 +210,7 @@ export default function AdminSidebar({
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-5 pb-4">
         {/* Brand Header */}
         <Link
-          href={currentUser.role === 'Giảng viên' ? '/instructor/dashboard' : '/admin'}
+          href={currentUser.role === 'Giảng viên' ? '/instructor/dashboard' : '/admin/dashboard'}
           onClick={() => {
             if (onSelectModule) {
               onSelectModule('overview');
@@ -300,12 +300,12 @@ export default function AdminSidebar({
 
             <div className="mt-1.5 space-y-0.5 text-xs font-medium text-slate-700">
               <Link
-                href="/admin/users"
+                href="/admin/profile"
                 onClick={() => setIsMenuOpen(false)}
                 className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600"
               >
                 <User className="h-4 w-4 text-slate-400" />
-                Hồ sơ & Phân quyền
+                Hồ sơ cá nhân
               </Link>
               <Link
                 href="/reset-password"

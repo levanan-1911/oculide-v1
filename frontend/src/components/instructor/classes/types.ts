@@ -110,6 +110,10 @@ export interface ScheduleSessionItem {
   enrolledStudents: number;
   attendedStudents: number;
   isAiProctored: boolean;
+  templateId?: string;
+  templateTitle?: string;
+  durationMinutes?: number;
+  lecturer?: string;
 }
 
 export interface RoomSession {

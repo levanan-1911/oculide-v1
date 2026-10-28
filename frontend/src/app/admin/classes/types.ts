@@ -170,6 +170,17 @@ export interface QuestionTemplate {
   description?: string;
   questions?: TemplateQuestionItem[];
   updatedAt?: string;
+  lecturer?: string;
+}
+
+function getDefaultTemplateLecturer(category?: string, id?: string): string {
+  if (category === 'Cấu trúc dữ liệu' || id?.includes('02') || id?.includes('04')) {
+    return 'Cô Nguyễn Minh Anh';
+  }
+  if (category === 'Lập trình OOP' || id?.includes('03')) {
+    return 'Thầy Lê Hoàng Đức';
+  }
+  return 'Thầy Nguyễn Văn Nam';
 }
 
 export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
@@ -959,13 +970,19 @@ export function saveStoredClasses(classes: ClassRow[]): void {
 const TEMPLATES_STORAGE_KEY = 'oculide_question_templates_mock';
 
 export function getStoredQuestionTemplates(): QuestionTemplate[] {
-  if (typeof window === 'undefined') return SAMPLE_QUESTION_TEMPLATES;
+  const withLecturer = (list: QuestionTemplate[]) =>
+    list.map((t) => ({
+      ...t,
+      lecturer: t.lecturer || getDefaultTemplateLecturer(t.category, t.id),
+    }));
+
+  if (typeof window === 'undefined') return withLecturer(SAMPLE_QUESTION_TEMPLATES);
   try {
     const raw = localStorage.getItem(TEMPLATES_STORAGE_KEY);
-    if (!raw) return SAMPLE_QUESTION_TEMPLATES;
+    if (!raw) return withLecturer(SAMPLE_QUESTION_TEMPLATES);
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      // Tự động bổ sung testCases nếu localStorage lưu trữ bản mock cũ chưa có testCases
+      // Tự động bổ sung testCases & lecturer nếu localStorage lưu trữ bản mock cũ
       return parsed.map((tpl: QuestionTemplate) => {
         const sample = SAMPLE_QUESTION_TEMPLATES.find((s) => s.id === tpl.id);
         const questions = (tpl.questions || []).map((q: TemplateQuestionItem, idx: number) => {
@@ -979,26 +996,31 @@ export function getStoredQuestionTemplates(): QuestionTemplate[] {
             testCasesCount: testCases.length > 0 ? testCases.length : (q.testCasesCount || 0),
           };
         });
-        return { ...tpl, questions };
+        return {
+          ...tpl,
+          lecturer: tpl.lecturer || getDefaultTemplateLecturer(tpl.category, tpl.id),
+          questions,
+        };
       });
     }
   } catch {
     // fallback
   }
-  return SAMPLE_QUESTION_TEMPLATES;
+  return withLecturer(SAMPLE_QUESTION_TEMPLATES);
 }
 
 export function saveStoredQuestionTemplates(templates: QuestionTemplate[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
+    window.dispatchEvent(new Event('storage'));
   } catch {
     // ignore
   }
 }
 
 /**
- * Tự động đồng bộ các thay đổi từ bộ đề sang tất cả các lớp học đang sử dụng bộ đề này.
+ * Tự động đồng bộ các thay đổi từ bộ đề sang tất cả các lớp học và lịch kiểm tra đang sử dụng bộ đề này.
  */
 export function syncClassesWithTemplate(updatedTemplate: QuestionTemplate): void {
   if (typeof window === 'undefined') return;
@@ -1042,6 +1064,25 @@ export function syncClassesWithTemplate(updatedTemplate: QuestionTemplate): void
     if (hasChanges) {
       saveStoredClasses(nextClasses);
     }
+
+    // Đồng bộ tên bộ đề & thời lượng sang lịch kiểm tra Admin (oculide_schedules_mock)
+    const rawSched = localStorage.getItem('oculide_schedules_mock');
+    if (rawSched) {
+      const parsedSched = JSON.parse(rawSched);
+      if (Array.isArray(parsedSched)) {
+        const updatedSched = parsedSched.map((s: any) =>
+          s.templateId === updatedTemplate.id
+            ? {
+                ...s,
+                templateTitle: updatedTemplate.title,
+                durationMinutes: updatedTemplate.durationMinutes || s.durationMinutes,
+              }
+            : s
+        );
+        localStorage.setItem('oculide_schedules_mock', JSON.stringify(updatedSched));
+      }
+    }
+    window.dispatchEvent(new Event('storage'));
   } catch {
     // ignore
   }

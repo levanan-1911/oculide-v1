@@ -26,6 +26,7 @@ import {
   Eye,
   EyeOff,
   ShieldCheck,
+  Calendar,
 } from 'lucide-react';
 import {
   QuestionTemplate,
@@ -37,43 +38,66 @@ import {
   syncClassesWithTemplate,
   ClassRow,
 } from '@/app/admin/classes/types';
+import {
+  ExamScheduleItem,
+  getStoredSchedules,
+} from '@/app/admin/schedules/types';
 
 export default function QuestionsManagerView() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const directTemplateId = searchParams.get('templateId');
 
+  // Phân định vai trò: Giảng viên (Instructor) vs Quản trị viên (Admin)
+  const isInstructor = pathname.startsWith('/instructor');
+  const isAdmin = !isInstructor;
+
   const [templates, setTemplates] = useState<QuestionTemplate[]>([]);
   const [classes, setClasses] = useState<ClassRow[]>([]);
+  const [schedules, setSchedules] = useState<ExamScheduleItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'lab' | 'exam'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [expandedTemplateIds, setExpandedTemplateIds] = useState<Record<string, boolean>>({});
   const [expandedQuestionTestCases, setExpandedQuestionTestCases] = useState<Record<string, boolean>>({});
 
-  // Modal State for Editing / Creating
+  // Modal State for Editing / Creating (Chỉ dành cho Giảng viên)
   const [editingTemplate, setEditingTemplate] = useState<QuestionTemplate | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [editQuestions, setEditQuestions] = useState<TemplateQuestionItem[]>([]);
+  // Modal State xem thông tin đề chỉ đọc (Dành cho Admin - không hiện câu hỏi & testcases)
+  const [viewingAdminTemplate, setViewingAdminTemplate] = useState<QuestionTemplate | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
 
-  // Load templates & classes from localStorage
+  // Load templates, classes & schedules from localStorage + listen to storage sync
   useEffect(() => {
-    const loadedTemplates = getStoredQuestionTemplates();
-    const loadedClasses = getStoredClasses();
-    setTemplates(loadedTemplates);
-    setClasses(loadedClasses);
+    const loadAllData = () => {
+      const loadedTemplates = getStoredQuestionTemplates();
+      const loadedClasses = getStoredClasses();
+      const loadedSchedules = getStoredSchedules();
+      setTemplates(loadedTemplates);
+      setClasses(loadedClasses);
+      setSchedules(loadedSchedules);
 
-    // If templateId is in URL, auto-expand and open edit modal
-    if (directTemplateId) {
-      const match = loadedTemplates.find((t) => t.id === directTemplateId);
-      if (match) {
-        setEditingTemplate(match);
-        setEditQuestions(match.questions ? JSON.parse(JSON.stringify(match.questions)) : []);
-        setExpandedTemplateIds((prev) => ({ ...prev, [directTemplateId]: true }));
+      // If templateId is in URL
+      if (directTemplateId) {
+        const match = loadedTemplates.find((t) => t.id === directTemplateId);
+        if (match) {
+          if (isInstructor) {
+            setEditingTemplate(match);
+            setEditQuestions(match.questions ? JSON.parse(JSON.stringify(match.questions)) : []);
+            setExpandedTemplateIds((prev) => ({ ...prev, [directTemplateId]: true }));
+          } else {
+            setViewingAdminTemplate(match);
+          }
+        }
       }
-    }
-  }, [directTemplateId]);
+    };
+
+    loadAllData();
+    window.addEventListener('storage', loadAllData);
+    return () => window.removeEventListener('storage', loadAllData);
+  }, [directTemplateId, isInstructor]);
 
   // Hide notification after 4 seconds
   useEffect(() => {
@@ -82,7 +106,7 @@ export default function QuestionsManagerView() {
     return () => clearTimeout(timer);
   }, [notification]);
 
-  // Map each template to the classes using it
+  // Map each template to the classes using it (từ cả lớp học và lịch kiểm tra)
   const templateUsageMap = useMemo(() => {
     const map: Record<string, { classId: string; className: string; activityType: 'lab' | 'exam' }[]> = {};
     templates.forEach((tpl) => {
@@ -106,8 +130,35 @@ export default function QuestionsManagerView() {
       });
     });
 
+    // Bổ sung các lớp học từ lịch kiểm tra do Giảng viên tạo
+    schedules.forEach((s) => {
+      if (s.templateId && map[s.templateId]) {
+        if (!map[s.templateId].some((u) => u.classId === s.classId)) {
+          map[s.templateId].push({
+            classId: s.classId,
+            className: s.className,
+            activityType: s.templateId.includes('LAB') ? 'lab' : 'exam',
+          });
+        }
+      }
+    });
+
     return map;
-  }, [templates, classes]);
+  }, [templates, classes, schedules]);
+
+  // Map each template to the exam schedules using it
+  const templateScheduleMap = useMemo(() => {
+    const map: Record<string, ExamScheduleItem[]> = {};
+    templates.forEach((tpl) => {
+      map[tpl.id] = [];
+    });
+    schedules.forEach((s) => {
+      if (s.templateId && map[s.templateId]) {
+        map[s.templateId].push(s);
+      }
+    });
+    return map;
+  }, [templates, schedules]);
 
   // Categories list
   const categories = useMemo(() => {
@@ -129,14 +180,19 @@ export default function QuestionsManagerView() {
         const matchesTitle = tpl.title.toLowerCase().includes(q);
         const matchesCategory = tpl.category.toLowerCase().includes(q);
         const matchesLang = tpl.language.toLowerCase().includes(q);
-        const matchesQuestion = (tpl.questions || []).some((question) =>
-          question.title.toLowerCase().includes(q) || question.description.toLowerCase().includes(q)
-        );
-        return matchesId || matchesTitle || matchesCategory || matchesLang || matchesQuestion;
+        const matchesLecturer = (tpl.lecturer || '').toLowerCase().includes(q);
+        // Nếu là Giảng viên mới tìm kiếm trong nội dung câu hỏi
+        const matchesQuestion = isInstructor
+          ? (tpl.questions || []).some(
+              (question) =>
+                question.title.toLowerCase().includes(q) || question.description.toLowerCase().includes(q)
+            )
+          : false;
+        return matchesId || matchesTitle || matchesCategory || matchesLang || matchesLecturer || matchesQuestion;
       }
       return true;
     });
-  }, [templates, typeFilter, categoryFilter, searchTerm]);
+  }, [templates, typeFilter, categoryFilter, searchTerm, isInstructor]);
 
   // Toggle card expansion
   function toggleExpand(id: string) {
@@ -192,6 +248,7 @@ export default function QuestionsManagerView() {
       description: 'Mô tả bài thực hành...',
       questions: [initialQuestion],
       updatedAt: 'Hôm nay',
+      lecturer: 'Thầy Nguyễn Văn Nam',
     });
     setEditQuestions([initialQuestion]);
   }
@@ -372,8 +429,51 @@ export default function QuestionsManagerView() {
       return;
     }
 
-    const rows: string[][] = [
-      [
+    const rows: string[][] = [];
+
+    if (isAdmin) {
+      // Role Admin: Chỉ xuất thông tin quản lý định danh đề (KHÔNG xuất câu hỏi & testcases bảo mật)
+      rows.push([
+        'Mã bộ đề',
+        'Tên bộ đề',
+        'Loại đề',
+        'Chuyên mục',
+        'Giảng viên khởi tạo',
+        'Ngôn ngữ lập trình',
+        'Số bài tập coding',
+        'Tổng số Test Cases',
+        'Thời gian (phút)',
+        'Các lớp đang sử dụng',
+        'Ca kiểm tra áp dụng',
+        'Cập nhật',
+      ]);
+
+      templates.forEach((t) => {
+        const questions = t.questions || [];
+        const totalTc = questions.reduce(
+          (sum, q) => sum + ((q.testCases && q.testCases.length) || q.testCasesCount || 0),
+          0
+        );
+        const classList = (templateUsageMap[t.id] || []).map((u) => u.classId).join(', ');
+        const schedList = (templateScheduleMap[t.id] || []).map((s) => s.id).join(', ');
+        rows.push([
+          t.id,
+          t.title,
+          t.type === 'lab' ? 'Lab thực hành' : 'Thi lập trình',
+          t.category,
+          t.lecturer || 'Thầy Nguyễn Văn Nam',
+          t.language,
+          String(questions.length || t.questionCount || 0),
+          String(totalTc),
+          String(t.durationMinutes || (t.type === 'exam' ? 90 : 120)),
+          classList || 'Chưa gán',
+          schedList || 'Chưa lên lịch',
+          t.updatedAt || 'Hôm nay',
+        ]);
+      });
+    } else {
+      // Role Giảng viên: Xuất đầy đủ câu hỏi & testcases
+      rows.push([
         'Mã bộ đề',
         'Tên bộ đề',
         'Loại đề',
@@ -390,41 +490,24 @@ export default function QuestionsManagerView() {
         'Đầu ra kỳ vọng (Expected Output)',
         'Phân loại Test',
         'Điểm',
-      ],
-    ];
+      ]);
 
-    templates.forEach((t) => {
-      const questions = t.questions || [];
-      if (questions.length === 0) {
-        rows.push([
-          t.id,
-          t.title,
-          t.type === 'lab' ? 'Lab thực hành' : 'Thi lập trình',
-          t.category,
-          t.language,
-          String(t.durationMinutes || ''),
-          '', '', '', '', '', '', '', '', '', ''
-        ]);
-      } else {
-        questions.forEach((q) => {
-          const testCases = q.testCases || [];
-          if (testCases.length === 0) {
-            rows.push([
-              t.id,
-              t.title,
-              t.type === 'lab' ? 'Lab thực hành' : 'Thi lập trình',
-              t.category,
-              t.language,
-              String(t.durationMinutes || ''),
-              q.id,
-              q.title,
-              q.difficulty,
-              q.sampleInput || '',
-              q.sampleOutput || '',
-              '', '', '', '', ''
-            ]);
-          } else {
-            testCases.forEach((tc) => {
+      templates.forEach((t) => {
+        const questions = t.questions || [];
+        if (questions.length === 0) {
+          rows.push([
+            t.id,
+            t.title,
+            t.type === 'lab' ? 'Lab thực hành' : 'Thi lập trình',
+            t.category,
+            t.language,
+            String(t.durationMinutes || ''),
+            '', '', '', '', '', '', '', '', '', ''
+          ]);
+        } else {
+          questions.forEach((q) => {
+            const testCases = q.testCases || [];
+            if (testCases.length === 0) {
               rows.push([
                 t.id,
                 t.title,
@@ -437,17 +520,34 @@ export default function QuestionsManagerView() {
                 q.difficulty,
                 q.sampleInput || '',
                 q.sampleOutput || '',
-                tc.id,
-                tc.input,
-                tc.expectedOutput,
-                tc.isHidden ? 'Ẩn chấm điểm' : 'Công khai',
-                String(tc.points || ''),
+                '', '', '', '', ''
               ]);
-            });
-          }
-        });
-      }
-    });
+            } else {
+              testCases.forEach((tc) => {
+                rows.push([
+                  t.id,
+                  t.title,
+                  t.type === 'lab' ? 'Lab thực hành' : 'Thi lập trình',
+                  t.category,
+                  t.language,
+                  String(t.durationMinutes || ''),
+                  q.id,
+                  q.title,
+                  q.difficulty,
+                  q.sampleInput || '',
+                  q.sampleOutput || '',
+                  tc.id,
+                  tc.input,
+                  tc.expectedOutput,
+                  tc.isHidden ? 'Ẩn chấm điểm' : 'Công khai',
+                  String(tc.points || ''),
+                ]);
+              });
+            }
+          });
+        }
+      });
+    }
 
     const csvContent =
       '\uFEFF' +
@@ -463,14 +563,19 @@ export default function QuestionsManagerView() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `ngan_hang_cau_hoi_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute(
+      'download',
+      `${isAdmin ? 'danh_muc_bo_de_admin' : 'ngan_hang_cau_hoi'}_${new Date().toISOString().slice(0, 10)}.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
     setNotification({
       type: 'success',
-      message: 'Đã xuất dữ liệu bộ đề & test cases ra file Excel/CSV thành công!',
+      message: isAdmin
+        ? 'Đã xuất danh mục thông tin bộ đề ra file Excel/CSV thành công!'
+        : 'Đã xuất dữ liệu bộ đề & test cases ra file Excel/CSV thành công!',
     });
   }
 
@@ -509,31 +614,33 @@ export default function QuestionsManagerView() {
             </div>
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-blue-700">
-                Chế độ chỉnh sửa liên kết từ Lớp học
+                {isInstructor ? 'Chế độ chỉnh sửa liên kết từ Lớp học' : 'Tra cứu thông tin bộ đề liên kết'}
               </p>
               <h3 className="text-sm font-bold text-slate-900">
-                Đang quản lý bộ đề: <span className="font-mono text-blue-600">{directTemplateId}</span>
+                Đang xem bộ đề: <span className="font-mono text-blue-600">{directTemplateId}</span>
               </h3>
             </div>
           </div>
           <Link
-            href={pathname.startsWith('/instructor') ? '/instructor/classes' : '/admin/classes'}
+            href={isInstructor ? '/instructor/classes' : '/admin/classes'}
             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
           >
-            Quay lại Lớp & sinh viên →
+            Quay lại Lớp &amp; sinh viên →
           </Link>
         </div>
       )}
 
-      {/* Main Header - Đồng bộ với module Người dùng & Lớp học */}
+      {/* Main Header - Đồng bộ theo phân quyền Giảng viên vs Admin */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-blue-600">QUẢN LÝ ĐÀO TẠO</p>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[28px]">
-            Đề & câu hỏi
+            Đề &amp; câu hỏi
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Kho câu hỏi, bộ test case và đề thực hành chuẩn hóa, đồng bộ tự động tới các lớp học.
+            {isAdmin
+              ? 'Ghi nhận, quản lý thông tin định danh và theo dõi trạng thái các bộ đề thực hành & đề kiểm tra do giảng viên khởi tạo trên toàn hệ thống.'
+              : 'Kho câu hỏi, bộ test case và đề thực hành chuẩn hóa, đồng bộ tự động tới các lớp học và lịch kiểm tra.'}
           </p>
         </div>
 
@@ -547,14 +654,17 @@ export default function QuestionsManagerView() {
             Xuất Excel
           </button>
 
-          <button
-            type="button"
-            onClick={handleOpenCreate}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer self-start sm:self-auto"
-          >
-            <Plus className="h-4 w-4" />
-            Tạo bộ đề mới
-          </button>
+          {/* Chỉ Role Giảng viên mới có nút Tạo bộ đề mới */}
+          {isInstructor && (
+            <button
+              type="button"
+              onClick={handleOpenCreate}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer self-start sm:self-auto"
+            >
+              <Plus className="h-4 w-4" />
+              Tạo bộ đề mới
+            </button>
+          )}
         </div>
       </div>
 
@@ -563,7 +673,9 @@ export default function QuestionsManagerView() {
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold text-slate-500">Tổng số bộ đề</p>
           <p className="mt-1 text-2xl font-black text-slate-900">{templates.length}</p>
-          <p className="mt-0.5 text-[11px] text-slate-400">Đề thực hành & thi</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            {isAdmin ? 'Do giảng viên khởi tạo' : 'Đề thực hành & thi'}
+          </p>
         </div>
         <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4 shadow-sm">
           <p className="text-xs font-semibold text-blue-700">Bộ đề Lab thực hành</p>
@@ -573,29 +685,29 @@ export default function QuestionsManagerView() {
           <p className="mt-0.5 text-[11px] text-blue-500">Phục vụ các bài lab trên lớp</p>
         </div>
         <div className="rounded-2xl border border-purple-100 bg-purple-50/40 p-4 shadow-sm">
-          <p className="text-xs font-semibold text-purple-700">Đề kiểm tra & thi</p>
+          <p className="text-xs font-semibold text-purple-700">Đề kiểm tra &amp; thi</p>
           <p className="mt-1 text-2xl font-black text-purple-600">
             {templates.filter((t) => t.type === 'exam').length}
           </p>
-          <p className="mt-0.5 text-[11px] text-purple-500">Giữa kỳ, quá trình & cuối kỳ</p>
+          <p className="mt-0.5 text-[11px] text-purple-500">Giữa kỳ, quá trình &amp; cuối kỳ</p>
         </div>
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm">
-          <p className="text-xs font-semibold text-emerald-700">Lớp học đang liên kết</p>
+          <p className="text-xs font-semibold text-emerald-700">Lớp &amp; lịch thi liên kết</p>
           <p className="mt-1 text-2xl font-black text-emerald-600">
             {new Set(Object.values(templateUsageMap).flatMap((list) => list.map((u) => u.classId))).size}
           </p>
-          <p className="mt-0.5 text-[11px] text-emerald-500">Đồng bộ tự động realtime</p>
+          <p className="mt-0.5 text-[11px] text-emerald-500">Đồng bộ tự động với lịch thi</p>
         </div>
       </div>
 
       {/* Filters and Search Bar - Chuẩn hóa chiều cao h-11 và typography text-sm */}
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         {/* Type tabs */}
-        <div className="inline-flex h-11 items-center rounded-xl bg-slate-100 p-1">
+        <div className="inline-flex h-11 items-center rounded-xl bg-slate-100 p-1 overflow-x-auto">
           <button
             type="button"
             onClick={() => setTypeFilter('all')}
-            className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
+            className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
               typeFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -604,7 +716,7 @@ export default function QuestionsManagerView() {
           <button
             type="button"
             onClick={() => setTypeFilter('lab')}
-            className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
+            className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
               typeFilter === 'lab' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-blue-700'
             }`}
           >
@@ -613,7 +725,7 @@ export default function QuestionsManagerView() {
           <button
             type="button"
             onClick={() => setTypeFilter('exam')}
-            className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
+            className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
               typeFilter === 'exam' ? 'bg-white text-purple-700 shadow-sm' : 'text-slate-600 hover:text-purple-700'
             }`}
           >
@@ -642,7 +754,11 @@ export default function QuestionsManagerView() {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm theo mã, tên đề, câu hỏi..."
+              placeholder={
+                isAdmin
+                  ? 'Tìm theo mã đề, tên bộ đề, giảng viên...'
+                  : 'Tìm theo mã, tên đề, câu hỏi...'
+              }
               className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm font-medium outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
             />
             {searchTerm && (
@@ -672,6 +788,11 @@ export default function QuestionsManagerView() {
           filteredTemplates.map((template) => {
             const isExpanded = !!expandedTemplateIds[template.id];
             const usageList = templateUsageMap[template.id] || [];
+            const scheduleList = templateScheduleMap[template.id] || [];
+            const totalTc = (template.questions || []).reduce(
+              (s, q) => s + ((q.testCases || []).length || q.testCasesCount || 0),
+              0
+            );
             const isTargetHighlight = directTemplateId === template.id;
 
             return (
@@ -706,6 +827,10 @@ export default function QuestionsManagerView() {
                         {template.category}
                       </span>
 
+                      <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700">
+                        GV: {template.lecturer || 'Thầy Nguyễn Văn Nam'}
+                      </span>
+
                       {template.updatedAt && (
                         <span className="text-[11px] text-slate-400">
                           Cập nhật: {template.updatedAt}
@@ -734,7 +859,7 @@ export default function QuestionsManagerView() {
 
                       <span className="inline-flex items-center gap-1 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">
                         <Code2 className="h-3.5 w-3.5 text-slate-400" />
-                        {(template.questions || []).length} bài tập coding
+                        {(template.questions || []).length} bài tập coding ({totalTc} test cases)
                       </span>
 
                       {template.durationMinutes && (
@@ -748,9 +873,9 @@ export default function QuestionsManagerView() {
                       {usageList.length > 0 ? (
                         <div className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/70 px-2.5 py-1 text-xs font-semibold text-emerald-800">
                           <Layers className="h-3.5 w-3.5 text-emerald-600" />
-                          <span>Đang sử dụng trong:</span>
+                          <span>Đang sử dụng trong lớp:</span>
                           <span className="font-bold underline">
-                            {usageList.map((u) => u.classId).join(', ')}
+                            {Array.from(new Set(usageList.map((u) => u.classId))).join(', ')}
                           </span>
                         </div>
                       ) : (
@@ -758,46 +883,75 @@ export default function QuestionsManagerView() {
                           Chưa có lớp nào sử dụng
                         </span>
                       )}
+
+                      {/* Linked schedules badge */}
+                      {scheduleList.length > 0 && (
+                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-1 text-xs font-semibold text-blue-800">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
+                          <span>Lịch kiểm tra:</span>
+                          <span className="font-bold">
+                            {scheduleList.length} ca ({scheduleList.map((s) => s.roomCode || s.id).join(', ')})
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   {/* Actions column */}
                   <div className="flex flex-row lg:flex-col items-center lg:items-end gap-2 shrink-0 pt-2 lg:pt-0">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEdit(template)}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                      Chỉnh sửa đề & câu hỏi
-                    </button>
+                    {isAdmin ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setViewingAdminTemplate(template)}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-700 cursor-pointer whitespace-nowrap"
+                        >
+                          <Eye className="h-3.5 w-3.5 text-blue-600" />
+                          Xem thông tin bộ đề
+                        </button>
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500 whitespace-nowrap">
+                          🔒 Bảo mật câu hỏi & Test Cases
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(template)}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Chỉnh sửa đề & câu hỏi
+                        </button>
 
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => toggleExpand(template.id)}
-                        className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
-                      >
-                        {isExpanded ? 'Ẩn câu hỏi' : 'Xem câu hỏi'}
-                        <ChevronDown
-                          className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                        />
-                      </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpand(template.id)}
+                            className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+                          >
+                            {isExpanded ? 'Ẩn câu hỏi' : 'Xem câu hỏi'}
+                            <ChevronDown
+                              className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                            />
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTemplate(template.id)}
-                        title="Xóa bộ đề"
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTemplate(template.id)}
+                            title="Xóa bộ đề"
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                {/* Collapsible Questions Details */}
-                {isExpanded && (
+                {/* Collapsible Questions Details (Instructor Only) */}
+                {!isAdmin && isExpanded && (
                   <div className="mt-4 border-t border-slate-100 pt-4">
                     <div className="mb-3 flex items-center justify-between">
                       <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
@@ -1383,6 +1537,150 @@ export default function QuestionsManagerView() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Policy Notice Banner */}
+      {isAdmin && (
+        <div className="rounded-xl border border-[#dbeafe] bg-[#eff6ff] px-4 py-3 text-xs font-medium text-[#1d4ed8] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <strong>Chính sách phân quyền & bảo mật đề thi:</strong> Quản trị viên chỉ ghi nhận và quản lý thông tin bộ đề từ <strong>Role Giảng viên</strong> tạo ra. Nội dung chi tiết câu hỏi và Test Cases được bảo mật tuyệt đối và không hiển thị ở quyền Quản trị viên.
+          </div>
+          <Link
+            href="/admin/schedules"
+            className="inline-flex items-center gap-1 rounded-lg bg-white/90 px-3 py-1.5 text-[11px] font-bold text-[#1d4ed8] shadow-2xs transition hover:bg-white whitespace-nowrap shrink-0"
+          >
+            Xem Lịch & Phiên kiểm tra →
+          </Link>
+        </div>
+      )}
+
+      {/* Modal: Xem thông tin bộ đề (Read-only Metadata cho Role Admin) */}
+      {isAdmin && viewingAdminTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs font-black tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200">
+                    {viewingAdminTemplate.id}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                    {viewingAdminTemplate.category}
+                  </span>
+                  <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700">
+                    GV: {viewingAdminTemplate.lecturer || 'Thầy Nguyễn Văn Nam'}
+                  </span>
+                </div>
+                <h2 className="mt-2 text-lg font-bold text-slate-900">
+                  {viewingAdminTemplate.title}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingAdminTemplate(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {viewingAdminTemplate.description && (
+              <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+                {viewingAdminTemplate.description}
+              </p>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-slate-50 p-4 border border-slate-100 text-xs">
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400">Phân loại</span>
+                <span className="mt-1 block font-bold text-slate-800">
+                  {viewingAdminTemplate.type === 'lab' ? 'Đề Lab thực hành' : 'Đề thi lập trình'}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400">Ngôn ngữ</span>
+                <span className="mt-1 block font-bold text-slate-800">{viewingAdminTemplate.language}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400">Quy mô câu hỏi</span>
+                <span className="mt-1 block font-bold text-blue-700">
+                  {(viewingAdminTemplate.questions || []).length} bài tập (
+                  {(viewingAdminTemplate.questions || []).reduce(
+                    (s, q) => s + ((q.testCases || []).length || q.testCasesCount || 0),
+                    0
+                  )}{' '}
+                  test cases)
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold uppercase text-slate-400">Thời lượng</span>
+                <span className="mt-1 block font-bold text-slate-800">
+                  {viewingAdminTemplate.durationMinutes ? `${viewingAdminTemplate.durationMinutes} phút` : '90 phút'}
+                </span>
+              </div>
+            </div>
+
+            {/* Linked classes & exam schedules */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="rounded-xl border border-slate-200 p-3.5">
+                <div className="text-[11px] font-bold uppercase text-slate-400 mb-2">
+                  Lớp học đang gán bộ đề
+                </div>
+                {(templateUsageMap[viewingAdminTemplate.id] || []).length > 0 ? (
+                  <div className="space-y-1.5">
+                    {(templateUsageMap[viewingAdminTemplate.id] || []).map((u, idx) => (
+                      <div key={idx} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5">
+                        <span className="font-bold text-slate-800">{u.classId}</span>
+                        <span className="text-[11px] text-slate-500 truncate max-w-[180px]">{u.className}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-400 text-[11px]">Chưa có lớp học nào gán bộ đề này.</p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 p-3.5">
+                <div className="text-[11px] font-bold uppercase text-slate-400 mb-2">
+                  Lịch kiểm tra sử dụng đề
+                </div>
+                {(templateScheduleMap[viewingAdminTemplate.id] || []).length > 0 ? (
+                  <div className="space-y-1.5">
+                    {(templateScheduleMap[viewingAdminTemplate.id] || []).map((sch) => (
+                      <div key={sch.id} className="flex items-center justify-between rounded-lg bg-blue-50/60 px-2.5 py-1.5">
+                        <div>
+                          <span className="font-mono font-bold text-blue-700">{sch.roomCode || sch.id}</span>
+                          <span className="ml-1.5 text-[11px] font-semibold text-slate-700">({sch.classId})</span>
+                        </div>
+                        <span className="text-[11px] text-slate-500">{sch.date}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-400 text-[11px]">Chưa có lịch kiểm tra nào sử dụng đề này.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Security notice */}
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 text-xs text-amber-900">
+              <div className="font-bold">🔒 Bảo mật nội dung câu hỏi & Test Cases</div>
+              <p className="mt-1 text-[11px] text-amber-800 leading-relaxed">
+                Theo quy định phân quyền của hệ thống OCULIDE, Quản trị viên chỉ quản lý thông tin định danh bộ đề, lớp học và lịch kiểm tra liên kết. Nội dung đề bài và bộ Test Cases chấm điểm chỉ hiển thị cho Giảng viên biên soạn đề.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setViewingAdminTemplate(null)}
+                className="h-10 rounded-xl border border-slate-200 bg-white px-5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}

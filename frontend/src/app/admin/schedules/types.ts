@@ -246,14 +246,14 @@ export function getStoredSchedules(): ExamScheduleItem[] {
               classId: item.classCode || 'CLASS-01',
               className: item.className || 'Lớp học phần',
               studentCount: item.enrolledStudents || 45,
-              lecturer: 'Thầy Nguyễn Văn Nam',
-              templateId: item.type === 'LAB' ? 'TPL-LAB' : 'TPL-EXAM',
-              templateTitle: item.title || 'Bài tập thực hành / Kiểm tra',
-              templateVersion: 'v1.0',
+              lecturer: item.lecturer || 'Thầy Nguyễn Văn Nam',
+              templateId: item.templateId || (item.type === 'LAB' ? 'TPL-LAB-01' : 'TPL-EXAM-01'),
+              templateTitle: item.templateTitle || item.title || 'Bài tập thực hành / Kiểm tra',
+              templateVersion: 'v1 • Sẵn sàng',
               date: item.date === 'Hôm nay' ? '28/10/2026' : (item.date || '28/10/2026'),
               startTime: item.startTime || '08:00',
               endTime: item.endTime || '09:30',
-              durationMinutes: 90,
+              durationMinutes: item.durationMinutes || 90,
               room: item.roomCode?.includes('LAB') ? 'Phòng máy thực hành' : 'Phòng thi tiêu chuẩn',
               roomCode: item.roomCode || 'OC-ROOM',
               roomPassword: item.passcode || '••••••',
@@ -278,7 +278,7 @@ export function getStoredSchedules(): ExamScheduleItem[] {
       const parsedRooms = JSON.parse(rawInstructorRooms);
       if (Array.isArray(parsedRooms)) {
         parsedRooms.forEach((room: any) => {
-          const id = room.roomCode;
+          const id = room.id || room.roomCode;
           if (!id) return;
           const exists = baseList.some((s) => s.id === id || s.roomCode === id);
           if (!exists) {
@@ -292,17 +292,17 @@ export function getStoredSchedules(): ExamScheduleItem[] {
               classId: room.classId || 'CLASS-01',
               className: room.className || 'Lớp học phần',
               studentCount: Array.isArray(room.attendees) ? room.attendees.length : 45,
-              lecturer: 'Thầy Nguyễn Văn Nam',
-              templateId: room.templateId || (room.type === 'lab' ? 'TPL-LAB' : 'TPL-EXAM'),
+              lecturer: room.lecturer || 'Thầy Nguyễn Văn Nam',
+              templateId: room.templateId || (room.type === 'lab' ? 'TPL-LAB-01' : 'TPL-EXAM-01'),
               templateTitle: room.templateTitle || room.title || 'Bài tập thực hành / Kiểm tra',
-              templateVersion: room.templateVersion || 'v1.0',
-              date: '28/10/2026',
+              templateVersion: room.templateVersion || 'v1 • Sẵn sàng',
+              date: room.scheduledDate || '28/10/2026',
               startTime: room.startTime || '08:00',
-              endTime: '09:30',
+              endTime: room.endTime || '09:30',
               durationMinutes: room.durationMinutes || 90,
               room: room.type === 'lab' ? 'Phòng máy thực hành' : 'Phòng thi tiêu chuẩn',
               roomCode: id,
-              roomPassword: room.roomPassword || '••••••',
+              roomPassword: room.password || room.roomPassword || '••••••',
               status: status,
               proctoringPolicy: DEFAULT_PROCTORING_POLICY,
               createdAt: room.createdAt || '28/10/2026',

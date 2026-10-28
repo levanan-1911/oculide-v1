@@ -41,6 +41,7 @@ import {
   INSTRUCTOR_ROOMS_STORAGE_KEY,
   INSTRUCTOR_SCHEDULES_STORAGE_KEY,
 } from '@/components/instructor/classes/types';
+import { getStoredQuestionTemplates, getStoredClasses } from '@/app/admin/classes/types';
 
 const DEFAULT_CLASSES: Array<{ id: string; name: string; studentCount: number }> = [
   { id: 'CS101', name: 'Nhập môn Lập trình C/C++', studentCount: 48 },
@@ -363,28 +364,69 @@ export default function InstructorCreateRoomView() {
   );
   const [maxTabSwitches, setMaxTabSwitches] = useState<number>(queryType === 'exam' ? 0 : 999);
 
-  // Khởi tạo danh sách lớp từ localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem(INSTRUCTOR_STORAGE_KEY);
-        if (raw) {
-          const parsed: ClassRow[] = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setClassesList(
-              parsed.map((c) => ({
+  const [templatesList, setTemplatesList] = useState<QuestionTemplate[]>(SAMPLE_QUESTION_TEMPLATES);
+
+  // Khởi tạo danh sách lớp & bộ đề từ localStorage (đồng bộ 2 chiều với Ngân hàng đề & Lớp học)
+  const syncInstructorResources = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const mergedClasses = [...DEFAULT_CLASSES];
+      const raw = localStorage.getItem(INSTRUCTOR_STORAGE_KEY);
+      if (raw) {
+        const parsed: ClassRow[] = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((c) => {
+            if (!mergedClasses.some((mc) => mc.id === c.id)) {
+              mergedClasses.push({
                 id: c.id,
                 name: c.name,
                 studentCount: c.studentCount || c.students?.length || 40,
-              }))
-            );
-          }
+              });
+            }
+          });
         }
-      } catch {
-        // fallback
       }
+      // Đồng bộ thêm các lớp từ hệ thống (SE1848, IT2202, SE1849...)
+      const systemClasses = getStoredClasses();
+      systemClasses.forEach((sc) => {
+        if (!mergedClasses.some((mc) => mc.id === sc.id)) {
+          mergedClasses.push({
+            id: sc.id,
+            name: sc.name,
+            studentCount: sc.students?.length || 45,
+          });
+        }
+      });
+      setClassesList(mergedClasses);
+
+      // Đồng bộ danh sách bộ đề do giảng viên tạo từ Ngân hàng đề
+      const storedTemplates = getStoredQuestionTemplates();
+      const mergedTemplates: QuestionTemplate[] = storedTemplates.map((st) => ({
+        id: st.id,
+        title: st.title,
+        type: st.type,
+        category: st.category,
+        language: st.language,
+        questionCount: st.questionCount || st.questions?.length || 1,
+        durationMinutes: st.durationMinutes || (st.type === 'exam' ? 60 : 120),
+        description: st.description || 'Bộ đề lập trình chuẩn hóa.',
+      }));
+      SAMPLE_QUESTION_TEMPLATES.forEach((sampleTpl) => {
+        if (!mergedTemplates.some((mt) => mt.id === sampleTpl.id)) {
+          mergedTemplates.push(sampleTpl);
+        }
+      });
+      setTemplatesList(mergedTemplates);
+    } catch {
+      // fallback
     }
   }, []);
+
+  useEffect(() => {
+    syncInstructorResources();
+    window.addEventListener('storage', syncInstructorResources);
+    return () => window.removeEventListener('storage', syncInstructorResources);
+  }, [syncInstructorResources]);
 
   // Cập nhật cấu hình ràng buộc mặc định khi đổi loại phòng (Lab vs Exam)
   const handleApplyPreset = (type: 'lab' | 'exam') => {
@@ -440,7 +482,7 @@ export default function InstructorCreateRoomView() {
 
   const curClass = classesList.find((c) => c.id === selectedClassId) || classesList[0];
   const selectedTemplate =
-    SAMPLE_QUESTION_TEMPLATES.find((t) => t.id === selectedTemplateId) || SAMPLE_QUESTION_TEMPLATES[0];
+    templatesList.find((t) => t.id === selectedTemplateId) || templatesList[0] || SAMPLE_QUESTION_TEMPLATES[0];
 
   // Khởi tạo phòng chờ
   const handleCreateRoomSubmit = (e: React.FormEvent) => {
@@ -560,6 +602,10 @@ export default function InstructorCreateRoomView() {
             enrolledStudents: curClass.studentCount,
             attendedStudents: 0,
             isAiProctored: Boolean(requireCamera || aiFaceDetection || aiPhoneDetection || lockdownFullscreen),
+            templateId: selectedTemplate.id,
+            templateTitle: selectedTemplate.title,
+            durationMinutes: durationMinutes,
+            lecturer: 'Thầy Nguyễn Văn Nam',
           };
 
           let existingSchedules: ScheduleSessionItem[] = [];
@@ -1216,7 +1262,7 @@ export default function InstructorCreateRoomView() {
                 </h2>
               </div>
               <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded-full">
-                {SAMPLE_QUESTION_TEMPLATES.length} Đề Trong Ngân Hàng
+                {templatesList.length} Đề Trong Ngân Hàng
               </span>
             </div>
 
@@ -1226,7 +1272,7 @@ export default function InstructorCreateRoomView() {
 
             {/* Danh sách đề thi với thanh cuộn hiện đại */}
             <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-300">
-              {SAMPLE_QUESTION_TEMPLATES.map((tpl) => {
+              {templatesList.map((tpl) => {
                 const isSelected = tpl.id === selectedTemplateId;
 
                 return (

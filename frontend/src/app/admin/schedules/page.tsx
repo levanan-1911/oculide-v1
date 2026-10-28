@@ -38,9 +38,12 @@ export default function ScheduleManagerPage() {
   const [selectedSchedule, setSelectedSchedule] = useState<ExamScheduleItem | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
 
-  // Load schedules
+  // Load schedules & listen to instructor storage changes
   useEffect(() => {
-    setSchedules(getStoredSchedules());
+    const refresh = () => setSchedules(getStoredSchedules());
+    refresh();
+    window.addEventListener('storage', refresh);
+    return () => window.removeEventListener('storage', refresh);
   }, []);
 
   // Hide notification

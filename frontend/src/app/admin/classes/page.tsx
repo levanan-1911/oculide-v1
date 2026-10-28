@@ -1785,16 +1785,18 @@ function ClassManagerContent() {
                               </span>
                               <span className="text-slate-300">•</span>
                               <Link
-                                href={`/admin?module=questions&templateId=${encodeURIComponent(
+                                href={`/admin/questions?templateId=${encodeURIComponent(
                                   lab.templateId || 'TPL-LAB-01'
                                 )}`}
                                 className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline"
-                                title="Chỉnh sửa nội dung câu hỏi trong module Đề & câu hỏi"
+                                title="Xem thông tin định danh bộ đề (Bảo mật câu hỏi & Test Cases)"
                               >
                                 <FileCode2 className="h-3 w-3" />
-                                Chỉnh sửa đề từ module Đề & câu hỏi
+                                Xem thông tin bộ đề
                                 <ExternalLink className="h-2.5 w-2.5" />
                               </Link>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-slate-400 font-medium">🔒 Bảo mật câu hỏi & Test Cases</span>
                             </div>
 
                             {/* Mã phòng & Mật khẩu phòng Lab */}
@@ -2004,16 +2006,18 @@ function ClassManagerContent() {
                               </span>
                               <span className="text-slate-300">•</span>
                               <Link
-                                href={`/admin?module=questions&templateId=${encodeURIComponent(
+                                href={`/admin/questions?templateId=${encodeURIComponent(
                                   exam.templateId || 'TPL-EXAM-01'
                                 )}`}
                                 className="inline-flex items-center gap-1 font-semibold text-purple-600 hover:underline"
-                                title="Chỉnh sửa nội dung đề & câu hỏi trong module Đề & câu hỏi"
+                                title="Xem thông tin định danh bộ đề (Bảo mật câu hỏi & Test Cases)"
                               >
                                 <FileCode2 className="h-3 w-3" />
-                                Chỉnh sửa đề từ module Đề & câu hỏi
+                                Xem thông tin bộ đề
                                 <ExternalLink className="h-2.5 w-2.5" />
                               </Link>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-slate-400 font-medium">🔒 Bảo mật câu hỏi & Test Cases</span>
                             </div>
 
                             {/* Mã phòng thi & Mật khẩu phòng thi */}
@@ -2240,11 +2244,11 @@ function ClassManagerContent() {
                     CHỌN BỘ ĐỀ TỪ MODULE &quot;ĐỀ & CÂU HỎI&quot;
                   </label>
                   <Link
-                    href="/admin?module=questions"
+                    href="/admin/questions"
                     className="text-[11px] font-semibold text-blue-600 hover:underline inline-flex items-center gap-0.5"
                     target="_blank"
                   >
-                    Ngân hàng đề ↗
+                    Danh mục đề ↗
                   </Link>
                 </div>
                 <select
@@ -2260,7 +2264,7 @@ function ClassManagerContent() {
                   ))}
                 </select>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  💡 Bộ câu hỏi và test case được nạp từ module Đề & câu hỏi. Bạn có thể chỉnh sửa nội dung bài tập tại module Đề & câu hỏi.
+                  💡 Bộ đề được nạp từ ngân hàng đề do Giảng viên biên soạn (Nội dung câu hỏi & Test Cases được bảo mật).
                 </p>
               </div>
 
@@ -2574,11 +2578,11 @@ function ClassManagerContent() {
                     CHỌN ĐỀ THI TỪ NGÂN HÀNG &quot;ĐỀ & CÂU HỎI&quot;
                   </label>
                   <Link
-                    href="/admin?module=questions"
+                    href="/admin/questions"
                     className="text-[11px] font-semibold text-purple-600 hover:underline inline-flex items-center gap-0.5"
                     target="_blank"
                   >
-                    Ngân hàng đề ↗
+                    Danh mục đề ↗
                   </Link>
                 </div>
                 <select
@@ -2594,7 +2598,7 @@ function ClassManagerContent() {
                   ))}
                 </select>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  💡 Chọn đề thi từ ngân hàng để đồng bộ bộ test và cấu trúc câu hỏi. Bạn có thể chỉnh sửa đề tại module Đề & câu hỏi.
+                  💡 Đề thi được nạp từ ngân hàng đề do Giảng viên biên soạn (Nội dung câu hỏi & Test Cases được bảo mật).
                 </p>
               </div>
 
@@ -2791,11 +2795,11 @@ function ClassManagerContent() {
                     CHỌN BỘ ĐỀ TỪ NGÂN HÀNG ĐỀ & CÂU HỎI
                   </label>
                   <Link
-                    href={`/admin?module=questions&templateId=${encodeURIComponent(editLabTemplateId || 'TPL-LAB-01')}`}
+                    href={`/admin/questions?templateId=${encodeURIComponent(editLabTemplateId || 'TPL-LAB-01')}`}
                     className="text-[11px] font-semibold text-blue-600 hover:underline inline-flex items-center gap-0.5"
                     target="_blank"
                   >
-                    Xem chi tiết đề ↗
+                    Xem thông tin đề ↗
                   </Link>
                 </div>
                 <select
@@ -3126,11 +3130,11 @@ function ClassManagerContent() {
                     CHỌN BỘ ĐỀ THI TỪ NGÂN HÀNG ĐỀ & CÂU HỎI
                   </label>
                   <Link
-                    href={`/admin?module=questions&templateId=${encodeURIComponent(editExamTemplateId || 'TPL-EXAM-01')}`}
+                    href={`/admin/questions?templateId=${encodeURIComponent(editExamTemplateId || 'TPL-EXAM-01')}`}
                     className="text-[11px] font-semibold text-purple-600 hover:underline inline-flex items-center gap-0.5"
                     target="_blank"
                   >
-                    Xem chi tiết đề thi ↗
+                    Xem thông tin đề thi ↗
                   </Link>
                 </div>
                 <select

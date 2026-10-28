@@ -8,6 +8,7 @@ export interface StudentRow {
   name: string;
   email: string;
   status: StudentStatus;
+  missingFields?: string[];
 }
 
 export interface ClassLab {

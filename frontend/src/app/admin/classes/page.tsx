@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -8,13 +8,16 @@ import {
   BookOpen,
   Calendar,
   CheckCircle,
+  CheckCircle2,
   ChevronDown,
   Clock,
   Code2,
   Copy,
+  Download,
   ExternalLink,
   Eye,
   FileCode2,
+  FileSpreadsheet,
   GraduationCap,
   KeyRound,
   Pencil,
@@ -25,12 +28,19 @@ import {
   ShieldCheck,
   Terminal,
   Trash2,
+  UploadCloud,
+  UserPlus,
   UserRoundCheck,
   Users,
   X,
 } from 'lucide-react';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
+import {
+  parseStudentFile,
+  downloadStudentSampleTemplate,
+  ParsedStudentRow,
+} from './excelParser';
 import {
   ClassExam,
   ClassLab,
@@ -100,6 +110,16 @@ function ClassManagerContent() {
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
   const [addStudentError, setAddStudentError] = useState('');
   const [deletingStudent, setDeletingStudent] = useState<StudentRow | null>(null);
+
+  // Bulk import students modal (Đồng bộ module Người dùng)
+  const [isImportStudentsOpen, setIsImportStudentsOpen] = useState(false);
+  const [importStudentFile, setImportStudentFile] = useState<File | null>(null);
+  const [importStudentWarnings, setImportStudentWarnings] = useState<string[]>([]);
+  const [importStudentError, setImportStudentError] = useState('');
+  const [previewStudents, setPreviewStudents] = useState<ParsedStudentRow[]>([]);
+  const [isImportStudentParsing, setIsImportStudentParsing] = useState(false);
+  const [isImportStudentDragging, setIsImportStudentDragging] = useState(false);
+  const importStudentFileInputRef = useRef<HTMLInputElement>(null);
 
   // Lab modal (Tạo bài Lab mới trên lớp)
   const [isAddLabOpen, setIsAddLabOpen] = useState(false);
@@ -286,6 +306,119 @@ function ClassManagerContent() {
     setIsAddStudentOpen(false);
     setAddStudentError('');
     form.reset();
+  }
+
+  // ── XỬ LÝ NHẬP EXCEL / CSV SINH VIÊN VÀO LỚP ──
+  async function handleProcessImportStudentFile(file: File) {
+    setImportStudentError('');
+    setImportStudentWarnings([]);
+    setPreviewStudents([]);
+    setIsImportStudentParsing(true);
+    setImportStudentFile(file);
+
+    try {
+      const result = await parseStudentFile(file);
+      if (result.errorMessage) {
+        setImportStudentError(result.errorMessage);
+        return;
+      }
+      setImportStudentWarnings(result.warnings);
+      setPreviewStudents(result.parsedStudents);
+    } catch (err) {
+      setImportStudentError(
+        err instanceof Error
+          ? err.message
+          : 'Không thể đọc nội dung tệp. Vui lòng kiểm tra lại định dạng tệp Excel / CSV.'
+      );
+    } finally {
+      setIsImportStudentParsing(false);
+    }
+  }
+
+  function handleResetImportStudentState() {
+    setImportStudentFile(null);
+    setImportStudentError('');
+    setImportStudentWarnings([]);
+    setPreviewStudents([]);
+    setIsImportStudentParsing(false);
+    setIsImportStudentDragging(false);
+    if (importStudentFileInputRef.current) {
+      importStudentFileInputRef.current.value = '';
+    }
+  }
+
+  function handleConfirmBulkImportStudents() {
+    if (!viewingClass || previewStudents.length === 0) return;
+
+    const existingIds = new Set(viewingClass.students.map((s) => s.id.toLowerCase()));
+    const newStudents: StudentRow[] = [];
+
+    previewStudents.forEach((p) => {
+      const normalizedId = p.id.toLowerCase();
+      if (!existingIds.has(normalizedId)) {
+        existingIds.add(normalizedId);
+        newStudents.push({
+          id: p.id,
+          name: p.name,
+          email: p.email,
+          status: 'Đang học',
+          missingFields: p.missingFields,
+        });
+      }
+    });
+
+    const updatedStudents = [...viewingClass.students, ...newStudents];
+    const updatedClass: ClassRow = {
+      ...viewingClass,
+      studentCount: updatedStudents.length,
+      students: updatedStudents,
+    };
+
+    setViewingClass(updatedClass);
+    const nextClasses = classes.map((c) => (c.id === updatedClass.id ? updatedClass : c));
+    setClasses(nextClasses);
+    saveStoredClasses(nextClasses);
+
+    setIsImportStudentsOpen(false);
+    handleResetImportStudentState();
+  }
+
+  function handleExportStudentList() {
+    if (!viewingClass || viewingClass.students.length === 0) return;
+    const header = 'STT,Mã sinh viên,Họ và tên,Email,Lớp,Trạng thái\n';
+    const rows = viewingClass.students
+      .map(
+        (st, idx) =>
+          `${idx + 1},${st.id},"${st.name}",${st.email},${viewingClass.id},${st.status}`
+      )
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Danh_Sach_Sinh_Vien_Lop_${viewingClass.id}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function handleExportClasses() {
+    if (classes.length === 0) return;
+    const header = 'Mã lớp,Tên lớp học phần,Học kỳ,Giảng viên,Sĩ số,Trạng thái,Mã phòng,Mật khẩu\n';
+    const rows = classes
+      .map(
+        (c) =>
+          `${c.id},"${c.name}","${c.semester}","${c.lecturer || 'Long Phạm'}",${c.students.length},${c.status},${c.roomCode || ''},${c.roomPassword || ''}`
+      )
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Danh_Sach_Lop_Hoc_Oculide.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   function handleAddLab(event: FormEvent<HTMLFormElement>) {
@@ -732,7 +865,16 @@ function ClassManagerContent() {
                   Theo dõi lớp học, danh sách sinh viên và các phiên thực hành, kiểm tra lập trình.
                 </p>
               </div>
-              <div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportClasses}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 cursor-pointer"
+                  title="Xuất danh sách tất cả các lớp học"
+                >
+                  <Download className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Xuất Excel</span>
+                </button>
                 <Link
                   href="/admin/classes/create"
                   className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
@@ -1353,10 +1495,52 @@ function ClassManagerContent() {
               {/* ── NỘI DUNG TAB 1: SINH VIÊN & SĨ SỐ ── */}
               {detailTab === 'students' && (
                 <div className="mt-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-base font-extrabold text-slate-900">
-                      Danh sách lớp • {viewingClass.students.length} sinh viên
-                    </h3>
+                  <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between mb-4">
+                    <div>
+                      <h3 className="text-base font-extrabold text-slate-900">
+                        Danh sách lớp • {viewingClass.students.length} sinh viên
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Theo dõi và quản lý danh sách sinh viên ghi danh trong lớp học phần {viewingClass.id}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleExportStudentList}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 cursor-pointer"
+                        title="Tải về danh sách sinh viên lớp hiện tại (.csv)"
+                      >
+                        <Download className="h-3.5 w-3.5 text-slate-500" />
+                        <span>Xuất danh sách</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleResetImportStudentState();
+                          setIsImportStudentsOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 cursor-pointer"
+                        title="Thêm danh sách sinh viên từ file Excel / CSV"
+                      >
+                        <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>Nhập Excel/CSV</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddStudentError('');
+                          setIsAddStudentOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>Thêm sinh viên</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1366,38 +1550,84 @@ function ClassManagerContent() {
                           <tr>
                             <th className="px-4 py-3.5 w-16">STT</th>
                             <th className="px-4 py-3.5 w-32">MÃ SV</th>
-                            <th className="px-4 py-3.5">HỌ VÀ TÊN</th>
+                            <th className="px-4 py-3.5">HỌ VÀ TÊN &amp; EMAIL</th>
                             <th className="px-4 py-3.5 w-28">LỚP</th>
-                            <th className="px-4 py-3.5 w-28 text-center">TRẠNG THÁI</th>
+                            <th className="px-4 py-3.5 w-36 text-center">TRẠNG THÁI</th>
                             <th className="px-4 py-3.5 w-20 text-right">THAO TÁC</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-slate-700">
                           {viewingClass.students.length > 0 ? (
-                            viewingClass.students.map((student, index) => (
-                              <tr key={student.id} className="hover:bg-slate-50/80 transition-colors">
-                                <td className="px-4 py-3 font-medium text-slate-400">{index + 1}</td>
-                                <td className="px-4 py-3 font-bold text-slate-900">{student.id}</td>
-                                <td className="px-4 py-3 font-semibold text-slate-800">{student.name}</td>
-                                <td className="px-4 py-3 text-slate-600">{viewingClass.id}</td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className="inline-block rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                                    {student.status}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeletingStudent(student)}
-                                    title={`Xóa sinh viên ${student.name}`}
-                                    aria-label={`Xóa sinh viên ${student.name}`}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600 cursor-pointer"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
+                            viewingClass.students.map((student, index) => {
+                              const hasMissing = student.missingFields && student.missingFields.length > 0;
+                              const isMissingId = student.missingFields?.includes('Thiếu Mã SV') || !student.id;
+                              const isMissingName = student.missingFields?.includes('Thiếu Họ và tên') || !student.name;
+                              const isMissingEmail =
+                                student.missingFields?.includes('Thiếu Email') ||
+                                student.missingFields?.includes('Email sai định dạng') ||
+                                !student.email;
+
+                              return (
+                                <tr
+                                  key={student.id || index}
+                                  className={`transition-colors ${
+                                    hasMissing ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-slate-50/80'
+                                  }`}
+                                >
+                                  <td className="px-4 py-3 font-medium text-slate-400">{index + 1}</td>
+                                  <td className="px-4 py-3 font-bold text-slate-900">
+                                    {isMissingId ? (
+                                      <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                        Thiếu Mã SV
+                                      </span>
+                                    ) : (
+                                      student.id
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {isMissingName ? (
+                                      <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                        Thiếu Họ và tên
+                                      </span>
+                                    ) : (
+                                      <p className="font-semibold text-slate-800">{student.name}</p>
+                                    )}
+                                    {isMissingEmail ? (
+                                      <span className="mt-0.5 inline-flex items-center rounded bg-red-100 px-1.5 py-0.2 text-[10px] font-bold text-red-600">
+                                        {student.missingFields?.includes('Email sai định dạng')
+                                          ? `Email sai (${student.email})`
+                                          : 'Thiếu Email'}
+                                      </span>
+                                    ) : (
+                                      <p className="text-[11px] text-slate-400">{student.email}</p>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 font-medium text-slate-600">{viewingClass.id}</td>
+                                  <td className="px-4 py-3 text-center">
+                                    {hasMissing ? (
+                                      <span className="inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800">
+                                        ⚠ {student.missingFields?.join(', ')}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-block rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                        {student.status}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeletingStudent(student)}
+                                      title={`Xóa sinh viên ${student.name}`}
+                                      aria-label={`Xóa sinh viên ${student.name}`}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600 cursor-pointer"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })
                           ) : (
                             <tr>
                               <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
@@ -3149,6 +3379,311 @@ function ClassManagerContent() {
                 </button>
               </div>
             </form>
+          </section>
+        </div>
+      )}
+
+      {/* ── MODAL NHẬP HÀNG LOẠT SINH VIÊN BẰNG EXCEL / CSV (ĐỒNG BỘ MODULE NGƯỜI DÙNG) ── */}
+      {isImportStudentsOpen && viewingClass && (
+        <div
+          className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/45 p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsImportStudentsOpen(false);
+              handleResetImportStudentState();
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-student-title"
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl border border-slate-200/80"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="import-student-title" className="text-lg font-bold text-slate-900">
+                  Nhập danh sách sinh viên bằng Excel / CSV
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Thêm nhanh danh sách sinh viên vào lớp học phần{' '}
+                  <strong className="text-slate-800">{viewingClass.id}</strong> ({viewingClass.name}).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsImportStudentsOpen(false);
+                  handleResetImportStudentState();
+                }}
+                aria-label="Đóng"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {/* Thẻ input ẩn để chọn tệp */}
+              <input
+                ref={importStudentFileInputRef}
+                type="file"
+                accept=".csv, .xlsx, .xls"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleProcessImportStudentFile(e.target.files[0]);
+                  }
+                }}
+                className="hidden"
+              />
+
+              {/* VÙNG THẢ TỆP (DRAG & DROP ZONE) */}
+              {!importStudentFile ? (
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsImportStudentDragging(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setIsImportStudentDragging(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsImportStudentDragging(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      handleProcessImportStudentFile(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  onClick={() => importStudentFileInputRef.current?.click()}
+                  className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 text-center transition-all cursor-pointer ${
+                    isImportStudentDragging
+                      ? 'border-blue-600 bg-blue-50/70 scale-[0.99]'
+                      : 'border-slate-200 bg-slate-50/60 hover:border-blue-400 hover:bg-blue-50/30'
+                  }`}
+                >
+                  <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-2xl transition ${
+                      isImportStudentDragging ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-600'
+                    }`}
+                  >
+                    <UploadCloud className="h-6 w-6" />
+                  </div>
+                  <p className="mt-3 text-sm font-bold text-slate-800">
+                    Kéo thả tệp dữ liệu vào đây hoặc{' '}
+                    <span className="text-blue-600 underline">chọn từ máy tính</span>
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Hỗ trợ định dạng .csv, .xlsx, .xls (Dung lượng tối đa: 10MB)
+                  </p>
+                  <p className="mt-1 text-[11px] font-medium text-slate-500">
+                    3 cột chuẩn: Mã sinh viên, Họ và tên, Email
+                  </p>
+                </div>
+              ) : (
+                /* THẺ HIỂN THỊ TỆP ĐÃ ĐƯỢC CHỌN */
+                <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+                        <FileSpreadsheet className="h-6 w-6" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-slate-900">{importStudentFile.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {(importStudentFile.size / 1024).toFixed(1)} KB · Đọc được {previewStudents.length} sinh viên
+                          {importStudentWarnings.length > 0 ? ` (${importStudentWarnings.length} cảnh báo thiếu thông tin)` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleResetImportStudentState}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-red-600 shadow-xs cursor-pointer transition"
+                      title="Gỡ tệp để chọn tệp khác"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Loading khi phân tích file */}
+              {isImportStudentParsing && (
+                <div className="flex items-center justify-center gap-2 py-4 text-xs font-semibold text-blue-600">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                  <span>Đang phân tích dữ liệu tệp...</span>
+                </div>
+              )}
+
+              {/* Thông báo lỗi không đọc được tệp */}
+              {importStudentError && (
+                <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
+                  <span>{importStudentError}</span>
+                </div>
+              )}
+
+              {/* Cảnh báo thiếu cột hoặc dòng thiếu thông tin */}
+              {importStudentWarnings.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3.5 text-xs text-amber-900 space-y-1.5">
+                  <div className="flex items-center gap-2 font-bold text-amber-800">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                    <span>
+                      Phát hiện {importStudentWarnings.length} cảnh báo thiếu trường / cột dữ liệu (Vẫn cho phép nhập):
+                    </span>
+                  </div>
+                  <ul className="max-h-28 overflow-y-auto list-disc pl-5 space-y-0.5 text-[11.5px] font-medium text-amber-800">
+                    {importStudentWarnings.map((warn, idx) => (
+                      <li key={idx}>{warn}</li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-amber-700 pt-0.5">
+                    * Các trường bị thiếu đã được đánh dấu đỏ bên dưới. Bạn vẫn có thể nhấn <strong>Xác nhận nhập</strong> và chỉnh sửa bổ sung sau.
+                  </p>
+                </div>
+              )}
+
+              {/* BẢNG XEM TRƯỚC DANH SÁCH SINH VIÊN */}
+              {previewStudents.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                      Xem trước danh sách sinh viên ({previewStudents.length} sinh viên)
+                    </p>
+                    {importStudentWarnings.length > 0 ? (
+                      <span className="text-[11px] font-semibold text-amber-600">
+                        ⚠ Có trường thiếu · Vẫn có thể nhập
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-emerald-600">✓ Đủ 3 trường hợp lệ</span>
+                    )}
+                  </div>
+                  <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                    <table className="w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                        <tr>
+                          <th className="px-3 py-2.5 w-12 text-center">STT</th>
+                          <th className="px-3 py-2.5 w-28">Mã sinh viên</th>
+                          <th className="px-3 py-2.5">Họ và tên</th>
+                          <th className="px-3 py-2.5">Email</th>
+                          <th className="px-3 py-2.5 w-32">Kiểm tra</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {previewStudents.map((st, i) => {
+                          const hasMissing = st.missingFields.length > 0;
+                          const isMissingId = st.missingFields.includes('Thiếu Mã SV') || !st.id;
+                          const isMissingName = st.missingFields.includes('Thiếu Họ và tên') || !st.name;
+                          const isMissingEmail =
+                            st.missingFields.includes('Thiếu Email') ||
+                            st.missingFields.includes('Email sai định dạng') ||
+                            !st.email;
+
+                          return (
+                            <tr
+                              key={st.id || i}
+                              className={hasMissing ? 'bg-amber-50/50 hover:bg-amber-50' : 'hover:bg-slate-50/60'}
+                            >
+                              <td className="px-3 py-2 text-center font-medium text-slate-400">{i + 1}</td>
+                              <td className="px-3 py-2 font-bold text-slate-900">
+                                {isMissingId ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    Thiếu Mã SV
+                                  </span>
+                                ) : (
+                                  st.id
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-slate-700 font-medium">
+                                {isMissingName ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    Thiếu Họ và tên
+                                  </span>
+                                ) : (
+                                  st.name
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-slate-500">
+                                {isMissingEmail ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    {st.missingFields.includes('Email sai định dạng')
+                                      ? `Sai Email (${st.email})`
+                                      : 'Thiếu Email'}
+                                  </span>
+                                ) : (
+                                  st.email
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                {hasMissing ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                    ⚠ {st.missingFields.join(', ')}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                                    ✓ Đủ thông tin
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* TẢI TỆP MẪU CHUẨN */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200/90 bg-white p-3.5">
+                <div className="flex items-center gap-3">
+                  <FileSpreadsheet className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">Tệp mẫu chuẩn Oculide (CSV / Excel)</p>
+                    <p className="text-[11px] text-slate-400">
+                      3 cột bắt buộc: Mã sinh viên, Họ và tên, Email
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={downloadStudentSampleTemplate}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5 text-slate-500" />
+                    <span>Tải tệp mẫu</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* NÚT THAO TÁC */}
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsImportStudentsOpen(false);
+                    handleResetImportStudentState();
+                  }}
+                  className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  disabled={previewStudents.length === 0}
+                  onClick={handleConfirmBulkImportStudents}
+                  className={`h-10 rounded-xl px-5 text-xs font-semibold transition cursor-pointer ${
+                    previewStudents.length > 0
+                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm shadow-blue-500/20'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  Xác nhận nhập ({previewStudents.length} sinh viên)
+                </button>
+              </div>
+            </div>
           </section>
         </div>
       )}

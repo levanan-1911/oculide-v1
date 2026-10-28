@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -13,6 +13,7 @@ import {
   X,
   Plus,
   KeyRound,
+  Download,
 } from 'lucide-react';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
@@ -21,13 +22,18 @@ import {
   ClassStatus,
   StudentRow,
   UploadedFileInfo,
-  FileRowError,
   getStoredClasses,
   saveStoredClasses,
 } from '../types';
+import {
+  parseStudentFile,
+  downloadStudentSampleTemplate,
+  ParsedStudentRow,
+} from '../excelParser';
 
 export default function CreateClassPage() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [createStep, setCreateStep] = useState<1 | 2>(1);
   const [createClassId, setCreateClassId] = useState('');
@@ -42,109 +48,100 @@ export default function CreateClassPage() {
 
   const [studentInputMode, setStudentInputMode] = useState<'file' | 'manual'>('file');
   const [uploadedFileInfo, setUploadedFileInfo] = useState<UploadedFileInfo | null>(null);
-  const [fileValidationErrors, setFileValidationErrors] = useState<FileRowError[]>([]);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [createdStudents, setCreatedStudents] = useState<StudentRow[]>([]);
+  const [isParsing, setIsParsing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const [manualStudentId, setManualStudentId] = useState('');
   const [manualStudentName, setManualStudentName] = useState('');
   const [manualStudentEmail, setManualStudentEmail] = useState('');
   const [createError, setCreateError] = useState('');
 
-  function downloadSampleTemplate() {
-    const sampleCsv = `Mã SV,Họ và tên,Email\nSE184801,Nguyễn Văn An,an.nv@school.edu.vn\nSE184802,Trần Thu Bình,binh.tt@school.edu.vn\nSE184803,Lê Hải Nam,nam.lh@school.edu.vn\nSE184804,Phạm Minh Châu,chau.pm@school.edu.vn`;
-    const blob = new Blob(['\uFEFF' + sampleCsv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'Mau_Danh_Sach_Sinh_Vien.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
-  function handleFileUpload(file: File) {
+  async function handleFileUpload(file: File) {
     setCreateError('');
+    setImportWarnings([]);
+    setIsParsing(true);
+
     const sizeKB =
       file.size < 1024
         ? `${file.size} B`
         : `${(file.size / 1024).toFixed(1)} KB`;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = String(e.target?.result ?? '');
-      const rawLines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+    try {
+      const result = await parseStudentFile(file);
 
-      const parsed: StudentRow[] = [];
-      const errors: FileRowError[] = [];
-
-      const startIndex = rawLines[0]?.toLowerCase().includes('mã') ? 1 : 0;
-
-      for (let i = startIndex; i < rawLines.length; i++) {
-        const line = rawLines[i].trim();
-        const rowNum = i + 1;
-        const delimiter = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ',';
-        const parts = line.split(delimiter).map((p) => p.trim());
-        const id = parts[0] || '';
-        const name = parts[1] || '';
-        const email = parts[2] || '';
-
-        if (!id && !name && !email) {
-          errors.push({
-            rowNumber: rowNum,
-            rawData: line,
-            errorMessage: 'Dòng trống hoặc không đúng định dạng',
-          });
-        } else if (!id) {
-          errors.push({
-            rowNumber: rowNum,
-            rawData: line,
-            errorMessage: `Thiếu "Mã sinh viên" (Họ tên: ${name || 'Chưa rõ'})`,
-          });
-        } else if (!name) {
-          errors.push({
-            rowNumber: rowNum,
-            rawData: line,
-            errorMessage: `Thiếu "Họ và tên" (Mã SV: ${id})`,
-          });
-        } else if (!email) {
-          errors.push({
-            rowNumber: rowNum,
-            rawData: line,
-            errorMessage: `Thiếu "Email" (Mã SV: ${id} - Họ tên: ${name})`,
-          });
-        } else if (!email.includes('@') || !email.includes('.')) {
-          errors.push({
-            rowNumber: rowNum,
-            rawData: line,
-            errorMessage: `Email không hợp lệ: "${email}" (Mã SV: ${id})`,
-          });
-        } else {
-          parsed.push({
-            id: id.toUpperCase(),
-            name,
-            email: email.toLowerCase(),
-            status: 'Đang học',
-          });
-        }
+      if (result.errorMessage) {
+        setCreateError(result.errorMessage);
+        setUploadedFileInfo(null);
+        setCreatedStudents([]);
+        return;
       }
 
+      setImportWarnings(result.warnings);
       setUploadedFileInfo({
         name: file.name,
         sizeFormatted: sizeKB,
-        totalRows: rawLines.length - startIndex,
-        validCount: parsed.length,
-        invalidCount: errors.length,
+        totalRows: result.totalRows,
+        validCount: result.parsedStudents.filter((s) => s.missingFields.length === 0).length,
+        invalidCount: result.parsedStudents.filter((s) => s.missingFields.length > 0).length,
       });
-      setFileValidationErrors(errors);
-      setCreatedStudents(parsed);
-    };
-    reader.readAsText(file);
+
+      // Lưu danh sách sinh viên được phân tích
+      setCreatedStudents(
+        result.parsedStudents.map((s) => ({
+          id: s.id,
+          name: s.name,
+          email: s.email,
+          status: 'Đang học',
+          missingFields: s.missingFields,
+        }))
+      );
+    } catch (err) {
+      setCreateError(
+        err instanceof Error
+          ? err.message
+          : 'Không thể đọc nội dung tệp. Vui lòng kiểm tra lại định dạng tệp Excel (.xlsx, .xls) hoặc CSV.'
+      );
+      setUploadedFileInfo(null);
+      setCreatedStudents([]);
+    } finally {
+      setIsParsing(false);
+    }
   }
 
   function clearUploadedFile() {
     setUploadedFileInfo(null);
-    setFileValidationErrors([]);
+    setImportWarnings([]);
     setCreatedStudents([]);
+    setCreateError('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files && e.target.files[0]) {
+      handleFileUpload(e.target.files[0]);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileUpload(e.dataTransfer.files[0]);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
   }
 
   function handleAddManualStudent() {
@@ -417,145 +414,224 @@ export default function CreateClassPage() {
                     {/* Khung tải file khi chọn Nhập từ file */}
                     {studentInputMode === 'file' && (
                       <div className="mt-5 space-y-4">
-                        {/* 1. KHUNG KÉO THẢ TỆP LUÔN HIỂN THỊ Ở TRÊN */}
-                        <label className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-blue-200 bg-white p-6 transition hover:border-blue-400 hover:bg-blue-50/20 cursor-pointer">
-                          <UploadCloud className="mb-2 h-8 w-8 text-blue-500" />
-                          <p className="text-xs font-bold text-slate-800 text-center">
-                            Kéo thả file .xlsx / .csv vào đây hoặc bấm để duyệt
-                          </p>
-                          <p className="mt-1 text-[11px] text-slate-400 text-center">
-                            Hỗ trợ định dạng CSV hoặc Excel gồm các cột: Mã SV, Họ và tên, Email
-                          </p>
-                          <input
-                            type="file"
-                            accept=".csv,.xlsx,.xls,.txt"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) handleFileUpload(file);
-                            }}
-                            className="hidden"
-                          />
-                        </label>
+                        {/* Input file ẩn */}
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".csv, .xlsx, .xls"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
 
-                        {/* Thanh công cụ: Link tải file mẫu */}
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-500 font-medium">
-                            {uploadedFileInfo
-                              ? `Đang chọn file: ${uploadedFileInfo.name}`
-                              : 'Chưa chọn file. Vui lòng tải lên file danh sách sinh viên (.csv, .xlsx).'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={downloadSampleTemplate}
-                            className="inline-flex items-center gap-1.5 font-semibold text-blue-600 hover:underline cursor-pointer"
+                        {/* 1. KHUNG KÉO THẢ TỆP */}
+                        {!uploadedFileInfo ? (
+                          <div
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                            onClick={() => fileInputRef.current?.click()}
+                            className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 text-center transition-all cursor-pointer ${
+                              isDragging
+                                ? 'border-blue-600 bg-blue-50/70 scale-[0.99]'
+                                : 'border-slate-200 bg-white hover:border-blue-400 hover:bg-blue-50/20'
+                            }`}
                           >
-                            <FileSpreadsheet className="h-3.5 w-3.5" />
-                            Tải file mẫu Excel (.csv)
-                          </button>
-                        </div>
-
-                        {/* 2. THÔNG TIN FILE HIỂN THỊ Ở DƯỚI KHUNG TẢI LÊN */}
-                        {uploadedFileInfo && (
-                          <div className="space-y-3.5 pt-2 border-t border-slate-200/60">
-                            {/* Card thông tin tệp */}
-                            <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 sm:p-5">
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="flex items-center gap-3.5">
-                                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-500/30">
-                                    <FileSpreadsheet className="h-5 w-5" />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="truncate text-sm font-bold text-slate-900">
-                                      {uploadedFileInfo.name}
-                                    </p>
-                                    <p className="text-xs text-slate-500">
-                                      Dung lượng:{' '}
-                                      <span className="font-semibold text-slate-700">
-                                        {uploadedFileInfo.sizeFormatted}
-                                      </span>{' '}
-                                      • Đã phân tích:{' '}
-                                      <span className="font-semibold text-slate-700">
-                                        {uploadedFileInfo.totalRows} dòng
-                                      </span>
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={clearUploadedFile}
-                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-red-600 cursor-pointer self-start sm:self-auto"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                  Hủy / Xóa file
-                                </button>
-                              </div>
-
-                              <div className="mt-3.5 flex flex-wrap items-center gap-4 border-t border-blue-100 pt-3 text-xs">
-                                <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700">
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                                  <strong>{uploadedFileInfo.validCount}</strong> sinh viên hợp lệ
-                                </span>
-                                {uploadedFileInfo.invalidCount > 0 && (
-                                  <span className="inline-flex items-center gap-1.5 font-semibold text-amber-700">
-                                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                                    <strong>{uploadedFileInfo.invalidCount}</strong> dòng bị lỗi / thiếu trường
-                                  </span>
-                                )}
-                              </div>
+                            <div
+                              className={`flex h-12 w-12 items-center justify-center rounded-2xl transition ${
+                                isDragging ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-600'
+                              }`}
+                            >
+                              <UploadCloud className="h-6 w-6" />
                             </div>
-
-                            {/* Cảnh báo lỗi nếu có dòng thiếu trường */}
-                            {fileValidationErrors.length > 0 && (
-                              <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-xs text-amber-900 shadow-sm">
-                                <div className="flex items-center gap-2 text-sm font-bold text-amber-800">
-                                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-                                  Phát hiện {fileValidationErrors.length} dòng dữ liệu chưa hợp lệ hoặc thiếu trường bắt buộc:
+                            <p className="mt-3 text-sm font-bold text-slate-800">
+                              Kéo thả tệp dữ liệu vào đây hoặc{' '}
+                              <span className="text-blue-600 underline">chọn từ máy tính</span>
+                            </p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              Hỗ trợ định dạng .csv, .xlsx, .xls (Dung lượng tối đa: 10MB)
+                            </p>
+                            <p className="mt-1 text-[11px] font-medium text-slate-500">
+                              3 cột chuẩn: Mã sinh viên, Họ và tên, Email
+                            </p>
+                          </div>
+                        ) : (
+                          /* THẺ HIỂN THỊ TỆP ĐÃ ĐƯỢC CHỌN */
+                          <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+                                  <FileSpreadsheet className="h-6 w-6" />
                                 </div>
-                                <ul className="mt-2.5 max-h-36 overflow-y-auto space-y-1.5 pl-6 list-disc text-amber-800/90 font-medium">
-                                  {fileValidationErrors.map((err) => (
-                                    <li key={err.rowNumber}>
-                                      <strong>Dòng {err.rowNumber}:</strong> {err.errorMessage}
-                                    </li>
-                                  ))}
-                                </ul>
-                                <p className="mt-3 border-t border-amber-200/70 pt-2 text-[11px] italic text-amber-700">
-                                  {uploadedFileInfo?.validCount ? (
-                                    <>
-                                      Hệ thống đã tự động lọc giữ lại <strong>{uploadedFileInfo.validCount}</strong> sinh viên hợp lệ. Bạn có thể tiếp tục với danh sách này hoặc tải lại file chuẩn.
-                                    </>
-                                  ) : (
-                                    <>
-                                      Không tìm thấy sinh viên hợp lệ nào trong file. Vui lòng kiểm tra lại cấu trúc file hoặc tải file mẫu bên dưới.
-                                    </>
-                                  )}
-                                </p>
-                              </div>
-                            )}
-
-                            {/* Bảng xem trước danh sách sinh viên nạp từ file */}
-                            {createdStudents.length > 0 && (
-                              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                                <p className="text-xs font-bold text-slate-800 mb-2.5">
-                                  Danh sách sinh viên đọc từ file ({createdStudents.length} sinh viên):
-                                </p>
-                                <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-100 divide-y divide-slate-100 text-xs">
-                                  {createdStudents.map((st, i) => (
-                                    <div key={st.id} className="flex items-center justify-between px-3.5 py-2">
-                                      <span className="font-medium text-slate-400 w-8">{i + 1}</span>
-                                      <span className="font-bold text-slate-900 w-28">{st.id}</span>
-                                      <span className="font-semibold text-slate-800 flex-1 truncate">{st.name}</span>
-                                      <span className="text-slate-500 flex-1 truncate">{st.email}</span>
-                                      <span className="rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[10px] font-bold">
-                                        Hợp lệ
-                                      </span>
-                                    </div>
-                                  ))}
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-bold text-slate-900">
+                                    {uploadedFileInfo.name}
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    {uploadedFileInfo.sizeFormatted} · Đọc được {createdStudents.length} sinh viên
+                                    {importWarnings.length > 0 ? ` (${importWarnings.length} cảnh báo thiếu thông tin)` : ''}
+                                  </p>
                                 </div>
                               </div>
-                            )}
+                              <button
+                                type="button"
+                                onClick={clearUploadedFile}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-red-600 shadow-xs cursor-pointer transition"
+                                title="Gỡ tệp để chọn tệp khác"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
                           </div>
                         )}
+
+                        {/* Loading khi đang phân tích tệp */}
+                        {isParsing && (
+                          <div className="flex items-center justify-center gap-2 py-4 text-xs font-semibold text-blue-600">
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                            <span>Đang đọc và phân tích tệp Excel / CSV...</span>
+                          </div>
+                        )}
+
+                        {/* Cảnh báo thiếu trường hoặc cột (Vẫn cho phép nạp) */}
+                        {importWarnings.length > 0 && (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3.5 text-xs text-amber-900 space-y-1.5">
+                            <div className="flex items-center gap-2 font-bold text-amber-800">
+                              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                              <span>
+                                Phát hiện {importWarnings.length} cảnh báo thiếu trường / cột dữ liệu (Vẫn cho phép nạp vào lớp):
+                              </span>
+                            </div>
+                            <ul className="max-h-28 overflow-y-auto list-disc pl-5 space-y-0.5 text-[11.5px] font-medium text-amber-800">
+                              {importWarnings.map((warn, idx) => (
+                                <li key={idx}>{warn}</li>
+                              ))}
+                            </ul>
+                            <p className="text-[11px] text-amber-700 pt-0.5">
+                              * Các trường bị thiếu đã được đánh dấu đỏ trong bảng bên dưới để bổ sung sau.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Bảng xem trước danh sách sinh viên nạp từ file */}
+                        {createdStudents.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                                Danh sách sinh viên đọc từ tệp ({createdStudents.length} sinh viên)
+                              </p>
+                              {importWarnings.length > 0 ? (
+                                <span className="text-[11px] font-semibold text-amber-600">
+                                  ⚠ Có trường thiếu · Vẫn có thể nạp
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-semibold text-emerald-600">
+                                  ✓ Đủ 3 trường hợp lệ
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                              <table className="w-full text-left text-xs">
+                                <thead className="sticky top-0 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                                  <tr>
+                                    <th className="px-3 py-2.5 w-12 text-center">STT</th>
+                                    <th className="px-3 py-2.5 w-32">Mã sinh viên</th>
+                                    <th className="px-3 py-2.5">Họ và tên</th>
+                                    <th className="px-3 py-2.5">Email</th>
+                                    <th className="px-3 py-2.5 w-36">Kiểm tra</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {createdStudents.map((st, i) => {
+                                    const hasMissing = st.missingFields && st.missingFields.length > 0;
+                                    const isMissingId = st.missingFields?.includes('Thiếu Mã SV') || !st.id;
+                                    const isMissingName = st.missingFields?.includes('Thiếu Họ và tên') || !st.name;
+                                    const isMissingEmail =
+                                      st.missingFields?.includes('Thiếu Email') ||
+                                      st.missingFields?.includes('Email sai định dạng') ||
+                                      !st.email;
+
+                                    return (
+                                      <tr
+                                        key={st.id || i}
+                                        className={hasMissing ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-slate-50/60'}
+                                      >
+                                        <td className="px-3 py-2 text-center font-medium text-slate-400">
+                                          {i + 1}
+                                        </td>
+                                        <td className="px-3 py-2 font-bold text-slate-900">
+                                          {isMissingId ? (
+                                            <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                              Thiếu Mã SV
+                                            </span>
+                                          ) : (
+                                            st.id
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-slate-700 font-medium">
+                                          {isMissingName ? (
+                                            <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                              Thiếu Họ và tên
+                                            </span>
+                                          ) : (
+                                            st.name
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-slate-500">
+                                          {isMissingEmail ? (
+                                            <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                              {st.missingFields?.includes('Email sai định dạng')
+                                                ? `Sai Email (${st.email})`
+                                                : 'Thiếu Email'}
+                                            </span>
+                                          ) : (
+                                            st.email
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          {hasMissing ? (
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                              ⚠ {st.missingFields?.join(', ')}
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                                              ✓ Đủ thông tin
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* TẢI TỆP MẪU CHUẨN (ĐỒNG BỘ MODULE NGƯỜI DÙNG) */}
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200/90 bg-white p-3.5">
+                          <div className="flex items-center gap-3">
+                            <FileSpreadsheet className="h-5 w-5 text-emerald-600 shrink-0" />
+                            <div>
+                              <p className="text-xs font-bold text-slate-800">
+                                Tệp mẫu chuẩn Oculide (CSV / Excel)
+                              </p>
+                              <p className="text-[11px] text-slate-400">
+                                3 cột bắt buộc: Mã sinh viên, Họ và tên, Email
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={downloadStudentSampleTemplate}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                            >
+                              <Download className="h-3.5 w-3.5 text-slate-500" />
+                              <span>Tải tệp mẫu</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     )}
 

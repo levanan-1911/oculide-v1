@@ -211,3 +211,4 @@ export function saveStoredSchedules(schedules: ExamScheduleItem[]): void {
     // ignore
   }
 }
+

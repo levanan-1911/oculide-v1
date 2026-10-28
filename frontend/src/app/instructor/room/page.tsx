@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from "react";
+import InstructorSidebar from "../components/InstructorSidebar";
 import {
   ArrowLeft,
   BookOpen,
@@ -226,28 +227,7 @@ export default function InstructorRoomManagementPage() {
   return (
     <main className="min-h-screen bg-[#f3f8f7] text-slate-900">
       <div className="flex min-h-screen">
-        <aside className="hidden w-[216px] shrink-0 flex-col border-r border-slate-200/80 bg-white px-3 py-5 md:flex">
-          <div className="flex items-center gap-2 px-2 pb-8">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white"><ShieldAlert className="h-5 w-5" /></span>
-            <span className="text-xl font-extrabold tracking-tight text-blue-700">OCLIDE</span>
-          </div>
-          <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">Không gian giảng viên</p>
-          <nav aria-label="Điều hướng giảng viên" className="mt-3 space-y-1 text-[13px]">
-            <button type="button" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-slate-500 hover:bg-slate-50"><BookOpen className="h-4 w-4" />Tổng quan</button>
-            <p className="px-3 pb-1 pt-5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Quản lý đào tạo</p>
-            <button type="button" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-slate-500 hover:bg-slate-50"><Users className="h-4 w-4" />Lớp học</button>
-            <button type="button" aria-current="page" className="flex w-full items-center gap-3 rounded-xl bg-blue-50 px-3 py-2.5 text-left font-semibold text-blue-700"><ClipboardList className="h-4 w-4" />Phòng thi & lớp học</button>
-            <button type="button" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-slate-500 hover:bg-slate-50"><CalendarClock className="h-4 w-4" />Lịch & phiên kiểm tra</button>
-            <p className="px-3 pb-1 pt-5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Theo dõi & đánh giá</p>
-            <button type="button" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-slate-500 hover:bg-slate-50"><ShieldAlert className="h-4 w-4" />Giám sát & hỗ trợ</button>
-            <button type="button" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-slate-500 hover:bg-slate-50"><BookOpen className="h-4 w-4" />Kết quả & báo cáo</button>
-          </nav>
-          <div className="mt-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p className="text-[13px] font-semibold text-slate-800">Không gian giảng viên</p>
-            <p className="mt-1 text-xs text-slate-500">Quản lý lớp và phòng</p>
-          </div>
-        </aside>
-
+      <InstructorSidebar activePage="room" />
         <div className="min-w-0 flex-1">
           <div className="mx-auto w-full max-w-[1440px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
             <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

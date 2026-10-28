@@ -139,7 +139,7 @@ export default function InstructorSidebar({
 
   const currentActiveModule =
     activeModule ??
-    (pathname.startsWith('/instructor/classes')
+    (pathname.startsWith('/instructor/classes') || pathname.startsWith('/instructor/room')
       ? 'classes'
       : pathname.startsWith('/instructor/questions')
       ? 'questions'
@@ -149,6 +149,8 @@ export default function InstructorSidebar({
       ? 'monitoring'
       : pathname.startsWith('/instructor/reports')
       ? 'reports'
+      : pathname.startsWith('/instructor/profile')
+      ? 'profile'
       : 'overview');
 
   return (

@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import ClassManagerView from '@/components/admin/ClassManagerView';
+import InstructorClassManagerView from '@/components/instructor/classes/InstructorClassManagerView';
 
 export default function InstructorClassesPage() {
   return (
@@ -10,7 +10,7 @@ export default function InstructorClassesPage() {
         </div>
       }
     >
-      <ClassManagerView hideLayout={true} role="instructor" />
+      <InstructorClassManagerView />
     </Suspense>
   );
 } 

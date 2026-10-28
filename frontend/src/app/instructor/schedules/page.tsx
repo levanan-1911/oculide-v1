@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Calendar,
@@ -17,7 +17,10 @@ import {
   ExternalLink,
   ChevronRight,
   ShieldCheck,
+  Radio,
 } from 'lucide-react';
+import ExtendSessionModal from '@/components/instructor/monitoring/ExtendSessionModal';
+import { INSTRUCTOR_SCHEDULES_STORAGE_KEY } from '@/components/instructor/classes/types';
 
 interface InstructorSession {
   id: string;
@@ -100,20 +103,42 @@ const INITIAL_SESSIONS: InstructorSession[] = [
     endTime: '10:20',
     date: 'Hôm qua',
     roomCode: 'CS102-PTR',
-    passcode: '372109',
+    passcode: '451092',
     status: 'Đã kết thúc',
-    enrolledStudents: 47,
-    attendedStudents: 45,
+    enrolledStudents: 50,
+    attendedStudents: 49,
     isAiProctored: true,
   },
 ];
 
 export default function InstructorSchedulesPage() {
   const [sessions, setSessions] = useState<InstructorSession[]>(INITIAL_SESSIONS);
-  const [filterType, setFilterType] = useState<'all' | 'LAB' | 'EXAM' | 'active' | 'upcoming'>('all');
+  const [filterType, setFilterType] = useState<'ALL' | 'LAB' | 'EXAM' | 'active' | 'upcoming'>('ALL');
   const [search, setSearch] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // State modal gia hạn phòng tùy chỉnh
+  const [sessionToExtend, setSessionToExtend] = useState<InstructorSession | null>(null);
+
+  // Đọc danh sách ca học đã được tạo & lưu vào lịch từ localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
+      if (raw) {
+        const storedSchedules: InstructorSession[] = JSON.parse(raw);
+        if (Array.isArray(storedSchedules) && storedSchedules.length > 0) {
+          setSessions((prev) => {
+            const storedCodes = new Set(storedSchedules.map((s) => s.roomCode.toLowerCase()));
+            const remaining = prev.filter((p) => !storedCodes.has(p.roomCode.toLowerCase()));
+            return [...storedSchedules, ...remaining];
+          });
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -131,20 +156,39 @@ export default function InstructorSchedulesPage() {
     setSessions((prev) =>
       prev.map((s) => (s.id === sessionId ? { ...s, status: 'Đang diễn ra' } : s))
     );
+    try {
+      const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
+      if (raw) {
+        const stored: InstructorSession[] = JSON.parse(raw);
+        const updated = stored.map((s) =>
+          s.id === sessionId ? { ...s, status: 'Đang diễn ra' as const } : s
+        );
+        localStorage.setItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY, JSON.stringify(updated));
+      }
+    } catch {
+      // fallback
+    }
     showToast('Phòng thi đã được mở sớm thành công. Sinh viên đã có thể tham gia!');
   };
 
-  const handleExtendSession = (sessionId: string) => {
+  // Xác nhận gia hạn phòng tùy chỉnh
+  const handleConfirmExtend = (minutes: number, reason: string, notify: boolean) => {
+    if (!sessionToExtend) return;
     setSessions((prev) =>
       prev.map((s) => {
-        if (s.id !== sessionId) return s;
+        if (s.id !== sessionToExtend.id) return s;
         return {
           ...s,
-          endTime: s.endTime + ' (+15p)',
+          endTime: `${s.endTime} (+${minutes}p)`,
         };
       })
     );
-    showToast('Đã gia hạn thêm 15 phút làm bài cho phòng thi!');
+    showToast(
+      `Đã gia hạn thành công +${minutes} phút cho phòng ${sessionToExtend.roomCode}!${
+        notify ? ' (Đã gửi thông báo đến thí sinh)' : ''
+      }`
+    );
+    setSessionToExtend(null);
   };
 
   const filteredSessions = sessions.filter((s) => {
@@ -188,11 +232,11 @@ export default function InstructorSchedulesPage() {
 
         <div className="flex items-center gap-3">
           <Link
-            href="/instructor/monitoring"
+            href="/instructor/room"
             className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
           >
-            <Video className="h-3.5 w-3.5" />
-            <span>Màn hình LiveKit</span>
+            <Plus className="h-3.5 w-3.5" />
+            <span>Tạo &amp; Lên Lịch Phòng Mới</span>
           </Link>
         </div>
       </div>
@@ -202,31 +246,31 @@ export default function InstructorSchedulesPage() {
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Ca thi hôm nay
+              Tổng số ca
             </span>
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
               <Calendar className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">3</span>
-            <span className="text-xs font-semibold text-slate-600">phiên kiểm tra</span>
+            <span className="text-2xl font-black text-slate-900">{sessions.length}</span>
+            <span className="text-xs font-semibold text-slate-600">phiên hôm nay</span>
           </div>
-          <p className="mt-1 text-xs text-blue-600 font-medium">2 Lab • 1 Kiểm tra</p>
+          <p className="mt-1 text-xs text-slate-500">3 ca thực hành • 1 ca thi</p>
         </div>
 
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Phòng đang mở
+              Đang diễn ra
             </span>
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-              <Play className="h-4 w-4" />
+              <Clock className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">1</span>
-            <span className="text-xs font-bold text-emerald-600">CS101-LAB3</span>
+            <span className="text-2xl font-black text-emerald-600">1</span>
+            <span className="text-xs font-semibold text-slate-600">phòng hoạt động</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">46/48 SV đã vào phòng</p>
         </div>
@@ -270,29 +314,30 @@ export default function InstructorSchedulesPage() {
           <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
+            placeholder="Tìm theo môn học, mã phòng, bài lab..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm theo mã lớp, tên bài thi hoặc mã phòng..."
-            className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-4 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-4 text-xs outline-none transition focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
+        {/* Nút lọc */}
         <div className="flex flex-wrap items-center gap-1.5">
           {[
-            { id: 'all', label: 'Tất cả' },
+            { id: 'ALL', label: 'Tất cả' },
             { id: 'active', label: 'Đang diễn ra' },
             { id: 'upcoming', label: 'Sắp diễn ra' },
-            { id: 'LAB', label: 'Bài Lab' },
-            { id: 'EXAM', label: 'Thi / Kiểm tra' },
+            { id: 'LAB', label: 'Thực hành Lab' },
+            { id: 'EXAM', label: 'Kiểm tra' },
           ].map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setFilterType(tab.id as any)}
-              className={`rounded-xl px-3 py-2 text-xs font-bold transition cursor-pointer ${
+              className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
                 filterType === tab.id
                   ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
               {tab.label}
@@ -421,15 +466,18 @@ export default function InstructorSchedulesPage() {
                   {/* Nút hành động */}
                   {session.status === 'Đang diễn ra' ? (
                     <div className="flex items-center gap-2">
+                      {/* NÚT GIA HẠN PHÒNG TÙY CHỈNH */}
                       <button
                         type="button"
-                        onClick={() => handleExtendSession(session.id)}
-                        className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 transition cursor-pointer"
+                        onClick={() => setSessionToExtend(session)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 transition cursor-pointer"
+                        title="Tùy chỉnh số phút gia hạn cho phòng thi này"
                       >
-                        +15 Phút
+                        <Clock className="h-3.5 w-3.5 text-amber-700" />
+                        Gia hạn...
                       </button>
                       <Link
-                        href="/instructor/monitoring"
+                        href={`/instructor/monitoring?room=${encodeURIComponent(session.roomCode)}`}
                         className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-700 transition cursor-pointer"
                       >
                         <Video className="h-3.5 w-3.5" />
@@ -437,14 +485,24 @@ export default function InstructorSchedulesPage() {
                       </Link>
                     </div>
                   ) : session.status === 'Sắp diễn ra' ? (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenRoomEarly(session.id)}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm shadow-blue-600/20 hover:bg-blue-700 transition cursor-pointer"
-                    >
-                      <Play className="h-3.5 w-3.5" />
-                      Mở phòng sớm
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/instructor/room/${encodeURIComponent(session.roomCode)}`}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
+                        title="Vào phòng chờ để điểm danh sinh viên trước giờ bắt đầu"
+                      >
+                        <Users className="h-3.5 w-3.5" />
+                        Vào phòng chờ
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenRoomEarly(session.id)}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm shadow-blue-600/20 hover:bg-blue-700 transition cursor-pointer"
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                        Mở phòng sớm
+                      </button>
+                    </div>
                   ) : (
                     <Link
                       href="/instructor/reports"
@@ -459,6 +517,17 @@ export default function InstructorSchedulesPage() {
           ))
         )}
       </div>
+
+      {/* Modal gia hạn phòng tùy chỉnh từ trang Lịch & Phiên */}
+      {sessionToExtend && (
+        <ExtendSessionModal
+          isOpen={true}
+          onClose={() => setSessionToExtend(null)}
+          roomCode={sessionToExtend.roomCode}
+          currentRemainingMinutes={54}
+          onConfirm={handleConfirmExtend}
+        />
+      )}
     </div>
   );
 }

@@ -140,6 +140,14 @@ export function addMinutesToIso(startIso: string, minutes: number): string {
   }
 }
 
+export interface TestCaseItem {
+  id: string;
+  input: string;
+  expectedOutput: string;
+  isHidden: boolean; // true: Test ẩn chấm điểm, false: Test công khai cho sinh viên xem
+  points?: number; // Điểm số từng test case (ví dụ: 1.0, 2.0, 2.5...)
+}
+
 export interface TemplateQuestionItem {
   id: string;
   title: string;
@@ -148,6 +156,7 @@ export interface TemplateQuestionItem {
   sampleInput?: string;
   sampleOutput?: string;
   testCasesCount: number;
+  testCases?: TestCaseItem[];
 }
 
 export interface QuestionTemplate {
@@ -181,6 +190,13 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         sampleInput: '[3, 7, 10, 11, 4, 15]',
         sampleOutput: '11',
         testCasesCount: 5,
+        testCases: [
+          { id: 'TC-01', input: '[3, 7, 10, 11, 4, 15]', expectedOutput: '11', isHidden: false, points: 2 },
+          { id: 'TC-02', input: '[4, 6, 8, 9]', expectedOutput: '-1', isHidden: false, points: 2 },
+          { id: 'TC-03', input: '[2, 3, 5, 7, 13, 17, 19, 23]', expectedOutput: '23', isHidden: true, points: 2 },
+          { id: 'TC-04', input: '[1]', expectedOutput: '-1', isHidden: true, points: 2 },
+          { id: 'TC-05', input: '[97, 2, 4, 6]', expectedOutput: '97', isHidden: true, points: 2 },
+        ],
       },
       {
         id: 'Q-02',
@@ -190,6 +206,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         sampleInput: '[1, 2, 3, 4, 5]',
         sampleOutput: '[5, 4, 3, 2, 1]',
         testCasesCount: 4,
+        testCases: [
+          { id: 'TC-01', input: '[1, 2, 3, 4, 5]', expectedOutput: '[5, 4, 3, 2, 1]', isHidden: false, points: 2.5 },
+          { id: 'TC-02', input: '[10, 20]', expectedOutput: '[20, 10]', isHidden: false, points: 2.5 },
+          { id: 'TC-03', input: '[7]', expectedOutput: '[7]', isHidden: true, points: 2.5 },
+          { id: 'TC-04', input: '[-1, 0, 1, 2, 3]', expectedOutput: '[3, 2, 1, 0, -1]', isHidden: true, points: 2.5 },
+        ],
       },
       {
         id: 'Q-03',
@@ -197,8 +219,15 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         difficulty: 'Trung bình',
         description: 'Áp dụng thuật toán Kadane để tìm tổng lớn nhất của dãy con liên tiếp trong mảng có cả số âm.',
         sampleInput: '[-2, 1, -3, 4, -1, 2, 1, -5, 4]',
-        sampleOutput: '6 (dãy [4, -1, 2, 1])',
-        testCasesCount: 8,
+        sampleOutput: '6',
+        testCasesCount: 5,
+        testCases: [
+          { id: 'TC-01', input: '[-2, 1, -3, 4, -1, 2, 1, -5, 4]', expectedOutput: '6', isHidden: false, points: 2 },
+          { id: 'TC-02', input: '[1]', expectedOutput: '1', isHidden: false, points: 2 },
+          { id: 'TC-03', input: '[-1, -2, -3]', expectedOutput: '-1', isHidden: true, points: 2 },
+          { id: 'TC-04', input: '[5, 4, -1, 7, 8]', expectedOutput: '23', isHidden: true, points: 2 },
+          { id: 'TC-05', input: '[1, 2, 3, -2, 5]', expectedOutput: '9', isHidden: true, points: 2 },
+        ],
       },
     ],
     updatedAt: '24/10/2026',
@@ -219,7 +248,13 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Loại bỏ khoảng trắng thừa, viết hoa chữ cái đầu mỗi từ và kiểm tra định dạng email hợp lệ.',
         sampleInput: '"  nguyen  van   an  "',
         sampleOutput: '"Nguyen Van An"',
-        testCasesCount: 6,
+        testCasesCount: 4,
+        testCases: [
+          { id: 'TC-01', input: '"  nguyen  van   an  "', expectedOutput: '"Nguyen Van An"', isHidden: false, points: 2.5 },
+          { id: 'TC-02', input: '"LE THI HOA"', expectedOutput: '"Le Thi Hoa"', isHidden: false, points: 2.5 },
+          { id: 'TC-03', input: '" tran   duc  nam "', expectedOutput: '"Tran Duc Nam"', isHidden: true, points: 2.5 },
+          { id: 'TC-04', input: '"bui hoa"', expectedOutput: '"Bui Hoa"', isHidden: true, points: 2.5 },
+        ],
       },
       {
         id: 'Q-02',
@@ -228,7 +263,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Nhận mảng công việc và tạo các phần tử DOM kèm nút Đánh dấu hoàn thành.',
         sampleInput: '[{ text: "Nộp bài lab", done: false }]',
         sampleOutput: 'HTML Element <ul>...</ul>',
-        testCasesCount: 5,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: '[{ text: "Nộp bài lab", done: false }]', expectedOutput: '<ul><li>Nộp bài lab</li></ul>', isHidden: false, points: 3 },
+          { id: 'TC-02', input: '[]', expectedOutput: '<ul></ul>', isHidden: false, points: 3 },
+          { id: 'TC-03', input: '[{ text: "A", done: true }, { text: "B", done: false }]', expectedOutput: '<ul><li class="done">A</li><li>B</li></ul>', isHidden: true, points: 4 },
+        ],
       },
       {
         id: 'Q-03',
@@ -237,7 +277,13 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Kiểm tra mật khẩu tối thiểu 8 ký tự, có ít nhất 1 chữ hoa, 1 số và 1 ký tự đặc biệt.',
         sampleInput: '"P@ssw0rd2026"',
         sampleOutput: 'true',
-        testCasesCount: 7,
+        testCasesCount: 4,
+        testCases: [
+          { id: 'TC-01', input: '"P@ssw0rd2026"', expectedOutput: 'true', isHidden: false, points: 2.5 },
+          { id: 'TC-02', input: '"abc"', expectedOutput: 'false', isHidden: false, points: 2.5 },
+          { id: 'TC-03', input: '"Password"', expectedOutput: 'false', isHidden: true, points: 2.5 },
+          { id: 'TC-04', input: '"Admin#9999"', expectedOutput: 'true', isHidden: true, points: 2.5 },
+        ],
       },
     ],
     updatedAt: '24/10/2026',
@@ -258,7 +304,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Gửi request đến endpoint, nếu lỗi kết nối tự động thử lại tối đa 3 lần với exponential backoff.',
         sampleInput: 'fetchWithRetry(url, 3, 1000)',
         sampleOutput: 'Response { status: 200, data: [...] }',
-        testCasesCount: 5,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'fetchWithRetry("/api/success", 3, 1000)', expectedOutput: '{ status: 200 }', isHidden: false, points: 3 },
+          { id: 'TC-02', input: 'fetchWithRetry("/api/timeout-then-ok", 3, 500)', expectedOutput: '{ status: 200, retries: 2 }', isHidden: false, points: 3 },
+          { id: 'TC-03', input: 'fetchWithRetry("/api/error-404", 3, 500)', expectedOutput: 'Error: Request failed 404', isHidden: true, points: 4 },
+        ],
       },
       {
         id: 'Q-02',
@@ -267,7 +318,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Lấy dữ liệu đồng thời từ 5 API khác nhau và phân loại kết quả thành công và thất bại.',
         sampleInput: '[url1, url2, url3]',
         sampleOutput: '{ fulfilled: 2, rejected: 1 }',
-        testCasesCount: 6,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: '[url1, url2, url3]', expectedOutput: '{ fulfilled: 2, rejected: 1 }', isHidden: false, points: 5 },
+          { id: 'TC-02', input: '[url1]', expectedOutput: '{ fulfilled: 1, rejected: 0 }', isHidden: false, points: 2.5 },
+          { id: 'TC-03', input: '[failUrl1, failUrl2]', expectedOutput: '{ fulfilled: 0, rejected: 2 }', isHidden: true, points: 2.5 },
+        ],
       },
     ],
     updatedAt: '24/10/2026',
@@ -288,7 +344,13 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Cài đặt hàm insertAt(k, val) và removeAt(k) trên danh sách liên kết đơn.',
         sampleInput: 'head -> [1] -> [3], insertAt(1, 2)',
         sampleOutput: 'head -> [1] -> [2] -> [3]',
-        testCasesCount: 5,
+        testCasesCount: 4,
+        testCases: [
+          { id: 'TC-01', input: 'head -> [1] -> [3], insertAt(1, 2)', expectedOutput: '[1, 2, 3]', isHidden: false, points: 2.5 },
+          { id: 'TC-02', input: 'head -> [1] -> [2], removeAt(0)', expectedOutput: '[2]', isHidden: false, points: 2.5 },
+          { id: 'TC-03', input: 'head -> null, insertAt(0, 10)', expectedOutput: '[10]', isHidden: true, points: 2.5 },
+          { id: 'TC-04', input: 'head -> [5, 6], removeAt(1)', expectedOutput: '[5]', isHidden: true, points: 2.5 },
+        ],
       },
       {
         id: 'Q-02',
@@ -297,7 +359,13 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Kiểm tra xem chuỗi chứa các dấu (), [], {} có đóng mở đúng thứ tự hay không.',
         sampleInput: '"({[]})"',
         sampleOutput: 'true',
-        testCasesCount: 6,
+        testCasesCount: 4,
+        testCases: [
+          { id: 'TC-01', input: '"({[]})"', expectedOutput: 'true', isHidden: false, points: 2.5 },
+          { id: 'TC-02', input: '"([)]"', expectedOutput: 'false', isHidden: false, points: 2.5 },
+          { id: 'TC-03', input: '""', expectedOutput: 'true', isHidden: true, points: 2.5 },
+          { id: 'TC-04', input: '")("', expectedOutput: 'false', isHidden: true, points: 2.5 },
+        ],
       },
       {
         id: 'Q-03',
@@ -306,7 +374,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Sử dụng Stack để chuyển đổi biểu thức toán học dạng Infix sang Postfix.',
         sampleInput: '"A + B * C"',
         sampleOutput: '"A B C * +"',
-        testCasesCount: 8,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: '"A + B * C"', expectedOutput: '"A B C * +"', isHidden: false, points: 3 },
+          { id: 'TC-02', input: '"(A + B) * C"', expectedOutput: '"A B + C *"', isHidden: false, points: 3 },
+          { id: 'TC-03', input: '"A + B - C"', expectedOutput: '"A B + C -"', isHidden: true, points: 4 },
+        ],
       },
       {
         id: 'Q-04',
@@ -315,7 +388,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Đảo ngược từng cụm k node liên tiếp trong danh sách liên kết đơn.',
         sampleInput: '[1, 2, 3, 4, 5], k = 2',
         sampleOutput: '[2, 1, 4, 3, 5]',
-        testCasesCount: 5,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: '[1, 2, 3, 4, 5], k = 2', expectedOutput: '[2, 1, 4, 3, 5]', isHidden: false, points: 3 },
+          { id: 'TC-02', input: '[1, 2, 3, 4, 5], k = 3', expectedOutput: '[3, 2, 1, 4, 5]', isHidden: false, points: 3 },
+          { id: 'TC-03', input: '[1, 2], k = 2', expectedOutput: '[2, 1]', isHidden: true, points: 4 },
+        ],
       },
     ],
     updatedAt: '24/10/2026',
@@ -336,7 +414,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Cài đặt Priority Queue bằng cấu trúc Max-Heap với 2 hàm push và pop.',
         sampleInput: 'push(10), push(30), push(20), pop()',
         sampleOutput: '30',
-        testCasesCount: 5,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'push(10), push(30), push(20), pop()', expectedOutput: '30', isHidden: false, points: 3 },
+          { id: 'TC-02', input: 'push(5), pop()', expectedOutput: '5', isHidden: false, points: 3 },
+          { id: 'TC-03', input: 'push(1), push(99), push(50), pop(), pop()', expectedOutput: '99, then 50', isHidden: true, points: 4 },
+        ],
       },
       {
         id: 'Q-02',
@@ -345,7 +428,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Duyệt các node của cây theo thứ tự từng tầng từ trên xuống dưới sử dụng Queue.',
         sampleInput: 'Root: [3, 9, 20, null, null, 15, 7]',
         sampleOutput: '[[3], [9, 20], [15, 7]]',
-        testCasesCount: 6,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'Root: [3, 9, 20, null, null, 15, 7]', expectedOutput: '[[3], [9, 20], [15, 7]]', isHidden: false, points: 3 },
+          { id: 'TC-02', input: 'Root: [1]', expectedOutput: '[[1]]', isHidden: false, points: 3 },
+          { id: 'TC-03', input: 'Root: []', expectedOutput: '[]', isHidden: true, points: 4 },
+        ],
       },
       {
         id: 'Q-03',
@@ -354,7 +442,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Kiểm tra độ chênh lệch chiều cao giữa 2 cây con của mọi node không vượt quá 1.',
         sampleInput: 'Tree [1, 2, 2, 3, 3, null, null, 4, 4]',
         sampleOutput: 'false',
-        testCasesCount: 7,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'Tree [1, 2, 2, 3, 3, null, null, 4, 4]', expectedOutput: 'false', isHidden: false, points: 3 },
+          { id: 'TC-02', input: 'Tree [3, 9, 20, null, null, 15, 7]', expectedOutput: 'true', isHidden: false, points: 3 },
+          { id: 'TC-03', input: 'Tree []', expectedOutput: 'true', isHidden: true, points: 4 },
+        ],
       },
     ],
     updatedAt: '24/10/2026',
@@ -375,7 +468,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Tạo class Student có private fields name, gpa. Có method getGradeRank() trả về Giỏi/Khá/TB.',
         sampleInput: 'new Student("An", 3.6)',
         sampleOutput: 'rank: "Giỏi"',
-        testCasesCount: 4,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'new Student("An", 3.6).getGradeRank()', expectedOutput: '"Giỏi"', isHidden: false, points: 3 },
+          { id: 'TC-02', input: 'new Student("Binh", 2.8).getGradeRank()', expectedOutput: '"Khá"', isHidden: false, points: 3 },
+          { id: 'TC-03', input: 'new Student("Cuong", 1.9).getGradeRank()', expectedOutput: '"Yếu"', isHidden: true, points: 4 },
+        ],
       },
       {
         id: 'Q-02',
@@ -384,7 +482,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Cài đặt phương thức deposit và withdraw với điều kiện số dư tối thiểu không âm.',
         sampleInput: 'balance = 100, withdraw(120)',
         sampleOutput: 'false, balance = 100',
-        testCasesCount: 6,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'balance = 100, withdraw(120)', expectedOutput: 'false, balance = 100', isHidden: false, points: 3 },
+          { id: 'TC-02', input: 'balance = 200, deposit(50), withdraw(100)', expectedOutput: 'true, balance = 150', isHidden: false, points: 3 },
+          { id: 'TC-03', input: 'balance = 0, deposit(0)', expectedOutput: 'false, balance = 0', isHidden: true, points: 4 },
+        ],
       },
       {
         id: 'Q-03',
@@ -393,7 +496,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Lớp cha Employee, hai lớp con FullTimeEmployee và PartTimeEmployee tính lương theo công thức.',
         sampleInput: 'PartTimeEmployee(rate=50k, hours=80)',
         sampleOutput: 'salary = 4000000',
-        testCasesCount: 5,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'PartTimeEmployee(rate=50k, hours=80)', expectedOutput: 'salary = 4000000', isHidden: false, points: 3 },
+          { id: 'TC-02', input: 'FullTimeEmployee(base=8000000, bonus=1500000)', expectedOutput: 'salary = 9500000', isHidden: false, points: 3 },
+          { id: 'TC-03', input: 'PartTimeEmployee(rate=50k, hours=0)', expectedOutput: 'salary = 0', isHidden: true, points: 4 },
+        ],
       },
     ],
     updatedAt: '24/10/2026',
@@ -415,7 +523,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Viết hàm filterAndPaginate(items, search, category, page, limit) trả về danh sách trang tương ứng.',
         sampleInput: 'items (100 sp), category="tech", page=2, limit=10',
         sampleOutput: '{ data: 10 items, totalPages: 4 }',
-        testCasesCount: 6,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'items (100 sp), category="tech", page=2, limit=10', expectedOutput: '{ data: 10 items, totalPages: 4 }', isHidden: false, points: 1 },
+          { id: 'TC-02', input: 'items (10 sp), category="all", page=1, limit=20', expectedOutput: '{ data: 10 items, totalPages: 1 }', isHidden: false, points: 1 },
+          { id: 'TC-03', input: 'items (50 sp), category="empty", page=1, limit=10', expectedOutput: '{ data: 0 items, totalPages: 0 }', isHidden: true, points: 1 },
+        ],
       },
       {
         id: 'Q-02',
@@ -424,7 +537,13 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Middleware kiểm tra token Bearer, giải mã payload và xác nhận quyền hạn người dùng trước khi next().',
         sampleInput: 'header: "Bearer invalid_token"',
         sampleOutput: '401 Unauthorized',
-        testCasesCount: 8,
+        testCasesCount: 4,
+        testCases: [
+          { id: 'TC-01', input: 'header: "Bearer invalid_token"', expectedOutput: '401 Unauthorized', isHidden: false, points: 1 },
+          { id: 'TC-02', input: 'header: "Bearer valid_admin_token"', expectedOutput: '200 OK (req.user set)', isHidden: false, points: 1 },
+          { id: 'TC-03', input: 'header: missing', expectedOutput: '401 Unauthorized', isHidden: true, points: 1 },
+          { id: 'TC-04', input: 'header: "Bearer valid_student_token" access admin endpoint', expectedOutput: '403 Forbidden', isHidden: true, points: 1 },
+        ],
       },
       {
         id: 'Q-03',
@@ -433,7 +552,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Tính tổng tiền giỏ hàng, áp dụng voucher giảm giá (tiền cố định hoặc %) và thuế VAT chuẩn.',
         sampleInput: 'cart 500k, voucher DISCOUNT20 (20%, max 80k)',
         sampleOutput: 'finalTotal = 420k',
-        testCasesCount: 10,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'cart 500k, voucher DISCOUNT20 (20%, max 80k)', expectedOutput: 'finalTotal = 420k', isHidden: false, points: 1 },
+          { id: 'TC-02', input: 'cart 200k, voucher MIN300K', expectedOutput: 'finalTotal = 200k (Voucher not applicable)', isHidden: false, points: 1 },
+          { id: 'TC-03', input: 'cart 1000k, voucher FIXED100K', expectedOutput: 'finalTotal = 900k', isHidden: true, points: 2 },
+        ],
       },
     ],
     updatedAt: '24/10/2026',
@@ -455,7 +579,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Áp dụng thuật toán Dijkstra với Priority Queue để tìm khoảng cách ngắn nhất từ đỉnh nguồn S đến mọi đỉnh.',
         sampleInput: 'Đồ thị 6 đỉnh có trọng số dương, nguồn 1',
         sampleOutput: 'Mảng khoảng cách [0, 4, 12, 19, 21, 11]',
-        testCasesCount: 8,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'Đồ thị 6 đỉnh có trọng số dương, nguồn 1', expectedOutput: 'Mảng khoảng cách [0, 4, 12, 19, 21, 11]', isHidden: false, points: 2 },
+          { id: 'TC-02', input: 'Đồ thị rời rạc có đỉnh không tới được', expectedOutput: 'INF', isHidden: false, points: 2 },
+          { id: 'TC-03', input: 'Đồ thị 100 đỉnh, 500 cạnh', expectedOutput: 'Khoảng cách tối ưu O((V+E)logV)', isHidden: true, points: 1 },
+        ],
       },
       {
         id: 'Q-02',
@@ -464,7 +593,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Sử dụng DFS và Stack để xác định tất cả các thành phần liên thông mạnh trong đồ thị có hướng.',
         sampleInput: 'Directed Graph 8 đỉnh, 14 cạnh',
         sampleOutput: '3 thành phần liên thông mạnh',
-        testCasesCount: 10,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'Directed Graph 8 đỉnh, 14 cạnh', expectedOutput: '3 thành phần liên thông mạnh', isHidden: false, points: 2 },
+          { id: 'TC-02', input: 'Đồ thị chu trình đơn C5', expectedOutput: '1 thành phần liên thông mạnh', isHidden: false, points: 2 },
+          { id: 'TC-03', input: 'DAG không có chu trình', expectedOutput: 'V thành phần liên thông mạnh', isHidden: true, points: 1 },
+        ],
       },
     ],
     updatedAt: '24/10/2026',
@@ -486,7 +620,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Tạo interface PaymentMethod với các implementation: CreditCard, EWallet, BankTransfer.',
         sampleInput: 'processPayment(new EWallet("Momo", 500000), 200000)',
         sampleOutput: 'Success: remaining 300000',
-        testCasesCount: 6,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'processPayment(new EWallet("Momo", 500000), 200000)', expectedOutput: 'Success: remaining 300000', isHidden: false, points: 1.5 },
+          { id: 'TC-02', input: 'processPayment(new CreditCard("1234", 100000), 150000)', expectedOutput: 'Failed: Insufficient limit', isHidden: false, points: 1.5 },
+          { id: 'TC-03', input: 'processPayment(new BankTransfer("VCB", 1000000), 500000)', expectedOutput: 'Success: remaining 500000', isHidden: true, points: 1 },
+        ],
       },
       {
         id: 'Q-02',
@@ -495,7 +634,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Bắt các trường hợp số tiền âm, vượt hạn mức ngày và ném ngoại lệ tùy chỉnh.',
         sampleInput: 'transfer(-50000)',
         sampleOutput: 'Throw InvalidTransactionException("Số tiền không hợp lệ")',
-        testCasesCount: 5,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'transfer(-50000)', expectedOutput: 'Throw InvalidTransactionException("Số tiền không hợp lệ")', isHidden: false, points: 1.5 },
+          { id: 'TC-02', input: 'transfer(50000000) > maxDailyLimit', expectedOutput: 'Throw InvalidTransactionException("Vượt hạn mức ngày")', isHidden: false, points: 1.5 },
+          { id: 'TC-03', input: 'transfer(100000)', expectedOutput: 'Success', isHidden: true, points: 1 },
+        ],
       },
       {
         id: 'Q-03',
@@ -504,7 +648,12 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
         description: 'Áp dụng Factory Pattern để sinh hóa đơn theo định dạng JSON, XML hoặc PDF.',
         sampleInput: 'InvoiceFactory.create("JSON", invoiceData)',
         sampleOutput: 'JSON formatted string',
-        testCasesCount: 8,
+        testCasesCount: 3,
+        testCases: [
+          { id: 'TC-01', input: 'InvoiceFactory.create("JSON", invoiceData)', expectedOutput: 'JSON formatted string', isHidden: false, points: 1 },
+          { id: 'TC-02', input: 'InvoiceFactory.create("XML", invoiceData)', expectedOutput: '<invoice>...</invoice>', isHidden: false, points: 1 },
+          { id: 'TC-03', input: 'InvoiceFactory.create("UNKNOWN", invoiceData)', expectedOutput: 'Throw IllegalArgumentException', isHidden: true, points: 1 },
+        ],
       },
     ],
     updatedAt: '24/10/2026',
@@ -816,7 +965,22 @@ export function getStoredQuestionTemplates(): QuestionTemplate[] {
     if (!raw) return SAMPLE_QUESTION_TEMPLATES;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+      // Tự động bổ sung testCases nếu localStorage lưu trữ bản mock cũ chưa có testCases
+      return parsed.map((tpl: QuestionTemplate) => {
+        const sample = SAMPLE_QUESTION_TEMPLATES.find((s) => s.id === tpl.id);
+        const questions = (tpl.questions || []).map((q: TemplateQuestionItem, idx: number) => {
+          const sampleQ = sample?.questions?.[idx];
+          const testCases = q.testCases && q.testCases.length > 0
+            ? q.testCases
+            : (sampleQ?.testCases || []);
+          return {
+            ...q,
+            testCases,
+            testCasesCount: testCases.length > 0 ? testCases.length : (q.testCasesCount || 0),
+          };
+        });
+        return { ...tpl, questions };
+      });
     }
   } catch {
     // fallback

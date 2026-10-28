@@ -22,10 +22,15 @@ import {
   Sparkles,
   Layers,
   Check,
+  Download,
+  Eye,
+  EyeOff,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   QuestionTemplate,
   TemplateQuestionItem,
+  TestCaseItem,
   getStoredQuestionTemplates,
   saveStoredQuestionTemplates,
   getStoredClasses,
@@ -43,6 +48,7 @@ export default function QuestionsManagerView() {
   const [typeFilter, setTypeFilter] = useState<'all' | 'lab' | 'exam'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [expandedTemplateIds, setExpandedTemplateIds] = useState<Record<string, boolean>>({});
+  const [expandedQuestionTestCases, setExpandedQuestionTestCases] = useState<Record<string, boolean>>({});
 
   // Modal State for Editing / Creating
   const [editingTemplate, setEditingTemplate] = useState<QuestionTemplate | null>(null);
@@ -139,6 +145,14 @@ export default function QuestionsManagerView() {
     }));
   }
 
+  // Toggle test cases detail for a specific question in the list
+  function toggleQuestionTestCases(uniqueKey: string) {
+    setExpandedQuestionTestCases((prev) => ({
+      ...prev,
+      [uniqueKey]: !prev[uniqueKey],
+    }));
+  }
+
   // Open Edit Modal
   function handleOpenEdit(template: QuestionTemplate) {
     setIsCreatingNew(false);
@@ -150,6 +164,23 @@ export default function QuestionsManagerView() {
   function handleOpenCreate() {
     setIsCreatingNew(true);
     const newId = `TPL-LAB-0${templates.length + 1}`;
+    const initialTestCases: TestCaseItem[] = [
+      { id: 'TC-01', input: '[1, 2, 3]', expectedOutput: '6', isHidden: false, points: 2 },
+      { id: 'TC-02', input: '[0, 0, 0]', expectedOutput: '0', isHidden: false, points: 2 },
+      { id: 'TC-03', input: '[-1, -2, -3]', expectedOutput: '-6', isHidden: true, points: 3 },
+      { id: 'TC-04', input: '[100, 200, 300]', expectedOutput: '600', isHidden: true, points: 3 },
+    ];
+    const initialQuestion: TemplateQuestionItem = {
+      id: 'Q-01',
+      title: 'Bài 1: Khởi tạo chương trình',
+      difficulty: 'Dễ',
+      description: 'Cài đặt hàm tính toán cơ bản theo đặc tả...',
+      sampleInput: '[1, 2, 3]',
+      sampleOutput: '6',
+      testCasesCount: initialTestCases.length,
+      testCases: initialTestCases,
+    };
+
     setEditingTemplate({
       id: newId,
       title: '',
@@ -158,35 +189,21 @@ export default function QuestionsManagerView() {
       language: 'JavaScript / Python',
       questionCount: 1,
       description: 'Mô tả bài thực hành...',
-      questions: [
-        {
-          id: 'Q-01',
-          title: 'Bài 1: Khởi tạo chương trình',
-          difficulty: 'Dễ',
-          description: 'Cài đặt hàm tính toán cơ bản theo đặc tả...',
-          sampleInput: '[1, 2, 3]',
-          sampleOutput: '6',
-          testCasesCount: 5,
-        },
-      ],
+      questions: [initialQuestion],
       updatedAt: 'Hôm nay',
     });
-    setEditQuestions([
-      {
-        id: 'Q-01',
-        title: 'Bài 1: Khởi tạo chương trình',
-        difficulty: 'Dễ',
-        description: 'Cài đặt hàm tính toán cơ bản theo đặc tả...',
-        sampleInput: '[1, 2, 3]',
-        sampleOutput: '6',
-        testCasesCount: 5,
-      },
-    ]);
+    setEditQuestions([initialQuestion]);
   }
 
   // Add a question inside the edit modal
   function handleAddQuestionToTemplate() {
     const nextIndex = editQuestions.length + 1;
+    const defaultTestCases: TestCaseItem[] = [
+      { id: 'TC-01', input: 'input_1', expectedOutput: 'output_1', isHidden: false, points: 2 },
+      { id: 'TC-02', input: 'input_2', expectedOutput: 'output_2', isHidden: false, points: 2 },
+      { id: 'TC-03', input: 'input_hidden', expectedOutput: 'output_hidden', isHidden: true, points: 3 },
+    ];
+
     const newQ: TemplateQuestionItem = {
       id: `Q-0${nextIndex}`,
       title: `Bài ${nextIndex}: Yêu cầu thuật toán mới`,
@@ -194,7 +211,8 @@ export default function QuestionsManagerView() {
       description: 'Mô tả chi tiết yêu cầu thuật toán, điều kiện biên và kết quả trả về.',
       sampleInput: 'Input mẫu',
       sampleOutput: 'Output mong đợi',
-      testCasesCount: 5,
+      testCasesCount: defaultTestCases.length,
+      testCases: defaultTestCases,
     };
     setEditQuestions((prev) => [...prev, newQ]);
   }
@@ -213,6 +231,68 @@ export default function QuestionsManagerView() {
     });
   }
 
+  // Add a test case for a specific question
+  function handleAddTestCase(questionIndex: number) {
+    setEditQuestions((prev) => {
+      const copy = [...prev];
+      const targetQ = copy[questionIndex];
+      const currentTestCases = targetQ.testCases ? [...targetQ.testCases] : [];
+      const nextTcNum = currentTestCases.length + 1;
+      const newTc: TestCaseItem = {
+        id: `TC-${String(nextTcNum).padStart(2, '0')}`,
+        input: '',
+        expectedOutput: '',
+        isHidden: nextTcNum > 2,
+        points: 2,
+      };
+      currentTestCases.push(newTc);
+      copy[questionIndex] = {
+        ...targetQ,
+        testCases: currentTestCases,
+        testCasesCount: currentTestCases.length,
+      };
+      return copy;
+    });
+  }
+
+  // Update a test case field
+  function handleUpdateTestCase(
+    questionIndex: number,
+    testCaseIndex: number,
+    field: keyof TestCaseItem,
+    value: any
+  ) {
+    setEditQuestions((prev) => {
+      const copy = [...prev];
+      const targetQ = copy[questionIndex];
+      const currentTestCases = targetQ.testCases ? [...targetQ.testCases] : [];
+      currentTestCases[testCaseIndex] = {
+        ...currentTestCases[testCaseIndex],
+        [field]: value,
+      };
+      copy[questionIndex] = {
+        ...targetQ,
+        testCases: currentTestCases,
+      };
+      return copy;
+    });
+  }
+
+  // Remove a test case
+  function handleRemoveTestCase(questionIndex: number, testCaseIndex: number) {
+    setEditQuestions((prev) => {
+      const copy = [...prev];
+      const targetQ = copy[questionIndex];
+      const currentTestCases = (targetQ.testCases || []).filter((_, idx) => idx !== testCaseIndex);
+      copy[questionIndex] = {
+        ...targetQ,
+        testCases: currentTestCases,
+        testCasesCount: currentTestCases.length,
+      };
+      return copy;
+    });
+  }
+
   // Save changes
   function handleSaveTemplate(e: React.FormEvent) {
     e.preventDefault();
@@ -224,11 +304,17 @@ export default function QuestionsManagerView() {
       return;
     }
 
+    // Ensure testCasesCount matches testCases length
+    const normalizedQuestions = editQuestions.map((q) => ({
+      ...q,
+      testCasesCount: (q.testCases && q.testCases.length > 0) ? q.testCases.length : (q.testCasesCount || 0),
+    }));
+
     const updatedTpl: QuestionTemplate = {
       ...editingTemplate,
       title: trimmedTitle,
-      questionCount: editQuestions.length,
-      questions: editQuestions,
+      questionCount: normalizedQuestions.length,
+      questions: normalizedQuestions,
       updatedAt: 'Vừa xong',
     };
 
@@ -278,6 +364,115 @@ export default function QuestionsManagerView() {
     });
   }
 
+  // Export to Excel / CSV
+  function handleExportExcel() {
+    if (templates.length === 0) {
+      alert('Không có dữ liệu bộ đề để xuất.');
+      return;
+    }
+
+    const rows: string[][] = [
+      [
+        'Mã bộ đề',
+        'Tên bộ đề',
+        'Loại đề',
+        'Chuyên mục',
+        'Ngôn ngữ',
+        'Thời gian (phút)',
+        'Mã câu hỏi',
+        'Tiêu đề câu hỏi',
+        'Độ khó',
+        'Input mẫu',
+        'Output mẫu',
+        'Mã Test Case',
+        'Đầu vào (Input)',
+        'Đầu ra kỳ vọng (Expected Output)',
+        'Phân loại Test',
+        'Điểm',
+      ],
+    ];
+
+    templates.forEach((t) => {
+      const questions = t.questions || [];
+      if (questions.length === 0) {
+        rows.push([
+          t.id,
+          t.title,
+          t.type === 'lab' ? 'Lab thực hành' : 'Thi lập trình',
+          t.category,
+          t.language,
+          String(t.durationMinutes || ''),
+          '', '', '', '', '', '', '', '', '', ''
+        ]);
+      } else {
+        questions.forEach((q) => {
+          const testCases = q.testCases || [];
+          if (testCases.length === 0) {
+            rows.push([
+              t.id,
+              t.title,
+              t.type === 'lab' ? 'Lab thực hành' : 'Thi lập trình',
+              t.category,
+              t.language,
+              String(t.durationMinutes || ''),
+              q.id,
+              q.title,
+              q.difficulty,
+              q.sampleInput || '',
+              q.sampleOutput || '',
+              '', '', '', '', ''
+            ]);
+          } else {
+            testCases.forEach((tc) => {
+              rows.push([
+                t.id,
+                t.title,
+                t.type === 'lab' ? 'Lab thực hành' : 'Thi lập trình',
+                t.category,
+                t.language,
+                String(t.durationMinutes || ''),
+                q.id,
+                q.title,
+                q.difficulty,
+                q.sampleInput || '',
+                q.sampleOutput || '',
+                tc.id,
+                tc.input,
+                tc.expectedOutput,
+                tc.isHidden ? 'Ẩn chấm điểm' : 'Công khai',
+                String(tc.points || ''),
+              ]);
+            });
+          }
+        });
+      }
+    });
+
+    const csvContent =
+      '\uFEFF' +
+      rows
+        .map((row) =>
+          row
+            .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+            .join(',')
+        )
+        .join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `ngan_hang_cau_hoi_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setNotification({
+      type: 'success',
+      message: 'Đã xuất dữ liệu bộ đề & test cases ra file Excel/CSV thành công!',
+    });
+  }
+
   return (
     <div className="mx-auto max-w-[1440px] space-y-6">
       {/* Toast notification */}
@@ -322,32 +517,44 @@ export default function QuestionsManagerView() {
           </div>
           <Link
             href="/admin/classes"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
           >
             Quay lại Lớp & sinh viên →
           </Link>
         </div>
       )}
 
-      {/* Main Header */}
+      {/* Main Header - Đồng bộ với module Người dùng & Lớp học */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[26px]">
-            Ngân hàng Đề & Câu hỏi
-          </h2>
-          <p className="mt-1 text-xs text-slate-500 sm:text-[13.5px]">
-            Kho câu hỏi, bộ test case và đề thực hành chuẩn hóa. Các lớp học liên kết trực tiếp tới các bộ đề này để tổ chức bài Lab và thi.
+          <p className="text-xs font-bold uppercase tracking-wider text-blue-600">QUẢN LÝ ĐÀO TẠO</p>
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[28px]">
+            Đề & câu hỏi
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Kho câu hỏi, bộ test case và đề thực hành chuẩn hóa, đồng bộ tự động tới các lớp học.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          className="inline-flex items-center gap-2 rounded-xl bg-[#2563eb] px-4 py-2.5 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="h-4 w-4" />
-          Tạo bộ đề mới
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+          >
+            <Download className="h-4 w-4 text-slate-500" />
+            Xuất Excel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer self-start sm:self-auto"
+          >
+            <Plus className="h-4 w-4" />
+            Tạo bộ đề mới
+          </button>
+        </div>
       </div>
 
       {/* KPI mini cards */}
@@ -380,14 +587,14 @@ export default function QuestionsManagerView() {
         </div>
       </div>
 
-      {/* Filters and Search Bar */}
+      {/* Filters and Search Bar - Chuẩn hóa chiều cao h-11 và typography text-sm */}
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         {/* Type tabs */}
-        <div className="inline-flex rounded-xl bg-slate-100 p-1">
+        <div className="inline-flex h-11 items-center rounded-xl bg-slate-100 p-1">
           <button
             type="button"
             onClick={() => setTypeFilter('all')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+            className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
               typeFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -396,7 +603,7 @@ export default function QuestionsManagerView() {
           <button
             type="button"
             onClick={() => setTypeFilter('lab')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+            className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
               typeFilter === 'lab' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-blue-700'
             }`}
           >
@@ -405,7 +612,7 @@ export default function QuestionsManagerView() {
           <button
             type="button"
             onClick={() => setTypeFilter('exam')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+            className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
               typeFilter === 'exam' ? 'bg-white text-purple-700 shadow-sm' : 'text-slate-600 hover:text-purple-700'
             }`}
           >
@@ -418,7 +625,7 @@ export default function QuestionsManagerView() {
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
+            className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
           >
             <option value="all">Tất cả chuyên mục</option>
             {categories.map((cat) => (
@@ -428,14 +635,14 @@ export default function QuestionsManagerView() {
             ))}
           </select>
 
-          <div className="relative min-w-[240px] flex-1">
+          <div className="relative min-w-[260px] flex-1">
             <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Tìm theo mã, tên đề, câu hỏi..."
-              className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm font-medium outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
             />
             {searchTerm && (
               <button
@@ -443,7 +650,7 @@ export default function QuestionsManagerView() {
                 onClick={() => setSearchTerm('')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-4 w-4" />
               </button>
             )}
           </div>
@@ -558,17 +765,17 @@ export default function QuestionsManagerView() {
                     <button
                       type="button"
                       onClick={() => handleOpenEdit(template)}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
+                      className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                       Chỉnh sửa đề & câu hỏi
                     </button>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => toggleExpand(template.id)}
-                        className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+                        className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
                       >
                         {isExpanded ? 'Ẩn câu hỏi' : 'Xem câu hỏi'}
                         <ChevronDown
@@ -580,7 +787,7 @@ export default function QuestionsManagerView() {
                         type="button"
                         onClick={() => handleDeleteTemplate(template.id)}
                         title="Xóa bộ đề"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -596,66 +803,155 @@ export default function QuestionsManagerView() {
                         Danh sách {(template.questions || []).length} bài tập coding trong đề
                       </h4>
                       <span className="text-[11px] text-slate-400">
-                        Chỉnh sửa tại nút “Chỉnh sửa đề & câu hỏi” ở góc trên
+                        Chỉnh sửa hoặc thêm test cases tại nút &quot;Chỉnh sửa đề & câu hỏi&quot;
                       </span>
                     </div>
 
-                    <div className="space-y-2.5">
-                      {(template.questions || []).map((q, index) => (
-                        <div
-                          key={q.id || index}
-                          className="rounded-xl border border-slate-100 bg-[#f8fafc] p-3.5 text-xs transition hover:bg-slate-100/60"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-blue-100 font-mono text-[11px] font-bold text-blue-700">
-                                {index + 1}
-                              </span>
-                              <span className="font-bold text-slate-900">{q.title}</span>
+                    <div className="space-y-3">
+                      {(template.questions || []).map((q, index) => {
+                        const tcList = q.testCases || [];
+                        const publicCount = tcList.filter((tc) => !tc.isHidden).length;
+                        const hiddenCount = tcList.filter((tc) => tc.isHidden).length;
+                        const qKey = `${template.id}-${q.id || index}`;
+                        const isTcOpen = !!expandedQuestionTestCases[qKey];
+
+                        return (
+                          <div
+                            key={q.id || index}
+                            className="rounded-xl border border-slate-200/90 bg-[#f8fafc] p-4 text-xs transition hover:bg-slate-50"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-md bg-blue-100 font-mono text-[11px] font-bold text-blue-700">
+                                  {index + 1}
+                                </span>
+                                <span className="font-bold text-slate-900 sm:text-[13px]">{q.title}</span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                    q.difficulty === 'Dễ'
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : q.difficulty === 'Trung bình'
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-red-100 text-red-700'
+                                  }`}
+                                >
+                                  {q.difficulty}
+                                </span>
+
+                                <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                                  <span>{tcList.length > 0 ? tcList.length : q.testCasesCount} test cases</span>
+                                  {tcList.length > 0 && (
+                                    <span className="text-slate-400 font-normal">
+                                      ({publicCount} công khai, {hiddenCount} ẩn)
+                                    </span>
+                                  )}
+                                </span>
+
+                                {tcList.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleQuestionTestCases(qKey)}
+                                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 transition cursor-pointer"
+                                  >
+                                    {isTcOpen ? (
+                                      <>
+                                        <EyeOff className="h-3 w-3" />
+                                        <span>Ẩn test cases</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Eye className="h-3 w-3" />
+                                        <span>Chi tiết test cases</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                  q.difficulty === 'Dễ'
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : q.difficulty === 'Trung bình'
-                                    ? 'bg-amber-100 text-amber-700'
-                                    : 'bg-red-100 text-red-700'
-                                }`}
-                              >
-                                {q.difficulty}
-                              </span>
-                              <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                                {q.testCasesCount} test cases
-                              </span>
-                            </div>
+                            <p className="mt-2 text-slate-600 leading-relaxed">{q.description}</p>
+
+                            {(q.sampleInput || q.sampleOutput) && (
+                              <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
+                                {q.sampleInput && (
+                                  <div className="rounded-lg bg-white border border-slate-200/80 p-2.5">
+                                    <span className="font-sans font-bold text-slate-400 text-[10px] block mb-0.5 uppercase">
+                                      Input mẫu:
+                                    </span>
+                                    <span className="text-slate-800">{q.sampleInput}</span>
+                                  </div>
+                                )}
+                                {q.sampleOutput && (
+                                  <div className="rounded-lg bg-white border border-slate-200/80 p-2.5">
+                                    <span className="font-sans font-bold text-slate-400 text-[10px] block mb-0.5 uppercase">
+                                      Output mẫu:
+                                    </span>
+                                    <span className="text-slate-800">{q.sampleOutput}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Expanded Test Cases list */}
+                            {isTcOpen && tcList.length > 0 && (
+                              <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                    Chi tiết bộ Test Cases chấm điểm ({tcList.length} test)
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    Tổng điểm: {tcList.reduce((acc, curr) => acc + (curr.points || 0), 0)}đ
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-1 gap-2 pt-1">
+                                  {tcList.map((tc, tcIndex) => (
+                                    <div
+                                      key={tc.id || tcIndex}
+                                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border p-2.5 text-[11px] ${
+                                        tc.isHidden
+                                          ? 'border-purple-200 bg-purple-50/40 text-purple-950'
+                                          : 'border-emerald-200 bg-emerald-50/30 text-emerald-950'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-mono font-bold text-slate-700">
+                                          {tc.id}
+                                        </span>
+                                        <span
+                                          className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                            tc.isHidden
+                                              ? 'bg-purple-100 text-purple-700'
+                                              : 'bg-emerald-100 text-emerald-700'
+                                          }`}
+                                        >
+                                          {tc.isHidden ? '🔒 Test ẩn (Chấm điểm)' : '👁️ Test công khai'}
+                                        </span>
+                                        <span className="font-semibold text-slate-600">
+                                          {tc.points ? `${tc.points}đ` : '1đ'}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex-1 font-mono text-[11px] space-y-0.5 sm:space-y-0 sm:flex sm:items-center sm:gap-4 sm:justify-end">
+                                        <div className="truncate max-w-[280px]">
+                                          <span className="font-sans text-slate-400 text-[10px] font-bold mr-1">In:</span>
+                                          <span className="font-semibold">{tc.input}</span>
+                                        </div>
+                                        <div className="truncate max-w-[280px]">
+                                          <span className="font-sans text-slate-400 text-[10px] font-bold mr-1">Out:</span>
+                                          <span className="font-semibold">{tc.expectedOutput}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-
-                          <p className="mt-2 text-slate-600 leading-relaxed">{q.description}</p>
-
-                          {(q.sampleInput || q.sampleOutput) && (
-                            <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
-                              {q.sampleInput && (
-                                <div className="rounded-lg bg-white border border-slate-200/80 p-2">
-                                  <span className="font-sans font-bold text-slate-400 text-[10px] block mb-0.5 uppercase">
-                                    Input mẫu:
-                                  </span>
-                                  <span className="text-slate-800">{q.sampleInput}</span>
-                                </div>
-                              )}
-                              {q.sampleOutput && (
-                                <div className="rounded-lg bg-white border border-slate-200/80 p-2">
-                                  <span className="font-sans font-bold text-slate-400 text-[10px] block mb-0.5 uppercase">
-                                    Output mẫu:
-                                  </span>
-                                  <span className="text-slate-800">{q.sampleOutput}</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -821,7 +1117,7 @@ export default function QuestionsManagerView() {
                 />
               </div>
 
-              {/* Sub-form: Danh sách câu hỏi */}
+              {/* Sub-form: Danh sách câu hỏi và quản lý Test Cases con */}
               <div className="border-t border-slate-100 pt-3">
                 <div className="mb-2.5 flex items-center justify-between">
                   <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
@@ -837,14 +1133,16 @@ export default function QuestionsManagerView() {
                   </button>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-3.5">
                   {editQuestions.map((q, idx) => (
                     <div
                       key={idx}
-                      className="rounded-xl border border-slate-200 bg-[#f8fafc] p-3.5 space-y-2.5 text-xs"
+                      className="rounded-xl border border-slate-200 bg-[#f8fafc] p-4 space-y-3 text-xs"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-blue-700">Câu hỏi {idx + 1}</span>
+                      <div className="flex items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
+                        <span className="font-bold text-blue-700 sm:text-sm">
+                          Câu hỏi {idx + 1}: {q.title || 'Chưa đặt tiêu đề'}
+                        </span>
                         <button
                           type="button"
                           onClick={() => handleRemoveQuestionFromTemplate(idx)}
@@ -855,7 +1153,7 @@ export default function QuestionsManagerView() {
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px_100px] gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_130px] gap-2">
                         <div>
                           <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                             Tiêu đề câu hỏi
@@ -864,7 +1162,7 @@ export default function QuestionsManagerView() {
                             type="text"
                             value={q.title}
                             onChange={(e) => handleUpdateQuestionField(idx, 'title', e.target.value)}
-                            className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold"
+                            className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold"
                           />
                         </div>
                         <div>
@@ -876,27 +1174,12 @@ export default function QuestionsManagerView() {
                             onChange={(e) =>
                               handleUpdateQuestionField(idx, 'difficulty', e.target.value)
                             }
-                            className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold"
+                            className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold"
                           >
                             <option value="Dễ">Dễ</option>
                             <option value="Trung bình">Trung bình</option>
                             <option value="Khó">Khó</option>
                           </select>
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                            Số test case
-                          </label>
-                          <input
-                            type="number"
-                            min={1}
-                            max={50}
-                            value={q.testCasesCount}
-                            onChange={(e) =>
-                              handleUpdateQuestionField(idx, 'testCasesCount', Number(e.target.value))
-                            }
-                            className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold"
-                          />
                         </div>
                       </div>
 
@@ -908,14 +1191,14 @@ export default function QuestionsManagerView() {
                           rows={2}
                           value={q.description}
                           onChange={(e) => handleUpdateQuestionField(idx, 'description', e.target.value)}
-                          className="w-full rounded-lg border border-slate-200 bg-white p-2 text-xs font-normal"
+                          className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-xs font-normal"
                         />
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div>
                           <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                            Sample Input
+                            Sample Input (mẫu hiển thị)
                           </label>
                           <input
                             type="text"
@@ -928,7 +1211,7 @@ export default function QuestionsManagerView() {
                         </div>
                         <div>
                           <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                            Sample Output
+                            Sample Output (mẫu hiển thị)
                           </label>
                           <input
                             type="text"
@@ -939,6 +1222,134 @@ export default function QuestionsManagerView() {
                             className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 font-mono text-xs"
                           />
                         </div>
+                      </div>
+
+                      {/* Quản lý Test Cases của câu hỏi con */}
+                      <div className="rounded-xl border border-slate-200/90 bg-white p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                              Bộ Test Cases Chấm Điểm ({q.testCases?.length || 0} tests)
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
+                              (Tự động kiểm thử mã nguồn và chấm điểm)
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleAddTestCase(idx)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/60 px-2.5 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
+                          >
+                            <Plus className="h-3 w-3" />
+                            Thêm Test Case
+                          </button>
+                        </div>
+
+                        {(!q.testCases || q.testCases.length === 0) ? (
+                          <div className="rounded-lg border border-dashed border-slate-200 p-2.5 text-center text-[11px] text-slate-400">
+                            Chưa có test case nào cho câu hỏi này. Nhấn &quot;Thêm Test Case&quot; để thiết lập bộ test chấm điểm tự động.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {q.testCases.map((tc, tcIdx) => (
+                              <div
+                                key={tc.id || tcIdx}
+                                className={`rounded-lg border p-2.5 text-xs transition ${
+                                  tc.isHidden
+                                    ? 'border-purple-200 bg-purple-50/30'
+                                    : 'border-emerald-200 bg-emerald-50/20'
+                                }`}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono font-bold text-[11px] text-slate-700">
+                                      Test #{tcIdx + 1} ({tc.id})
+                                    </span>
+                                    <span
+                                      className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                                        tc.isHidden
+                                          ? 'bg-purple-100 text-purple-700'
+                                          : 'bg-emerald-100 text-emerald-700'
+                                      }`}
+                                    >
+                                      {tc.isHidden ? '🔒 Test ẩn (Chống gian lận)' : '👁️ Test công khai'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-3">
+                                    <label className="inline-flex items-center gap-1.5 cursor-pointer text-[11px] font-semibold text-slate-700 select-none">
+                                      <input
+                                        type="checkbox"
+                                        checked={tc.isHidden}
+                                        onChange={(e) =>
+                                          handleUpdateTestCase(idx, tcIdx, 'isHidden', e.target.checked)
+                                        }
+                                        className="rounded border-slate-300 text-purple-600 focus:ring-purple-400 h-3.5 w-3.5"
+                                      />
+                                      <span>Test ẩn khi chấm</span>
+                                    </label>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveTestCase(idx, tcIdx)}
+                                      className="text-slate-400 hover:text-red-600 transition"
+                                      title="Xóa test case này"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_90px] gap-2">
+                                  <div>
+                                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                      Input đầu vào (stdin / arguments)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={tc.input}
+                                      onChange={(e) =>
+                                        handleUpdateTestCase(idx, tcIdx, 'input', e.target.value)
+                                      }
+                                      placeholder="[1, 2, 3]"
+                                      className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 font-mono text-[11px]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                      Expected Output (stdout / return)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={tc.expectedOutput}
+                                      onChange={(e) =>
+                                        handleUpdateTestCase(idx, tcIdx, 'expectedOutput', e.target.value)
+                                      }
+                                      placeholder="6"
+                                      className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 font-mono text-[11px]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                      Điểm (points)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="0.5"
+                                      min="0.5"
+                                      max="10"
+                                      value={tc.points || 1}
+                                      onChange={(e) =>
+                                        handleUpdateTestCase(idx, tcIdx, 'points', Number(e.target.value))
+                                      }
+                                      className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-800"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -954,18 +1365,18 @@ export default function QuestionsManagerView() {
                 </p>
               </div>
 
-              {/* Footer action buttons */}
+              {/* Footer action buttons - Chuẩn hóa chiều cao h-10 */}
               <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setEditingTemplate(null)}
-                  className="h-9 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                  className="h-10 rounded-xl border border-slate-200 px-4 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="h-9 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 hover:bg-blue-700 transition cursor-pointer"
+                  className="h-10 rounded-xl bg-blue-600 px-5 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition cursor-pointer"
                 >
                   Lưu thay đổi bộ đề
                 </button>
@@ -977,4 +1388,3 @@ export default function QuestionsManagerView() {
     </div>
   );
 }
-

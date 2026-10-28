@@ -6,37 +6,27 @@ import {
   Calendar,
   Clock,
   Search,
-  Plus,
   Download,
   Eye,
-  Pencil,
-  Trash2,
   X,
   CheckCircle2,
-  AlertCircle,
   Video,
   Monitor,
-  Copy,
-  Layers,
-  Sparkles,
-  ShieldAlert,
   ShieldCheck,
   Check,
-  Users,
   MapPin,
   FileCode2,
   Radio,
-  ExternalLink,
-  ChevronRight,
   BookOpen,
+  User,
+  GraduationCap,
+  Layers,
 } from 'lucide-react';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
 import {
   ExamScheduleItem,
-  ScheduleStatus,
   getStoredSchedules,
-  saveStoredSchedules,
 } from './types';
 
 export default function ScheduleManagerPage() {
@@ -46,7 +36,6 @@ export default function ScheduleManagerPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeTab, setTypeTab] = useState<'all' | 'ongoing' | 'scheduled' | 'completed'>('all');
   const [selectedSchedule, setSelectedSchedule] = useState<ExamScheduleItem | null>(null);
-  const [editingSchedule, setEditingSchedule] = useState<ExamScheduleItem | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
 
   // Load schedules
@@ -90,9 +79,10 @@ export default function ScheduleManagerPage() {
         const matchesId = item.id.toLowerCase().includes(q);
         const matchesTitle = item.title.toLowerCase().includes(q);
         const matchesClass = item.classId.toLowerCase().includes(q) || item.className.toLowerCase().includes(q);
+        const matchesLecturer = item.lecturer.toLowerCase().includes(q);
         const matchesTemplate = item.templateId.toLowerCase().includes(q) || item.templateTitle.toLowerCase().includes(q);
         const matchesRoom = item.room.toLowerCase().includes(q);
-        return matchesId || matchesTitle || matchesClass || matchesTemplate || matchesRoom;
+        return matchesId || matchesTitle || matchesClass || matchesLecturer || matchesTemplate || matchesRoom;
       }
       return true;
     });
@@ -103,39 +93,6 @@ export default function ScheduleManagerPage() {
   const ongoingCount = schedules.filter((s) => s.status === 'ongoing').length;
   const scheduledCount = schedules.filter((s) => s.status === 'scheduled').length;
   const completedCount = schedules.filter((s) => s.status === 'completed').length;
-
-  // Save edited schedule
-  function handleSaveEditedSchedule(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingSchedule) return;
-
-    const next = schedules.map((s) => (s.id === editingSchedule.id ? editingSchedule : s));
-    setSchedules(next);
-    saveStoredSchedules(next);
-    setNotification({
-      type: 'success',
-      message: `Đã cập nhật ca kiểm tra "${editingSchedule.id}" thành công.`,
-    });
-    setEditingSchedule(null);
-  }
-
-  // Delete a schedule
-  function handleDeleteSchedule(id: string) {
-    const item = schedules.find((s) => s.id === id);
-    if (!item) return;
-    if (!confirm(`Bạn có chắc chắn muốn xóa lịch kiểm tra "${item.id} - ${item.title}"?`)) return;
-
-    const next = schedules.filter((s) => s.id !== id);
-    setSchedules(next);
-    saveStoredSchedules(next);
-    setNotification({
-      type: 'info',
-      message: `Đã xóa lịch kiểm tra "${item.id}".`,
-    });
-    if (selectedSchedule?.id === id) {
-      setSelectedSchedule(null);
-    }
-  }
 
   // Export to Excel / CSV
   function handleExportExcel() {
@@ -151,7 +108,7 @@ export default function ScheduleManagerPage() {
         'Lớp học',
         'Môn học',
         'Sĩ số',
-        'Giảng viên',
+        'Giảng viên phụ trách',
         'Bộ đề liên kết',
         'Tên bộ đề',
         'Ngày thi',
@@ -211,7 +168,7 @@ export default function ScheduleManagerPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `danh_sach_lich_thi_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `danh_sach_lich_thi_admin_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -247,14 +204,14 @@ export default function ScheduleManagerPage() {
                 <button
                   type="button"
                   onClick={() => setNotification(null)}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-black/5"
+                  className="rounded-lg p-1 text-slate-400 hover:bg-black/5 cursor-pointer"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
             )}
 
-            {/* Header đồng bộ với Users, Classes, Questions */}
+            {/* Header: Đồng bộ hệ thống, Admin chỉ ghi nhận/giám sát */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-blue-600">QUẢN LÝ ĐÀO TẠO</p>
@@ -262,11 +219,11 @@ export default function ScheduleManagerPage() {
                   Quản lý lịch &amp; phiên kiểm tra
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  Tạo, quản lý ca thi, kiểm tra trùng lịch tự động và kết nối phiên giám sát AI thời gian thực.
+                  Ghi nhận, giám sát và thống kê danh sách lịch kiểm tra &amp; phiên thực hành do giảng viên khởi tạo trên toàn hệ thống.
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-2.5">
                 <button
                   type="button"
                   onClick={handleExportExcel}
@@ -275,14 +232,6 @@ export default function ScheduleManagerPage() {
                   <Download className="h-4 w-4 text-slate-500" />
                   Xuất Excel
                 </button>
-
-                <Link
-                  href="/admin/schedules/create"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer self-start sm:self-auto"
-                >
-                  <Plus className="h-4 w-4" />
-                  Tạo lịch kiểm tra
-                </Link>
               </div>
             </div>
 
@@ -291,7 +240,7 @@ export default function ScheduleManagerPage() {
               <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
                 <p className="text-xs font-semibold text-slate-500">Tổng ca kiểm tra</p>
                 <p className="mt-1 text-2xl font-black text-slate-900">{totalCount}</p>
-                <p className="mt-0.5 text-[11px] text-slate-400">Thi &amp; thực hành lab</p>
+                <p className="mt-0.5 text-[11px] text-slate-400">Do giảng viên khởi tạo</p>
               </div>
 
               <div className="rounded-2xl border border-red-200 bg-red-50/40 p-4 shadow-sm">
@@ -303,19 +252,19 @@ export default function ScheduleManagerPage() {
                   </span>
                 </div>
                 <p className="mt-1 text-2xl font-black text-red-600">{ongoingCount}</p>
-                <p className="mt-0.5 text-[11px] text-red-500">Đang có thí sinh làm bài</p>
+                <p className="mt-0.5 text-[11px] text-red-500">Có thể vào giám sát Live</p>
               </div>
 
               <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4 shadow-sm">
                 <p className="text-xs font-semibold text-blue-700">Đã lên lịch (Sắp tới)</p>
                 <p className="mt-1 text-2xl font-black text-blue-600">{scheduledCount}</p>
-                <p className="mt-0.5 text-[11px] text-blue-500">Chờ mở phòng thi</p>
+                <p className="mt-0.5 text-[11px] text-blue-500">Chờ giảng viên mở phòng</p>
               </div>
 
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm">
                 <p className="text-xs font-semibold text-emerald-700">Đã hoàn thành</p>
                 <p className="mt-1 text-2xl font-black text-emerald-600">{completedCount}</p>
-                <p className="mt-0.5 text-[11px] text-emerald-500">Đã chốt &amp; có điểm số</p>
+                <p className="mt-0.5 text-[11px] text-emerald-500">Đã chốt &amp; có bảng điểm</p>
               </div>
             </div>
 
@@ -406,14 +355,14 @@ export default function ScheduleManagerPage() {
                     type="text"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Tìm theo mã ca thi, lớp, môn, đề..."
+                    placeholder="Nhập mã hoặc tên..."
                     className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm font-medium outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
                   />
                   {searchTerm && (
                     <button
                       type="button"
                       onClick={() => setSearchTerm('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -422,14 +371,14 @@ export default function ScheduleManagerPage() {
               </div>
             </div>
 
-            {/* Bảng Danh sách Ca kiểm tra chuẩn Oculide */}
+            {/* Bảng Danh sách Ca kiểm tra ghi nhận từ Giảng viên */}
             <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-[#f8fafc] text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
                       <th className="px-5 py-3.5">LỊCH KIỂM TRA &amp; ĐỀ THI</th>
-                      <th className="px-4 py-3.5">LỚP HỌC</th>
+                      <th className="px-4 py-3.5">LỚP &amp; GIẢNG VIÊN</th>
                       <th className="px-4 py-3.5">BẮT ĐẦU &amp; THỜI LƯỢNG</th>
                       <th className="px-4 py-3.5">GIÁM SÁT AI</th>
                       <th className="px-4 py-3.5">TRẠNG THÁI</th>
@@ -445,7 +394,7 @@ export default function ScheduleManagerPage() {
                             Không tìm thấy ca kiểm tra phù hợp
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
-                            Hãy thử thay đổi bộ lọc hoặc tạo ca kiểm tra mới.
+                            Các ca kiểm tra sẽ tự động hiển thị tại đây khi Giảng viên tạo phòng hoặc lên lịch.
                           </p>
                         </td>
                       </tr>
@@ -482,7 +431,7 @@ export default function ScheduleManagerPage() {
                               </div>
                             </td>
 
-                            {/* Cột 2: Lớp học & Sĩ số */}
+                            {/* Cột 2: Lớp học & Giảng viên */}
                             <td className="px-4 py-4 whitespace-nowrap">
                               <div>
                                 <p className="font-bold text-slate-900 text-xs sm:text-[13px]">
@@ -491,7 +440,8 @@ export default function ScheduleManagerPage() {
                                 <p className="text-[11px] text-slate-500">
                                   {item.className} • <span className="font-semibold">{item.studentCount} SV</span>
                                 </p>
-                                <p className="text-[10px] text-slate-400">
+                                <p className="text-[11px] font-semibold text-blue-700 mt-0.5 flex items-center gap-1">
+                                  <GraduationCap className="h-3 w-3 text-blue-500 shrink-0" />
                                   GV: {item.lecturer}
                                 </p>
                               </div>
@@ -520,7 +470,7 @@ export default function ScheduleManagerPage() {
                                 <div className="flex items-center gap-1.5">
                                   <span
                                     className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold ${
-                                      item.proctoringPolicy.webcam === 'required'
+                                      item.proctoringPolicy?.webcam === 'required'
                                         ? 'bg-blue-50 text-blue-700 border border-blue-200'
                                         : 'bg-slate-100 text-slate-500'
                                     }`}
@@ -530,17 +480,17 @@ export default function ScheduleManagerPage() {
                                   </span>
                                   <span
                                     className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold ${
-                                      item.proctoringPolicy.screenShare === 'required'
+                                      item.proctoringPolicy?.screenShare === 'required'
                                         ? 'bg-purple-50 text-purple-700 border border-purple-200'
                                         : 'bg-slate-100 text-slate-500'
                                     }`}
                                   >
                                     <Monitor className="h-2.5 w-2.5" />
-                                    Toàn màn hình
+                                    Màn hình
                                   </span>
                                 </div>
                                 <span className="text-[10px] text-slate-400 font-mono">
-                                  Mã: {item.roomCode}
+                                  Mã phòng: {item.roomCode}
                                 </span>
                               </div>
                             </td>
@@ -569,10 +519,10 @@ export default function ScheduleManagerPage() {
                               )}
                             </td>
 
-                            {/* Cột 6: Thao tác */}
+                            {/* Cột 6: Thao tác (Admin chỉ xem & giám sát) */}
                             <td className="px-5 py-4 text-right whitespace-nowrap">
-                              <div className="inline-flex items-center gap-1.5">
-                                {/* Nút chính theo từng trạng thái */}
+                              <div className="inline-flex items-center gap-2">
+                                {/* Nếu ca thi đang diễn ra -> Nút Giám sát Live */}
                                 {item.status === 'ongoing' && (
                                   <Link
                                     href={`/admin/monitoring?session=${item.id}`}
@@ -583,15 +533,7 @@ export default function ScheduleManagerPage() {
                                   </Link>
                                 )}
 
-                                {item.status === 'scheduled' && (
-                                  <Link
-                                    href={`/admin/schedules/lobby/${item.id}`}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition"
-                                  >
-                                    Mở phòng thi
-                                  </Link>
-                                )}
-
+                                {/* Nếu đã kết thúc -> Nút Xem bảng điểm */}
                                 {item.status === 'completed' && (
                                   <Link
                                     href={`/admin/reports?exam=${item.id}`}
@@ -601,34 +543,14 @@ export default function ScheduleManagerPage() {
                                   </Link>
                                 )}
 
-                                {/* Nút xem chi tiết */}
+                                {/* Nút xem chi tiết ca thi (áp dụng cho mọi trạng thái) */}
                                 <button
                                   type="button"
                                   onClick={() => setSelectedSchedule(item)}
-                                  title="Xem chi tiết ca thi"
-                                  className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                                 >
                                   <Eye className="h-3.5 w-3.5 text-slate-500" />
-                                </button>
-
-                                {/* Nút chỉnh sửa ca thi */}
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingSchedule({ ...item })}
-                                  title="Chỉnh sửa ca kiểm tra"
-                                  className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-                                >
-                                  <Pencil className="h-3.5 w-3.5 text-slate-500" />
-                                </button>
-
-                                {/* Nút xóa ca thi */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteSchedule(item.id)}
-                                  title="Xóa ca kiểm tra"
-                                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <span>Xem chi tiết</span>
                                 </button>
                               </div>
                             </td>
@@ -641,24 +563,24 @@ export default function ScheduleManagerPage() {
               </div>
             </div>
 
-            {/* Banner chính sách phân công & đồng bộ */}
+            {/* Banner chính sách phân công & đồng bộ (theo mockup wireframe) */}
             <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-xs text-blue-900 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <ShieldCheck className="h-5 w-5 text-blue-600 shrink-0" />
                 <p className="leading-relaxed">
                   Chỉ hiển thị dữ liệu trong phạm vi được phân công theo học kỳ{' '}
-                  <strong className="font-semibold">HK1 2026–2027</strong>. Mọi lịch thi tạo mới sẽ tự động đồng bộ lịch sinh viên và cấu hình phiên giám sát AI.
+                  <strong className="font-semibold">HK1 2026–2027</strong>. Lịch kiểm tra &amp; phòng thi do Giảng viên bộ môn tạo và quản trị; Quản trị viên theo dõi trạng thái, giám sát phiên Live và thống kê kết quả.
                 </p>
               </div>
               <span className="text-[11px] font-bold text-blue-600 shrink-0">
-                Oculide Proctoring Engine v2.4
+                Oculide Proctoring System v2.4
               </span>
             </div>
           </div>
         </main>
       </div>
 
-      {/* ── MODAL CHI TIẾT CA THI (QUICK VIEW) ── */}
+      {/* ── MODAL CHI TIẾT CA THI (READ-ONLY CHO ADMIN) ── */}
       {selectedSchedule && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 overflow-y-auto"
@@ -686,8 +608,12 @@ export default function ScheduleManagerPage() {
             </div>
 
             <div className="mt-4 space-y-4 text-xs">
-              {/* Thông tin phòng & mã truy cập */}
+              {/* Thông tin Giảng viên & Phòng máy */}
               <div className="rounded-xl border border-slate-200 bg-[#f8fafc] p-3.5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Giảng viên:</span>
+                  <span className="font-bold text-blue-700">{selectedSchedule.lecturer}</span>
+                </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Phòng máy:</span>
                   <span className="font-bold text-slate-800">{selectedSchedule.room}</span>
@@ -699,10 +625,6 @@ export default function ScheduleManagerPage() {
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Mã phòng:</span>
                   <span className="font-mono font-bold text-blue-600 text-sm">{selectedSchedule.roomCode}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Mật khẩu:</span>
-                  <span className="font-mono font-bold text-slate-700">{selectedSchedule.roomPassword || 'Chưa đặt'}</span>
                 </div>
               </div>
 
@@ -730,37 +652,39 @@ export default function ScheduleManagerPage() {
               </div>
 
               {/* Chính sách giám sát AI */}
-              <div className="rounded-xl border border-purple-100 bg-purple-50/30 p-3.5 space-y-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700">
-                  Chính sách giám sát AI áp dụng
-                </span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                  <div className="rounded-lg bg-white border border-purple-100 p-2">
-                    <span className="block text-slate-400 text-[10px]">Webcam:</span>
-                    <strong className="text-purple-800">
-                      {selectedSchedule.proctoringPolicy.webcam === 'required' ? 'Bắt buộc' : 'Tùy chọn'}
-                    </strong>
-                  </div>
-                  <div className="rounded-lg bg-white border border-purple-100 p-2">
-                    <span className="block text-slate-400 text-[10px]">Chia sẻ màn hình:</span>
-                    <strong className="text-purple-800">
-                      {selectedSchedule.proctoringPolicy.screenShare === 'required' ? 'Toàn màn hình' : 'Không'}
-                    </strong>
-                  </div>
-                  <div className="rounded-lg bg-white border border-purple-100 p-2">
-                    <span className="block text-slate-400 text-[10px]">Chặn Clipboard:</span>
-                    <strong className="text-purple-800">
-                      {selectedSchedule.proctoringPolicy.clipboard === 'block' ? 'Chặn sao chép' : 'Cảnh báo'}
-                    </strong>
-                  </div>
-                  <div className="rounded-lg bg-white border border-purple-100 p-2">
-                    <span className="block text-slate-400 text-[10px]">Giới hạn đổi tab:</span>
-                    <strong className="text-purple-800">
-                      Tối đa {selectedSchedule.proctoringPolicy.tabSwitchLimit} lần
-                    </strong>
+              {selectedSchedule.proctoringPolicy && (
+                <div className="rounded-xl border border-purple-100 bg-purple-50/30 p-3.5 space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700">
+                    Chính sách giám sát AI áp dụng
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div className="rounded-lg bg-white border border-purple-100 p-2">
+                      <span className="block text-slate-400 text-[10px]">Webcam:</span>
+                      <strong className="text-purple-800">
+                        {selectedSchedule.proctoringPolicy.webcam === 'required' ? 'Bắt buộc' : 'Tùy chọn'}
+                      </strong>
+                    </div>
+                    <div className="rounded-lg bg-white border border-purple-100 p-2">
+                      <span className="block text-slate-400 text-[10px]">Chia sẻ màn hình:</span>
+                      <strong className="text-purple-800">
+                        {selectedSchedule.proctoringPolicy.screenShare === 'required' ? 'Toàn màn hình' : 'Không'}
+                      </strong>
+                    </div>
+                    <div className="rounded-lg bg-white border border-purple-100 p-2">
+                      <span className="block text-slate-400 text-[10px]">Chặn Clipboard:</span>
+                      <strong className="text-purple-800">
+                        {selectedSchedule.proctoringPolicy.clipboard === 'block' ? 'Chặn sao chép' : 'Cảnh báo'}
+                      </strong>
+                    </div>
+                    <div className="rounded-lg bg-white border border-purple-100 p-2">
+                      <span className="block text-slate-400 text-[10px]">Giới hạn đổi tab:</span>
+                      <strong className="text-purple-800">
+                        Tối đa {selectedSchedule.proctoringPolicy.tabSwitchLimit || 2} lần
+                      </strong>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Footer Buttons */}
@@ -780,164 +704,15 @@ export default function ScheduleManagerPage() {
                   <Radio className="h-4 w-4 animate-pulse" />
                   Vào phòng giám sát Live
                 </Link>
-              ) : selectedSchedule.status === 'scheduled' ? (
+              ) : selectedSchedule.status === 'completed' ? (
                 <Link
-                  href={`/admin/schedules/lobby/${selectedSchedule.id}`}
+                  href={`/admin/reports?exam=${selectedSchedule.id}`}
                   className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-blue-600 px-5 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition"
                 >
-                  Mở phòng kiểm tra
+                  Xem bảng điểm
                 </Link>
               ) : null}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL CHỈNH SỬA CA THI ── */}
-      {editingSchedule && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 overflow-y-auto"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setEditingSchedule(null);
-          }}
-        >
-          <div className="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 my-8">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
-              <div>
-                <span className="font-mono text-xs font-bold text-blue-600 uppercase">
-                  MÃ CA: {editingSchedule.id}
-                </span>
-                <h3 className="text-base sm:text-lg font-bold text-slate-900">
-                  Chỉnh sửa lịch kiểm tra
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingSchedule(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEditedSchedule} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  TIÊU ĐỀ CA KIỂM TRA <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingSchedule.title}
-                  onChange={(e) =>
-                    setEditingSchedule({ ...editingSchedule, title: e.target.value })
-                  }
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs sm:text-sm font-semibold outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    NGÀY THI
-                  </label>
-                  <input
-                    type="text"
-                    value={editingSchedule.date}
-                    onChange={(e) =>
-                      setEditingSchedule({ ...editingSchedule, date: e.target.value })
-                    }
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    GIỜ BẮT ĐẦU
-                  </label>
-                  <input
-                    type="text"
-                    value={editingSchedule.startTime}
-                    onChange={(e) =>
-                      setEditingSchedule({ ...editingSchedule, startTime: e.target.value })
-                    }
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    THỜI LƯỢNG (PHÚT)
-                  </label>
-                  <input
-                    type="number"
-                    min={15}
-                    max={360}
-                    value={editingSchedule.durationMinutes}
-                    onChange={(e) =>
-                      setEditingSchedule({
-                        ...editingSchedule,
-                        durationMinutes: Number(e.target.value),
-                      })
-                    }
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    TRẠNG THÁI CA THI
-                  </label>
-                  <select
-                    value={editingSchedule.status}
-                    onChange={(e) =>
-                      setEditingSchedule({
-                        ...editingSchedule,
-                        status: e.target.value as any,
-                      })
-                    }
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold outline-none focus:border-blue-500"
-                  >
-                    <option value="scheduled">📅 Đã lên lịch</option>
-                    <option value="ongoing">🔴 Đang diễn ra (Live)</option>
-                    <option value="completed">✅ Đã kết thúc</option>
-                    <option value="draft">📝 Bản nháp</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  PHÒNG MÁY / ĐỊA ĐIỂM
-                </label>
-                <input
-                  type="text"
-                  value={editingSchedule.room}
-                  onChange={(e) =>
-                    setEditingSchedule({ ...editingSchedule, room: e.target.value })
-                  }
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setEditingSchedule(null)}
-                  className="h-10 rounded-xl border border-slate-200 px-4 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="h-10 rounded-xl bg-blue-600 px-5 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition cursor-pointer"
-                >
-                  Lưu thay đổi
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

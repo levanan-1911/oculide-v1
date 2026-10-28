@@ -21,7 +21,7 @@ export interface ExamScheduleItem {
   classId: string; // Mã lớp (ví dụ: "SE1848")
   className: string; // Tên lớp (ví dụ: "Lập trình Web")
   studentCount: number; // Sĩ số (ví dụ: 48)
-  lecturer: string; // Giảng viên (ví dụ: "Long Phạm")
+  lecturer: string; // Giảng viên khởi tạo (ví dụ: "Thầy Nguyễn Văn Nam")
   templateId: string; // Mã bộ đề (ví dụ: "TPL-EXAM-01")
   templateTitle: string; // Tên bộ đề (ví dụ: "Xây dựng ứng dụng Web tương tác")
   templateVersion: string; // Phiên bản đề (ví dụ: "v1 • Sẵn sàng")
@@ -29,7 +29,7 @@ export interface ExamScheduleItem {
   startTime: string; // Giờ bắt đầu (hh:mm)
   endTime: string; // Giờ kết thúc (hh:mm)
   durationMinutes: number; // Thời lượng thi (phút)
-  room: string; // Phòng máy / Địa điểm thi (ví dụ: "Phòng LAB-302" hoặc "Online tập trung")
+  room: string; // Phòng máy / Địa điểm thi (ví dụ: "Phòng máy LAB-302" hoặc "Online tập trung")
   roomCode: string; // Mã phòng thi (ví dụ: "OC-482915")
   roomPassword?: string; // Mật khẩu phòng (ví dụ: "123456")
   status: ScheduleStatus;
@@ -39,6 +39,7 @@ export interface ExamScheduleItem {
   deviceCheckCount?: number;
   absentCount?: number;
   createdAt?: string;
+  creatorRole?: 'instructor' | 'system';
 }
 
 export const DEFAULT_PROCTORING_POLICY: ProctoringPolicy = {
@@ -63,7 +64,7 @@ export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
     classId: 'SE1848',
     className: 'Lập trình Web',
     studentCount: 48,
-    lecturer: 'Long Phạm',
+    lecturer: 'Thầy Nguyễn Văn Nam',
     templateId: 'TPL-EXAM-01',
     templateTitle: 'Xây dựng ứng dụng Web tương tác',
     templateVersion: 'v1 • Sẵn sàng',
@@ -81,6 +82,7 @@ export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
     deviceCheckCount: 7,
     absentCount: 5,
     createdAt: '20/10/2026',
+    creatorRole: 'instructor',
   },
   {
     id: 'CSD-MID',
@@ -88,7 +90,7 @@ export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
     classId: 'IT2202',
     className: 'Cấu trúc dữ liệu',
     studentCount: 52,
-    lecturer: 'Nguyễn Minh Anh',
+    lecturer: 'Cô Nguyễn Minh Anh',
     templateId: 'TPL-EXAM-02',
     templateTitle: 'Cây & Đồ thị nâng cao',
     templateVersion: 'v1 • Sẵn sàng',
@@ -106,6 +108,7 @@ export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
     deviceCheckCount: 0,
     absentCount: 52,
     createdAt: '22/10/2026',
+    creatorRole: 'instructor',
   },
   {
     id: 'OOP-FIN',
@@ -113,7 +116,7 @@ export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
     classId: 'SE1849',
     className: 'Lập trình hướng đối tượng',
     studentCount: 46,
-    lecturer: 'Long Phạm',
+    lecturer: 'Thầy Lê Hoàng Đức',
     templateId: 'TPL-EXAM-03',
     templateTitle: 'Kiểm tra thực hành OOP • Kế thừa & Đa hình',
     templateVersion: 'v1 • Sẵn sàng',
@@ -131,6 +134,7 @@ export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
     deviceCheckCount: 0,
     absentCount: 46,
     createdAt: '24/10/2026',
+    creatorRole: 'instructor',
   },
   {
     id: 'WEB-LAB-02',
@@ -138,7 +142,7 @@ export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
     classId: 'SE1848',
     className: 'Lập trình Web',
     studentCount: 48,
-    lecturer: 'Long Phạm',
+    lecturer: 'Thầy Nguyễn Văn Nam',
     templateId: 'TPL-LAB-02',
     templateTitle: 'Xử lý chuỗi & Thao tác DOM trên trình duyệt',
     templateVersion: 'v1 • Sẵn sàng',
@@ -159,6 +163,7 @@ export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
     deviceCheckCount: 0,
     absentCount: 0,
     createdAt: '15/10/2026',
+    creatorRole: 'instructor',
   },
   {
     id: 'CSD-QUIZ-01',
@@ -166,7 +171,7 @@ export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
     classId: 'IT2202',
     className: 'Cấu trúc dữ liệu',
     studentCount: 52,
-    lecturer: 'Nguyễn Minh Anh',
+    lecturer: 'Cô Nguyễn Minh Anh',
     templateId: 'TPL-LAB-04',
     templateTitle: 'Danh sách liên kết đơn & Ngăn xếp (Stack)',
     templateVersion: 'v1 • Bản nháp',
@@ -183,24 +188,82 @@ export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
     deviceCheckCount: 0,
     absentCount: 52,
     createdAt: '26/10/2026',
+    creatorRole: 'instructor',
   },
 ];
 
-const SCHEDULES_STORAGE_KEY = 'oculide_schedules_mock';
+export const SCHEDULES_STORAGE_KEY = 'oculide_schedules_mock';
+export const INSTRUCTOR_SCHEDULES_STORAGE_KEY = 'oculide_instructor_schedules_mock';
+export const INSTRUCTOR_ROOMS_STORAGE_KEY = 'oculide_instructor_rooms_mock';
 
+/**
+ * Đọc toàn bộ danh sách lịch kiểm tra được ghi nhận từ:
+ * 1. Dữ liệu mock hệ thống & Admin cache (SCHEDULES_STORAGE_KEY)
+ * 2. Các ca kiểm tra & thực hành do Giảng viên khởi tạo (INSTRUCTOR_SCHEDULES_STORAGE_KEY, INSTRUCTOR_ROOMS_STORAGE_KEY)
+ */
 export function getStoredSchedules(): ExamScheduleItem[] {
   if (typeof window === 'undefined') return INITIAL_SCHEDULES;
+
+  let baseList: ExamScheduleItem[] = INITIAL_SCHEDULES;
+
   try {
     const raw = localStorage.getItem(SCHEDULES_STORAGE_KEY);
-    if (!raw) return INITIAL_SCHEDULES;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        baseList = parsed;
+      }
     }
   } catch {
     // fallback
   }
-  return INITIAL_SCHEDULES;
+
+  // Tích hợp dữ liệu ca thi do giảng viên tạo từ INSTRUCTOR_SCHEDULES_STORAGE_KEY
+  try {
+    const rawInstructorSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
+    if (rawInstructorSched) {
+      const parsedInstructor = JSON.parse(rawInstructorSched);
+      if (Array.isArray(parsedInstructor)) {
+        parsedInstructor.forEach((item: any) => {
+          const id = item.id || item.roomCode;
+          const exists = baseList.some((s) => s.id === id || s.roomCode === item.roomCode);
+          if (!exists) {
+            let status: ScheduleStatus = 'scheduled';
+            if (item.status === 'Đang diễn ra' || item.status === 'in_progress') status = 'ongoing';
+            else if (item.status === 'Đã kết thúc' || item.status === 'ended') status = 'completed';
+
+            const converted: ExamScheduleItem = {
+              id: id,
+              title: item.title || `Ca kiểm tra ${item.classCode || ''}`,
+              classId: item.classCode || 'CLASS-01',
+              className: item.className || 'Lớp học phần',
+              studentCount: item.enrolledStudents || 45,
+              lecturer: 'Thầy Nguyễn Văn Nam (Giảng viên)',
+              templateId: item.type === 'LAB' ? 'TPL-LAB' : 'TPL-EXAM',
+              templateTitle: item.title || 'Bài tập thực hành / Kiểm tra',
+              templateVersion: 'v1.0',
+              date: item.date === 'Hôm nay' ? '28/10/2026' : (item.date || '28/10/2026'),
+              startTime: item.startTime || '08:00',
+              endTime: item.endTime || '09:30',
+              durationMinutes: 90,
+              room: item.roomCode?.includes('LAB') ? 'Phòng máy thực hành' : 'Phòng thi tiêu chuẩn',
+              roomCode: item.roomCode || 'OC-ROOM',
+              roomPassword: item.passcode || '••••••',
+              status: status,
+              proctoringPolicy: DEFAULT_PROCTORING_POLICY,
+              createdAt: '28/10/2026',
+              creatorRole: 'instructor',
+            };
+            baseList = [converted, ...baseList];
+          }
+        });
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return baseList;
 }
 
 export function saveStoredSchedules(schedules: ExamScheduleItem[]): void {
@@ -211,4 +274,3 @@ export function saveStoredSchedules(schedules: ExamScheduleItem[]): void {
     // ignore
   }
 }
-

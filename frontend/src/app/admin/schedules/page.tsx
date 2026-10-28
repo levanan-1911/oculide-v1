@@ -1,41 +1,771 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import {
+  Calendar,
+  Clock,
+  Search,
+  Plus,
+  Download,
+  Eye,
+  Pencil,
+  Trash2,
+  X,
+  CheckCircle2,
+  AlertCircle,
+  Video,
+  Monitor,
+  Copy,
+  Layers,
+  Sparkles,
+  ShieldAlert,
+  ShieldCheck,
+  Check,
+  Users,
+  MapPin,
+  FileCode2,
+  Radio,
+  ExternalLink,
+  ChevronRight,
+  BookOpen,
+} from 'lucide-react';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
-import { Clock } from 'lucide-react';
+import {
+  ExamScheduleItem,
+  ScheduleStatus,
+  getStoredSchedules,
+  saveStoredSchedules,
+} from './types';
 
 export default function ScheduleManagerPage() {
+  const [schedules, setSchedules] = useState<ExamScheduleItem[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [classFilter, setClassFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [typeTab, setTypeTab] = useState<'all' | 'ongoing' | 'scheduled' | 'completed'>('all');
+  const [selectedSchedule, setSelectedSchedule] = useState<ExamScheduleItem | null>(null);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+
+  // Load schedules
+  useEffect(() => {
+    setSchedules(getStoredSchedules());
+  }, []);
+
+  // Hide notification
+  useEffect(() => {
+    if (!notification) return;
+    const timer = setTimeout(() => setNotification(null), 4000);
+    return () => clearTimeout(timer);
+  }, [notification]);
+
+  // Classes list for dropdown
+  const classOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    schedules.forEach((s) => {
+      map.set(s.classId, s.className);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [schedules]);
+
+  // Filtered schedules
+  const filteredSchedules = useMemo(() => {
+    return schedules.filter((item) => {
+      // Type tab filter
+      if (typeTab === 'ongoing' && item.status !== 'ongoing') return false;
+      if (typeTab === 'scheduled' && item.status !== 'scheduled') return false;
+      if (typeTab === 'completed' && item.status !== 'completed') return false;
+
+      // Status dropdown filter
+      if (statusFilter !== 'all' && item.status !== statusFilter) return false;
+
+      // Class dropdown filter
+      if (classFilter !== 'all' && item.classId !== classFilter) return false;
+
+      // Search term
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase();
+        const matchesId = item.id.toLowerCase().includes(q);
+        const matchesTitle = item.title.toLowerCase().includes(q);
+        const matchesClass = item.classId.toLowerCase().includes(q) || item.className.toLowerCase().includes(q);
+        const matchesTemplate = item.templateId.toLowerCase().includes(q) || item.templateTitle.toLowerCase().includes(q);
+        const matchesRoom = item.room.toLowerCase().includes(q);
+        return matchesId || matchesTitle || matchesClass || matchesTemplate || matchesRoom;
+      }
+      return true;
+    });
+  }, [schedules, typeTab, statusFilter, classFilter, searchTerm]);
+
+  // Counts for KPIs
+  const totalCount = schedules.length;
+  const ongoingCount = schedules.filter((s) => s.status === 'ongoing').length;
+  const scheduledCount = schedules.filter((s) => s.status === 'scheduled').length;
+  const completedCount = schedules.filter((s) => s.status === 'completed').length;
+
+  // Delete a schedule
+  function handleDeleteSchedule(id: string) {
+    const item = schedules.find((s) => s.id === id);
+    if (!item) return;
+    if (!confirm(`Bạn có chắc chắn muốn xóa lịch kiểm tra "${item.id} - ${item.title}"?`)) return;
+
+    const next = schedules.filter((s) => s.id !== id);
+    setSchedules(next);
+    saveStoredSchedules(next);
+    setNotification({
+      type: 'info',
+      message: `Đã xóa lịch kiểm tra "${item.id}".`,
+    });
+    if (selectedSchedule?.id === id) {
+      setSelectedSchedule(null);
+    }
+  }
+
+  // Export to Excel / CSV
+  function handleExportExcel() {
+    if (schedules.length === 0) {
+      alert('Không có dữ liệu ca thi để xuất.');
+      return;
+    }
+
+    const rows: string[][] = [
+      [
+        'Mã ca thi',
+        'Tên ca thi',
+        'Lớp học',
+        'Môn học',
+        'Sĩ số',
+        'Giảng viên',
+        'Bộ đề liên kết',
+        'Tên bộ đề',
+        'Ngày thi',
+        'Giờ bắt đầu',
+        'Giờ kết thúc',
+        'Thời lượng (phút)',
+        'Phòng thi / Địa điểm',
+        'Mã phòng thi',
+        'Trạng thái',
+        'Webcam AI',
+        'Khóa màn hình',
+        'Chặn Clipboard',
+      ],
+    ];
+
+    schedules.forEach((s) => {
+      const statusLabel =
+        s.status === 'ongoing'
+          ? 'Đang diễn ra (Live)'
+          : s.status === 'scheduled'
+          ? 'Đã lên lịch'
+          : s.status === 'completed'
+          ? 'Đã kết thúc'
+          : s.status === 'draft'
+          ? 'Bản nháp'
+          : 'Đã hủy';
+
+      rows.push([
+        s.id,
+        s.title,
+        s.classId,
+        s.className,
+        String(s.studentCount),
+        s.lecturer,
+        s.templateId,
+        s.templateTitle,
+        s.date,
+        s.startTime,
+        s.endTime,
+        String(s.durationMinutes),
+        s.room,
+        s.roomCode,
+        statusLabel,
+        s.proctoringPolicy.webcam === 'required' ? 'Bắt buộc' : 'Tùy chọn',
+        s.proctoringPolicy.screenShare === 'required' ? 'Bắt buộc' : 'Không',
+        s.proctoringPolicy.clipboard === 'block' ? 'Chặn hoàn toàn' : 'Cảnh báo',
+      ]);
+    });
+
+    const csvContent =
+      '\uFEFF' +
+      rows
+        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `danh_sach_lich_thi_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setNotification({
+      type: 'success',
+      message: 'Đã xuất danh sách lịch & phiên kiểm tra ra file Excel/CSV thành công!',
+    });
+  }
+
   return (
     <div className="flex min-h-screen w-full bg-[#f4f7f9] text-slate-800">
       <AdminSidebar activeModule="schedules" />
       <div className="flex min-w-0 flex-1 flex-col">
         <AdminTopbar title="Lịch & phiên kiểm tra" />
+
         <main className="flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-          <div className="mx-auto max-w-[1440px]">
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-12 text-center shadow-sm">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-                <Clock className="h-7 w-7" />
-              </div>
-              <p className="mt-4 text-xs font-bold uppercase tracking-wider text-blue-600">Quản lý đào tạo</p>
-              <h2 className="mt-1 text-2xl font-bold text-slate-900">
-                Lịch &amp; phiên kiểm tra
-              </h2>
-              <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
-                Đường dẫn chuẩn: <code className="rounded bg-slate-100 px-2 py-0.5 text-xs text-blue-600 font-mono">/admin/schedules</code>. Khung điều hướng đã sẵn sàng để thiết kế giao diện chi tiết.
-              </p>
-              <Link
-                href="/admin"
-                className="mt-6 inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 cursor-pointer"
+          <div className="mx-auto max-w-[1440px] space-y-6">
+            {/* Toast Notification */}
+            {notification && (
+              <div
+                role="status"
+                className={`flex items-center justify-between rounded-xl border p-4 shadow-sm transition ${
+                  notification.type === 'success'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                    : 'border-blue-200 bg-blue-50 text-blue-900'
+                }`}
               >
-                Quay lại trang Tổng quan
-              </Link>
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                  <p className="text-xs sm:text-sm font-semibold">{notification.message}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNotification(null)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-black/5"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Header đồng bộ với Users, Classes, Questions */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">QUẢN LÝ ĐÀO TẠO</p>
+                <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[28px]">
+                  Quản lý lịch &amp; phiên kiểm tra
+                </h1>
+                <p className="mt-1 text-sm text-slate-500">
+                  Tạo, quản lý ca thi, kiểm tra trùng lịch tự động và kết nối phiên giám sát AI thời gian thực.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+                >
+                  <Download className="h-4 w-4 text-slate-500" />
+                  Xuất Excel
+                </button>
+
+                <Link
+                  href="/admin/schedules/create"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer self-start sm:self-auto"
+                >
+                  <Plus className="h-4 w-4" />
+                  Tạo lịch kiểm tra
+                </Link>
+              </div>
+            </div>
+
+            {/* KPI Cards Row (4 cards) */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+                <p className="text-xs font-semibold text-slate-500">Tổng ca kiểm tra</p>
+                <p className="mt-1 text-2xl font-black text-slate-900">{totalCount}</p>
+                <p className="mt-0.5 text-[11px] text-slate-400">Thi &amp; thực hành lab</p>
+              </div>
+
+              <div className="rounded-2xl border border-red-200 bg-red-50/40 p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-red-700">Đang diễn ra (Live)</p>
+                  <span className="flex h-2.5 w-2.5 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                  </span>
+                </div>
+                <p className="mt-1 text-2xl font-black text-red-600">{ongoingCount}</p>
+                <p className="mt-0.5 text-[11px] text-red-500">Đang có thí sinh làm bài</p>
+              </div>
+
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4 shadow-sm">
+                <p className="text-xs font-semibold text-blue-700">Đã lên lịch (Sắp tới)</p>
+                <p className="mt-1 text-2xl font-black text-blue-600">{scheduledCount}</p>
+                <p className="mt-0.5 text-[11px] text-blue-500">Chờ mở phòng thi</p>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm">
+                <p className="text-xs font-semibold text-emerald-700">Đã hoàn thành</p>
+                <p className="mt-1 text-2xl font-black text-emerald-600">{completedCount}</p>
+                <p className="mt-0.5 text-[11px] text-emerald-500">Đã chốt &amp; có điểm số</p>
+              </div>
+            </div>
+
+            {/* Toolbar: Tabs lọc + Dropdown Lớp + Dropdown Trạng thái + Tìm kiếm (chuẩn h-11) */}
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+              {/* Type Tabs */}
+              <div className="inline-flex h-11 items-center rounded-xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => setTypeTab('all')}
+                  className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
+                    typeTab === 'all'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Tất cả ({schedules.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTypeTab('ongoing')}
+                  className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    typeTab === 'ongoing'
+                      ? 'bg-white text-red-700 shadow-sm'
+                      : 'text-slate-600 hover:text-red-700'
+                  }`}
+                >
+                  <span className="h-2 w-2 rounded-full bg-red-500"></span>
+                  Đang diễn ra ({ongoingCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTypeTab('scheduled')}
+                  className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
+                    typeTab === 'scheduled'
+                      ? 'bg-white text-blue-700 shadow-sm'
+                      : 'text-slate-600 hover:text-blue-700'
+                  }`}
+                >
+                  📅 Sắp tới ({scheduledCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTypeTab('completed')}
+                  className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
+                    typeTab === 'completed'
+                      ? 'bg-white text-emerald-700 shadow-sm'
+                      : 'text-slate-600 hover:text-emerald-700'
+                  }`}
+                >
+                  ✅ Đã xong ({completedCount})
+                </button>
+              </div>
+
+              {/* Filters & Search */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                {/* Lớp filter */}
+                <select
+                  value={classFilter}
+                  onChange={(e) => setClassFilter(e.target.value)}
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
+                >
+                  <option value="all">Tất cả lớp học</option>
+                  {classOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.id} - {c.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Trạng thái filter */}
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
+                >
+                  <option value="all">Tất cả trạng thái</option>
+                  <option value="ongoing">🔴 Đang diễn ra</option>
+                  <option value="scheduled">📅 Đã lên lịch</option>
+                  <option value="completed">✅ Đã kết thúc</option>
+                  <option value="draft">📝 Bản nháp</option>
+                </select>
+
+                {/* Search Input */}
+                <div className="relative min-w-[260px] flex-1">
+                  <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Tìm theo mã ca thi, lớp, môn, đề..."
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm font-medium outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Bảng Danh sách Ca kiểm tra chuẩn Oculide */}
+            <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-[#f8fafc] text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-3.5">LỊCH KIỂM TRA &amp; ĐỀ THI</th>
+                      <th className="px-4 py-3.5">LỚP HỌC</th>
+                      <th className="px-4 py-3.5">BẮT ĐẦU &amp; THỜI LƯỢNG</th>
+                      <th className="px-4 py-3.5">GIÁM SÁT AI</th>
+                      <th className="px-4 py-3.5">TRẠNG THÁI</th>
+                      <th className="px-5 py-3.5 text-right">THAO TÁC</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {filteredSchedules.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-12 text-center">
+                          <FileCode2 className="mx-auto h-12 w-12 text-slate-300" />
+                          <p className="mt-3 text-base font-bold text-slate-900">
+                            Không tìm thấy ca kiểm tra phù hợp
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Hãy thử thay đổi bộ lọc hoặc tạo ca kiểm tra mới.
+                          </p>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredSchedules.map((item) => {
+                        return (
+                          <tr
+                            key={item.id}
+                            className={`transition hover:bg-slate-50/80 ${
+                              item.status === 'ongoing' ? 'bg-red-50/20' : ''
+                            }`}
+                          >
+                            {/* Cột 1: Mã ca thi & Đề thi */}
+                            <td className="px-5 py-4">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-xs font-black tracking-wider text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
+                                    {item.id}
+                                  </span>
+                                  <span className="text-xs font-bold text-slate-900 sm:text-sm">
+                                    {item.title}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                  <Link
+                                    href={`/admin/questions?templateId=${item.templateId}`}
+                                    className="inline-flex items-center gap-1 font-mono text-[11px] text-blue-600 hover:underline"
+                                    title="Xem đề trong Ngân hàng đề"
+                                  >
+                                    <BookOpen className="h-3 w-3" />
+                                    {item.templateId} • {item.templateTitle}
+                                  </Link>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Cột 2: Lớp học & Sĩ số */}
+                            <td className="px-4 py-4 whitespace-nowrap">
+                              <div>
+                                <p className="font-bold text-slate-900 text-xs sm:text-[13px]">
+                                  {item.classId}
+                                </p>
+                                <p className="text-[11px] text-slate-500">
+                                  {item.className} • <span className="font-semibold">{item.studentCount} SV</span>
+                                </p>
+                                <p className="text-[10px] text-slate-400">
+                                  GV: {item.lecturer}
+                                </p>
+                              </div>
+                            </td>
+
+                            {/* Cột 3: Bắt đầu & Thời lượng */}
+                            <td className="px-4 py-4 whitespace-nowrap">
+                              <div>
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                                  <Clock className="h-3.5 w-3.5 text-slate-400" />
+                                  <span>{item.date} • {item.startTime}</span>
+                                </div>
+                                <p className="mt-0.5 text-[11px] text-slate-500">
+                                  Thời lượng: <strong className="text-slate-700">{item.durationMinutes} phút</strong> ({item.startTime} - {item.endTime})
+                                </p>
+                                <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
+                                  <MapPin className="h-3 w-3 text-slate-400" />
+                                  <span>{item.room}</span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Cột 4: Giám sát AI */}
+                            <td className="px-4 py-4 whitespace-nowrap">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold ${
+                                      item.proctoringPolicy.webcam === 'required'
+                                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                        : 'bg-slate-100 text-slate-500'
+                                    }`}
+                                  >
+                                    <Video className="h-2.5 w-2.5" />
+                                    Webcam
+                                  </span>
+                                  <span
+                                    className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold ${
+                                      item.proctoringPolicy.screenShare === 'required'
+                                        ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                        : 'bg-slate-100 text-slate-500'
+                                    }`}
+                                  >
+                                    <Monitor className="h-2.5 w-2.5" />
+                                    Toàn màn hình
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  Mã: {item.roomCode}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Cột 5: Trạng thái */}
+                            <td className="px-4 py-4 whitespace-nowrap">
+                              {item.status === 'ongoing' ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">
+                                  <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse"></span>
+                                  Đang diễn ra (Live)
+                                </span>
+                              ) : item.status === 'scheduled' ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                                  <Calendar className="h-3 w-3" />
+                                  Đã lên lịch
+                                </span>
+                              ) : item.status === 'completed' ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                                  <Check className="h-3 w-3" />
+                                  Đã kết thúc
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                                  Nháp
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Cột 6: Thao tác */}
+                            <td className="px-5 py-4 text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1.5">
+                                {/* Nút chính theo từng trạng thái */}
+                                {item.status === 'ongoing' && (
+                                  <Link
+                                    href={`/admin/monitoring?session=${item.id}`}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-red-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-red-500/20 hover:bg-red-700 transition"
+                                  >
+                                    <Radio className="h-3.5 w-3.5 animate-pulse" />
+                                    Giám sát Live
+                                  </Link>
+                                )}
+
+                                {item.status === 'scheduled' && (
+                                  <Link
+                                    href={`/admin/schedules/lobby/${item.id}`}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition"
+                                  >
+                                    Mở phòng thi
+                                  </Link>
+                                )}
+
+                                {item.status === 'completed' && (
+                                  <Link
+                                    href={`/admin/reports?exam=${item.id}`}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                                  >
+                                    Xem bảng điểm
+                                  </Link>
+                                )}
+
+                                {/* Nút xem chi tiết */}
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedSchedule(item)}
+                                  title="Xem chi tiết ca thi"
+                                  className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                                >
+                                  <Eye className="h-3.5 w-3.5 text-slate-500" />
+                                </button>
+
+                                {/* Nút xóa ca thi */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSchedule(item.id)}
+                                  title="Xóa ca kiểm tra"
+                                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Banner chính sách phân công & đồng bộ */}
+            <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-xs text-blue-900 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck className="h-5 w-5 text-blue-600 shrink-0" />
+                <p className="leading-relaxed">
+                  Chỉ hiển thị dữ liệu trong phạm vi được phân công theo học kỳ{' '}
+                  <strong className="font-semibold">HK1 2026–2027</strong>. Mọi lịch thi tạo mới sẽ tự động đồng bộ lịch sinh viên và cấu hình phiên giám sát AI.
+                </p>
+              </div>
+              <span className="text-[11px] font-bold text-blue-600 shrink-0">
+                Oculide Proctoring Engine v2.4
+              </span>
             </div>
           </div>
         </main>
       </div>
+
+      {/* ── MODAL CHI TIẾT CA THI (QUICK VIEW) ── */}
+      {selectedSchedule && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 overflow-y-auto"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setSelectedSchedule(null);
+          }}
+        >
+          <div className="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 my-8">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+              <div>
+                <span className="font-mono text-xs font-bold text-blue-600 uppercase">
+                  {selectedSchedule.id} • {selectedSchedule.classId}
+                </span>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                  {selectedSchedule.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedSchedule(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4 text-xs">
+              {/* Thông tin phòng & mã truy cập */}
+              <div className="rounded-xl border border-slate-200 bg-[#f8fafc] p-3.5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Phòng máy:</span>
+                  <span className="font-bold text-slate-800">{selectedSchedule.room}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Thời gian:</span>
+                  <span className="font-bold text-slate-800">{selectedSchedule.startTime} - {selectedSchedule.endTime}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Mã phòng:</span>
+                  <span className="font-mono font-bold text-blue-600 text-sm">{selectedSchedule.roomCode}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Mật khẩu:</span>
+                  <span className="font-mono font-bold text-slate-700">{selectedSchedule.roomPassword || 'Chưa đặt'}</span>
+                </div>
+              </div>
+
+              {/* Thông tin Đề thi liên kết */}
+              <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Bộ đề thi liên kết (Ngân hàng đề)
+                </span>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-slate-900 sm:text-sm">
+                      {selectedSchedule.templateId} - {selectedSchedule.templateTitle}
+                    </h4>
+                    <p className="text-slate-500 text-[11px]">
+                      Phiên bản: {selectedSchedule.templateVersion} • Thời lượng: {selectedSchedule.durationMinutes} phút
+                    </p>
+                  </div>
+                  <Link
+                    href={`/admin/questions?templateId=${selectedSchedule.templateId}`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 transition"
+                  >
+                    Xem câu hỏi &amp; Test Cases →
+                  </Link>
+                </div>
+              </div>
+
+              {/* Chính sách giám sát AI */}
+              <div className="rounded-xl border border-purple-100 bg-purple-50/30 p-3.5 space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700">
+                  Chính sách giám sát AI áp dụng
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                  <div className="rounded-lg bg-white border border-purple-100 p-2">
+                    <span className="block text-slate-400 text-[10px]">Webcam:</span>
+                    <strong className="text-purple-800">
+                      {selectedSchedule.proctoringPolicy.webcam === 'required' ? 'Bắt buộc' : 'Tùy chọn'}
+                    </strong>
+                  </div>
+                  <div className="rounded-lg bg-white border border-purple-100 p-2">
+                    <span className="block text-slate-400 text-[10px]">Chia sẻ màn hình:</span>
+                    <strong className="text-purple-800">
+                      {selectedSchedule.proctoringPolicy.screenShare === 'required' ? 'Toàn màn hình' : 'Không'}
+                    </strong>
+                  </div>
+                  <div className="rounded-lg bg-white border border-purple-100 p-2">
+                    <span className="block text-slate-400 text-[10px]">Chặn Clipboard:</span>
+                    <strong className="text-purple-800">
+                      {selectedSchedule.proctoringPolicy.clipboard === 'block' ? 'Chặn sao chép' : 'Cảnh báo'}
+                    </strong>
+                  </div>
+                  <div className="rounded-lg bg-white border border-purple-100 p-2">
+                    <span className="block text-slate-400 text-[10px]">Giới hạn đổi tab:</span>
+                    <strong className="text-purple-800">
+                      Tối đa {selectedSchedule.proctoringPolicy.tabSwitchLimit} lần
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="mt-5 flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedSchedule(null)}
+                className="h-10 rounded-xl border border-slate-200 px-4 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+              >
+                Đóng
+              </button>
+              {selectedSchedule.status === 'ongoing' ? (
+                <Link
+                  href={`/admin/monitoring?session=${selectedSchedule.id}`}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-red-600 px-5 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-red-500/20 hover:bg-red-700 transition"
+                >
+                  <Radio className="h-4 w-4 animate-pulse" />
+                  Vào phòng giám sát Live
+                </Link>
+              ) : selectedSchedule.status === 'scheduled' ? (
+                <Link
+                  href={`/admin/schedules/lobby/${selectedSchedule.id}`}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-blue-600 px-5 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition"
+                >
+                  Mở phòng kiểm tra
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

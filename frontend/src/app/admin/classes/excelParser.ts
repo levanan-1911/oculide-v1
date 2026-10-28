@@ -409,3 +409,4 @@ export function downloadStudentSampleTemplate() {
   link.click();
   document.body.removeChild(link);
 }
+

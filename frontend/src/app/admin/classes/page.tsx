@@ -2,7 +2,7 @@
 
 import { FormEvent, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
   BookOpen,
@@ -90,6 +90,7 @@ function getAvatarColor(id: string): string {
 }
 
 function ClassManagerContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [classes, setClasses] = useState<ClassRow[]>(INITIAL_CLASSES);
@@ -858,28 +859,50 @@ function ClassManagerContent() {
                 <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">
                   Quản lý đào tạo
                 </p>
-                <h1 className="mt-0.5 text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-                  Lớp học & sinh viên
+                <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[28px]">
+                  Lớp học &amp; sinh viên
                 </h1>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="mt-1 text-sm text-slate-500">
                   Theo dõi lớp học, danh sách sinh viên và các phiên thực hành, kiểm tra lập trình.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Nút Xuất Excel */}
                 <button
                   type="button"
                   onClick={handleExportClasses}
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 cursor-pointer"
-                  title="Xuất danh sách tất cả các lớp học"
+                  title="Xuất toàn bộ danh sách lớp học ra file Excel/CSV"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
                 >
-                  <Download className="h-3.5 w-3.5 text-slate-500" />
+                  <Download className="h-4 w-4 text-slate-500" />
                   <span>Xuất Excel</span>
                 </button>
+
+                {/* Nút Nhập Excel / CSV */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (viewingClass) {
+                      handleResetImportStudentState();
+                      setIsImportStudentsOpen(true);
+                    } else {
+                      router.push('/admin/classes/create');
+                    }
+                  }}
+                  title="Nhập danh sách sinh viên / lớp học từ file Excel/CSV"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-slate-500" />
+                  <span>Nhập Excel/CSV</span>
+                </button>
+
+                {/* Nút Tạo lớp mới */}
                 <Link
                   href="/admin/classes/create"
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer"
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className="h-4 w-4" />
                   <span>Tạo lớp mới</span>
                 </Link>
               </div>
@@ -943,34 +966,34 @@ function ClassManagerContent() {
                     <BookOpen className="h-4 w-4 text-slate-400" />
                   </div>
 
-                  {/* Thanh tìm kiếm & bộ lọc: Bố cục tinh gọn, không đè icon, không vỡ dòng */}
-                  <div className="mt-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                  {/* Thanh tìm kiếm & bộ lọc đồng bộ chuẩn h-11 text-sm */}
+                  <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                     <div className="relative flex-1 min-w-0">
-                      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Tìm mã hoặc tên lớp..."
-                        className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/80 pl-10 pr-8 text-xs outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 placeholder:text-slate-400"
+                        placeholder="Tìm theo mã hoặc tên lớp..."
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 placeholder:text-slate-400"
                       />
                       {search && (
                         <button
                           type="button"
                           onClick={() => setSearch('')}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200/60 transition cursor-pointer"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-200/60 transition cursor-pointer"
                           title="Xóa tìm kiếm"
                         >
-                          <X className="h-3 w-3" />
+                          <X className="h-3.5 w-3.5" />
                         </button>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
-                      <div className="relative flex-1 sm:w-40 sm:flex-initial">
+                    <div className="flex items-center gap-3 w-full sm:w-auto sm:shrink-0">
+                      <div className="relative flex-1 sm:w-44 sm:flex-initial">
                         <select
                           value={semester}
                           onChange={(e) => setSemester(e.target.value)}
-                          className="h-9 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 text-xs font-medium text-slate-700 outline-none transition focus:border-blue-500 cursor-pointer"
+                          className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3.5 pr-10 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
                         >
                           <option value="Tất cả học kỳ">Tất cả học kỳ</option>
                           {SEMESTERS.map((s) => (
@@ -979,21 +1002,21 @@ function ClassManagerContent() {
                             </option>
                           ))}
                         </select>
-                        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                        <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       </div>
 
-                      <div className="relative flex-1 sm:w-40 sm:flex-initial">
+                      <div className="relative flex-1 sm:w-44 sm:flex-initial">
                         <select
                           value={status}
                           onChange={(e) => setStatus(e.target.value)}
-                          className="h-9 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 text-xs font-medium text-slate-700 outline-none transition focus:border-blue-500 cursor-pointer"
+                          className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3.5 pr-10 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
                         >
                           <option value="Tất cả trạng thái">Tất cả trạng thái</option>
-                          <option value="Chưa mở">Chưa mở</option>
                           <option value="Hoạt động">Hoạt động</option>
+                          <option value="Chưa mở">Chưa mở</option>
                           <option value="Đã kết thúc">Đã kết thúc</option>
                         </select>
-                        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                        <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       </div>
                     </div>
                   </div>
@@ -1161,13 +1184,13 @@ function ClassManagerContent() {
                                   }}
                                   title="Xem chi tiết đầy đủ"
                                   aria-label={`Xem chi tiết lớp ${classItem.id}`}
-                                  className={`flex h-7.5 w-7.5 items-center justify-center rounded-lg transition cursor-pointer ${
+                                  className={`flex h-8 w-8 items-center justify-center rounded-lg transition cursor-pointer ${
                                     isSelected
                                       ? 'bg-blue-600 text-white shadow-xs'
                                       : 'text-slate-400 hover:bg-blue-50 hover:text-blue-600'
                                   }`}
                                 >
-                                  <Eye className="h-3.5 w-3.5" />
+                                  <Eye className="h-4 w-4" />
                                 </button>
                                 <button
                                   type="button"
@@ -1177,9 +1200,9 @@ function ClassManagerContent() {
                                   }}
                                   title="Chỉnh sửa lớp"
                                   aria-label={`Chỉnh sửa lớp ${classItem.id}`}
-                                  className="flex h-7.5 w-7.5 items-center justify-center rounded-lg text-slate-400 transition hover:bg-amber-50 hover:text-amber-600 cursor-pointer"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-amber-50 hover:text-amber-600 cursor-pointer"
                                 >
-                                  <Pencil className="h-3.5 w-3.5" />
+                                  <Pencil className="h-4 w-4" />
                                 </button>
                                 <button
                                   type="button"
@@ -1189,9 +1212,9 @@ function ClassManagerContent() {
                                   }}
                                   title="Xóa lớp"
                                   aria-label={`Xóa lớp ${classItem.id}`}
-                                  className="flex h-7.5 w-7.5 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600 cursor-pointer"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600 cursor-pointer"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <Trash2 className="h-4 w-4" />
                                 </button>
                               </div>
                             </td>
@@ -1239,12 +1262,12 @@ function ClassManagerContent() {
                   )}
 
                   <div className="relative mt-2.5">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
                       value={studentSearch}
                       onChange={(event) => setStudentSearch(event.target.value)}
                       placeholder="Tìm MSSV, tên, email..."
-                      className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 placeholder:text-slate-400"
                     />
                   </div>
                 </div>
@@ -1505,14 +1528,14 @@ function ClassManagerContent() {
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2.5">
                       <button
                         type="button"
                         onClick={handleExportStudentList}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 cursor-pointer"
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
                         title="Tải về danh sách sinh viên lớp hiện tại (.csv)"
                       >
-                        <Download className="h-3.5 w-3.5 text-slate-500" />
+                        <Download className="h-4 w-4 text-slate-500" />
                         <span>Xuất danh sách</span>
                       </button>
 
@@ -1522,10 +1545,10 @@ function ClassManagerContent() {
                           handleResetImportStudentState();
                           setIsImportStudentsOpen(true);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 cursor-pointer"
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
                         title="Thêm danh sách sinh viên từ file Excel / CSV"
                       >
-                        <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                        <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
                         <span>Nhập Excel/CSV</span>
                       </button>
 
@@ -1535,9 +1558,9 @@ function ClassManagerContent() {
                           setAddStudentError('');
                           setIsAddStudentOpen(true);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer"
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <Plus className="h-4 w-4" />
                         <span>Thêm sinh viên</span>
                       </button>
                     </div>
@@ -1666,10 +1689,10 @@ function ClassManagerContent() {
                         setNewLabNumber((viewingClass.labs || []).length + 1);
                         setIsAddLabOpen(true);
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer self-start sm:self-auto"
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer self-start sm:self-auto"
                     >
-                      <Plus className="h-3.5 w-3.5" />
-                      Tạo buổi lab mới
+                      <Plus className="h-4 w-4" />
+                      <span>Tạo buổi lab mới</span>
                     </button>
                   </div>
 
@@ -1886,10 +1909,10 @@ function ClassManagerContent() {
                         setAddExamError('');
                         setIsAddExamOpen(true);
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-purple-500/20 transition hover:bg-purple-700 cursor-pointer self-start sm:self-auto"
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 text-xs font-semibold text-white shadow-sm shadow-purple-200 transition hover:bg-purple-700 cursor-pointer self-start sm:self-auto"
                     >
-                      <Plus className="h-3.5 w-3.5" />
-                      Tạo bài thi mới
+                      <Plus className="h-4 w-4" />
+                      <span>Tạo bài thi mới</span>
                     </button>
                   </div>
 

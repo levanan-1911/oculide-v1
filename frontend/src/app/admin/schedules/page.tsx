@@ -271,11 +271,11 @@ export default function ScheduleManagerPage() {
             {/* Toolbar: Tabs lọc + Dropdown Lớp + Dropdown Trạng thái + Tìm kiếm (chuẩn h-11) */}
             <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
               {/* Type Tabs */}
-              <div className="inline-flex h-11 items-center rounded-xl bg-slate-100 p-1">
+              <div className="inline-flex h-11 items-center rounded-xl bg-slate-100 p-1 overflow-x-auto">
                 <button
                   type="button"
                   onClick={() => setTypeTab('all')}
-                  className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
+                  className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
                     typeTab === 'all'
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
@@ -286,19 +286,19 @@ export default function ScheduleManagerPage() {
                 <button
                   type="button"
                   onClick={() => setTypeTab('ongoing')}
-                  className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer flex items-center gap-1.5 ${
                     typeTab === 'ongoing'
                       ? 'bg-white text-red-700 shadow-sm'
                       : 'text-slate-600 hover:text-red-700'
                   }`}
                 >
-                  <span className="h-2 w-2 rounded-full bg-red-500"></span>
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-red-500"></span>
                   Đang diễn ra ({ongoingCount})
                 </button>
                 <button
                   type="button"
                   onClick={() => setTypeTab('scheduled')}
-                  className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
+                  className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
                     typeTab === 'scheduled'
                       ? 'bg-white text-blue-700 shadow-sm'
                       : 'text-slate-600 hover:text-blue-700'
@@ -309,7 +309,7 @@ export default function ScheduleManagerPage() {
                 <button
                   type="button"
                   onClick={() => setTypeTab('completed')}
-                  className={`h-full rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
+                  className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
                     typeTab === 'completed'
                       ? 'bg-white text-emerald-700 shadow-sm'
                       : 'text-slate-600 hover:text-emerald-700'
@@ -408,10 +408,10 @@ export default function ScheduleManagerPage() {
                             }`}
                           >
                             {/* Cột 1: Mã ca thi & Đề thi */}
-                            <td className="px-5 py-4">
-                              <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono text-xs font-black tracking-wider text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
+                            <td className="px-5 py-4 min-w-[260px]">
+                              <div className="flex flex-col gap-1.5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="shrink-0 font-mono text-xs font-black tracking-wider text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
                                     {item.id}
                                   </span>
                                   <span className="text-xs font-bold text-slate-900 sm:text-sm">
@@ -419,14 +419,10 @@ export default function ScheduleManagerPage() {
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                                  <Link
-                                    href={`/admin/questions?templateId=${item.templateId}`}
-                                    className="inline-flex items-center gap-1 font-mono text-[11px] text-blue-600 hover:underline"
-                                    title="Xem đề trong Ngân hàng đề"
-                                  >
-                                    <BookOpen className="h-3 w-3" />
+                                  <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-600">
+                                    <BookOpen className="h-3 w-3 shrink-0 text-slate-400" />
                                     {item.templateId} • {item.templateTitle}
-                                  </Link>
+                                  </span>
                                 </div>
                               </div>
                             </td>
@@ -628,12 +624,12 @@ export default function ScheduleManagerPage() {
                 </div>
               </div>
 
-              {/* Thông tin Đề thi liên kết */}
+              {/* Thông tin Đề thi liên kết (Chỉ hiển thị thông tin định danh đề, bảo mật câu hỏi & testcase) */}
               <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Bộ đề thi liên kết (Ngân hàng đề)
+                  Bộ đề thi liên kết
                 </span>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div>
                     <h4 className="font-bold text-slate-900 sm:text-sm">
                       {selectedSchedule.templateId} - {selectedSchedule.templateTitle}
@@ -642,12 +638,10 @@ export default function ScheduleManagerPage() {
                       Phiên bản: {selectedSchedule.templateVersion} • Thời lượng: {selectedSchedule.durationMinutes} phút
                     </p>
                   </div>
-                  <Link
-                    href={`/admin/questions?templateId=${selectedSchedule.templateId}`}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 transition"
-                  >
-                    Xem câu hỏi &amp; Test Cases →
-                  </Link>
+                  <span className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                    <ShieldCheck className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                    Bảo mật câu hỏi &amp; Test Cases
+                  </span>
                 </div>
               </div>
 

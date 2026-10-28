@@ -204,14 +204,22 @@ export const INSTRUCTOR_ROOMS_STORAGE_KEY = 'oculide_instructor_rooms_mock';
 export function getStoredSchedules(): ExamScheduleItem[] {
   if (typeof window === 'undefined') return INITIAL_SCHEDULES;
 
-  let baseList: ExamScheduleItem[] = INITIAL_SCHEDULES;
+  let baseList: ExamScheduleItem[] = [...INITIAL_SCHEDULES];
 
   try {
     const raw = localStorage.getItem(SCHEDULES_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        baseList = parsed;
+        // Chuẩn hóa giảng viên nếu dữ liệu cũ từng lưu tên Admin ("Long Phạm")
+        baseList = parsed.map((item: ExamScheduleItem) => ({
+          ...item,
+          lecturer:
+            !item.lecturer || item.lecturer === 'Long Phạm'
+              ? 'Thầy Nguyễn Văn Nam'
+              : item.lecturer,
+          creatorRole: 'instructor',
+        }));
       }
     }
   } catch {
@@ -238,7 +246,7 @@ export function getStoredSchedules(): ExamScheduleItem[] {
               classId: item.classCode || 'CLASS-01',
               className: item.className || 'Lớp học phần',
               studentCount: item.enrolledStudents || 45,
-              lecturer: 'Thầy Nguyễn Văn Nam (Giảng viên)',
+              lecturer: 'Thầy Nguyễn Văn Nam',
               templateId: item.type === 'LAB' ? 'TPL-LAB' : 'TPL-EXAM',
               templateTitle: item.title || 'Bài tập thực hành / Kiểm tra',
               templateVersion: 'v1.0',
@@ -252,6 +260,52 @@ export function getStoredSchedules(): ExamScheduleItem[] {
               status: status,
               proctoringPolicy: DEFAULT_PROCTORING_POLICY,
               createdAt: '28/10/2026',
+              creatorRole: 'instructor',
+            };
+            baseList = [converted, ...baseList];
+          }
+        });
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // Tích hợp phòng thi/thực hành từ INSTRUCTOR_ROOMS_STORAGE_KEY
+  try {
+    const rawInstructorRooms = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+    if (rawInstructorRooms) {
+      const parsedRooms = JSON.parse(rawInstructorRooms);
+      if (Array.isArray(parsedRooms)) {
+        parsedRooms.forEach((room: any) => {
+          const id = room.roomCode;
+          if (!id) return;
+          const exists = baseList.some((s) => s.id === id || s.roomCode === id);
+          if (!exists) {
+            let status: ScheduleStatus = 'scheduled';
+            if (room.status === 'in_progress') status = 'ongoing';
+            else if (room.status === 'ended') status = 'completed';
+
+            const converted: ExamScheduleItem = {
+              id: id,
+              title: room.title || `Ca kiểm tra ${room.classId || ''}`,
+              classId: room.classId || 'CLASS-01',
+              className: room.className || 'Lớp học phần',
+              studentCount: Array.isArray(room.attendees) ? room.attendees.length : 45,
+              lecturer: 'Thầy Nguyễn Văn Nam',
+              templateId: room.templateId || (room.type === 'lab' ? 'TPL-LAB' : 'TPL-EXAM'),
+              templateTitle: room.templateTitle || room.title || 'Bài tập thực hành / Kiểm tra',
+              templateVersion: room.templateVersion || 'v1.0',
+              date: '28/10/2026',
+              startTime: room.startTime || '08:00',
+              endTime: '09:30',
+              durationMinutes: room.durationMinutes || 90,
+              room: room.type === 'lab' ? 'Phòng máy thực hành' : 'Phòng thi tiêu chuẩn',
+              roomCode: id,
+              roomPassword: room.roomPassword || '••••••',
+              status: status,
+              proctoringPolicy: DEFAULT_PROCTORING_POLICY,
+              createdAt: room.createdAt || '28/10/2026',
               creatorRole: 'instructor',
             };
             baseList = [converted, ...baseList];

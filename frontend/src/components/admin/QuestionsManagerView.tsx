@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   Code2,
   Terminal,
@@ -39,6 +39,7 @@ import {
 } from '@/app/admin/classes/types';
 
 export default function QuestionsManagerView() {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const directTemplateId = searchParams.get('templateId');
 
@@ -516,7 +517,7 @@ export default function QuestionsManagerView() {
             </div>
           </div>
           <Link
-            href="/admin/classes"
+            href={pathname.startsWith('/instructor') ? '/instructor/classes' : '/admin/classes'}
             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
           >
             Quay lại Lớp & sinh viên →

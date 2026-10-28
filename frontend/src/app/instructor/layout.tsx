@@ -4,6 +4,8 @@ import React from 'react';
 import { usePathname } from 'next/navigation';
 import InstructorSidebar, { INSTRUCTOR_NAV_GROUPS } from '@/components/instructor/InstructorSidebar';
 import InstructorTopbar from '@/components/instructor/InstructorTopbar';
+import { MonitoringProvider } from '@/components/instructor/monitoring/MonitoringContext';
+import InstructorGlobalAlerts from '@/components/instructor/monitoring/InstructorGlobalAlerts';
 
 export default function InstructorLayout({
   children,
@@ -19,18 +21,27 @@ export default function InstructorLayout({
       : pathname.startsWith(item.href)
   );
 
-  const title = currentItem ? currentItem.label : 'Không gian Giảng viên';
+  const title = currentItem
+    ? currentItem.label
+    : pathname.startsWith('/instructor/room')
+    ? 'Lớp & Sinh viên'
+    : pathname.startsWith('/instructor/profile')
+    ? 'Hồ sơ cá nhân Giảng viên'
+    : 'Không gian Giảng viên';
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] font-sans text-slate-800">
-      <InstructorSidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <InstructorTopbar title={title} />
-        <main className="flex-1 overflow-y-auto px-6 py-6 lg:px-8 lg:py-7">
-          {children}
-        </main>
+    <MonitoringProvider>
+      <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] font-sans text-slate-800">
+        <InstructorSidebar />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <InstructorTopbar title={title} />
+          <main className="flex-1 overflow-y-auto px-6 py-6 lg:px-8 lg:py-7">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+      {/* Cảnh báo vi phạm AI nổi bật trên mọi màn hình của Giảng viên */}
+      <InstructorGlobalAlerts />
+    </MonitoringProvider>
   );
 }
-

@@ -46,6 +46,7 @@ export default function ScheduleManagerPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeTab, setTypeTab] = useState<'all' | 'ongoing' | 'scheduled' | 'completed'>('all');
   const [selectedSchedule, setSelectedSchedule] = useState<ExamScheduleItem | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState<ExamScheduleItem | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
 
   // Load schedules
@@ -102,6 +103,21 @@ export default function ScheduleManagerPage() {
   const ongoingCount = schedules.filter((s) => s.status === 'ongoing').length;
   const scheduledCount = schedules.filter((s) => s.status === 'scheduled').length;
   const completedCount = schedules.filter((s) => s.status === 'completed').length;
+
+  // Save edited schedule
+  function handleSaveEditedSchedule(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingSchedule) return;
+
+    const next = schedules.map((s) => (s.id === editingSchedule.id ? editingSchedule : s));
+    setSchedules(next);
+    saveStoredSchedules(next);
+    setNotification({
+      type: 'success',
+      message: `Đã cập nhật ca kiểm tra "${editingSchedule.id}" thành công.`,
+    });
+    setEditingSchedule(null);
+  }
 
   // Delete a schedule
   function handleDeleteSchedule(id: string) {
@@ -595,6 +611,16 @@ export default function ScheduleManagerPage() {
                                   <Eye className="h-3.5 w-3.5 text-slate-500" />
                                 </button>
 
+                                {/* Nút chỉnh sửa ca thi */}
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingSchedule({ ...item })}
+                                  title="Chỉnh sửa ca kiểm tra"
+                                  className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                                >
+                                  <Pencil className="h-3.5 w-3.5 text-slate-500" />
+                                </button>
+
                                 {/* Nút xóa ca thi */}
                                 <button
                                   type="button"
@@ -763,6 +789,155 @@ export default function ScheduleManagerPage() {
                 </Link>
               ) : null}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL CHỈNH SỬA CA THI ── */}
+      {editingSchedule && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 overflow-y-auto"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setEditingSchedule(null);
+          }}
+        >
+          <div className="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 my-8">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+              <div>
+                <span className="font-mono text-xs font-bold text-blue-600 uppercase">
+                  MÃ CA: {editingSchedule.id}
+                </span>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                  Chỉnh sửa lịch kiểm tra
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSchedule(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditedSchedule} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  TIÊU ĐỀ CA KIỂM TRA <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingSchedule.title}
+                  onChange={(e) =>
+                    setEditingSchedule({ ...editingSchedule, title: e.target.value })
+                  }
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs sm:text-sm font-semibold outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    NGÀY THI
+                  </label>
+                  <input
+                    type="text"
+                    value={editingSchedule.date}
+                    onChange={(e) =>
+                      setEditingSchedule({ ...editingSchedule, date: e.target.value })
+                    }
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    GIỜ BẮT ĐẦU
+                  </label>
+                  <input
+                    type="text"
+                    value={editingSchedule.startTime}
+                    onChange={(e) =>
+                      setEditingSchedule({ ...editingSchedule, startTime: e.target.value })
+                    }
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    THỜI LƯỢNG (PHÚT)
+                  </label>
+                  <input
+                    type="number"
+                    min={15}
+                    max={360}
+                    value={editingSchedule.durationMinutes}
+                    onChange={(e) =>
+                      setEditingSchedule({
+                        ...editingSchedule,
+                        durationMinutes: Number(e.target.value),
+                      })
+                    }
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    TRẠNG THÁI CA THI
+                  </label>
+                  <select
+                    value={editingSchedule.status}
+                    onChange={(e) =>
+                      setEditingSchedule({
+                        ...editingSchedule,
+                        status: e.target.value as any,
+                      })
+                    }
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold outline-none focus:border-blue-500"
+                  >
+                    <option value="scheduled">📅 Đã lên lịch</option>
+                    <option value="ongoing">🔴 Đang diễn ra (Live)</option>
+                    <option value="completed">✅ Đã kết thúc</option>
+                    <option value="draft">📝 Bản nháp</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  PHÒNG MÁY / ĐỊA ĐIỂM
+                </label>
+                <input
+                  type="text"
+                  value={editingSchedule.room}
+                  onChange={(e) =>
+                    setEditingSchedule({ ...editingSchedule, room: e.target.value })
+                  }
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingSchedule(null)}
+                  className="h-10 rounded-xl border border-slate-200 px-4 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="h-10 rounded-xl bg-blue-600 px-5 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition cursor-pointer"
+                >
+                  Lưu thay đổi
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

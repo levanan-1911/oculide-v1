@@ -144,6 +144,39 @@ export default function CreateSchedulePage() {
     }
   }
 
+  // Handle Save Draft
+  function handleSaveDraft() {
+    const draftSchedule: ExamScheduleItem = {
+      id: scheduleId.trim() || `DRAFT-${selectedClassId}-${Date.now().toString().slice(-4)}`,
+      title: title.trim() || 'Ca kiểm tra bản nháp',
+      classId: selectedClassId,
+      className: currentClass?.name || 'Lớp học',
+      studentCount: currentClass?.students?.length || 48,
+      lecturer: lecturer || 'Long Phạm',
+      templateId: selectedTemplateId,
+      templateTitle: currentTemplate?.title || 'Bộ đề kiểm tra',
+      templateVersion,
+      date,
+      startTime,
+      endTime: calculatedEndTime,
+      durationMinutes: Number(durationMinutes),
+      room,
+      roomCode,
+      roomPassword,
+      status: 'draft',
+      proctoringPolicy,
+      isLobbyOpen: false,
+      readyStudentCount: 0,
+      deviceCheckCount: 0,
+      absentCount: currentClass?.students?.length || 48,
+      createdAt: 'Hôm nay',
+    };
+
+    const existingSchedules = getStoredSchedules();
+    saveStoredSchedules([draftSchedule, ...existingSchedules]);
+    router.push('/admin/schedules');
+  }
+
   // Handle Finish & Create Schedule
   function handleFinishCreate() {
     if (!title.trim()) {
@@ -533,13 +566,23 @@ export default function CreateSchedulePage() {
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setStep(3)}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition cursor-pointer"
-                  >
-                    Tiếp tục: Chính sách giám sát →
-                  </button>
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleSaveDraft}
+                      className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                    >
+                      <Save className="h-4 w-4 text-slate-500" />
+                      Lưu nháp
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStep(3)}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition cursor-pointer"
+                    >
+                      Tiếp tục: Chính sách giám sát →
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -863,13 +906,23 @@ export default function CreateSchedulePage() {
                     Quay lại
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setStep(4)}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition cursor-pointer"
-                  >
-                    Lưu và tiếp tục: Xác nhận →
-                  </button>
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleSaveDraft}
+                      className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                    >
+                      <Save className="h-4 w-4 text-slate-500" />
+                      Lưu nháp
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStep(4)}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition cursor-pointer"
+                    >
+                      Lưu và tiếp tục: Xác nhận →
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -975,3 +1028,4 @@ export default function CreateSchedulePage() {
     </div>
   );
 }
+

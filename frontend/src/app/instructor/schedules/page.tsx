@@ -20,124 +20,31 @@ import {
   Radio,
 } from 'lucide-react';
 import ExtendSessionModal from '@/components/instructor/monitoring/ExtendSessionModal';
-import { INSTRUCTOR_SCHEDULES_STORAGE_KEY } from '@/components/instructor/classes/types';
-
-interface InstructorSession {
-  id: string;
-  classCode: string;
-  className: string;
-  title: string;
-  type: 'LAB' | 'EXAM';
-  language: string;
-  startTime: string;
-  endTime: string;
-  date: string;
-  roomCode: string;
-  passcode: string;
-  status: 'Đang diễn ra' | 'Sắp diễn ra' | 'Đã kết thúc';
-  enrolledStudents: number;
-  attendedStudents: number;
-  isAiProctored: boolean;
-}
-
-const INITIAL_SESSIONS: InstructorSession[] = [
-  {
-    id: 'SES-01',
-    classCode: 'CS101-A',
-    className: 'Nhập môn Lập trình C/C++',
-    title: 'Lab 03: Vòng lặp For/While & Mảng 1 chiều',
-    type: 'LAB',
-    language: 'C++',
-    startTime: '07:30',
-    endTime: '09:50',
-    date: 'Hôm nay',
-    roomCode: 'CS101-LAB3',
-    passcode: '883921',
-    status: 'Đang diễn ra',
-    enrolledStudents: 48,
-    attendedStudents: 46,
-    isAiProctored: true,
-  },
-  {
-    id: 'SES-02',
-    classCode: 'PRJ301',
-    className: 'Lập trình ứng dụng Java Web',
-    title: 'Kiểm tra quá trình: Servlet & MVC Pattern',
-    type: 'EXAM',
-    language: 'Java',
-    startTime: '13:30',
-    endTime: '15:00',
-    date: 'Hôm nay',
-    roomCode: 'PRJ-KT01',
-    passcode: '901244',
-    status: 'Sắp diễn ra',
-    enrolledStudents: 45,
-    attendedStudents: 0,
-    isAiProctored: true,
-  },
-  {
-    id: 'SES-03',
-    classCode: 'CSD201',
-    className: 'Cấu trúc dữ liệu & Giải thuật',
-    title: 'Lab 04: Cây nhị phân tìm kiếm (BST)',
-    type: 'LAB',
-    language: 'Python',
-    startTime: '15:15',
-    endTime: '17:35',
-    date: 'Hôm nay',
-    roomCode: 'CSD-BST4',
-    passcode: '128472',
-    status: 'Sắp diễn ra',
-    enrolledStudents: 42,
-    attendedStudents: 0,
-    isAiProctored: false,
-  },
-  {
-    id: 'SES-04',
-    classCode: 'CS102',
-    className: 'Kỹ thuật Lập trình nâng cao',
-    title: 'Lab 02: Con trỏ & Quản lý bộ nhớ động',
-    type: 'LAB',
-    language: 'C++',
-    startTime: '08:00',
-    endTime: '10:20',
-    date: 'Hôm qua',
-    roomCode: 'CS102-PTR',
-    passcode: '451092',
-    status: 'Đã kết thúc',
-    enrolledStudents: 50,
-    attendedStudents: 49,
-    isAiProctored: true,
-  },
-];
+import {
+  ScheduleSessionItem,
+  INITIAL_INSTRUCTOR_SCHEDULES,
+  getStoredInstructorSchedules,
+  saveStoredInstructorSchedules,
+} from '@/components/instructor/classes/types';
 
 export default function InstructorSchedulesPage() {
-  const [sessions, setSessions] = useState<InstructorSession[]>(INITIAL_SESSIONS);
+  const [sessions, setSessions] = useState<ScheduleSessionItem[]>(INITIAL_INSTRUCTOR_SCHEDULES);
   const [filterType, setFilterType] = useState<'ALL' | 'LAB' | 'EXAM' | 'active' | 'upcoming'>('ALL');
   const [search, setSearch] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // State modal gia hạn phòng tùy chỉnh
-  const [sessionToExtend, setSessionToExtend] = useState<InstructorSession | null>(null);
+  const [sessionToExtend, setSessionToExtend] = useState<ScheduleSessionItem | null>(null);
 
   // Đọc danh sách ca học đã được tạo & lưu vào lịch từ localStorage
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-      if (raw) {
-        const storedSchedules: InstructorSession[] = JSON.parse(raw);
-        if (Array.isArray(storedSchedules) && storedSchedules.length > 0) {
-          setSessions((prev) => {
-            const storedCodes = new Set(storedSchedules.map((s) => s.roomCode.toLowerCase()));
-            const remaining = prev.filter((p) => !storedCodes.has(p.roomCode.toLowerCase()));
-            return [...storedSchedules, ...remaining];
-          });
-        }
-      }
-    } catch {
-      // fallback
-    }
+    const syncSchedules = () => {
+      setSessions(getStoredInstructorSchedules());
+    };
+    syncSchedules();
+    window.addEventListener('storage', syncSchedules);
+    return () => window.removeEventListener('storage', syncSchedules);
   }, []);
 
   const showToast = (msg: string) => {
@@ -153,36 +60,30 @@ export default function InstructorSchedulesPage() {
   };
 
   const handleOpenRoomEarly = (sessionId: string) => {
-    setSessions((prev) =>
-      prev.map((s) => (s.id === sessionId ? { ...s, status: 'Đang diễn ra' } : s))
-    );
-    try {
-      const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-      if (raw) {
-        const stored: InstructorSession[] = JSON.parse(raw);
-        const updated = stored.map((s) =>
-          s.id === sessionId ? { ...s, status: 'Đang diễn ra' as const } : s
-        );
-        localStorage.setItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY, JSON.stringify(updated));
-      }
-    } catch {
-      // fallback
-    }
+    setSessions((prev) => {
+      const updated = prev.map((s) =>
+        s.id === sessionId ? { ...s, status: 'Đang diễn ra' as const } : s
+      );
+      saveStoredInstructorSchedules(updated);
+      return updated;
+    });
     showToast('Phòng thi đã được mở sớm thành công. Sinh viên đã có thể tham gia!');
   };
 
   // Xác nhận gia hạn phòng tùy chỉnh
   const handleConfirmExtend = (minutes: number, reason: string, notify: boolean) => {
     if (!sessionToExtend) return;
-    setSessions((prev) =>
-      prev.map((s) => {
+    setSessions((prev) => {
+      const updated = prev.map((s) => {
         if (s.id !== sessionToExtend.id) return s;
         return {
           ...s,
           endTime: `${s.endTime} (+${minutes}p)`,
         };
-      })
-    );
+      });
+      saveStoredInstructorSchedules(updated);
+      return updated;
+    });
     showToast(
       `Đã gia hạn thành công +${minutes} phút cho phòng ${sessionToExtend.roomCode}!${
         notify ? ' (Đã gửi thông báo đến thí sinh)' : ''
@@ -254,9 +155,12 @@ export default function InstructorSchedulesPage() {
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900">{sessions.length}</span>
-            <span className="text-xs font-semibold text-slate-600">phiên hôm nay</span>
+            <span className="text-xs font-semibold text-slate-600">phiên kiểm tra</span>
           </div>
-          <p className="mt-1 text-xs text-slate-500">3 ca thực hành • 1 ca thi</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {sessions.filter((s) => s.type === 'LAB').length} ca thực hành •{' '}
+            {sessions.filter((s) => s.type === 'EXAM').length} ca thi
+          </p>
         </div>
 
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
@@ -269,10 +173,14 @@ export default function InstructorSchedulesPage() {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-600">1</span>
+            <span className="text-2xl font-black text-emerald-600">
+              {sessions.filter((s) => s.status === 'Đang diễn ra').length}
+            </span>
             <span className="text-xs font-semibold text-slate-600">phòng hoạt động</span>
           </div>
-          <p className="mt-1 text-xs text-slate-500">46/48 SV đã vào phòng</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {sessions.filter((s) => s.status === 'Sắp diễn ra').length} ca sắp diễn ra
+          </p>
         </div>
 
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
@@ -285,8 +193,10 @@ export default function InstructorSchedulesPage() {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">135</span>
-            <span className="text-xs font-semibold text-slate-600">sinh viên tham gia</span>
+            <span className="text-2xl font-black text-slate-900">
+              {sessions.reduce((acc, s) => acc + (s.enrolledStudents || 0), 0)}
+            </span>
+            <span className="text-xs font-semibold text-slate-600">lượt sinh viên</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">Điểm danh tự động qua MSSV</p>
         </div>
@@ -301,7 +211,9 @@ export default function InstructorSchedulesPage() {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">3/4</span>
+            <span className="text-2xl font-black text-slate-900">
+              {sessions.filter((s) => s.isAiProctored).length}/{sessions.length}
+            </span>
             <span className="text-xs font-semibold text-amber-600 font-bold">phiên bật AI</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">Bắt tab & nhận diện khuôn mặt</p>
@@ -429,6 +341,12 @@ export default function InstructorSchedulesPage() {
                           {session.attendedStudents}/{session.enrolledStudents} SV
                         </strong>
                       </span>
+                      {session.templateId && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-blue-50/80 border border-blue-200/70 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                          Đề: <strong className="font-mono">{session.templateId}</strong>
+                          {session.templateTitle ? ` • ${session.templateTitle}` : ''}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

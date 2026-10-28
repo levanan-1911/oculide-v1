@@ -57,267 +57,96 @@ export const DEFAULT_PROCTORING_POLICY: ProctoringPolicy = {
   tabSwitchSeverity: 'high',
 };
 
-export const INITIAL_SCHEDULES: ExamScheduleItem[] = [
-  {
-    id: 'PRJ301-MID',
-    title: 'Kiểm tra giữa kỳ • Xây dựng ứng dụng Web tương tác',
-    classId: 'SE1848',
-    className: 'Lập trình Web',
-    studentCount: 48,
-    lecturer: 'Thầy Nguyễn Văn Nam',
-    templateId: 'TPL-EXAM-01',
-    templateTitle: 'Xây dựng ứng dụng Web tương tác',
-    templateVersion: 'v1 • Sẵn sàng',
-    date: '28/10/2026',
-    startTime: '08:00',
-    endTime: '09:30',
-    durationMinutes: 90,
-    room: 'Phòng máy LAB-302',
-    roomCode: 'OC-482915',
-    roomPassword: '••••••••',
-    status: 'ongoing', // Đang diễn ra
-    proctoringPolicy: DEFAULT_PROCTORING_POLICY,
-    isLobbyOpen: true,
-    readyStudentCount: 36,
-    deviceCheckCount: 7,
-    absentCount: 5,
-    createdAt: '20/10/2026',
-    creatorRole: 'instructor',
-  },
-  {
-    id: 'CSD-MID',
-    title: 'Kiểm tra giữa kỳ • Cấu trúc dữ liệu & Giải thuật',
-    classId: 'IT2202',
-    className: 'Cấu trúc dữ liệu',
-    studentCount: 52,
-    lecturer: 'Cô Nguyễn Minh Anh',
-    templateId: 'TPL-EXAM-02',
-    templateTitle: 'Cây & Đồ thị nâng cao',
-    templateVersion: 'v1 • Sẵn sàng',
-    date: '30/10/2026',
-    startTime: '13:30',
-    endTime: '15:00',
-    durationMinutes: 90,
-    room: 'Phòng máy LAB-201',
-    roomCode: 'OC-220299',
-    roomPassword: '••••••••',
-    status: 'scheduled', // Đã lên lịch
-    proctoringPolicy: DEFAULT_PROCTORING_POLICY,
-    isLobbyOpen: false,
-    readyStudentCount: 0,
-    deviceCheckCount: 0,
-    absentCount: 52,
-    createdAt: '22/10/2026',
-    creatorRole: 'instructor',
-  },
-  {
-    id: 'OOP-FIN',
-    title: 'Kiểm tra thực hành • Kế thừa & Đa hình OOP',
-    classId: 'SE1849',
-    className: 'Lập trình hướng đối tượng',
-    studentCount: 46,
-    lecturer: 'Thầy Lê Hoàng Đức',
-    templateId: 'TPL-EXAM-03',
-    templateTitle: 'Kiểm tra thực hành OOP • Kế thừa & Đa hình',
-    templateVersion: 'v1 • Sẵn sàng',
-    date: '02/11/2026',
-    startTime: '08:00',
-    endTime: '09:15',
-    durationMinutes: 75,
-    room: 'Phòng máy LAB-305',
-    roomCode: 'OC-184901',
-    roomPassword: '••••••••',
-    status: 'scheduled', // Đã lên lịch
-    proctoringPolicy: DEFAULT_PROCTORING_POLICY,
-    isLobbyOpen: false,
-    readyStudentCount: 0,
-    deviceCheckCount: 0,
-    absentCount: 46,
-    createdAt: '24/10/2026',
-    creatorRole: 'instructor',
-  },
-  {
-    id: 'WEB-LAB-02',
-    title: 'Đánh giá thực hành • Xử lý chuỗi & Thao tác DOM',
-    classId: 'SE1848',
-    className: 'Lập trình Web',
-    studentCount: 48,
-    lecturer: 'Thầy Nguyễn Văn Nam',
-    templateId: 'TPL-LAB-02',
-    templateTitle: 'Xử lý chuỗi & Thao tác DOM trên trình duyệt',
-    templateVersion: 'v1 • Sẵn sàng',
-    date: '18/10/2026',
-    startTime: '07:30',
-    endTime: '09:30',
-    durationMinutes: 120,
-    room: 'Online tập trung',
-    roomCode: 'OC-LAB02-ON',
-    roomPassword: '••••••••',
-    status: 'completed', // Đã kết thúc
-    proctoringPolicy: {
-      ...DEFAULT_PROCTORING_POLICY,
-      clipboard: 'warn',
-    },
-    isLobbyOpen: false,
-    readyStudentCount: 48,
-    deviceCheckCount: 0,
-    absentCount: 0,
-    createdAt: '15/10/2026',
-    creatorRole: 'instructor',
-  },
-  {
-    id: 'CSD-QUIZ-01',
-    title: 'Thi thử nghiệm • Danh sách liên kết & Ngăn xếp (Stack)',
-    classId: 'IT2202',
-    className: 'Cấu trúc dữ liệu',
-    studentCount: 52,
-    lecturer: 'Cô Nguyễn Minh Anh',
-    templateId: 'TPL-LAB-04',
-    templateTitle: 'Danh sách liên kết đơn & Ngăn xếp (Stack)',
-    templateVersion: 'v1 • Bản nháp',
-    date: '05/11/2026',
-    startTime: '10:00',
-    endTime: '11:30',
-    durationMinutes: 90,
-    room: 'Chưa phân phòng',
-    roomCode: 'OC-DRAFT-01',
-    status: 'draft', // Bản nháp
-    proctoringPolicy: DEFAULT_PROCTORING_POLICY,
-    isLobbyOpen: false,
-    readyStudentCount: 0,
-    deviceCheckCount: 0,
-    absentCount: 52,
-    createdAt: '26/10/2026',
-    creatorRole: 'instructor',
-  },
-];
+import {
+  getStoredInstructorSchedules,
+  INITIAL_INSTRUCTOR_SCHEDULES,
+  ScheduleSessionItem,
+  INSTRUCTOR_SCHEDULES_STORAGE_KEY,
+  INSTRUCTOR_ROOMS_STORAGE_KEY,
+} from '@/components/instructor/classes/types';
+import { getStoredQuestionTemplates } from '@/app/admin/classes/types';
 
+export { INSTRUCTOR_SCHEDULES_STORAGE_KEY, INSTRUCTOR_ROOMS_STORAGE_KEY };
 export const SCHEDULES_STORAGE_KEY = 'oculide_schedules_mock';
-export const INSTRUCTOR_SCHEDULES_STORAGE_KEY = 'oculide_instructor_schedules_mock';
-export const INSTRUCTOR_ROOMS_STORAGE_KEY = 'oculide_instructor_rooms_mock';
+
+function mapInstructorSessionToExamSchedule(
+  item: ScheduleSessionItem,
+  templatesMap?: Map<string, { title: string; durationMinutes?: number }>
+): ExamScheduleItem {
+  let status: ScheduleStatus = 'scheduled';
+  if (item.status === 'Đang diễn ra') status = 'ongoing';
+  else if (item.status === 'Đã kết thúc') status = 'completed';
+
+  const tplId = item.templateId || (item.type === 'LAB' ? 'TPL-LAB-01' : 'TPL-EXAM-01');
+  const matchedTpl = templatesMap?.get(tplId);
+
+  const normalizedClassId = (item.classCode || 'CS101').split('-')[0];
+  const displayDate =
+    item.date === 'Hôm nay'
+      ? 'Hôm nay (28/10/2026)'
+      : item.date === 'Hôm qua'
+      ? 'Hôm qua (27/10/2026)'
+      : item.date || '28/10/2026';
+
+  return {
+    id: item.id || item.roomCode,
+    title: item.title,
+    classId: normalizedClassId,
+    className: item.className,
+    studentCount: item.enrolledStudents || 45,
+    lecturer: item.lecturer || 'Thầy Nguyễn Văn Nam',
+    templateId: tplId,
+    templateTitle: matchedTpl?.title || item.templateTitle || item.title,
+    templateVersion: 'v1 • Sẵn sàng',
+    date: displayDate,
+    startTime: item.startTime || '08:00',
+    endTime: item.endTime || '09:30',
+    durationMinutes:
+      item.durationMinutes || matchedTpl?.durationMinutes || (item.type === 'LAB' ? 120 : 90),
+    room: item.type === 'LAB' ? 'Phòng thực hành Lab' : 'Phòng kiểm tra tập trung',
+    roomCode: item.roomCode,
+    roomPassword: item.passcode || '••••••',
+    status,
+    proctoringPolicy: item.isAiProctored
+      ? DEFAULT_PROCTORING_POLICY
+      : {
+          ...DEFAULT_PROCTORING_POLICY,
+          webcam: 'optional',
+          screenShare: 'optional',
+          clipboard: 'allow',
+        },
+    isLobbyOpen: status === 'ongoing',
+    readyStudentCount: item.attendedStudents || 0,
+    deviceCheckCount: 0,
+    absentCount: Math.max(0, (item.enrolledStudents || 0) - (item.attendedStudents || 0)),
+    createdAt: '28/10/2026',
+    creatorRole: 'instructor',
+  };
+}
+
+export const INITIAL_SCHEDULES: ExamScheduleItem[] = INITIAL_INSTRUCTOR_SCHEDULES.map((s) =>
+  mapInstructorSessionToExamSchedule(s)
+);
 
 /**
- * Đọc toàn bộ danh sách lịch kiểm tra được ghi nhận từ:
- * 1. Dữ liệu mock hệ thống & Admin cache (SCHEDULES_STORAGE_KEY)
- * 2. Các ca kiểm tra & thực hành do Giảng viên khởi tạo (INSTRUCTOR_SCHEDULES_STORAGE_KEY, INSTRUCTOR_ROOMS_STORAGE_KEY)
+ * Đọc toàn bộ danh sách lịch kiểm tra trực tiếp từ nguồn lịch của Role Giảng viên
+ * đảm bảo 100% khớp giữa /instructor/schedules và /admin/schedules.
  */
 export function getStoredSchedules(): ExamScheduleItem[] {
   if (typeof window === 'undefined') return INITIAL_SCHEDULES;
 
-  let baseList: ExamScheduleItem[] = [...INITIAL_SCHEDULES];
-
   try {
-    const raw = localStorage.getItem(SCHEDULES_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Chuẩn hóa giảng viên nếu dữ liệu cũ từng lưu tên Admin ("Long Phạm")
-        baseList = parsed.map((item: ExamScheduleItem) => ({
-          ...item,
-          lecturer:
-            !item.lecturer || item.lecturer === 'Long Phạm'
-              ? 'Thầy Nguyễn Văn Nam'
-              : item.lecturer,
-          creatorRole: 'instructor',
-        }));
-      }
-    }
+    const templates = getStoredQuestionTemplates();
+    const templatesMap = new Map(
+      templates.map((t) => [t.id, { title: t.title, durationMinutes: t.durationMinutes }])
+    );
+    const instructorSessions = getStoredInstructorSchedules();
+    return instructorSessions.map((item) =>
+      mapInstructorSessionToExamSchedule(item, templatesMap)
+    );
   } catch {
-    // fallback
+    return INITIAL_SCHEDULES;
   }
-
-  // Tích hợp dữ liệu ca thi do giảng viên tạo từ INSTRUCTOR_SCHEDULES_STORAGE_KEY
-  try {
-    const rawInstructorSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-    if (rawInstructorSched) {
-      const parsedInstructor = JSON.parse(rawInstructorSched);
-      if (Array.isArray(parsedInstructor)) {
-        parsedInstructor.forEach((item: any) => {
-          const id = item.id || item.roomCode;
-          const exists = baseList.some((s) => s.id === id || s.roomCode === item.roomCode);
-          if (!exists) {
-            let status: ScheduleStatus = 'scheduled';
-            if (item.status === 'Đang diễn ra' || item.status === 'in_progress') status = 'ongoing';
-            else if (item.status === 'Đã kết thúc' || item.status === 'ended') status = 'completed';
-
-            const converted: ExamScheduleItem = {
-              id: id,
-              title: item.title || `Ca kiểm tra ${item.classCode || ''}`,
-              classId: item.classCode || 'CLASS-01',
-              className: item.className || 'Lớp học phần',
-              studentCount: item.enrolledStudents || 45,
-              lecturer: item.lecturer || 'Thầy Nguyễn Văn Nam',
-              templateId: item.templateId || (item.type === 'LAB' ? 'TPL-LAB-01' : 'TPL-EXAM-01'),
-              templateTitle: item.templateTitle || item.title || 'Bài tập thực hành / Kiểm tra',
-              templateVersion: 'v1 • Sẵn sàng',
-              date: item.date === 'Hôm nay' ? '28/10/2026' : (item.date || '28/10/2026'),
-              startTime: item.startTime || '08:00',
-              endTime: item.endTime || '09:30',
-              durationMinutes: item.durationMinutes || 90,
-              room: item.roomCode?.includes('LAB') ? 'Phòng máy thực hành' : 'Phòng thi tiêu chuẩn',
-              roomCode: item.roomCode || 'OC-ROOM',
-              roomPassword: item.passcode || '••••••',
-              status: status,
-              proctoringPolicy: DEFAULT_PROCTORING_POLICY,
-              createdAt: '28/10/2026',
-              creatorRole: 'instructor',
-            };
-            baseList = [converted, ...baseList];
-          }
-        });
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  // Tích hợp phòng thi/thực hành từ INSTRUCTOR_ROOMS_STORAGE_KEY
-  try {
-    const rawInstructorRooms = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-    if (rawInstructorRooms) {
-      const parsedRooms = JSON.parse(rawInstructorRooms);
-      if (Array.isArray(parsedRooms)) {
-        parsedRooms.forEach((room: any) => {
-          const id = room.id || room.roomCode;
-          if (!id) return;
-          const exists = baseList.some((s) => s.id === id || s.roomCode === id);
-          if (!exists) {
-            let status: ScheduleStatus = 'scheduled';
-            if (room.status === 'in_progress') status = 'ongoing';
-            else if (room.status === 'ended') status = 'completed';
-
-            const converted: ExamScheduleItem = {
-              id: id,
-              title: room.title || `Ca kiểm tra ${room.classId || ''}`,
-              classId: room.classId || 'CLASS-01',
-              className: room.className || 'Lớp học phần',
-              studentCount: Array.isArray(room.attendees) ? room.attendees.length : 45,
-              lecturer: room.lecturer || 'Thầy Nguyễn Văn Nam',
-              templateId: room.templateId || (room.type === 'lab' ? 'TPL-LAB-01' : 'TPL-EXAM-01'),
-              templateTitle: room.templateTitle || room.title || 'Bài tập thực hành / Kiểm tra',
-              templateVersion: room.templateVersion || 'v1 • Sẵn sàng',
-              date: room.scheduledDate || '28/10/2026',
-              startTime: room.startTime || '08:00',
-              endTime: room.endTime || '09:30',
-              durationMinutes: room.durationMinutes || 90,
-              room: room.type === 'lab' ? 'Phòng máy thực hành' : 'Phòng thi tiêu chuẩn',
-              roomCode: id,
-              roomPassword: room.password || room.roomPassword || '••••••',
-              status: status,
-              proctoringPolicy: DEFAULT_PROCTORING_POLICY,
-              createdAt: room.createdAt || '28/10/2026',
-              creatorRole: 'instructor',
-            };
-            baseList = [converted, ...baseList];
-          }
-        });
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return baseList;
 }
 
 export function saveStoredSchedules(schedules: ExamScheduleItem[]): void {

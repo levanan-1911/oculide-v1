@@ -284,3 +284,208 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
     description: 'Đề kiểm tra thực hành xây dựng CRUD với Servlet, JSP và kết nối MySQL qua JDBC.',
   },
 ];
+
+export const INITIAL_INSTRUCTOR_SCHEDULES: ScheduleSessionItem[] = [
+  {
+    id: 'SES-01',
+    classCode: 'CS101-A',
+    className: 'Nhập môn Lập trình C/C++',
+    title: 'Lab 03: Vòng lặp For/While & Mảng 1 chiều',
+    type: 'LAB',
+    language: 'C++',
+    startTime: '07:30',
+    endTime: '09:50',
+    date: 'Hôm nay',
+    roomCode: 'CS101-LAB3',
+    passcode: '883921',
+    status: 'Đang diễn ra',
+    enrolledStudents: 48,
+    attendedStudents: 46,
+    isAiProctored: true,
+    templateId: 'TPL-LAB-03',
+    templateTitle: 'Lab 03: Vòng lặp For/While & Mảng 2 chiều',
+    durationMinutes: 120,
+    lecturer: CURRENT_INSTRUCTOR_NAME,
+  },
+  {
+    id: 'SES-02',
+    classCode: 'PRJ301',
+    className: 'Lập trình ứng dụng Java Web',
+    title: 'Kiểm tra quá trình: Servlet & MVC Pattern',
+    type: 'EXAM',
+    language: 'Java',
+    startTime: '13:30',
+    endTime: '15:00',
+    date: 'Hôm nay',
+    roomCode: 'PRJ-KT01',
+    passcode: '901244',
+    status: 'Sắp diễn ra',
+    enrolledStudents: 45,
+    attendedStudents: 0,
+    isAiProctored: true,
+    templateId: 'TPL-EXAM-03',
+    templateTitle: 'Kiểm tra quá trình • Java Web MVC & JDBC DAO',
+    durationMinutes: 90,
+    lecturer: CURRENT_INSTRUCTOR_NAME,
+  },
+  {
+    id: 'SES-03',
+    classCode: 'CSD201',
+    className: 'Cấu trúc dữ liệu & Giải thuật',
+    title: 'Lab 04: Cây nhị phân tìm kiếm (BST)',
+    type: 'LAB',
+    language: 'Python',
+    startTime: '15:15',
+    endTime: '17:35',
+    date: 'Hôm nay',
+    roomCode: 'CSD-BST4',
+    passcode: '128472',
+    status: 'Sắp diễn ra',
+    enrolledStudents: 42,
+    attendedStudents: 0,
+    isAiProctored: false,
+    templateId: 'TPL-LAB-04',
+    templateTitle: 'Lab 04: Danh sách liên kết đơn & Ngăn xếp (Stack)',
+    durationMinutes: 120,
+    lecturer: CURRENT_INSTRUCTOR_NAME,
+  },
+  {
+    id: 'SES-04',
+    classCode: 'CS102',
+    className: 'Kỹ thuật Lập trình nâng cao',
+    title: 'Lab 02: Con trỏ & Quản lý bộ nhớ động',
+    type: 'LAB',
+    language: 'C++',
+    startTime: '08:00',
+    endTime: '10:20',
+    date: 'Hôm qua',
+    roomCode: 'CS102-PTR',
+    passcode: '451092',
+    status: 'Đã kết thúc',
+    enrolledStudents: 50,
+    attendedStudents: 49,
+    isAiProctored: true,
+    templateId: 'TPL-LAB-02',
+    templateTitle: 'Lab 02: Cấu trúc rẽ nhánh If/Else & Switch-Case',
+    durationMinutes: 120,
+    lecturer: CURRENT_INSTRUCTOR_NAME,
+  },
+];
+
+/**
+ * Đọc toàn bộ lịch & phiên kiểm tra từ nguồn duy nhất của Giảng viên
+ * (kết hợp INITIAL_INSTRUCTOR_SCHEDULES, INSTRUCTOR_SCHEDULES_STORAGE_KEY và INSTRUCTOR_ROOMS_STORAGE_KEY)
+ */
+export function getStoredInstructorSchedules(): ScheduleSessionItem[] {
+  if (typeof window === 'undefined') return INITIAL_INSTRUCTOR_SCHEDULES;
+
+  let merged: ScheduleSessionItem[] = [...INITIAL_INSTRUCTOR_SCHEDULES];
+
+  try {
+    const rawSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
+    if (rawSched) {
+      const parsed: ScheduleSessionItem[] = JSON.parse(rawSched);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const storedCodes = new Set(parsed.map((s) => s.roomCode.toLowerCase()));
+        const remainingDefaults = INITIAL_INSTRUCTOR_SCHEDULES.filter(
+          (init) => !storedCodes.has(init.roomCode.toLowerCase())
+        );
+        merged = [
+          ...parsed.map((item) => {
+            const initMatch = INITIAL_INSTRUCTOR_SCHEDULES.find(
+              (i) => i.roomCode.toLowerCase() === item.roomCode.toLowerCase() || i.id === item.id
+            );
+            return {
+              ...initMatch,
+              ...item,
+              templateId:
+                item.templateId ||
+                initMatch?.templateId ||
+                (item.type === 'LAB' ? 'TPL-LAB-01' : 'TPL-EXAM-01'),
+              templateTitle:
+                item.templateTitle || initMatch?.templateTitle || item.title,
+              durationMinutes:
+                item.durationMinutes || initMatch?.durationMinutes || (item.type === 'LAB' ? 120 : 90),
+              lecturer: item.lecturer || CURRENT_INSTRUCTOR_NAME,
+            };
+          }),
+          ...remainingDefaults,
+        ];
+      }
+    }
+
+    // Đồng bộ thêm các phòng tạo từ /instructor/room nếu chưa có trong danh sách
+    const rawRooms = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+    if (rawRooms) {
+      const parsedRooms: RoomSession[] = JSON.parse(rawRooms);
+      if (Array.isArray(parsedRooms)) {
+        parsedRooms.forEach((room) => {
+          const code = room.id;
+          if (!code) return;
+          const existingIdx = merged.findIndex(
+            (m) => m.roomCode.toLowerCase() === code.toLowerCase()
+          );
+          const mappedStatus: ScheduleSessionItem['status'] =
+            room.status === 'in_progress'
+              ? 'Đang diễn ra'
+              : room.status === 'ended'
+              ? 'Đã kết thúc'
+              : 'Sắp diễn ra';
+
+          if (existingIdx >= 0) {
+            // Đồng bộ trạng thái và bộ đề mới nhất từ phòng
+            merged[existingIdx] = {
+              ...merged[existingIdx],
+              status: mappedStatus,
+              templateId: room.templateId || merged[existingIdx].templateId,
+              templateTitle: room.templateTitle || merged[existingIdx].templateTitle,
+              durationMinutes: room.durationMinutes || merged[existingIdx].durationMinutes,
+            };
+          } else {
+            merged.unshift({
+              id: `SES-${code}`,
+              classCode: room.classId || 'CS101',
+              className: room.className || 'Nhập môn Lập trình C/C++',
+              title: room.title || `Ca kiểm tra ${room.classId}`,
+              type: room.type === 'lab' ? 'LAB' : 'EXAM',
+              language: room.templateLanguage || 'C++',
+              startTime: room.startTime || '08:00',
+              endTime: room.endTime || '10:00',
+              date: room.scheduledDate || 'Hôm nay',
+              roomCode: code,
+              passcode: room.password || '123456',
+              status: mappedStatus,
+              enrolledStudents: Array.isArray(room.attendees) ? room.attendees.length : 45,
+              attendedStudents: Array.isArray(room.attendees)
+                ? room.attendees.filter((a) => a.status !== 'absent').length
+                : 0,
+              isAiProctored: Boolean(
+                room.proctoringConfig?.aiFaceDetection ||
+                  room.proctoringConfig?.aiObjectDetection ||
+                  room.proctoringConfig?.lockdownFullscreen
+              ),
+              templateId: room.templateId || (room.type === 'lab' ? 'TPL-LAB-01' : 'TPL-EXAM-01'),
+              templateTitle: room.templateTitle || room.title,
+              durationMinutes: room.durationMinutes || (room.type === 'lab' ? 120 : 90),
+              lecturer: CURRENT_INSTRUCTOR_NAME,
+            });
+          }
+        });
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return merged;
+}
+
+export function saveStoredInstructorSchedules(items: ScheduleSessionItem[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY, JSON.stringify(items));
+    window.dispatchEvent(new Event('storage'));
+  } catch {
+    // ignore
+  }
+}

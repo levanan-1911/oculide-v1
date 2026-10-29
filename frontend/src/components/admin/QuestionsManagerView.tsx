@@ -26,12 +26,56 @@ import {
 import {
   QuestionTemplate,
   TemplateQuestionItem,
+  TemplateTestCaseItem,
   getStoredQuestionTemplates,
   saveStoredQuestionTemplates,
   getStoredClasses,
   syncClassesWithTemplate,
   ClassRow,
 } from '@/app/admin/classes/types';
+
+function createDefaultTestCase(
+  index: number,
+  inputData = '',
+  expectedOutput = '',
+): TemplateTestCaseItem {
+  return {
+    id: `TC-${String(index).padStart(2, '0')}`,
+    inputData,
+    expectedOutput,
+    isHidden: false,
+    points: 1,
+  };
+}
+
+function normalizeQuestionForEditor(
+  question: TemplateQuestionItem,
+): TemplateQuestionItem {
+  const existingCases = Array.isArray(question.testCases)
+    ? question.testCases
+    : [];
+
+  const testCases =
+    existingCases.length > 0
+      ? existingCases.map((testCase, index) => ({
+          ...createDefaultTestCase(index + 1),
+          ...testCase,
+          id: testCase.id || `TC-${String(index + 1).padStart(2, '0')}`,
+        }))
+      : [
+          createDefaultTestCase(
+            1,
+            question.sampleInput || '',
+            question.sampleOutput || '',
+          ),
+        ];
+
+  return {
+    ...question,
+    testCases,
+    testCasesCount: testCases.length,
+  };
+}
 
 export default function QuestionsManagerView() {
   const pathname = usePathname();
@@ -63,7 +107,13 @@ export default function QuestionsManagerView() {
       const match = loadedTemplates.find((t) => t.id === directTemplateId);
       if (match) {
         setEditingTemplate(match);
-        setEditQuestions(match.questions ? JSON.parse(JSON.stringify(match.questions)) : []);
+        setEditQuestions(
+          match.questions
+            ? JSON.parse(JSON.stringify(match.questions)).map(
+              normalizeQuestionForEditor,
+            )
+          : [],
+    );
         setExpandedTemplateIds((prev) => ({ ...prev, [directTemplateId]: true }));
       }
     }
@@ -144,7 +194,14 @@ export default function QuestionsManagerView() {
   function handleOpenEdit(template: QuestionTemplate) {
     setIsCreatingNew(false);
     setEditingTemplate(template);
-    setEditQuestions(template.questions ? JSON.parse(JSON.stringify(template.questions)) : []);
+
+    setEditQuestions(
+      template.questions
+        ? JSON.parse(JSON.stringify(template.questions)).map(
+          normalizeQuestionForEditor,
+        )
+        : [],
+    );
   }
 
   // Open Create Modal
@@ -192,10 +249,12 @@ export default function QuestionsManagerView() {
       id: `Q-0${nextIndex}`,
       title: `Bài ${nextIndex}: Yêu cầu thuật toán mới`,
       difficulty: nextIndex % 2 === 0 ? 'Trung bình' : 'Dễ',
-      description: 'Mô tả chi tiết yêu cầu thuật toán, điều kiện biên và kết quả trả về.',
-      sampleInput: 'Input mẫu',
-      sampleOutput: 'Output mong đợi',
-      testCasesCount: 5,
+      description:
+        'Mô tả chi tiết yêu cầu thuật toán, điều kiện biên và kết quả trả về.',
+      sampleInput: '',
+      sampleOutput: '',
+      testCases: [createDefaultTestCase(1)],
+      testCasesCount: 1,
     };
     setEditQuestions((prev) => [...prev, newQ]);
   }
@@ -213,7 +272,73 @@ export default function QuestionsManagerView() {
       return copy;
     });
   }
+  // Add a test case to a question
+  function handleAddTestCase(questionIndex: number) {
+  setEditQuestions((prev) =>
+    prev.map((question, index) => {
+      if (index !== questionIndex) return question;
 
+      const testCases = question.testCases || [];
+      const nextTestCases = [
+        ...testCases,
+        createDefaultTestCase(testCases.length + 1),
+      ];
+
+      return {
+        ...question,
+        testCases: nextTestCases,
+        testCasesCount: nextTestCases.length,
+      };
+    }),
+  );
+}
+
+function handleRemoveTestCase(
+  questionIndex: number,
+  testCaseIndex: number,
+) {
+  setEditQuestions((prev) =>
+    prev.map((question, index) => {
+      if (index !== questionIndex) return question;
+
+      const testCases = (question.testCases || []).filter(
+        (_, tcIndex) => tcIndex !== testCaseIndex,
+      );
+
+      return {
+        ...question,
+        testCases,
+        testCasesCount: testCases.length,
+      };
+    }),
+  );
+}
+
+function handleUpdateTestCaseField(
+  questionIndex: number,
+  testCaseIndex: number,
+  field: keyof TemplateTestCaseItem,
+  value: string | number | boolean,
+) {
+  setEditQuestions((prev) =>
+    prev.map((question, index) => {
+      if (index !== questionIndex) return question;
+
+      const testCases = (question.testCases || []).map(
+        (testCase, tcIndex) =>
+          tcIndex === testCaseIndex
+            ? { ...testCase, [field]: value }
+            : testCase,
+      );
+
+      return {
+        ...question,
+        testCases,
+        testCasesCount: testCases.length,
+      };
+    }),
+  );
+}
   // Save changes
   function handleSaveTemplate(e: React.FormEvent) {
     e.preventDefault();
@@ -224,12 +349,29 @@ export default function QuestionsManagerView() {
       alert('Vui lòng nhập tên bộ đề.');
       return;
     }
+    
+    const questionWithoutTestCases = editQuestions.findIndex(
+  (question) =>
+    !question.testCases || question.testCases.length === 0,
+);
+
+if (questionWithoutTestCases >= 0) {
+  alert(
+    `Câu hỏi ${questionWithoutTestCases + 1} cần có ít nhất một Test Case.`,
+  );
+  return;
+}
+
+const updatedQuestions = editQuestions.map((question) => ({
+  ...question,
+  testCasesCount: question.testCases?.length || 0,
+}));
 
     const updatedTpl: QuestionTemplate = {
       ...editingTemplate,
       title: trimmedTitle,
-      questionCount: editQuestions.length,
-      questions: editQuestions,
+      questionCount: updatedQuestions.length,
+      questions: updatedQuestions,
       updatedAt: 'Vừa xong',
     };
 
@@ -941,6 +1083,129 @@ export default function QuestionsManagerView() {
                           />
                         </div>
                       </div>
+                      {/* Test cases của câu hỏi */}
+<div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
+  <div className="flex items-center justify-between gap-2">
+    <div>
+      <h5 className="text-xs font-bold text-slate-700">
+        Test Case chấm tự động ({q.testCases?.length || 0})
+      </h5>
+      <p className="text-[11px] text-slate-500">
+        Nhập dữ liệu đầu vào và kết quả mong đợi cho từng trường hợp.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      onClick={() => handleAddTestCase(idx)}
+      className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
+    >
+      <Plus className="mr-1 inline h-3.5 w-3.5" />
+      Thêm Test Case
+    </button>
+  </div>
+
+  {(q.testCases || []).map((testCase, tcIdx) => (
+    <div
+      key={testCase.id}
+      className="space-y-3 rounded-xl border border-slate-200 bg-white p-3"
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-xs font-bold text-blue-700">
+          TC-{String(tcIdx + 1).padStart(2, '0')}
+        </span>
+
+        <button
+          type="button"
+          onClick={() => handleRemoveTestCase(idx, tcIdx)}
+          className="text-slate-400 hover:text-red-600"
+          title="Xóa Test Case"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-600">
+            Input Data
+          </label>
+          <textarea
+            rows={4}
+            value={testCase.inputData}
+            onChange={(e) =>
+              handleUpdateTestCaseField(
+                idx,
+                tcIdx,
+                'inputData',
+                e.target.value,
+              )
+            }
+            placeholder="Nhập dữ liệu đầu vào..."
+            className="w-full rounded-lg border border-slate-200 p-2 font-mono text-xs focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-600">
+            Expected Output
+          </label>
+          <textarea
+            rows={4}
+            value={testCase.expectedOutput}
+            onChange={(e) =>
+              handleUpdateTestCaseField(
+                idx,
+                tcIdx,
+                'expectedOutput',
+                e.target.value,
+              )
+            }
+            placeholder="Nhập kết quả mong đợi..."
+            className="w-full rounded-lg border border-slate-200 p-2 font-mono text-xs focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-2">
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+          <input
+            type="checkbox"
+            checked={testCase.isHidden}
+            onChange={(e) =>
+              handleUpdateTestCaseField(
+                idx,
+                tcIdx,
+                'isHidden',
+                e.target.checked,
+              )
+            }
+          />
+          Ẩn Test Case với sinh viên
+        </label>
+
+        <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+          Điểm
+          <input
+            type="number"
+            min={0}
+            step={0.5}
+            value={testCase.points}
+            onChange={(e) =>
+              handleUpdateTestCaseField(
+                idx,
+                tcIdx,
+                'points',
+                Math.max(0, Number(e.target.value)),
+              )
+            }
+            className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-right"
+          />
+        </label>
+      </div>
+    </div>
+  ))}
+</div>
                     </div>
                   ))}
                 </div>

@@ -139,6 +139,14 @@ export function addMinutesToIso(startIso: string, minutes: number): string {
   }
 }
 
+export interface TemplateTestCaseItem {
+  id: string;
+  inputData: string;
+  expectedOutput: string;
+  isHidden: boolean;
+  points: number;
+}
+
 export interface TemplateQuestionItem {
   id: string;
   title: string;
@@ -146,6 +154,7 @@ export interface TemplateQuestionItem {
   description: string;
   sampleInput?: string;
   sampleOutput?: string;
+  testCases?: TemplateTestCaseItem[];
   testCasesCount: number;
 }
 

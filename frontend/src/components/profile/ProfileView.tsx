@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   User,
@@ -35,8 +36,18 @@ export interface ProfileViewProps {
   role: 'admin' | 'instructor' | 'student';
 }
 
-export default function ProfileView({ role }: ProfileViewProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'security' | 'activity'>('info');
+function ProfileViewContent({ role }: ProfileViewProps) {
+  const searchParams = useSearchParams();
+  const tabParam = searchParams?.get('tab');
+  const [activeTab, setActiveTab] = useState<'info' | 'security' | 'activity'>(
+    tabParam === 'security' || tabParam === 'activity' ? tabParam : 'info'
+  );
+
+  useEffect(() => {
+    if (tabParam === 'security' || tabParam === 'info' || tabParam === 'activity') {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   // Thông tin chung
   const [name, setName] = useState(
@@ -72,6 +83,7 @@ export default function ProfileView({ role }: ProfileViewProps) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
@@ -160,7 +172,7 @@ export default function ProfileView({ role }: ProfileViewProps) {
   };
 
   // Đổi mật khẩu
-  const handlePasswordChange = (e: React.FormEvent) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordMsg(null);
 
@@ -176,10 +188,35 @@ export default function ProfileView({ role }: ProfileViewProps) {
       setPasswordMsg({ type: 'error', text: 'Xác nhận mật khẩu mới không khớp.' });
       return;
     }
+    if (newPassword === currentPassword) {
+      setPasswordMsg({ type: 'error', text: 'Mật khẩu mới không được trùng với mật khẩu hiện tại.' });
+      return;
+    }
 
     setIsChangingPassword(true);
-    setTimeout(() => {
-      setIsChangingPassword(false);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      if (token) {
+        const res = await fetch('/api/v1/auth/change-password', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            current_password: currentPassword,
+            new_password: newPassword,
+          }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 400 || res.status === 401) {
+            throw new Error(data.detail || 'Mật khẩu hiện tại không chính xác.');
+          }
+        }
+      }
+
       setPasswordMsg({
         type: 'success',
         text: 'Đổi mật khẩu thành công! Hãy dùng mật khẩu mới trong lần đăng nhập tới.',
@@ -188,7 +225,15 @@ export default function ProfileView({ role }: ProfileViewProps) {
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => setPasswordMsg(null), 4000);
-    }, 600);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mật khẩu cũ.';
+      setPasswordMsg({
+        type: 'error',
+        text: message,
+      });
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const initials =
@@ -611,13 +656,22 @@ export default function ProfileView({ role }: ProfileViewProps) {
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
                 Xác nhận mật khẩu mới
               </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                placeholder="Nhập lại mật khẩu mới"
-              />
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 pr-10 text-xs text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                  placeholder="Nhập lại mật khẩu mới"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
 
             <div className="pt-2">
@@ -800,5 +854,14 @@ export default function ProfileView({ role }: ProfileViewProps) {
         </div>
       )}
     </div>
+  );
+}
+
+
+export default function ProfileView(props: ProfileViewProps) {
+  return (
+    <Suspense fallback={null}>
+      <ProfileViewContent {...props} />
+    </Suspense>
   );
 }

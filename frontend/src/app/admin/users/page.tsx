@@ -1,0 +1,2365 @@
+'use client';
+
+import React, { FormEvent, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  Copy,
+  Download,
+  Eye,
+  FileSpreadsheet,
+  GraduationCap,
+  KeyRound,
+  Lock,
+  Pencil,
+  Plus,
+  Search,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Trash2,
+  Unlock,
+  UploadCloud,
+  UserCheck,
+  Users,
+  X,
+} from 'lucide-react';
+import AdminSidebar from '@/components/admin/AdminSidebar';
+import AdminTopbar from '@/components/admin/AdminTopbar';
+
+export type UserRole = 'instructor' | 'student' | 'admin';
+export type UserStatus = 'active' | 'locked';
+
+export interface UserRow {
+  id: number;
+  userCode: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  role: UserRole;
+  status: UserStatus;
+  department: string;
+  lastLogin: string;
+  lastLoginIp?: string;
+  lastPasswordChange?: string;
+  missingFields?: string[];
+}
+
+export interface ImportPreviewRow extends UserRow {
+  rowNumber: number;
+  missingFields: string[];
+}
+
+const INITIAL_USERS: UserRow[] = [
+  {
+    id: 1,
+    userCode: 'GV0012',
+    fullName: 'Nguyễn Minh Anh',
+    email: 'minhanh@oclide.edu.vn',
+    phone: '0912 345 678',
+    role: 'instructor',
+    status: 'active',
+    department: 'Khoa Kỹ thuật phần mềm',
+    lastLogin: '16/10/2026 19:42',
+    lastLoginIp: '14.238.12.98 · Cầu Giấy, Hà Nội',
+    lastPasswordChange: '10/09/2026',
+  },
+  {
+    id: 2,
+    userCode: 'SV184801',
+    fullName: 'Trần Thu Bình',
+    email: 'binhtt@oclide.edu.vn',
+    phone: '0988 123 456',
+    role: 'student',
+    status: 'active',
+    department: 'Lớp SE1848 - Khoa CNTT',
+    lastLogin: '16/10/2026 19:37',
+    lastLoginIp: '118.70.182.44 · Đống Đa, Hà Nội',
+    lastPasswordChange: '01/10/2026',
+  },
+  {
+    id: 3,
+    userCode: 'GV0026',
+    fullName: 'Lê Hải Nam',
+    email: 'namlh@oclide.edu.vn',
+    phone: '0903 889 911',
+    role: 'instructor',
+    status: 'locked',
+    department: 'Bộ môn An toàn thông tin',
+    lastLogin: '15/10/2026 08:21',
+    lastLoginIp: '42.115.89.210 · Ba Đình, Hà Nội',
+    lastPasswordChange: '15/08/2026',
+  },
+  {
+    id: 4,
+    userCode: 'SV184803',
+    fullName: 'Phạm Minh Châu',
+    email: 'chaupm@oclide.edu.vn',
+    phone: '0977 654 321',
+    role: 'student',
+    status: 'active',
+    department: 'Lớp SE1848 - Khoa CNTT',
+    lastLogin: '16/10/2026 18:56',
+    lastLoginIp: '27.72.61.15 · Thanh Xuân, Hà Nội',
+    lastPasswordChange: '22/09/2026',
+  },
+  {
+    id: 5,
+    userCode: 'QT0001',
+    fullName: 'Long Phạm',
+    email: 'admin.long@oclide.edu.vn',
+    phone: '0966 999 888',
+    role: 'admin',
+    status: 'active',
+    department: 'Phòng Quản trị hệ thống',
+    lastLogin: 'Hôm nay 20:45',
+    lastLoginIp: '14.162.144.12 · Hà Nội',
+    lastPasswordChange: '05/10/2026',
+  },
+];
+
+export default function UserManagerPage() {
+  const [users, setUsers] = useState<UserRow[]>(INITIAL_USERS);
+  const [selectedUserId, setSelectedUserId] = useState<number>(INITIAL_USERS[0].id);
+
+  // Bộ lọc
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('Tất cả vai trò');
+  const [statusFilter, setStatusFilter] = useState('Tất cả trạng thái');
+
+  // Thông báo Toast
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Modals state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createError, setCreateError] = useState('');
+
+  // Trạng thái Nhập tệp hàng loạt (Excel / CSV Drag & Drop)
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [importPreviewUsers, setImportPreviewUsers] = useState<ImportPreviewRow[]>([]);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
+  const [importError, setImportError] = useState('');
+  const [isParsing, setIsParsing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [editingUser, setEditingUser] = useState<UserRow | null>(null);
+  const [editError, setEditError] = useState('');
+
+  const [resettingUser, setResettingUser] = useState<UserRow | null>(null);
+  const [resetStep, setResetStep] = useState<'confirm' | 'success'>('confirm');
+  const [temporaryPassword, setTemporaryPassword] = useState('');
+  const [isCopied, setIsCopied] = useState(false);
+
+  const [togglingUser, setTogglingUser] = useState<UserRow | null>(null);
+  const [lockReason, setLockReason] = useState('');
+
+  function showToast(message: string) {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3500);
+  }
+
+  // Dữ liệu lọc
+  const filteredUsers = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase('vi');
+    return users.filter((u) => {
+      const matchSearch =
+        !query ||
+        u.userCode.toLocaleLowerCase('vi').includes(query) ||
+        u.fullName.toLocaleLowerCase('vi').includes(query) ||
+        u.email.toLocaleLowerCase('vi').includes(query) ||
+        u.department.toLocaleLowerCase('vi').includes(query);
+
+      const matchRole =
+        roleFilter === 'Tất cả vai trò' ||
+        (roleFilter === 'Giảng viên' && u.role === 'instructor') ||
+        (roleFilter === 'Sinh viên' && u.role === 'student') ||
+        (roleFilter === 'Quản trị viên' && u.role === 'admin');
+
+      const matchStatus =
+        statusFilter === 'Tất cả trạng thái' ||
+        (statusFilter === 'Hoạt động' && u.status === 'active') ||
+        (statusFilter === 'Bị khóa' && u.status === 'locked');
+
+      return matchSearch && matchRole && matchStatus;
+    });
+  }, [users, search, roleFilter, statusFilter]);
+
+  const selectedUser = useMemo(() => {
+    return users.find((u) => u.id === selectedUserId) ?? users[0] ?? null;
+  }, [users, selectedUserId]);
+
+  // Thống kê KPI
+  const instructorCount = useMemo(() => users.filter((u) => u.role === 'instructor').length, [users]);
+  const activeStudentCount = useMemo(
+    () => users.filter((u) => u.role === 'student' && u.status === 'active').length,
+    [users]
+  );
+  const lockedCount = useMemo(() => users.filter((u) => u.status === 'locked').length, [users]);
+
+  // Initials cho Avatar
+  const getInitials = (name: string) => {
+    const clean = name.trim();
+    if (!clean) return '?';
+    const parts = clean.split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return clean.slice(0, 2).toUpperCase();
+  };
+
+  // ── XỬ LÝ ĐỌC VÀ PHÂN TÍCH TỆP NHẬP (CSV / EXCEL .XLSX / .XLS) ──
+  // Giải mã trực tiếp tệp .xlsx (ZIP + XML chuẩn Office Open XML) ngay trên trình duyệt
+  async function extractRowsFromXlsxBuffer(buffer: ArrayBuffer): Promise<string[][]> {
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+
+    // Tìm End of Central Directory (0x06054b50)
+    let eocdOffset = -1;
+    for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+      if (view.getUint32(i, true) === 0x06054b50) {
+        eocdOffset = i;
+        break;
+      }
+    }
+    if (eocdOffset === -1) {
+      throw new Error('Không tìm thấy cấu trúc ZIP hợp lệ trong tệp Excel (.xlsx).');
+    }
+
+    const totalEntries = view.getUint16(eocdOffset + 10, true);
+    const cdOffset = view.getUint32(eocdOffset + 16, true);
+
+    const zipEntries = new Map<string, { method: number; data: Uint8Array }>();
+    let ptr = cdOffset;
+
+    for (let i = 0; i < totalEntries; i++) {
+      if (ptr + 46 > bytes.length || view.getUint32(ptr, true) !== 0x02014b50) break;
+      const method = view.getUint16(ptr + 10, true);
+      const compressedSize = view.getUint32(ptr + 20, true);
+      const nameLen = view.getUint16(ptr + 28, true);
+      const extraLen = view.getUint16(ptr + 30, true);
+      const commentLen = view.getUint16(ptr + 32, true);
+      const localHeaderOffset = view.getUint32(ptr + 42, true);
+
+      const entryName = new TextDecoder('utf-8').decode(bytes.subarray(ptr + 46, ptr + 46 + nameLen));
+      if (localHeaderOffset + 30 <= bytes.length) {
+        const localNameLen = view.getUint16(localHeaderOffset + 26, true);
+        const localExtraLen = view.getUint16(localHeaderOffset + 28, true);
+        const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
+        const compressedData = bytes.subarray(dataStart, dataStart + compressedSize);
+        zipEntries.set(entryName, { method, data: compressedData });
+      }
+      ptr += 46 + nameLen + extraLen + commentLen;
+    }
+
+    async function readZipEntryText(entryPath: string): Promise<string | null> {
+      const entry = zipEntries.get(entryPath);
+      if (!entry) return null;
+      if (entry.method === 0) {
+        return new TextDecoder('utf-8').decode(entry.data);
+      }
+      if (entry.method === 8) {
+        const ds = new DecompressionStream('deflate-raw');
+        const writer = ds.writable.getWriter();
+        writer.write(new Uint8Array(entry.data));
+        writer.close();
+        const decompressedBuffer = await new Response(ds.readable).arrayBuffer();
+        return new TextDecoder('utf-8').decode(decompressedBuffer);
+      }
+      return null;
+    }
+
+    const domParser = new DOMParser();
+
+    // 1. Đọc bảng chuỗi dùng chung (xl/sharedStrings.xml)
+    const sharedStrings: string[] = [];
+    const sharedStringsXml = await readZipEntryText('xl/sharedStrings.xml');
+    if (sharedStringsXml) {
+      const ssDoc = domParser.parseFromString(sharedStringsXml, 'application/xml');
+      const siNodes = Array.from(ssDoc.getElementsByTagName('si'));
+      siNodes.forEach((si) => {
+        const tNodes = Array.from(si.getElementsByTagName('t'));
+        sharedStrings.push(tNodes.map((t) => t.textContent || '').join(''));
+      });
+    }
+
+    // 2. Tìm trang tính đầu tiên (xl/worksheets/sheet1.xml)
+    let sheetPath = 'xl/worksheets/sheet1.xml';
+    if (!zipEntries.has(sheetPath)) {
+      const found = Array.from(zipEntries.keys())
+        .filter((k) => k.startsWith('xl/worksheets/sheet') && k.endsWith('.xml'))
+        .sort()[0];
+      if (found) sheetPath = found;
+    }
+
+    const sheetXml = await readZipEntryText(sheetPath);
+    if (!sheetXml) {
+      throw new Error('Không tìm thấy trang tính dữ liệu trong tệp Excel.');
+    }
+
+    const sheetDoc = domParser.parseFromString(sheetXml, 'application/xml');
+    const rowElements = Array.from(sheetDoc.getElementsByTagName('row'));
+    const extractedRows: string[][] = [];
+
+    rowElements.forEach((rowEl) => {
+      const cellElements = Array.from(rowEl.getElementsByTagName('c'));
+      const rowValues: string[] = [];
+      let nextFallbackCol = 0;
+
+      cellElements.forEach((cEl) => {
+        const ref = cEl.getAttribute('r') || '';
+        const colLetters = ref.replace(/[0-9]/g, '');
+        let colIndex = nextFallbackCol;
+        if (colLetters) {
+          let computed = 0;
+          for (let i = 0; i < colLetters.length; i++) {
+            computed = computed * 26 + (colLetters.toUpperCase().charCodeAt(i) - 64);
+          }
+          colIndex = Math.max(0, computed - 1);
+        }
+        nextFallbackCol = colIndex + 1;
+
+        while (rowValues.length <= colIndex) {
+          rowValues.push('');
+        }
+
+        const cellType = cEl.getAttribute('t');
+        let cellText = '';
+        if (cellType === 'inlineStr') {
+          const tNodes = Array.from(cEl.getElementsByTagName('t'));
+          cellText = tNodes.map((t) => t.textContent || '').join('');
+        } else {
+          const vNode = cEl.getElementsByTagName('v')[0];
+          const rawVal = vNode?.textContent ?? '';
+          if (cellType === 's') {
+            const idx = parseInt(rawVal, 10);
+            cellText = !Number.isNaN(idx) && sharedStrings[idx] !== undefined ? sharedStrings[idx] : rawVal;
+          } else {
+            cellText = rawVal;
+          }
+        }
+
+        rowValues[colIndex] = cellText.trim();
+      });
+
+      if (rowValues.some((cell) => cell !== '')) {
+        extractedRows.push(rowValues);
+      }
+    });
+
+    return extractedRows;
+  }
+
+  // Tách dòng CSV/TSV giữ nguyên cả các cột rỗng (ví dụ: "SV001,,an@school.edu.vn")
+  function parseTextToRows(text: string): string[][] {
+    const trimmedText = text.trim();
+    if (!trimmedText) return [];
+
+    // Hỗ trợ trường hợp tệp .xls được xuất dưới dạng bảng HTML/XML
+    if (trimmedText.toLowerCase().includes('<table') || trimmedText.toLowerCase().includes('<tr')) {
+      const doc = new DOMParser().parseFromString(trimmedText, 'text/html');
+      const trList = Array.from(doc.querySelectorAll('tr'));
+      if (trList.length > 0) {
+        return trList
+          .map((tr) =>
+            Array.from(tr.querySelectorAll('th, td')).map((cell) => (cell.textContent || '').trim())
+          )
+          .filter((r) => r.some((c) => c !== ''));
+      }
+    }
+
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    return lines.map((line) => {
+      const delimiter = line.includes('\t') ? '\t' : line.includes(';') ? ';' : ',';
+      const cells: string[] = [];
+      let current = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"' || ch === "'") {
+          inQuotes = !inQuotes;
+        } else if (ch === delimiter && !inQuotes) {
+          cells.push(current.trim());
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+      cells.push(current.trim());
+      return cells;
+    });
+  }
+
+  // Kiểm tra 4 trường bắt buộc (Mã SV/GV, Họ và tên, Email, Vai trò) và ghi nhận cảnh báo chi tiết nhưng vẫn cho phép nhập
+  function evaluateExtractedRows(rows: string[][]) {
+    if (rows.length === 0) {
+      setImportError('Tệp rỗng hoặc không có dòng dữ liệu nào.');
+      return;
+    }
+
+    const warnings: string[] = [];
+    const firstRow = rows[0].map((c) => c.trim().toLowerCase());
+
+    const isHeaderRow = firstRow.some(
+      (cell) =>
+        cell.includes('mã') ||
+        cell.includes('mssv') ||
+        cell.includes('msgv') ||
+        cell.includes('code') ||
+        cell.includes('họ') ||
+        cell.includes('tên') ||
+        cell.includes('name') ||
+        cell === 'email' ||
+        cell.includes('địa chỉ email') ||
+        cell.includes('vai trò') ||
+        cell.includes('role')
+    );
+
+    let codeIdx = 0;
+    let nameIdx = 1;
+    let emailIdx = 2;
+    let roleIdx = 3;
+
+    if (isHeaderRow) {
+      const foundCodeIdx = firstRow.findIndex(
+        (c) =>
+          c.includes('mã') ||
+          c.includes('mssv') ||
+          c.includes('msgv') ||
+          c.includes('code') ||
+          c === 'id' ||
+          c.includes('tài khoản')
+      );
+      const foundNameIdx = firstRow.findIndex(
+        (c, idx) =>
+          idx !== foundCodeIdx &&
+          (c.includes('họ') || c.includes('tên') || c.includes('name'))
+      );
+      const foundEmailIdx = firstRow.findIndex(
+        (c) => c.includes('email') || c.includes('mail') || c.includes('thư')
+      );
+      const foundRoleIdx = firstRow.findIndex(
+        (c) => c.includes('vai trò') || c.includes('role') || c.includes('chức vụ') || c.includes('phân quyền')
+      );
+
+      const missingHeaderCols: string[] = [];
+      if (foundCodeIdx === -1) missingHeaderCols.push('Mã sinh viên / Mã giảng viên');
+      if (foundNameIdx === -1) missingHeaderCols.push('Họ và tên');
+      if (foundEmailIdx === -1) missingHeaderCols.push('Email');
+      if (foundRoleIdx === -1) missingHeaderCols.push('Vai trò');
+
+      if (missingHeaderCols.length > 0) {
+        warnings.push(
+          `Tệp thiếu cột tiêu đề bắt buộc: [${missingHeaderCols.join(', ')}]. Các trường thiếu được đánh dấu để bổ sung sau.`
+        );
+      }
+
+      codeIdx = foundCodeIdx;
+      nameIdx = foundNameIdx;
+      emailIdx = foundEmailIdx;
+      roleIdx = foundRoleIdx;
+    } else {
+      const maxCols = Math.max(...rows.map((r) => r.length));
+      if (maxCols < 4) {
+        const missingCount = 4 - maxCols;
+        warnings.push(
+          `Tệp chỉ có ${maxCols}/4 cột (thiếu ${missingCount} cột so với chuẩn: Mã SV/GV, Họ và tên, Email, Vai trò).`
+        );
+      }
+    }
+
+    const dataRows = isHeaderRow ? rows.slice(1) : rows;
+    if (dataRows.length === 0) {
+      setImportError('Tệp chỉ có dòng tiêu đề, chưa có dữ liệu tài khoản nào.');
+      return;
+    }
+
+    const parsed: ImportPreviewRow[] = [];
+
+    dataRows.forEach((cols, index) => {
+      const displayRowNum = isHeaderRow ? index + 2 : index + 1;
+      const rawCode = codeIdx >= 0 ? (cols[codeIdx] ?? '').trim() : '';
+      const rawName = nameIdx >= 0 ? (cols[nameIdx] ?? '').trim() : '';
+      const rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
+      const rawRole = roleIdx >= 0 ? (cols[roleIdx] ?? '').trim() : '';
+      const normalizedRole = rawRole.toLowerCase();
+
+      // Bỏ qua dòng hoàn toàn trống
+      if (!rawCode && !rawName && !rawEmail && !rawRole) return;
+
+      const missingFields: string[] = [];
+      if (!rawCode) missingFields.push('Thiếu Mã SV/GV');
+      if (!rawName) missingFields.push('Thiếu Họ và tên');
+      if (!rawEmail) {
+        missingFields.push('Thiếu Email');
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+        missingFields.push('Email sai định dạng');
+      }
+
+      let role: UserRole = 'student';
+      if (!rawRole) {
+        missingFields.push('Thiếu Vai trò');
+      } else if (
+        normalizedRole.includes('giảng viên') ||
+        normalizedRole.includes('giang vien') ||
+        normalizedRole === 'gv' ||
+        normalizedRole.includes('instructor') ||
+        normalizedRole.includes('teacher') ||
+        normalizedRole.includes('lecturer')
+      ) {
+        role = 'instructor';
+      } else if (
+        normalizedRole.includes('quản trị') ||
+        normalizedRole.includes('quan tri') ||
+        normalizedRole === 'qt' ||
+        normalizedRole.includes('admin')
+      ) {
+        role = 'admin';
+      } else if (
+        normalizedRole.includes('sinh viên') ||
+        normalizedRole.includes('sinh vien') ||
+        normalizedRole === 'sv' ||
+        normalizedRole.includes('student') ||
+        normalizedRole.includes('học viên')
+      ) {
+        role = 'student';
+      } else {
+        missingFields.push(`Vai trò không hợp lệ (${rawRole})`);
+      }
+
+      if (missingFields.length > 0) {
+        warnings.push(`Dòng ${displayRowNum}: ${missingFields.join(', ')}`);
+      }
+
+      const finalCode = rawCode ? rawCode.toUpperCase() : '';
+      const finalName = rawName || '';
+      const finalEmail = rawEmail || '';
+
+      parsed.push({
+        id: Date.now() + index + Math.floor(Math.random() * 1000),
+        rowNumber: displayRowNum,
+        missingFields,
+        userCode: finalCode,
+        fullName: finalName,
+        email: finalEmail,
+        phone: 'Chưa cập nhật',
+        role,
+        status: 'active',
+        department: role === 'instructor' ? 'Khoa CNTT' : 'Chưa phân lớp',
+        lastLogin: 'Chưa đăng nhập',
+        lastLoginIp: 'Chưa ghi nhận',
+        lastPasswordChange: 'Hôm nay',
+      });
+    });
+
+    if (parsed.length === 0) {
+      setImportError('Không tìm thấy dữ liệu người dùng nào trong tệp.');
+      return;
+    }
+
+    setImportWarnings(warnings);
+    setImportPreviewUsers(parsed);
+  }
+
+  async function processFile(file: File) {
+    setImportError('');
+    setImportWarnings([]);
+    setImportPreviewUsers([]);
+
+    const fileName = file.name.toLowerCase();
+    const isCsv = fileName.endsWith('.csv');
+    const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+
+    if (!isCsv && !isExcel) {
+      setImportError('Định dạng tệp không được hỗ trợ. Vui lòng tải lên tệp .csv, .xlsx hoặc .xls.');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setImportError('Dung lượng tệp vượt quá giới hạn cho phép (Tối đa 10MB).');
+      return;
+    }
+
+    setImportFile(file);
+    setIsParsing(true);
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const isZipSignature =
+        bytes.length >= 4 &&
+        bytes[0] === 0x50 &&
+        bytes[1] === 0x4b &&
+        bytes[2] === 0x03 &&
+        bytes[3] === 0x04;
+
+      let rows: string[][] = [];
+      if (isZipSignature) {
+        rows = await extractRowsFromXlsxBuffer(buffer);
+      } else {
+        const text = new TextDecoder('utf-8').decode(buffer);
+        rows = parseTextToRows(text);
+      }
+
+      evaluateExtractedRows(rows);
+    } catch (err) {
+      setImportError(
+        err instanceof Error
+          ? err.message
+          : 'Không thể đọc nội dung tệp. Vui lòng kiểm tra lại định dạng tệp Excel / CSV.'
+      );
+    } finally {
+      setIsParsing(false);
+    }
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files && e.target.files[0]) {
+      processFile(e.target.files[0]);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+  }
+
+  function handleResetImportState() {
+    setImportFile(null);
+    setImportPreviewUsers([]);
+    setImportWarnings([]);
+    setImportError('');
+    setIsDragging(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+
+  // Tải tệp biểu mẫu chuẩn UTF-8 (Đúng 4 trường: Mã SV/GV, Họ và tên, Email, Vai trò)
+  function handleDownloadSample() {
+    const csvHeader = 'MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL,VAI TRÒ\n';
+    const csvRows = [
+      '100088,Trần Văn Hùng,hung.tv@school.edu.vn,Giảng viên',
+      '20241820,Ngô Phương Linh,linh.np@school.edu.vn,Sinh viên',
+      '20241821,Đặng Tuấn Kiệt,kiet.dt@school.edu.vn,Sinh viên',
+      'GV0092,Bùi Hồng Ánh,anh.bh@school.edu.vn,Giảng viên',
+    ].join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvHeader + csvRows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'Oculide_Mau_Nhap_Nguoi_Dung.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast('Đã tải xuống tệp biểu mẫu 4 cột (Mã SV/GV, Họ và tên, Email, Vai trò).');
+  }
+
+  // Xuất danh sách tài khoản hiện tại ra file Excel/CSV chuẩn UTF-8
+  function handleExportUsers() {
+    const header = 'MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL,SỐ ĐIỆN THOẠI,VAI TRÒ,ĐƠN VỊ / LỚP,TRẠNG THÁI,ĐĂNG NHẬP CUỐI\n';
+    const rows = filteredUsers
+      .map(
+        (u) =>
+          `"${u.userCode}","${u.fullName}","${u.email}","${u.phone || ''}","${
+            u.role === 'instructor' ? 'Giảng viên' : u.role === 'admin' ? 'Quản trị viên' : 'Sinh viên'
+          }","${u.department}","${u.status === 'active' ? 'Hoạt động' : 'Bị khóa'}","${u.lastLogin}"`
+      )
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Oculide_Danh_Sach_Nguoi_Dung_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast(`Đã xuất thành công ${filteredUsers.length} tài khoản ra tệp Excel/CSV.`);
+  }
+
+  // ── XỬ LÝ TẠO MỚI TÀI KHOẢN ──
+  function handleCreateUser(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const userCode = String(formData.get('userCode') ?? '').trim().toUpperCase();
+    const fullName = String(formData.get('fullName') ?? '').trim();
+    const email = String(formData.get('email') ?? '').trim();
+    const role = String(formData.get('role') ?? 'student') as UserRole;
+    const status = String(formData.get('status') ?? 'active') as UserStatus;
+
+    if (!userCode || !fullName || !email) {
+      setCreateError('Vui lòng điền đầy đủ mã tài khoản, họ tên và email.');
+      return;
+    }
+
+    if (users.some((u) => u.userCode.toLocaleLowerCase('vi') === userCode.toLocaleLowerCase('vi'))) {
+      setCreateError('Mã tài khoản này đã tồn tại trong hệ thống.');
+      return;
+    }
+
+    const newUser: UserRow = {
+      id: Date.now(),
+      userCode,
+      fullName,
+      email,
+      phone: 'Chưa cập nhật',
+      role,
+      status,
+      department: role === 'instructor' ? 'Khoa CNTT' : 'Chưa phân lớp',
+      lastLogin: 'Chưa đăng nhập',
+      lastLoginIp: 'Chưa ghi nhận',
+      lastPasswordChange: 'Hôm nay',
+    };
+
+    setUsers((prev) => [newUser, ...prev]);
+    setSelectedUserId(newUser.id);
+    setIsCreateModalOpen(false);
+    setCreateError('');
+    showToast(`Đã tạo thành công tài khoản ${newUser.userCode} - ${newUser.fullName}.`);
+  }
+
+  // ── XỬ LÝ LƯU CHỈNH SỬA TÀI KHOẢN ──
+  function handleSaveEdit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editingUser) return;
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const userCode = String(formData.get('userCode') ?? '').trim().toUpperCase();
+    const fullName = String(formData.get('fullName') ?? '').trim();
+    const email = String(formData.get('email') ?? '').trim();
+    const rawRole = String(formData.get('role') ?? '').trim();
+    const status = String(formData.get('status') ?? 'active') as UserStatus;
+
+    if (!userCode || !fullName || !email || !rawRole) {
+      setEditError('Vui lòng điền đầy đủ các trường bắt buộc (Mã tài khoản, Vai trò, Họ tên, Email).');
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEditError('Địa chỉ Email chưa đúng định dạng chuẩn (VD: ten@school.edu.vn).');
+      return;
+    }
+
+    const role = rawRole as UserRole;
+
+    if (
+      userCode.toLocaleLowerCase('vi') !== editingUser.userCode.toLocaleLowerCase('vi') &&
+      users.some((u) => u.userCode && u.userCode.toLocaleLowerCase('vi') === userCode.toLocaleLowerCase('vi'))
+    ) {
+      setEditError('Mã tài khoản này đã trùng với tài khoản khác.');
+      return;
+    }
+
+    const updated: UserRow = {
+      ...editingUser,
+      userCode,
+      fullName,
+      email,
+      role,
+      department: role === 'instructor' ? 'Khoa CNTT' : editingUser.department || 'Chưa phân lớp',
+      status,
+      missingFields: [],
+    };
+
+    setUsers((prev) => prev.map((u) => (u.id === editingUser.id ? updated : u)));
+    setEditingUser(null);
+    setEditError('');
+    showToast(`Đã cập nhật đầy đủ thông tin tài khoản ${updated.userCode}.`);
+  }
+
+  // ── XỬ LÝ ĐẶT LẠI MẬT KHẨU ──
+  function openResetPasswordModal(userItem: UserRow) {
+    setResettingUser(userItem);
+    setResetStep('confirm');
+    setIsCopied(false);
+    setTemporaryPassword('');
+  }
+
+  function confirmResetPassword() {
+    if (!resettingUser) return;
+    const randomChars = Math.random().toString(36).substring(2, 7);
+    const generated = `Ocl@${new Date().getFullYear()}#${randomChars}`;
+    setTemporaryPassword(generated);
+    setResetStep('success');
+    showToast(`Đã tạo mật khẩu tạm mới cho tài khoản ${resettingUser.userCode}.`);
+  }
+
+  function handleCopyPassword() {
+    if (navigator.clipboard && temporaryPassword) {
+      navigator.clipboard.writeText(temporaryPassword);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    }
+  }
+
+  // ── XỬ LÝ KHÓA / MỞ KHÓA TÀI KHOẢN ──
+  function openToggleStatusModal(userItem: UserRow) {
+    setTogglingUser(userItem);
+    setLockReason('');
+  }
+
+  function confirmToggleStatus() {
+    if (!togglingUser) return;
+    const newStatus: UserStatus = togglingUser.status === 'active' ? 'locked' : 'active';
+    setUsers((prev) =>
+      prev.map((u) => (u.id === togglingUser.id ? { ...u, status: newStatus } : u))
+    );
+    showToast(
+      newStatus === 'locked'
+        ? `Tài khoản ${togglingUser.userCode} đã được chuyển sang trạng thái Khóa.`
+        : `Tài khoản ${togglingUser.userCode} đã được mở khóa thành công.`
+    );
+    setTogglingUser(null);
+  }
+
+  return (
+    <div className="flex min-h-screen w-full bg-[#f4f7f9] text-slate-800">
+      {/* Sidebar quản trị */}
+      <AdminSidebar activeModule="users" />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Topbar trên cùng */}
+        <AdminTopbar title="Quản lý người dùng & phân quyền" />
+
+        {/* Thông báo Toast dạng nổi */}
+        {toastMessage && (
+          <aside
+            role="status"
+            aria-live="polite"
+            className="fixed top-20 right-8 z-50 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-800 shadow-lg shadow-emerald-900/10 transition-all animate-in fade-in slide-in-from-top-4"
+          >
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>{toastMessage}</span>
+          </aside>
+        )}
+
+        <main className="flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+          <div className="mx-auto max-w-[1440px]">
+            {/* Header: Danh mục, Tiêu đề, Phụ đề, Nút hành động */}
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">
+                  Quản lý đào tạo
+                </p>
+                <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[28px]">
+                  Người dùng &amp; phân quyền
+                </h1>
+                <p className="mt-1 text-sm text-slate-500">
+                  Quản lý danh sách tài khoản, vai trò và trạng thái hoạt động trên cùng một màn hình.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Nút Xuất Excel */}
+                <button
+                  type="button"
+                  onClick={handleExportUsers}
+                  title="Xuất toàn bộ danh sách hiện tại ra file Excel/CSV"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+                >
+                  <Download className="h-4 w-4 text-slate-500" />
+                  <span>Xuất Excel</span>
+                </button>
+
+                {/* Nút Nhập Excel / CSV */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleResetImportState();
+                    setIsBulkImportOpen(true);
+                  }}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-slate-500" />
+                  <span>Nhập Excel/CSV</span>
+                </button>
+
+                {/* Nút Tạo tài khoản */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreateError('');
+                    setIsCreateModalOpen(true);
+                  }}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Tạo tài khoản</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Thẻ chỉ số KPI theo đúng giao diện chuẩn */}
+            <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                {
+                  label: 'Tổng người dùng',
+                  value: users.length,
+                  icon: Users,
+                  color: 'bg-blue-50 text-blue-600',
+                },
+                {
+                  label: 'Giảng viên',
+                  value: instructorCount,
+                  icon: UserCheck,
+                  color: 'bg-indigo-50 text-indigo-600',
+                },
+                {
+                  label: 'Sinh viên hoạt động',
+                  value: activeStudentCount,
+                  icon: GraduationCap,
+                  color: 'bg-emerald-50 text-emerald-600',
+                },
+                {
+                  label: 'Đang bị khóa',
+                  value: lockedCount,
+                  icon: Lock,
+                  color: 'bg-rose-50 text-rose-600',
+                },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <article
+                    key={item.label}
+                    className="flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/30"
+                  >
+                    <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${item.color}`}>
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <p className="text-xs font-medium text-slate-500">{item.label}</p>
+                      <p className="mt-0.5 text-2xl font-extrabold text-slate-900">{item.value}</p>
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+
+            {/* Khung lọc dữ liệu: Tìm kiếm + Vai trò + Trạng thái */}
+            <section className="mt-5 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-200/30 sm:p-6">
+              <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_220px_220px]">
+                <label className="relative block">
+                  <span className="sr-only">Tìm tài khoản</span>
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Tìm theo mã, họ tên hoặc email..."
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
+                  />
+                </label>
+                <SelectFilter
+                  label="Lọc theo vai trò"
+                  value={roleFilter}
+                  onChange={setRoleFilter}
+                  options={['Tất cả vai trò', 'Giảng viên', 'Sinh viên', 'Quản trị viên']}
+                />
+                <SelectFilter
+                  label="Lọc theo trạng thái"
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  options={['Tất cả trạng thái', 'Hoạt động', 'Bị khóa']}
+                />
+              </div>
+            </section>
+
+            {/* Bố cục 2 cột Master - Detail */}
+            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(380px,4fr)]">
+              {/* CỘT TRÁI: DANH SÁCH BẢNG TÀI KHOẢN (MASTER) */}
+              <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/30">
+                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                  <div>
+                    <h2 className="font-bold text-slate-900">Danh sách tài khoản</h2>
+                    <p className="mt-0.5 text-xs text-slate-500">{filteredUsers.length} tài khoản phù hợp</p>
+                  </div>
+                  <Users className="h-5 w-5 text-slate-300" />
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[650px] text-left">
+                    <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th scope="col" className="px-5 py-3">Mã / Họ tên</th>
+                        <th scope="col" className="px-4 py-3">Vai trò</th>
+                        <th scope="col" className="px-4 py-3">Đơn vị / Lớp</th>
+                        <th scope="col" className="px-4 py-3">Trạng thái</th>
+                        <th scope="col" className="px-5 py-3 text-right">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredUsers.map((user) => {
+                        const isSelected = selectedUserId === user.id;
+                        const hasMissingInfo =
+                          Boolean(user.missingFields && user.missingFields.length > 0) ||
+                          !user.userCode ||
+                          !user.fullName ||
+                          !user.email;
+                        const isRoleMissing = Boolean(
+                          user.missingFields?.some((f) => f.includes('Vai trò'))
+                        );
+
+                        return (
+                          <tr
+                            key={user.id}
+                            onClick={() => setSelectedUserId(user.id)}
+                            className={`transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-blue-50/60'
+                                : hasMissingInfo
+                                ? 'bg-red-50/30 hover:bg-red-50/60'
+                                : 'hover:bg-slate-50/70'
+                            }`}
+                          >
+                            <td className="px-5 py-4">
+                              {user.userCode ? (
+                                <p className="text-sm font-bold text-slate-900">{user.userCode}</p>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-700">
+                                  ⚠ Thiếu Mã SV/GV
+                                </span>
+                              )}
+
+                              {user.fullName ? (
+                                <p className="mt-0.5 text-xs font-medium text-slate-700">{user.fullName}</p>
+                              ) : (
+                                <p className="mt-0.5">
+                                  <span className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-700">
+                                    ⚠ Thiếu Họ và tên
+                                  </span>
+                                </p>
+                              )}
+
+                              {user.email ? (
+                                <p className="text-[11px] text-slate-400">{user.email}</p>
+                              ) : (
+                                <p className="mt-1">
+                                  <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600">
+                                    ⚠ Thiếu Email - Cần bổ sung
+                                  </span>
+                                </p>
+                              )}
+                            </td>
+
+                            <td className="px-4 py-4">
+                              {isRoleMissing ? (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-600">
+                                  ⚠ Thiếu Vai trò
+                                </span>
+                              ) : (
+                                <UserRoleBadge role={user.role} />
+                              )}
+                            </td>
+
+                            <td className="px-4 py-4 text-xs font-medium text-slate-600">
+                              {user.department}
+                            </td>
+
+                            <td className="px-4 py-4">
+                              <UserStatusBadge status={user.status} />
+                            </td>
+
+                            <td className="px-5 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedUserId(user.id)}
+                                  title="Xem chi tiết tài khoản"
+                                  aria-label={`Xem tài khoản ${user.userCode || user.id}`}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-lg transition cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-blue-600 text-white shadow-sm'
+                                      : 'text-slate-500 hover:bg-blue-50 hover:text-blue-600'
+                                  }`}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditError('');
+                                    setEditingUser(user);
+                                  }}
+                                  title={
+                                    hasMissingInfo
+                                      ? 'Cần bổ sung thông tin còn thiếu'
+                                      : 'Chỉnh sửa tài khoản'
+                                  }
+                                  aria-label={`Sửa tài khoản ${user.userCode || user.id}`}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-lg transition cursor-pointer ${
+                                    hasMissingInfo
+                                      ? 'bg-red-100 text-red-600 ring-1 ring-red-300 hover:bg-red-200'
+                                      : 'text-slate-500 hover:bg-amber-50 hover:text-amber-600'
+                                  }`}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => openToggleStatusModal(user)}
+                                  title={user.status === 'active' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+                                  aria-label={`${user.status === 'active' ? 'Khóa' : 'Mở khóa'} ${user.userCode || user.id}`}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-lg transition cursor-pointer ${
+                                    user.status === 'active'
+                                      ? 'text-slate-500 hover:bg-rose-50 hover:text-rose-600'
+                                      : 'text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'
+                                  }`}
+                                >
+                                  {user.status === 'active' ? (
+                                    <Lock className="h-4 w-4" />
+                                  ) : (
+                                    <Unlock className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {filteredUsers.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="px-5 py-14 text-center text-sm text-slate-400">
+                            Không tìm thấy tài khoản người dùng phù hợp.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              {/* CỘT PHẢI: CHI TIẾT TÀI KHOẢN (DETAIL VIEW) */}
+              <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/30">
+                <div className="border-b border-slate-100 px-5 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="font-bold text-slate-900">Chi tiết người dùng</h2>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {selectedUser
+                          ? `${selectedUser.userCode || 'Chưa có mã'} · ${selectedUser.fullName || 'Chưa có họ tên'}`
+                          : 'Chọn một tài khoản để xem chi tiết'}
+                      </p>
+                    </div>
+                    <Shield className="mt-0.5 h-5 w-5 shrink-0 text-slate-300" />
+                  </div>
+                </div>
+
+                {selectedUser ? (
+                  <div className="p-5 space-y-5">
+                    {/* Cảnh báo thiếu thông tin nếu có */}
+                    {(Boolean(selectedUser.missingFields && selectedUser.missingFields.length > 0) ||
+                      !selectedUser.userCode ||
+                      !selectedUser.fullName ||
+                      !selectedUser.email) && (
+                      <div className="rounded-xl border border-red-200 bg-red-50/90 p-3 text-xs text-red-800">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                          <div>
+                            <p className="font-bold text-red-900">
+                              Tài khoản chưa đủ thông tin bắt buộc
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-red-700">
+                              Cần bổ sung:{' '}
+                              <strong>
+                                {selectedUser.missingFields && selectedUser.missingFields.length > 0
+                                  ? selectedUser.missingFields.join(', ')
+                                  : [
+                                      !selectedUser.userCode ? 'Thiếu Mã SV/GV' : '',
+                                      !selectedUser.fullName ? 'Thiếu Họ và tên' : '',
+                                      !selectedUser.email ? 'Thiếu Email' : '',
+                                    ]
+                                      .filter(Boolean)
+                                      .join(', ')}
+                              </strong>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Hero Profile */}
+                    <div className="flex items-center gap-4 rounded-xl bg-slate-50/80 p-4 border border-slate-100">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-lg font-black text-white shadow-md shadow-blue-500/20">
+                        {getInitials(selectedUser.fullName)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          {selectedUser.fullName ? (
+                            <h3 className="truncate text-base font-bold text-slate-900">
+                              {selectedUser.fullName}
+                            </h3>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">
+                              ⚠ Thiếu Họ và tên
+                            </span>
+                          )}
+                        </div>
+                        {selectedUser.email ? (
+                          <p className="text-xs text-slate-500">{selectedUser.email}</p>
+                        ) : (
+                          <p className="mt-1">
+                            <span className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600">
+                              ⚠ Thiếu Email - Cần bổ sung
+                            </span>
+                          </p>
+                        )}
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          {selectedUser.missingFields?.some((f) => f.includes('Vai trò')) ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-bold text-red-600">
+                              ⚠ Thiếu Vai trò
+                            </span>
+                          ) : (
+                            <UserRoleBadge role={selectedUser.role} />
+                          )}
+                          <UserStatusBadge status={selectedUser.status} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Danh mục chi tiết */}
+                    <div className="space-y-3 text-xs">
+                      <div className="rounded-xl border border-slate-100 bg-white p-3.5 space-y-2.5">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                          Thông tin định danh
+                        </p>
+                        <div className="flex justify-between items-center py-1 border-b border-slate-50">
+                          <span className="text-slate-500">Mã tài khoản</span>
+                          {selectedUser.userCode ? (
+                            <span className="font-bold text-slate-800">{selectedUser.userCode}</span>
+                          ) : (
+                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-600">
+                              ⚠ Chưa bổ sung
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex justify-between items-center py-1 border-b border-slate-50">
+                          <span className="text-slate-500">Email trường</span>
+                          {selectedUser.email ? (
+                            <span className="font-medium text-slate-700">{selectedUser.email}</span>
+                          ) : (
+                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-600">
+                              ⚠ Bắt buộc bổ sung
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex justify-between items-center py-1">
+                          <span className="text-slate-500">Vai trò</span>
+                          {selectedUser.missingFields?.some((f) => f.includes('Vai trò')) ? (
+                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-600">
+                              ⚠ Bắt buộc chọn vai trò
+                            </span>
+                          ) : (
+                            <span className="font-semibold text-slate-800">
+                              {selectedUser.role === 'instructor'
+                                ? 'Giảng viên'
+                                : selectedUser.role === 'admin'
+                                ? 'Quản trị viên'
+                                : 'Sinh viên'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-100 bg-white p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                            Hoạt động &amp; Giám sát thi
+                          </p>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                            <ShieldCheck className="h-3 w-3" />
+                            <span>AI Proctoring</span>
+                          </span>
+                        </div>
+
+                        {selectedUser.role === 'student' ? (
+                          <>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Số bài thi tham gia</span>
+                              <span className="font-bold text-slate-800">4 / 5 ca thi</span>
+                            </div>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Chỉ số liêm chính AI</span>
+                              <span className="font-semibold text-emerald-600 inline-flex items-center gap-1">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                                100% (An toàn)
+                              </span>
+                            </div>
+                            <div className="flex justify-between py-1">
+                              <span className="text-slate-500">Trạng thái thiết bị</span>
+                              <span className="font-semibold text-slate-700">Camera &amp; Mic sẵn sàng</span>
+                            </div>
+                          </>
+                        ) : selectedUser.role === 'instructor' ? (
+                          <>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Ca thi phụ trách</span>
+                              <span className="font-bold text-slate-800">3 ca thi đang mở</span>
+                            </div>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Đề thi trong ngân hàng</span>
+                              <span className="font-semibold text-blue-600">12 bộ đề</span>
+                            </div>
+                            <div className="flex justify-between py-1">
+                              <span className="text-slate-500">Phiên giám sát gần nhất</span>
+                              <span className="font-semibold text-slate-700">Phòng SE1848 - LAB 02</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Phạm vi giám sát</span>
+                              <span className="font-bold text-slate-800">Toàn bộ hệ thống</span>
+                            </div>
+                            <div className="flex justify-between py-1 border-b border-slate-50">
+                              <span className="text-slate-500">Quyền hạn khảo thí</span>
+                              <span className="font-semibold text-indigo-600">Quản trị đề &amp; Phân quyền</span>
+                            </div>
+                            <div className="flex justify-between py-1">
+                              <span className="text-slate-500">Trạng thái điều phối</span>
+                              <span className="font-semibold text-emerald-600">Sẵn sàng vận hành</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 3 Nút hành động nhanh */}
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditError('');
+                          setEditingUser(selectedUser);
+                        }}
+                        className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer ${
+                          (selectedUser.missingFields && selectedUser.missingFields.length > 0) ||
+                          !selectedUser.userCode ||
+                          !selectedUser.fullName ||
+                          !selectedUser.email
+                            ? 'border border-red-300 bg-red-600 text-white shadow-sm shadow-red-500/20 hover:bg-red-700'
+                            : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Pencil
+                          className={`h-4 w-4 ${
+                            (selectedUser.missingFields && selectedUser.missingFields.length > 0) ||
+                            !selectedUser.userCode ||
+                            !selectedUser.fullName ||
+                            !selectedUser.email
+                              ? 'text-white'
+                              : 'text-slate-500'
+                          }`}
+                        />
+                        <span>
+                          {(selectedUser.missingFields && selectedUser.missingFields.length > 0) ||
+                          !selectedUser.userCode ||
+                          !selectedUser.fullName ||
+                          !selectedUser.email
+                            ? 'Bổ sung thông tin còn thiếu ngay'
+                            : 'Chỉnh sửa thông tin'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openResetPasswordModal(selectedUser)}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 py-2.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 cursor-pointer"
+                      >
+                        <KeyRound className="h-4 w-4 text-amber-600" />
+                        <span>Đặt lại mật khẩu</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openToggleStatusModal(selectedUser)}
+                        className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer ${
+                          selectedUser.status === 'active'
+                            ? 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                            : 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                        }`}
+                      >
+                        {selectedUser.status === 'active' ? (
+                          <>
+                            <Lock className="h-4 w-4 text-rose-600" />
+                            <span>Khóa tài khoản này</span>
+                          </>
+                        ) : (
+                          <>
+                            <Unlock className="h-4 w-4 text-emerald-600" />
+                            <span>Mở khóa tài khoản này</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="px-5 py-14 text-center text-sm text-slate-400">
+                    Vui lòng chọn một người dùng từ bảng danh sách bên trái.
+                  </p>
+                )}
+              </section>
+            </div>
+
+            <p className="mt-4 text-xs text-slate-400">
+              Dữ liệu người dùng &amp; phân quyền hoạt động đồng bộ với hệ sinh thái xác thực Oculide.
+            </p>
+          </div>
+        </main>
+      </div>
+
+      {/* ── MODAL 1: TẠO TÀI KHOẢN MỚI ── */}
+      {isCreateModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setIsCreateModalOpen(false);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-user-title"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="create-user-title" className="text-lg font-bold text-slate-900">
+                  Tạo tài khoản người dùng mới
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Nhập thông tin tài khoản và cấp quyền truy cập ban đầu.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateModalOpen(false)}
+                aria-label="Đóng cửa sổ"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateUser} className="mt-5 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Mã tài khoản <span className="text-red-500">*</span>
+                  <input
+                    name="userCode"
+                    required
+                    placeholder="VD: GV0035 hoặc SV184810"
+                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </label>
+
+                <label className="block text-xs font-semibold text-slate-700">
+                  Vai trò hệ thống <span className="text-red-500">*</span>
+                  <select
+                    name="role"
+                    required
+                    defaultValue="student"
+                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  >
+                    <option value="student">Sinh viên</option>
+                    <option value="instructor">Giảng viên</option>
+                    <option value="admin">Quản trị viên</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="block text-xs font-semibold text-slate-700">
+                Họ và tên <span className="text-red-500">*</span>
+                <input
+                  name="fullName"
+                  required
+                  placeholder="VD: Nguyễn Văn An"
+                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Địa chỉ Email <span className="text-red-500">*</span>
+                  <input
+                    name="email"
+                    type="email"
+                    required
+                    placeholder="VD: an.nv@oclide.edu.vn"
+                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </label>
+
+                <label className="block text-xs font-semibold text-slate-700">
+                  Trạng thái kích hoạt
+                  <select
+                    name="status"
+                    defaultValue="active"
+                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  >
+                    <option value="active">Hoạt động ngay</option>
+                    <option value="locked">Tạm khóa ban đầu</option>
+                  </select>
+                </label>
+              </div>
+
+              {createError && (
+                <p role="alert" className="text-xs font-medium text-red-600">
+                  {createError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white transition hover:bg-blue-700 cursor-pointer"
+                >
+                  Xác nhận tạo tài khoản
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {/* ── MODAL 2: NHẬP EXCEL / CSV THẬT SỰ TƯƠNG TÁC (DRAG & DROP + PREVIEW) ── */}
+      {isBulkImportOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsBulkImportOpen(false);
+              handleResetImportState();
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-title"
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="import-title" className="text-lg font-bold text-slate-900">
+                  Nhập danh sách tài khoản bằng Excel / CSV
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Kéo thả tệp hoặc chọn từ máy tính để thêm nhanh hàng loạt tài khoản vào hệ thống.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBulkImportOpen(false);
+                  handleResetImportState();
+                }}
+                aria-label="Đóng"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {/* Thẻ input ẩn để chọn tệp từ máy tính */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv, .xlsx, .xls"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              {/* VÙNG THẢ TỆP (DRAG & DROP ZONE) */}
+              {!importFile ? (
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 text-center transition-all cursor-pointer ${
+                    isDragging
+                      ? 'border-blue-600 bg-blue-50/70 scale-[0.99]'
+                      : 'border-slate-200 bg-slate-50/60 hover:border-blue-400 hover:bg-blue-50/30'
+                  }`}
+                >
+                  <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-2xl transition ${
+                      isDragging ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-600'
+                    }`}
+                  >
+                    <UploadCloud className="h-6 w-6" />
+                  </div>
+                  <p className="mt-3 text-sm font-bold text-slate-800">
+                    Kéo thả tệp dữ liệu vào đây hoặc{' '}
+                    <span className="text-blue-600 underline">chọn từ máy tính</span>
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Hỗ trợ định dạng .csv, .xlsx, .xls (Dung lượng tối đa: 10MB)
+                  </p>
+                </div>
+              ) : (
+                /* THẺ HIỂN THỊ TỆP ĐÃ ĐƯỢC CHỌN / THẢ VÀO */
+                <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+                        <FileSpreadsheet className="h-6 w-6" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-slate-900">{importFile.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {(importFile.size / 1024).toFixed(1)} KB · Đọc được {importPreviewUsers.length} dòng dữ liệu
+                          {importWarnings.length > 0 ? ` (${importWarnings.length} cảnh báo thiếu thông tin)` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleResetImportState}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-red-600 shadow-xs cursor-pointer transition"
+                      title="Gỡ tệp để chọn tệp khác"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Thông báo lỗi định dạng tệp không thể đọc */}
+              {importError && (
+                <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
+                  <span>{importError}</span>
+                </div>
+              )}
+
+              {/* Thông báo cảnh báo chi tiết khi tệp thiếu cột hoặc dòng thiếu thông tin (Vẫn cho phép nhập) */}
+              {importWarnings.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3.5 text-xs text-amber-900 space-y-1.5">
+                  <div className="flex items-center gap-2 font-bold text-amber-800">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                    <span>
+                      Phát hiện {importWarnings.length} cảnh báo thiếu trường / cột dữ liệu (Vẫn cho phép nhập):
+                    </span>
+                  </div>
+                  <ul className="max-h-28 overflow-y-auto list-disc pl-5 space-y-0.5 text-[11.5px] font-medium text-amber-800">
+                    {importWarnings.map((warn, idx) => (
+                      <li key={idx}>{warn}</li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-amber-700 pt-0.5">
+                    * Các trường bị thiếu đã được đánh dấu bên dưới. Bạn vẫn có thể nhấn <strong>Xác nhận nhập</strong> và chỉnh sửa bổ sung sau.
+                  </p>
+                </div>
+              )}
+
+              {/* BẢNG XEM TRƯỚC DANH SÁCH TÀI KHOẢN ĐƯỢC TRÍCH XUẤT TỪ TỆP */}
+              {importPreviewUsers.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                      Xem trước 4 trường chuẩn ({importPreviewUsers.length} tài khoản)
+                    </p>
+                    {importWarnings.length > 0 ? (
+                      <span className="text-[11px] font-semibold text-amber-600">
+                        ⚠ Có trường thiếu · Vẫn có thể nhập
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-emerald-600">✓ Đủ 4 trường hợp lệ</span>
+                    )}
+                  </div>
+                  <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                    <table className="w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                        <tr>
+                          <th className="px-3 py-2.5">Mã SV / GV</th>
+                          <th className="px-3 py-2.5">Họ và tên</th>
+                          <th className="px-3 py-2.5">Email</th>
+                          <th className="px-3 py-2.5">Vai trò</th>
+                          <th className="px-3 py-2.5">Kiểm tra</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {importPreviewUsers.map((u, i) => {
+                          const hasMissing = u.missingFields.length > 0;
+                          const isMissingCode = u.missingFields.includes('Thiếu Mã SV/GV');
+                          const isMissingName = u.missingFields.includes('Thiếu Họ và tên');
+                          const isMissingEmail =
+                            u.missingFields.includes('Thiếu Email') ||
+                            u.missingFields.includes('Email sai định dạng');
+                          const roleErrorField = u.missingFields.find((f) => f.includes('Vai trò'));
+
+                          return (
+                            <tr
+                              key={u.id || i}
+                              className={hasMissing ? 'bg-amber-50/50 hover:bg-amber-50' : 'hover:bg-slate-50/60'}
+                            >
+                              <td className="px-3 py-2 font-bold text-slate-900">
+                                {isMissingCode ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    Thiếu Mã SV/GV
+                                  </span>
+                                ) : (
+                                  u.userCode
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-slate-700">
+                                {isMissingName ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    Thiếu Họ và tên
+                                  </span>
+                                ) : (
+                                  u.fullName
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-slate-500">
+                                {isMissingEmail ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    {u.missingFields.includes('Email sai định dạng')
+                                      ? `Sai Email (${u.email})`
+                                      : 'Thiếu Email'}
+                                  </span>
+                                ) : (
+                                  u.email
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                {roleErrorField ? (
+                                  <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                                    {roleErrorField}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                      u.role === 'instructor'
+                                        ? 'bg-indigo-50 text-indigo-700'
+                                        : u.role === 'admin'
+                                        ? 'bg-amber-50 text-amber-700'
+                                        : 'bg-blue-50 text-blue-700'
+                                    }`}
+                                  >
+                                    {u.role === 'instructor'
+                                      ? 'Giảng viên'
+                                      : u.role === 'admin'
+                                      ? 'Quản trị viên'
+                                      : 'Sinh viên'}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                {hasMissing ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                    ⚠ {u.missingFields.join(', ')}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                                    ✓ Đủ thông tin
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* TẢI TỆP MẪU CHUẨN */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200/90 bg-white p-3.5">
+                <div className="flex items-center gap-3">
+                  <FileSpreadsheet className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">Tệp mẫu chuẩn Oculide (CSV / Excel)</p>
+                    <p className="text-[11px] text-slate-400">
+                      4 cột bắt buộc: Mã sinh viên / giảng viên, Họ và tên, Email, Vai trò
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadSample}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Tải tệp mẫu</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsBulkImportOpen(false);
+                    handleResetImportState();
+                  }}
+                  className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="button"
+                  disabled={importPreviewUsers.length === 0}
+                  onClick={() => {
+                    if (importPreviewUsers.length > 0) {
+                      setUsers((prev) => [...importPreviewUsers, ...prev]);
+                      setSelectedUserId(importPreviewUsers[0].id);
+                      showToast(`Đã nhập thành công ${importPreviewUsers.length} tài khoản mới vào hệ thống.`);
+                      setIsBulkImportOpen(false);
+                      handleResetImportState();
+                    }
+                  }}
+                  className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition shadow-sm shadow-blue-200"
+                >
+                  {isParsing ? 'Đang phân tích...' : `Xác nhận nhập (${importPreviewUsers.length} tài khoản)`}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* ── MODAL 3: CHỈNH SỬA TÀI KHOẢN ── */}
+      {editingUser && (() => {
+        const isCodeMissing =
+          !editingUser.userCode ||
+          Boolean(editingUser.missingFields?.some((f) => f.includes('Mã')));
+        const isRoleMissing = Boolean(
+          editingUser.missingFields?.some((f) => f.includes('Vai trò'))
+        );
+        const isNameMissing =
+          !editingUser.fullName ||
+          Boolean(editingUser.missingFields?.some((f) => f.includes('Họ và tên')));
+        const isEmailMissing =
+          !editingUser.email ||
+          Boolean(editingUser.missingFields?.some((f) => f.includes('Email')));
+        const hasAnyMissing =
+          isCodeMissing ||
+          isRoleMissing ||
+          isNameMissing ||
+          isEmailMissing ||
+          Boolean(editingUser.missingFields && editingUser.missingFields.length > 0);
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setEditingUser(null);
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="edit-user-title"
+              className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="edit-user-title" className="text-lg font-bold text-slate-900">
+                    Chỉnh sửa thông tin tài khoản
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Cập nhật thông tin cho tài khoản{' '}
+                    <strong className="text-slate-800">
+                      {editingUser.userCode || 'chưa có mã định danh'}
+                    </strong>
+                    .
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  aria-label="Đóng"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {hasAnyMissing && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-800">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                    <div>
+                      <p className="font-bold text-red-900">
+                        Tài khoản được nhập từ tệp đang thiếu thông tin bắt buộc!
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-red-700 leading-relaxed">
+                        Vui lòng điền đầy đủ các trường được <strong>khoanh đỏ cảnh báo</strong> bên dưới trước khi lưu.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveEdit} noValidate className="mt-5 space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    <span className="flex items-center justify-between">
+                      <span>
+                        Mã tài khoản <span className="text-red-500">*</span>
+                      </span>
+                      {isCodeMissing && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                          Thiếu thông tin
+                        </span>
+                      )}
+                    </span>
+                    <input
+                      name="userCode"
+                      required
+                      defaultValue={editingUser.userCode}
+                      placeholder="VD: 20241820 hoặc 100088"
+                      className={`mt-1.5 h-10 w-full rounded-xl px-3 text-xs outline-none transition ${
+                        isCodeMissing
+                          ? 'border-2 border-red-500 bg-red-50/40 text-red-900 placeholder:text-red-400 ring-2 ring-red-100 focus:border-red-600 focus:ring-red-200'
+                          : 'border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                      }`}
+                    />
+                    {isCodeMissing && (
+                      <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                        ⚠ Bắt buộc bổ sung Mã SV / Mã GV
+                      </span>
+                    )}
+                  </label>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    <span className="flex items-center justify-between">
+                      <span>
+                        Vai trò hệ thống <span className="text-red-500">*</span>
+                      </span>
+                      {isRoleMissing && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                          Cần xác nhận
+                        </span>
+                      )}
+                    </span>
+                    <select
+                      name="role"
+                      required
+                      defaultValue={isRoleMissing ? '' : editingUser.role}
+                      className={`mt-1.5 h-10 w-full rounded-xl px-3 text-xs outline-none transition ${
+                        isRoleMissing
+                          ? 'border-2 border-red-500 bg-red-50/40 font-semibold text-red-900 ring-2 ring-red-100 focus:border-red-600 focus:ring-red-200'
+                          : 'border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                      }`}
+                    >
+                      {isRoleMissing && (
+                        <option value="" disabled>
+                          — ⚠ Bắt buộc chọn vai trò —
+                        </option>
+                      )}
+                      <option value="student">Sinh viên</option>
+                      <option value="instructor">Giảng viên</option>
+                      <option value="admin">Quản trị viên</option>
+                    </select>
+                    {isRoleMissing && (
+                      <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                        ⚠ Tệp nhập thiếu hoặc sai cột Vai trò
+                      </span>
+                    )}
+                  </label>
+                </div>
+
+                <label className="block text-xs font-semibold text-slate-700">
+                  <span className="flex items-center justify-between">
+                    <span>
+                      Họ và tên <span className="text-red-500">*</span>
+                    </span>
+                    {isNameMissing && (
+                      <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                        Thiếu thông tin
+                      </span>
+                    )}
+                  </span>
+                  <input
+                    name="fullName"
+                    required
+                    defaultValue={editingUser.fullName}
+                    placeholder="Nhập đầy đủ họ và tên..."
+                    className={`mt-1.5 h-10 w-full rounded-xl px-3 text-xs outline-none transition ${
+                      isNameMissing
+                        ? 'border-2 border-red-500 bg-red-50/40 text-red-900 placeholder:text-red-400 ring-2 ring-red-100 focus:border-red-600 focus:ring-red-200'
+                        : 'border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                    }`}
+                  />
+                  {isNameMissing && (
+                    <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                      ⚠ Bắt buộc bổ sung Họ và tên
+                    </span>
+                  )}
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    <span className="flex items-center justify-between">
+                      <span>
+                        Địa chỉ Email <span className="text-red-500">*</span>
+                      </span>
+                      {isEmailMissing && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                          Bắt buộc bổ sung
+                        </span>
+                      )}
+                    </span>
+                    <input
+                      name="email"
+                      type="email"
+                      required
+                      defaultValue={editingUser.email}
+                      placeholder="Nhập email hợp lệ (VD: sv@school.edu.vn)"
+                      className={`mt-1.5 h-10 w-full rounded-xl px-3 text-xs outline-none transition ${
+                        isEmailMissing
+                          ? 'border-2 border-red-500 bg-red-50/40 text-red-900 placeholder:text-red-400 ring-2 ring-red-100 focus:border-red-600 focus:ring-red-200'
+                          : 'border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                      }`}
+                    />
+                    {isEmailMissing && (
+                      <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                        ⚠ Bắt buộc bổ sung địa chỉ Email hợp lệ
+                      </span>
+                    )}
+                  </label>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Trạng thái
+                    <select
+                      name="status"
+                      defaultValue={editingUser.status}
+                      className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    >
+                      <option value="active">Hoạt động</option>
+                      <option value="locked">Bị khóa</option>
+                    </select>
+                  </label>
+                </div>
+
+                {editError && (
+                  <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">
+                    ⚠ {editError}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(null)}
+                    className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
+                  >
+                    Lưu thay đổi
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        );
+      })()}
+
+      {/* ── MODAL 4: ĐẶT LẠI MẬT KHẨU (2-STEP) ── */}
+      {resettingUser && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setResettingUser(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-pass-title"
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+          >
+            {resetStep === 'confirm' ? (
+              <>
+                <div className="flex items-center gap-3.5">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
+                    <KeyRound className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 id="reset-pass-title" className="text-lg font-bold text-slate-900">
+                      Đặt lại mật khẩu
+                    </h2>
+                    <p className="text-xs text-slate-500">Cấp mật khẩu ngẫu nhiên tạm thời.</p>
+                  </div>
+                </div>
+
+                <p className="mt-4 text-sm text-slate-600 leading-relaxed">
+                  Bạn có chắc chắn muốn đặt lại mật khẩu cho tài khoản{' '}
+                  <strong className="font-bold text-slate-900">
+                    {resettingUser.userCode} ({resettingUser.fullName})
+                  </strong>
+                  ? Mật khẩu cũ sẽ bị vô hiệu ngay lập tức.
+                </p>
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setResettingUser(null)}
+                    className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmResetPassword}
+                    className="h-10 rounded-xl bg-amber-600 px-4 text-xs font-semibold text-white hover:bg-amber-700 cursor-pointer"
+                  >
+                    Tạo mật khẩu tạm
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3.5">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Mật khẩu tạm đã được tạo</h2>
+                    <p className="text-xs text-slate-500">Tài khoản: {resettingUser.userCode}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/70 p-4">
+                  <p className="text-xs text-slate-500">Mật khẩu tạm mới:</p>
+                  <div className="mt-1.5 flex items-center justify-between">
+                    <code className="text-base font-extrabold tracking-wider text-blue-700 font-mono">
+                      {temporaryPassword}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={handleCopyPassword}
+                      className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-blue-700 shadow-sm border border-blue-200 hover:bg-blue-50 cursor-pointer"
+                    >
+                      {isCopied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                      <span>{isCopied ? 'Đã sao chép' : 'Sao chép'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <p className="mt-3 text-xs text-slate-500 leading-relaxed">
+                  Người dùng sẽ nhận được yêu cầu đổi lại mật khẩu cá nhân ngay trong lần đăng nhập kế tiếp.
+                </p>
+
+                <div className="mt-6 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setResettingUser(null)}
+                    className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
+                  >
+                    Hoàn tất
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* ── MODAL 5: KHÓA / MỞ KHÓA TÀI KHOẢN ── */}
+      {togglingUser && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setTogglingUser(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="toggle-status-title"
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <div className="flex items-center gap-3.5">
+              <div
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                  togglingUser.status === 'active' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'
+                }`}
+              >
+                {togglingUser.status === 'active' ? (
+                  <AlertTriangle className="h-5 w-5" />
+                ) : (
+                  <ShieldCheck className="h-5 w-5" />
+                )}
+              </div>
+              <div>
+                <h2 id="toggle-status-title" className="text-lg font-bold text-slate-900">
+                  {togglingUser.status === 'active' ? 'Xác nhận khóa tài khoản' : 'Xác nhận mở khóa tài khoản'}
+                </h2>
+                <p className="text-xs text-slate-500">Mã người dùng: {togglingUser.userCode}</p>
+              </div>
+            </div>
+
+            <p className="mt-4 text-sm text-slate-600 leading-relaxed">
+              {togglingUser.status === 'active' ? (
+                <>
+                  Bạn có chắc chắn muốn khóa tài khoản{' '}
+                  <strong className="font-bold text-slate-900">
+                    {togglingUser.fullName} ({togglingUser.userCode})
+                  </strong>
+                  ? Người dùng sẽ không thể đăng nhập hoặc tham gia phòng thi cho đến khi được mở khóa.
+                </>
+              ) : (
+                <>
+                  Bạn có chắc chắn muốn mở khóa tài khoản{' '}
+                  <strong className="font-bold text-slate-900">
+                    {togglingUser.fullName} ({togglingUser.userCode})
+                  </strong>
+                  ? Người dùng sẽ có thể đăng nhập bình thường vào hệ thống.
+                </>
+              )}
+            </p>
+
+            {togglingUser.status === 'active' && (
+              <label className="mt-3 block text-xs font-semibold text-slate-700">
+                Lý do khóa tài khoản (Tùy chọn)
+                <input
+                  value={lockReason}
+                  onChange={(e) => setLockReason(e.target.value)}
+                  placeholder="VD: Vi phạm quy chế thi cử, theo yêu cầu phòng đào tạo..."
+                  className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                />
+              </label>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setTogglingUser(null)}
+                className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={confirmToggleStatus}
+                className={`h-10 rounded-xl px-4 text-xs font-semibold text-white cursor-pointer ${
+                  togglingUser.status === 'active'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+              >
+                {togglingUser.status === 'active' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── CÁC THÀNH PHẦN PHỤ TRỢ (HELPER COMPONENTS) ──
+
+function SelectFilter({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
+  return (
+    <label className="relative block">
+      <span className="sr-only">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3.5 pr-10 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+    </label>
+  );
+}
+
+function UserStatusBadge({ status }: { status: UserStatus }) {
+  const isActive = status === 'active';
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+        isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+      }`}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-rose-500'}`}
+      />
+      {isActive ? 'Hoạt động' : 'Bị khóa'}
+    </span>
+  );
+}
+
+function UserRoleBadge({ role }: { role: UserRole }) {
+  if (role === 'admin') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200/60">
+        Quản trị viên
+      </span>
+    );
+  }
+  if (role === 'instructor') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200/60">
+        Giảng viên
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200/60">
+      Sinh viên
+    </span>
+  );
+}

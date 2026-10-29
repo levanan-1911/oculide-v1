@@ -2,7 +2,10 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, status, Request
-import redis
+try:
+    import redis
+except ImportError:
+    redis = None
 
 from schemas.livekit import LiveKitTokenRequest, LiveKitTokenResponse, LiveKitRoomResponse
 from core.permissions import get_current_user, instructor_or_admin_required
@@ -16,20 +19,25 @@ from services.livekit_service import livekit_service
 router = APIRouter()
 
 def _get_redis_client():
-    if settings.REDIS_PASSWORD:
+    if redis is None:
+        return None
+    try:
+        if settings.REDIS_PASSWORD:
+            return redis.Redis(
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                password=settings.REDIS_PASSWORD,
+                db=settings.REDIS_DB,
+                socket_timeout=2
+            )
         return redis.Redis(
             host=settings.REDIS_HOST,
             port=settings.REDIS_PORT,
-            password=settings.REDIS_PASSWORD,
             db=settings.REDIS_DB,
             socket_timeout=2
         )
-    return redis.Redis(
-        host=settings.REDIS_HOST,
-        port=settings.REDIS_PORT,
-        db=settings.REDIS_DB,
-        socket_timeout=2
-    )
+    except Exception:
+        return None
 
 @router.post("/tokens", response_model=LiveKitTokenResponse)
 async def generate_livekit_token(
@@ -86,15 +94,16 @@ async def revoke_tokens_endpoint(
         
     revoked_count = revoke_user_tokens_in_room(int(room_id), int(student_id))
     
-    # Phát tín hiệu cắt stream qua Redis Pub/Sub
+    # Phát tín hiệu cắt stream qua Redis Pub/Sub nếu Redis khả dụng
     try:
         r = _get_redis_client()
-        r.publish("ws_updates", json.dumps({
-            "type": "token_revoked",
-            "room_id": int(room_id),
-            "student_id": int(student_id)
-        }))
-        r.close()
+        if r is not None:
+            r.publish("ws_updates", json.dumps({
+                "type": "token_revoked",
+                "room_id": int(room_id),
+                "student_id": int(student_id)
+            }))
+            r.close()
     except Exception:
         pass
         
@@ -116,15 +125,16 @@ async def livekit_webhook(request: Request):
         if event and room_name:
             try:
                 r = _get_redis_client()
-                event_payload = {
-                    "type": "livekit_stream_event",
-                    "event": event,
-                    "room_name": room_name,
-                    "identity": identity,
-                    "timestamp": datetime.now().isoformat()
-                }
-                r.publish("ws_updates", json.dumps(event_payload))
-                r.close()
+                if r is not None:
+                    event_payload = {
+                        "type": "livekit_stream_event",
+                        "event": event,
+                        "room_name": room_name,
+                        "identity": identity,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    r.publish("ws_updates", json.dumps(event_payload))
+                    r.close()
             except Exception:
                 pass
 

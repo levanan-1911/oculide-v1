@@ -16,7 +16,7 @@ JOIN sys.columns c ON cc.parent_object_id = c.object_id AND cc.parent_column_id 
 WHERE cc.parent_object_id = OBJECT_ID('Questions') AND c.name = 'question_type';
 
 IF @chk_name IS NOT NULL
-BEGIN
+BEGIN   
     EXEC('ALTER TABLE Questions DROP CONSTRAINT ' + @chk_name);
 END
 GO

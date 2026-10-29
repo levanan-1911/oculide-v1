@@ -1,4 +1,4 @@
-  'use client';
+'use client';
 
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -11,12 +11,8 @@ import {
   ArrowRight,
   User,
   Mail,
-  ShieldCheck,
   Code2,
   GraduationCap,
-  Clock,
-  Terminal,
-  Calendar,
 } from 'lucide-react';
 import {
   ClassExam,
@@ -269,7 +265,7 @@ function JoinClassContent() {
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-[#f4f7f9] text-slate-800">
-      {/* Header thanh lịch */}
+      {/* Header */}
       <header className="border-b border-slate-200/80 bg-white px-6 py-4 shadow-xs">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
@@ -289,7 +285,7 @@ function JoinClassContent() {
               <span className="text-xl font-extrabold tracking-tight text-[#2563eb]">
                 OCULIDE
               </span>
-              <span className="ml-2 rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 border border-blue-200">
+              <span className="ml-2 border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 rounded-md">
                 Cổng tham gia phòng học & bài thi
               </span>
             </div>
@@ -298,7 +294,7 @@ function JoinClassContent() {
           <div className="flex items-center gap-3 text-xs">
             <Link
               href="/login"
-              className="font-semibold text-slate-600 hover:text-blue-600 transition"
+              className="font-semibold text-slate-600 transition hover:text-blue-600"
             >
               Đăng nhập tài khoản
             </Link>
@@ -317,8 +313,8 @@ function JoinClassContent() {
       <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-xl">
           {joinedSession ? (
-            /* ── MÀN HÌNH THAM GIA THÀNH CÔNG ── */
-            <div className="rounded-3xl border border-emerald-200/90 bg-white p-6 sm:p-8 shadow-xl shadow-emerald-900/5">
+            /* MÀN HÌNH THAM GIA THÀNH CÔNG */
+            <div className="rounded-3xl border border-emerald-200/90 bg-white p-6 shadow-xl shadow-emerald-900/5 sm:p-8">
               <div className="flex items-center gap-3.5 border-b border-slate-100 pb-5">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 shadow-xs">
                   <CheckCircle2 className="h-6 w-6" />
@@ -339,12 +335,12 @@ function JoinClassContent() {
                 </div>
               </div>
 
-              {/* TRƯỜNG HỢP 1: VÀO PHÒNG LAB CỤ THỂ */}
+              {/* TRƯỜNG HỢP 1: LAB */}
               {joinedSession.type === 'lab' && joinedSession.lab && (
                 <div className="mt-5 space-y-4">
                   <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-5">
                     <div className="flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2.5 py-1 text-xs font-mono font-bold text-blue-700">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2.5 py-1 font-mono text-xs font-bold text-blue-700">
                         <Code2 className="h-3.5 w-3.5" />
                         Mã phòng: {joinedSession.lab.roomCode || roomCode}
                       </span>
@@ -357,8 +353,8 @@ function JoinClassContent() {
                       {joinedSession.lab.title}
                     </h3>
 
-                    <p className="mt-1 text-xs text-slate-600 font-medium">
-                      Lớp: <strong>{joinedSession.classRow.id}</strong> • {joinedSession.classRow.name}
+                    <p className="mt-1 text-xs font-medium text-slate-600">
+                      Lớp: <strong>{joinedSession.classRow.id}</strong> - {joinedSession.classRow.name}
                     </p>
 
                     <div className="mt-4 grid grid-cols-2 gap-3 border-t border-blue-200/60 pt-3 text-xs">
@@ -401,7 +397,7 @@ function JoinClassContent() {
                     onClick={() => {
                       alert(`Đang khởi động không gian lập trình IDE cho "${joinedSession.lab?.title}"!`);
                     }}
-                    className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-bold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700 cursor-pointer"
+                    className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-bold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700"
                   >
                     <Code2 className="h-5 w-5" />
                     <span>Bắt đầu buổi thực hành ngay</span>
@@ -410,12 +406,12 @@ function JoinClassContent() {
                 </div>
               )}
 
-              {/* TRƯỜNG HỢP 2: VÀO PHÒNG THI CỤ THỂ */}
+              {/* TRƯỜNG HỢP 2: EXAM */}
               {joinedSession.type === 'exam' && joinedSession.exam && (
                 <div className="mt-5 space-y-4">
                   <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-5">
                     <div className="flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1 rounded-md bg-purple-100 px-2.5 py-1 text-xs font-mono font-bold text-purple-700">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-purple-100 px-2.5 py-1 font-mono text-xs font-bold text-purple-700">
                         <GraduationCap className="h-3.5 w-3.5" />
                         Mã phòng thi: {joinedSession.exam.roomCode || roomCode}
                       </span>
@@ -428,8 +424,8 @@ function JoinClassContent() {
                       {joinedSession.exam.title}
                     </h3>
 
-                    <p className="mt-1 text-xs text-slate-600 font-medium">
-                      Lớp: <strong>{joinedSession.classRow.id}</strong> • {joinedSession.classRow.name}
+                    <p className="mt-1 text-xs font-medium text-slate-600">
+                      Lớp: <strong>{joinedSession.classRow.id}</strong> - {joinedSession.classRow.name}
                     </p>
 
                     <div className="mt-4 grid grid-cols-2 gap-3 border-t border-purple-200/60 pt-3 text-xs">
@@ -459,7 +455,7 @@ function JoinClassContent() {
                     onClick={() => {
                       alert(`Đang khởi động phòng thi bảo mật cho "${joinedSession.exam?.title}". Chúc bạn làm bài tốt!`);
                     }}
-                    className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-purple-600 text-sm font-bold text-white shadow-lg shadow-purple-600/25 transition hover:bg-purple-700 cursor-pointer"
+                    className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-purple-600 text-sm font-bold text-white shadow-lg shadow-purple-600/25 transition hover:bg-purple-700"
                   >
                     <GraduationCap className="h-5 w-5" />
                     <span>Vào phòng thi & Bắt đầu tính giờ</span>
@@ -468,26 +464,26 @@ function JoinClassContent() {
                 </div>
               )}
 
-              {/* TRƯỜNG HỢP 3: VÀO LỚP HỌC CHUNG */}
+              {/* TRƯỜNG HỢP 3: CLASS */}
               {joinedSession.type === 'class' && (
                 <div className="mt-5 space-y-4">
                   <div className="rounded-2xl border border-slate-200/90 bg-[#f8fafc] p-5">
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700 font-mono">
+                        <span className="font-mono text-xs font-bold text-blue-700 bg-blue-100 rounded-md px-2 py-0.5">
                           {joinedSession.classRow.id}
                         </span>
                         <h3 className="mt-1.5 text-lg font-extrabold text-slate-900">
                           {joinedSession.classRow.name}
                         </h3>
                       </div>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
+                      <span className="inline-flex items-center gap-1.5 border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 rounded-full">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                         {joinedSession.classRow.status}
                       </span>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-2 gap-3 text-xs border-t border-slate-200/80 pt-3">
+                    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200/80 pt-3 text-xs">
                       <div>
                         <p className="font-medium text-slate-400">Giảng viên:</p>
                         <p className="font-bold text-slate-800">{joinedSession.classRow.lecturer || 'Long Phạm'}</p>
@@ -509,7 +505,6 @@ function JoinClassContent() {
                     </div>
                   </div>
 
-                  {/* Danh sách các bài Lab & Thi trong lớp */}
                   <div className="space-y-3">
                     <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
                       Hoạt động học tập sẵn sàng ({joinedSession.classRow.labs?.length || 0} lab, {joinedSession.classRow.exams?.length || 0} bài thi)
@@ -520,21 +515,21 @@ function JoinClassContent() {
                         {joinedSession.classRow.labs?.map((lab) => (
                           <div
                             key={lab.id}
-                            className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3 shadow-xs hover:border-blue-300 transition"
+                            className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3 shadow-xs transition hover:border-blue-300"
                           >
                             <div className="flex items-center gap-2.5">
-                              <Code2 className="h-4 w-4 text-blue-600 shrink-0" />
+                              <Code2 className="h-4 w-4 shrink-0 text-blue-600" />
                               <div>
                                 <p className="text-xs font-bold text-slate-900">{lab.title}</p>
-                                <p className="text-[11px] text-slate-400 font-medium">
-                                  Mã phòng: <strong className="text-blue-700 font-mono">{lab.roomCode}</strong> • {lab.language}
+                                <p className="text-[11px] font-medium text-slate-400">
+                                  Mã phòng: <strong className="font-mono text-blue-700">{lab.roomCode}</strong> • {lab.language}
                                 </p>
                               </div>
                             </div>
                             <button
                               type="button"
                               onClick={() => alert(`Bắt đầu làm bài Lab: ${lab.title}`)}
-                              className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition cursor-pointer shrink-0"
+                              className="shrink-0 cursor-pointer rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 transition hover:bg-blue-100"
                             >
                               Làm bài Lab
                             </button>
@@ -548,21 +543,21 @@ function JoinClassContent() {
                         {joinedSession.classRow.exams?.map((exam) => (
                           <div
                             key={exam.id}
-                            className="flex items-center justify-between rounded-xl border border-purple-200 bg-white p-3 shadow-xs hover:border-purple-300 transition"
+                            className="flex items-center justify-between rounded-xl border border-purple-200 bg-white p-3 shadow-xs transition hover:border-purple-300"
                           >
                             <div className="flex items-center gap-2.5">
-                              <GraduationCap className="h-4 w-4 text-purple-600 shrink-0" />
+                              <GraduationCap className="h-4 w-4 shrink-0 text-purple-600" />
                               <div>
                                 <p className="text-xs font-bold text-slate-900">{exam.title}</p>
-                                <p className="text-[11px] text-slate-400 font-medium">
-                                  Mã phòng: <strong className="text-purple-700 font-mono">{exam.roomCode}</strong> • {exam.durationMinutes} phút
+                                <p className="text-[11px] font-medium text-slate-400">
+                                  Mã phòng: <strong className="font-mono text-purple-700">{exam.roomCode}</strong> • {exam.durationMinutes} phút
                                 </p>
                               </div>
                             </div>
                             <button
                               type="button"
                               onClick={() => alert(`Vào phòng thi: ${exam.title}`)}
-                              className="rounded-lg bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700 hover:bg-purple-100 transition cursor-pointer shrink-0"
+                              className="shrink-0 cursor-pointer rounded-lg bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700 transition hover:bg-purple-100"
                             >
                               Vào thi
                             </button>
@@ -574,19 +569,18 @@ function JoinClassContent() {
                 </div>
               )}
 
-              {/* Nút quay lại hoặc tham gia phòng khác */}
               <div className="mt-7 flex items-center justify-between border-t border-slate-100 pt-5">
                 <button
                   type="button"
                   onClick={handleReset}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                  className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Tham gia phòng khác
                 </button>
 
                 <Link
                   href="/admin/classes"
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#2563eb] px-5 py-2.5 text-xs font-bold text-white shadow-sm shadow-blue-500/20 hover:bg-blue-700 transition"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#2563eb] px-5 py-2.5 text-xs font-bold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700"
                 >
                   <span>Xem trong trang Quản lý</span>
                   <ArrowRight className="h-3.5 w-3.5" />
@@ -594,8 +588,8 @@ function JoinClassContent() {
               </div>
             </div>
           ) : (
-            /* ── FORM NHẬP MÃ PHÒNG & MẬT KHẨU PHÒNG ── */
-            <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xl shadow-slate-200/40">
+            /* FORM NHẬP MÃ PHÒNG */
+            <div className="rounded-3xl border border-slate-200/90 bg-white p-6 shadow-xl shadow-slate-200/40 sm:p-8">
               <div className="flex items-center gap-3.5 border-b border-slate-100 pb-5">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 shadow-xs">
                   <KeyRound className="h-6 w-6" />
@@ -612,14 +606,14 @@ function JoinClassContent() {
 
               {errorMsg && (
                 <div className="mt-5 flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-700">
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
                   <p className="font-semibold leading-relaxed">{errorMsg}</p>
                 </div>
               )}
 
               <form onSubmit={handleJoin} className="mt-6 space-y-4">
-                {/* Khối 1: Mã phòng & Mật khẩu phòng */}
-                <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4 space-y-3.5">
+                {/* Khối 1: Mã phòng & Passcode */}
+                <div className="space-y-3.5 rounded-2xl border border-blue-100 bg-blue-50/40 p-4">
                   <div>
                     <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-blue-900">
                       MÃ PHÒNG (ROOM CODE) <span className="text-red-500">*</span>
@@ -654,7 +648,7 @@ function JoinClassContent() {
                   </div>
                 </div>
 
-                {/* Khối 2: Thông tin định danh của sinh viên */}
+                {/* Khối 2: Thông tin định danh */}
                 <div className="space-y-3.5 pt-1">
                   <div>
                     <label className="mb-1 block text-xs font-bold text-slate-700">
@@ -718,26 +712,13 @@ function JoinClassContent() {
                 <div className="pt-2">
                   <button
                     type="submit"
-                    className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#2563eb] text-sm font-bold text-white shadow-md shadow-blue-500/25 transition hover:bg-blue-700 cursor-pointer"
+                    className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#2563eb] text-sm font-bold text-white shadow-md shadow-blue-500/25 transition hover:bg-blue-700"
                   >
                     <LogIn className="h-4 w-4" />
-                    <span>Tham gia phòng ngay</span>
+                    <span>Xác thực & Tham gia ngay</span>
                   </button>
                 </div>
               </form>
-
-              {/* Chú thích mã phòng mẫu cho người dùng tiện thử nghiệm */}
-              <div className="mt-6 rounded-2xl border border-slate-100 bg-[#f8fafc] p-3.5 text-xs text-slate-500">
-                <p className="font-bold text-slate-700 mb-1">Mã phòng mẫu có sẵn để thử nghiệm:</p>
-                <div className="space-y-1 text-[11px]">
-                  <p>
-                    • <strong>Phòng Lab:</strong> Mã <code className="font-bold text-blue-700">LAB-1848-01</code> | Mật khẩu: <code className="font-bold text-purple-700">112233</code> (Dành cho SV lớp SE1848 như MSSV: <code className="text-slate-700 font-bold">SE184801</code>)
-                  </p>
-                  <p>
-                    • <strong>Phòng Thi:</strong> Mã <code className="font-bold text-blue-700">EXAM-1848-MID</code> | Mật khẩu: <code className="font-bold text-purple-700">889900</code> (Dành cho SV lớp SE1848)
-                  </p>
-                </div>
-              </div>
             </div>
           )}
         </div>
@@ -748,13 +729,7 @@ function JoinClassContent() {
 
 export default function JoinPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-[#f4f7f9] text-sm text-slate-500">
-          Đang tải trang tham gia phòng...
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-500">Đang tải...</div>}>
       <JoinClassContent />
     </Suspense>
   );

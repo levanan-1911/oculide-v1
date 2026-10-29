@@ -1,4 +1,3 @@
-
 export type ExamStatus = "Sắp diễn ra" | "Đang diễn ra" | "Đã hoàn thành";
 
 export interface StudentExam {
@@ -7,10 +6,61 @@ export interface StudentExam {
   subject: string;
   instructor: string;
   startTime: string;
-  duration: number;
+  duration: number; // Tính bằng phút
   status: ExamStatus;
   roomCode: string;
 }
+
+export interface StudentProfile {
+  id: string;
+  mssv: string;
+  fullName: string;
+  email: string;
+  avatar?: string;
+  className: string;
+  major: string;
+  role: "student";
+  ipAddress: string;
+  deviceFingerprint: string;
+}
+
+export interface StudentAccount extends StudentProfile {
+  passcode: string; // Mật khẩu đăng nhập hệ thống
+}
+
+// Thông tin Sinh viên hiện tại đang đăng nhập trong phiên
+export const currentStudent: StudentProfile = {
+  id: "STU-184801",
+  mssv: "SE184801",
+  fullName: "Nguyễn Minh Anh",
+  email: "anh.nm@school.edu.vn",
+  avatar: "/avatars/student-default.png",
+  className: "SE1804-NET",
+  major: "Kỹ thuật Phần mềm (Software Engineering)",
+  role: "student",
+  ipAddress: "172.16.20.105 (Campus Network)",
+  deviceFingerprint: "FP-OCULIDE-9982X",
+};
+
+// Danh sách Tài khoản Sinh viên mẫu phục vụ Đăng nhập & Kiểm tra mật khẩu
+export const mockStudentAccounts: StudentAccount[] = [
+  {
+    ...currentStudent,
+    passcode: "123456",
+  },
+  {
+    id: "STU-184802",
+    mssv: "SE184802",
+    fullName: "Trần Bảo Nam",
+    email: "nam.tb@school.edu.vn",
+    className: "SE1804-NET",
+    major: "An toàn Thông tin",
+    role: "student",
+    ipAddress: "172.16.20.106",
+    deviceFingerprint: "FP-OCULIDE-8831Y",
+    passcode: "123456",
+  },
+];
 
 export const studentExams: StudentExam[] = [
   {

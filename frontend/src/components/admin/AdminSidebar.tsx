@@ -78,12 +78,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         href: '/admin/monitoring',
         icon: Flag,
       },
-      {
-        id: 'reports',
-        label: 'Kết quả & báo cáo',
-        href: '/admin/reports',
-        icon: BookOpen,
-      },
     ],
   },
   {
@@ -328,7 +322,7 @@ export default function AdminSidebar({
                 </>
               )}
             </div>
-            {!isCollapsed && (
+{!isCollapsed && (
               <kbd className="hidden sm:inline-block rounded bg-slate-200/60 dark:bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 font-normal">
                 Ctrl B
               </kbd>

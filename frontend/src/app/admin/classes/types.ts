@@ -143,10 +143,16 @@ export function addMinutesToIso(startIso: string, minutes: number): string {
 export interface TestCaseItem {
   id: string;
   input: string;
+  inputData?: string;
   expectedOutput: string;
   isHidden: boolean; // true: Test ẩn chấm điểm, false: Test công khai cho sinh viên xem
   points?: number; // Điểm số từng test case (ví dụ: 1.0, 2.0, 2.5...)
 }
+
+export type TemplateTestCaseItem = TestCaseItem & {
+  inputData: string;
+  points: number;
+};
 
 export interface TemplateQuestionItem {
   id: string;
@@ -155,8 +161,8 @@ export interface TemplateQuestionItem {
   description: string;
   sampleInput?: string;
   sampleOutput?: string;
+  testCases?: (TestCaseItem | TemplateTestCaseItem)[];
   testCasesCount: number;
-  testCases?: TestCaseItem[];
 }
 
 export interface QuestionTemplate {

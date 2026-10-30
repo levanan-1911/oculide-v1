@@ -20,19 +20,267 @@ import {
   Video,
 } from 'lucide-react';
 import ExtendSessionModal from '@/components/instructor/monitoring/ExtendSessionModal';
-import {
-  ScheduleSessionItem,
-  INITIAL_INSTRUCTOR_SCHEDULES,
-  getStoredInstructorSchedules,
-  saveStoredInstructorSchedules,
-  INSTRUCTOR_SCHEDULES_STORAGE_KEY,
-} from '@/components/instructor/classes/types';
+import { INSTRUCTOR_SCHEDULES_STORAGE_KEY } from '@/components/instructor/classes/types';
 
-interface InstructorSession extends ScheduleSessionItem {
+interface InstructorSession {
+  id: string;
+  classCode: string;
+  className: string;
+  title: string;
+  type: 'LAB' | 'EXAM';
+  language: string;
+  startTime: string;
+  endTime: string;
+  date: string;
   dateKey?: string;
+  roomCode: string;
+  passcode: string;
+  status: 'Đang diễn ra' | 'Sắp diễn ra' | 'Đã kết thúc';
+  enrolledStudents: number;
+  attendedStudents: number;
+  isAiProctored: boolean;
+
+  // Chỉ dùng để minh họa giao diện frontend.
   demoProgress?: number;
   demoRemainingMinutes?: number;
 }
+
+type DateFilter = 'ALL' | 'TODAY' | 'TOMORROW' | 'NEXT_7_DAYS' | 'CUSTOM';
+
+const getLocalDateKey = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const shiftDateKey = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return getLocalDateKey(date);
+};
+
+const formatDateDisplay = (dateKey: string) => {
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateKey;
+
+  return new Intl.DateTimeFormat('vi-VN', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+};
+
+const parseDateLabel = (value: string): string => {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === 'hôm nay') return getLocalDateKey();
+  if (normalized === 'ngày mai') return shiftDateKey(1);
+  if (normalized === 'hôm qua') return shiftDateKey(-1);
+
+  const match = value.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (match) {
+    const [, day, month, year] = match;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  return getLocalDateKey();
+};
+
+const getSessionDateKey = (session: InstructorSession) =>
+  session.dateKey || parseDateLabel(session.date);
+
+const timeToMinutes = (value: string) => {
+  const clean = value.match(/^(\d{1,2}):(\d{2})/);
+  if (!clean) return 0;
+  return Number(clean[1]) * 60 + Number(clean[2]);
+};
+
+const getSessionProgress = (session: InstructorSession, now: Date) => {
+  if (session.status === 'Đã kết thúc') return 100;
+  if (session.status === 'Sắp diễn ra') return 0;
+
+  const sessionDateKey = getSessionDateKey(session);
+  const todayKey = getLocalDateKey(now);
+
+  if (sessionDateKey !== todayKey && typeof session.demoProgress === 'number') {
+    return session.demoProgress;
+  }
+
+  const start = timeToMinutes(session.startTime);
+  const end = timeToMinutes(session.endTime);
+  const current = now.getHours() * 60 + now.getMinutes();
+
+  if (end <= start) return session.demoProgress ?? 50;
+
+  if (current >= start && current <= end) {
+    return Math.round(((current - start) / (end - start)) * 100);
+  }
+
+  return session.demoProgress ?? 0;
+};
+
+const formatDuration = (totalMinutes: number) => {
+  const minutes = Math.max(0, Math.floor(totalMinutes));
+
+  if (minutes < 60) {
+    return `${minutes} phút`;
+  }
+
+  const days = Math.floor(minutes / (24 * 60));
+  const remainingAfterDays = minutes % (24 * 60);
+  const hours = Math.floor(remainingAfterDays / 60);
+  const remainingMinutes = remainingAfterDays % 60;
+
+  const parts: string[] = [];
+
+  if (days > 0) {
+    parts.push(`${days} ngày`);
+  }
+
+  if (hours > 0) {
+    parts.push(`${hours} giờ`);
+  }
+
+  if (remainingMinutes > 0) {
+    parts.push(`${remainingMinutes} phút`);
+  }
+
+  return parts.join(' ') || '0 phút';
+};
+
+const getRemainingMinutes = (session: InstructorSession, now: Date) => {
+  if (session.status === 'Đã kết thúc') return 0;
+
+  const sessionDateKey = getSessionDateKey(session);
+  const todayKey = getLocalDateKey(now);
+  const current = now.getHours() * 60 + now.getMinutes();
+  const start = timeToMinutes(session.startTime);
+  const end = timeToMinutes(session.endTime);
+
+  if (sessionDateKey === todayKey) {
+    if (session.status === 'Đang diễn ra' && current >= start && current <= end) {
+      return Math.max(0, end - current);
+    }
+
+    if (session.status === 'Sắp diễn ra' && current < start) {
+      return Math.max(0, start - current);
+    }
+  }
+
+  return session.demoRemainingMinutes ?? 0;
+};
+
+const getLateStudents = (session: InstructorSession) => {
+  if (session.status === 'Đang diễn ra') {
+    return Math.min(3, session.attendedStudents);
+  }
+
+  if (session.status === 'Đã kết thúc') {
+    return Math.min(4, session.attendedStudents);
+  }
+
+  return 0;
+};
+
+const getAttendanceSummary = (session: InstructorSession) => {
+  const late = getLateStudents(session);
+  const onTime = Math.max(0, session.attendedStudents - late);
+
+  if (session.status === 'Sắp diễn ra') {
+    return {
+      onTime: 0,
+      late: 0,
+      absent: 0,
+      notArrived: Math.max(0, session.enrolledStudents - session.attendedStudents),
+    };
+  }
+
+  return {
+    onTime,
+    late,
+    absent: Math.max(0, session.enrolledStudents - session.attendedStudents),
+    notArrived: 0,
+  };
+};
+
+const INITIAL_SESSIONS: InstructorSession[] = [
+  {
+    id: 'SES-01',
+    classCode: 'CS101-A',
+    className: 'Nhập môn Lập trình C/C++',
+    title: 'Lab 03: Vòng lặp For/While & Mảng 1 chiều',
+    type: 'LAB',
+    language: 'C++',
+    startTime: '07:30',
+    endTime: '09:50',
+    date: 'Hôm nay',
+    dateKey: getLocalDateKey(),
+    roomCode: 'CS101-LAB3',
+    passcode: '883921',
+    status: 'Đang diễn ra',
+    enrolledStudents: 48,
+    attendedStudents: 46,
+    isAiProctored: true,
+    demoProgress: 68,
+    demoRemainingMinutes: 42,
+  },
+  {
+    id: 'SES-02',
+    classCode: 'PRJ301',
+    className: 'Lập trình ứng dụng Java Web',
+    title: 'Kiểm tra quá trình: Servlet & MVC Pattern',
+    type: 'EXAM',
+    language: 'Java',
+    startTime: '13:30',
+    endTime: '15:00',
+    date: 'Hôm nay',
+    dateKey: getLocalDateKey(),
+    roomCode: 'PRJ-KT01',
+    passcode: '901244',
+    status: 'Sắp diễn ra',
+    enrolledStudents: 45,
+    attendedStudents: 0,
+    isAiProctored: true,
+  },
+  {
+    id: 'SES-03',
+    classCode: 'CSD201',
+    className: 'Cấu trúc dữ liệu & Giải thuật',
+    title: 'Lab 04: Cây nhị phân tìm kiếm (BST)',
+    type: 'LAB',
+    language: 'Python',
+    startTime: '15:15',
+    endTime: '17:35',
+    date: 'Hôm nay',
+    dateKey: getLocalDateKey(),
+    roomCode: 'CSD-BST4',
+    passcode: '128472',
+    status: 'Sắp diễn ra',
+    enrolledStudents: 42,
+    attendedStudents: 0,
+    isAiProctored: false,
+  },
+  {
+    id: 'SES-04',
+    classCode: 'CS102',
+    className: 'Kỹ thuật Lập trình nâng cao',
+    title: 'Lab 02: Con trỏ & Quản lý bộ nhớ động',
+    type: 'LAB',
+    language: 'C++',
+    startTime: '08:00',
+    endTime: '10:20',
+    date: 'Hôm qua',
+    dateKey: shiftDateKey(-1),
+    roomCode: 'CS102-PTR',
+    passcode: '451092',
+    status: 'Đã kết thúc',
+    enrolledStudents: 50,
+    attendedStudents: 49,
+    isAiProctored: true,
+  },
+];
 
 function SessionDetailModal({
   session,
@@ -249,7 +497,7 @@ function SessionDetailModal({
 }
 
 export default function InstructorSchedulesPage() {
-  const [sessions, setSessions] = useState<ScheduleSessionItem[]>(INITIAL_INSTRUCTOR_SCHEDULES);
+  const [sessions, setSessions] = useState<InstructorSession[]>(INITIAL_SESSIONS);
   const [filterType, setFilterType] = useState<'ALL' | 'LAB' | 'EXAM' | 'active' | 'upcoming'>('ALL');
   const [dateFilter, setDateFilter] = useState<DateFilter>('ALL');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -257,17 +505,38 @@ export default function InstructorSchedulesPage() {
   const [search, setSearch] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-const [selectedSession, setSelectedSession] = useState<InstructorSession | null>(null);
+  const [selectedSession, setSelectedSession] = useState<InstructorSession | null>(null);
   const [sessionToExtend, setSessionToExtend] = useState<InstructorSession | null>(null);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-const syncSchedules = () => {
-      setSessions(getStoredInstructorSchedules() as InstructorSession[]);
-    };
-    syncSchedules();
-    window.addEventListener('storage', syncSchedules);
-    return () => window.removeEventListener('storage', syncSchedules);
+    try {
+      const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
+      if (raw) {
+        const storedSchedules: InstructorSession[] = JSON.parse(raw);
+
+        if (Array.isArray(storedSchedules) && storedSchedules.length > 0) {
+          setSessions((prev) => {
+            const storedCodes = new Set(
+              storedSchedules.map((s) => s.roomCode.toLowerCase())
+            );
+
+            const normalizedStored = storedSchedules.map((session) => ({
+              ...session,
+              dateKey: session.dateKey || parseDateLabel(session.date),
+            }));
+
+            const remaining = prev.filter(
+              (p) => !storedCodes.has(p.roomCode.toLowerCase())
+            );
+
+            return [...normalizedStored, ...remaining];
+          });
+        }
+      }
+    } catch {
+      // Fallback về dữ liệu demo.
+    }
   }, []);
 
   // Đồng hồ UI để countdown/progress tự cập nhật.
@@ -296,20 +565,45 @@ const syncSchedules = () => {
   };
 
   const handleOpenRoomEarly = (sessionId: string) => {
-setSessions((prev) => {
-      const updated = prev.map((s) =>
-        s.id === sessionId ? { ...s, status: 'Đang diễn ra' as const, demoProgress: 10, demoRemainingMinutes: 60 } : s
-      );
-      saveStoredInstructorSchedules(updated);
-      return updated;
-    });
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? { ...s, status: 'Đang diễn ra', demoProgress: 10, demoRemainingMinutes: 60 }
+          : s
+      )
+    );
+
+    try {
+      const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
+
+      if (raw) {
+        const stored: InstructorSession[] = JSON.parse(raw);
+        const updated = stored.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                status: 'Đang diễn ra' as const,
+              }
+            : s
+        );
+
+        localStorage.setItem(
+          INSTRUCTOR_SCHEDULES_STORAGE_KEY,
+          JSON.stringify(updated)
+        );
+      }
+    } catch {
+      // Fallback state vẫn được giữ.
+    }
+
     showToast('Phòng thi đã được mở sớm thành công. Sinh viên đã có thể tham gia!');
   };
 
   const handleConfirmExtend = (minutes: number, reason: string, notify: boolean) => {
     if (!sessionToExtend) return;
-setSessions((prev) => {
-      const updated = prev.map((s) => {
+
+    setSessions((prev) =>
+      prev.map((s) => {
         if (s.id !== sessionToExtend.id) return s;
 
         const oldEnd = timeToMinutes(s.endTime);
@@ -322,10 +616,9 @@ setSessions((prev) => {
           endTime: `${String(newHour).padStart(2, '0')}:${String(newMinute).padStart(2, '0')}`,
           demoRemainingMinutes: (s.demoRemainingMinutes ?? 0) + minutes,
         };
-});
-      saveStoredInstructorSchedules(updated);
-      return updated;
-    });
+      })
+    );
+
     showToast(
       `Đã gia hạn +${minutes} phút cho ${sessionToExtend.roomCode}${
         notify ? ' và đã gửi thông báo đến sinh viên' : ''
@@ -509,7 +802,7 @@ setSessions((prev) => {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-<span className="text-2xl font-black text-slate-900">{stats.total}</span>
+            <span className="text-2xl font-black text-slate-900">{stats.total}</span>
             <span className="text-xs font-semibold text-slate-600">tất cả phiên</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">
@@ -527,7 +820,7 @@ setSessions((prev) => {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-<span className="text-2xl font-black text-emerald-600">{stats.active}</span>
+            <span className="text-2xl font-black text-emerald-600">{stats.active}</span>
             <span className="text-xs font-semibold text-slate-600">phòng hoạt động</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">
@@ -545,7 +838,7 @@ setSessions((prev) => {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-<span className="text-2xl font-black text-slate-900">{stats.totalEnrolled}</span>
+            <span className="text-2xl font-black text-slate-900">{stats.totalEnrolled}</span>
             <span className="text-xs font-semibold text-slate-600">lượt đăng ký</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">Điểm danh tự động qua MSSV</p>
@@ -562,7 +855,7 @@ setSessions((prev) => {
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900">
-{stats.aiEnabled}/{stats.total}
+              {stats.aiEnabled}/{stats.total}
             </span>
             <span className="text-xs font-semibold text-amber-600">phiên bật AI</span>
           </div>
@@ -617,7 +910,7 @@ setSessions((prev) => {
               </button>
             ))}
 
-<div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
+            <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
 
             <div className="relative flex items-center gap-2">
               <CalendarDays className="h-4 w-4 text-slate-400" />

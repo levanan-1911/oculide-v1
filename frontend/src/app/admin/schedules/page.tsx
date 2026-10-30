@@ -183,7 +183,7 @@ export default function ScheduleManagerPage() {
   }
 
   return (
-    <div className="flex min-h-screen w-full bg-[#f4f7f9] text-slate-800">
+    <div className="flex min-h-screen w-full bg-[#f4f7f9] dark:bg-[#090a0f] text-slate-800 dark:text-slate-100 transition-colors">
       <AdminSidebar activeModule="schedules" />
       <div className="flex min-w-0 flex-1 flex-col">
         <AdminTopbar title="Lịch & phiên kiểm tra" />
@@ -217,11 +217,11 @@ export default function ScheduleManagerPage() {
             {/* Header: Đồng bộ hệ thống, Admin chỉ ghi nhận/giám sát */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">QUẢN LÝ ĐÀO TẠO</p>
-                <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[28px]">
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">QUẢN LÝ ĐÀO TẠO</p>
+                <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-[28px]">
                   Quản lý lịch &amp; phiên kiểm tra
                 </h1>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   Ghi nhận, giám sát và thống kê danh sách lịch kiểm tra &amp; phiên thực hành do giảng viên khởi tạo trên toàn hệ thống.
                 </p>
               </div>
@@ -230,58 +230,59 @@ export default function ScheduleManagerPage() {
                 <button
                   type="button"
                   onClick={handleExportExcel}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+                  title="Xuất danh sách lịch & ca kiểm tra ra file Excel/CSV"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 cursor-pointer"
                 >
-                  <Download className="h-4 w-4 text-slate-500" />
-                  Xuất Excel
+                  <Download className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                  <span>Xuất lịch & ca kiểm tra</span>
                 </button>
               </div>
             </div>
 
             {/* KPI Cards Row (4 cards) */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold text-slate-500">Tổng ca kiểm tra</p>
-                <p className="mt-1 text-2xl font-black text-slate-900">{totalCount}</p>
-                <p className="mt-0.5 text-[11px] text-slate-400">Do giảng viên khởi tạo</p>
+              <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tổng ca kiểm tra</p>
+                <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{totalCount}</p>
+                <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">Do giảng viên khởi tạo</p>
               </div>
 
-              <div className="rounded-2xl border border-red-200 bg-red-50/40 p-4 shadow-sm">
+              <div className="rounded-2xl border border-red-200 bg-red-50/50 p-4 shadow-sm dark:border-red-500/25 dark:bg-red-500/10 transition-colors">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-red-700">Đang diễn ra (Live)</p>
+                  <p className="text-xs font-semibold text-red-700 dark:text-red-300">Đang diễn ra (Live)</p>
                   <span className="flex h-2.5 w-2.5 relative">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
                   </span>
                 </div>
-                <p className="mt-1 text-2xl font-black text-red-600">{ongoingCount}</p>
-                <p className="mt-0.5 text-[11px] text-red-500">Có thể vào giám sát Live</p>
+                <p className="mt-1 text-2xl font-black text-red-600 dark:text-red-400">{ongoingCount}</p>
+                <p className="mt-0.5 text-[11px] text-red-500/90 dark:text-red-300/70">Có thể vào giám sát Live</p>
               </div>
 
-              <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4 shadow-sm">
-                <p className="text-xs font-semibold text-blue-700">Đã lên lịch (Sắp tới)</p>
-                <p className="mt-1 text-2xl font-black text-blue-600">{scheduledCount}</p>
-                <p className="mt-0.5 text-[11px] text-blue-500">Chờ giảng viên mở phòng</p>
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 shadow-sm dark:border-blue-500/25 dark:bg-blue-500/10 transition-colors">
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Đã lên lịch (Sắp tới)</p>
+                <p className="mt-1 text-2xl font-black text-blue-600 dark:text-blue-400">{scheduledCount}</p>
+                <p className="mt-0.5 text-[11px] text-blue-500/90 dark:text-blue-300/70">Chờ giảng viên mở phòng</p>
               </div>
 
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm">
-                <p className="text-xs font-semibold text-emerald-700">Đã hoàn thành</p>
-                <p className="mt-1 text-2xl font-black text-emerald-600">{completedCount}</p>
-                <p className="mt-0.5 text-[11px] text-emerald-500">Đã chốt &amp; có bảng điểm</p>
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4 shadow-sm dark:border-emerald-500/25 dark:bg-emerald-500/10 transition-colors">
+                <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Đã hoàn thành</p>
+                <p className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">{completedCount}</p>
+                <p className="mt-0.5 text-[11px] text-emerald-500/90 dark:text-emerald-300/70">Đã chốt &amp; có bảng điểm</p>
               </div>
             </div>
 
             {/* Toolbar: Tabs lọc + Dropdown Lớp + Dropdown Trạng thái + Tìm kiếm (chuẩn h-11) */}
-            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#0d1017] transition-colors lg:flex-row lg:items-center lg:justify-between">
               {/* Type Tabs */}
-              <div className="inline-flex h-11 items-center rounded-xl bg-slate-100 p-1 overflow-x-auto">
+              <div className="inline-flex h-11 items-center rounded-xl bg-slate-100 p-1 overflow-x-auto dark:bg-white/5">
                 <button
                   type="button"
                   onClick={() => setTypeTab('all')}
                   className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
                     typeTab === 'all'
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
                   }`}
                 >
                   Tất cả ({schedules.length})
@@ -291,11 +292,11 @@ export default function ScheduleManagerPage() {
                   onClick={() => setTypeTab('ongoing')}
                   className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer flex items-center gap-1.5 ${
                     typeTab === 'ongoing'
-                      ? 'bg-white text-red-700 shadow-sm'
-                      : 'text-slate-600 hover:text-red-700'
+                      ? 'bg-red-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-red-700 dark:text-slate-400 dark:hover:text-red-400'
                   }`}
                 >
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-red-500"></span>
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${typeTab === 'ongoing' ? 'bg-white' : 'bg-red-500'}`}></span>
                   Đang diễn ra ({ongoingCount})
                 </button>
                 <button
@@ -303,8 +304,8 @@ export default function ScheduleManagerPage() {
                   onClick={() => setTypeTab('scheduled')}
                   className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
                     typeTab === 'scheduled'
-                      ? 'bg-white text-blue-700 shadow-sm'
-                      : 'text-slate-600 hover:text-blue-700'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-400'
                   }`}
                 >
                   📅 Sắp tới ({scheduledCount})
@@ -314,8 +315,8 @@ export default function ScheduleManagerPage() {
                   onClick={() => setTypeTab('completed')}
                   className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
                     typeTab === 'completed'
-                      ? 'bg-white text-emerald-700 shadow-sm'
-                      : 'text-slate-600 hover:text-emerald-700'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-emerald-700 dark:text-slate-400 dark:hover:text-emerald-400'
                   }`}
                 >
                   ✅ Đã xong ({completedCount})
@@ -328,7 +329,7 @@ export default function ScheduleManagerPage() {
                 <select
                   value={classFilter}
                   onChange={(e) => setClassFilter(e.target.value)}
-                  className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-[#141824] dark:text-slate-100 cursor-pointer"
                 >
                   <option value="all">Tất cả lớp học</option>
                   {classOptions.map((c) => (
@@ -342,7 +343,7 @@ export default function ScheduleManagerPage() {
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-[#141824] dark:text-slate-100 cursor-pointer"
                 >
                   <option value="all">Tất cả trạng thái</option>
                   <option value="ongoing">🔴 Đang diễn ra</option>
@@ -359,7 +360,7 @@ export default function ScheduleManagerPage() {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     placeholder="Nhập mã hoặc tên..."
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm font-medium outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm font-medium outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-[#141824] dark:text-slate-100 dark:placeholder-slate-500 dark:focus:border-blue-500"
                   />
                   {searchTerm && (
                     <button
@@ -375,11 +376,11 @@ export default function ScheduleManagerPage() {
             </div>
 
             {/* Bảng Danh sách Ca kiểm tra ghi nhận từ Giảng viên */}
-            <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden">
+            <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden dark:border-white/10 dark:bg-[#0d1017] transition-colors">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 bg-[#f8fafc] text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                    <tr className="border-b border-slate-100 dark:border-white/10 bg-[#f8fafc] dark:bg-white/5 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       <th className="px-5 py-3.5">LỊCH KIỂM TRA &amp; ĐỀ THI</th>
                       <th className="px-4 py-3.5">LỚP &amp; GIẢNG VIÊN</th>
                       <th className="px-4 py-3.5">BẮT ĐẦU &amp; THỜI LƯỢNG</th>
@@ -388,7 +389,7 @@ export default function ScheduleManagerPage() {
                       <th className="px-5 py-3.5 text-right">THAO TÁC</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
+                  <tbody className="divide-y divide-slate-100 dark:divide-white/10 font-medium">
                     {filteredSchedules.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-6 py-12 text-center">
@@ -406,18 +407,18 @@ export default function ScheduleManagerPage() {
                         return (
                           <tr
                             key={item.id}
-                            className={`transition hover:bg-slate-50/80 ${
-                              item.status === 'ongoing' ? 'bg-red-50/20' : ''
+                            className={`transition hover:bg-slate-50/80 dark:hover:bg-white/5 ${
+                              item.status === 'ongoing' ? 'bg-red-50/20 dark:bg-red-950/25' : ''
                             }`}
                           >
                             {/* Cột 1: Mã ca thi & Đề thi */}
                             <td className="px-5 py-4 min-w-[260px]">
                               <div className="flex flex-col gap-1.5">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="shrink-0 font-mono text-xs font-black tracking-wider text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
+                                  <span className="shrink-0 font-mono text-xs font-black tracking-wider text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md dark:bg-white/10 dark:text-slate-200">
                                     {item.id}
                                   </span>
-                                  <span className="text-xs font-bold text-slate-900 sm:text-sm">
+                                  <span className="text-xs font-bold text-slate-900 dark:text-white sm:text-sm">
                                     {item.title}
                                   </span>
                                 </div>
@@ -433,7 +434,7 @@ export default function ScheduleManagerPage() {
                             {/* Cột 2: Lớp học & Giảng viên */}
                             <td className="px-4 py-4 whitespace-nowrap">
                               <div>
-                                <p className="font-bold text-slate-900 text-xs sm:text-[13px]">
+                                <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-[13px]">
                                   {item.classId}
                                 </p>
                                 <p className="text-[11px] text-slate-500">
@@ -546,9 +547,9 @@ export default function ScheduleManagerPage() {
                                 <button
                                   type="button"
                                   onClick={() => setSelectedSchedule(item)}
-                                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 transition cursor-pointer"
                                 >
-                                  <Eye className="h-3.5 w-3.5 text-slate-500" />
+                                  <Eye className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
                                   <span>Xem chi tiết</span>
                                 </button>
                               </div>
@@ -579,103 +580,105 @@ export default function ScheduleManagerPage() {
         </main>
       </div>
 
-      {/* ── MODAL CHI TIẾT CA THI (READ-ONLY CHO ADMIN) ── */}
+      {/* ── MODAL CHI TIẾT CA THI (ĐỒNG BỘ DARK / LIGHT CHUẨN XÁC) ── */}
       {selectedSchedule && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 overflow-y-auto"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 overflow-y-auto"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setSelectedSchedule(null);
           }}
         >
-          <div className="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 my-8">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+          <div className="relative w-full max-w-2xl rounded-2xl border border-slate-200/90 bg-white p-6 shadow-2xl transition-all dark:border-white/10 dark:bg-[#0d1017] my-8 text-slate-800 dark:text-slate-200">
+            {/* Header Modal */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-3.5">
               <div>
-                <span className="font-mono text-xs font-bold text-blue-600 uppercase">
+                <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
                   {selectedSchedule.id} • {selectedSchedule.classId}
                 </span>
-                <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                <h3 className="mt-0.5 text-base sm:text-lg font-bold text-slate-900 dark:text-white">
                   {selectedSchedule.title}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedSchedule(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+                aria-label="Đóng"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/10 dark:hover:text-white transition cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="mt-4 space-y-4 text-xs">
-              {/* Thông tin Giảng viên & Phòng máy */}
-              <div className="rounded-xl border border-slate-200 bg-[#f8fafc] p-3.5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="mt-4 space-y-3.5 text-xs">
+              {/* Box 1: Thông tin Giảng viên & Phòng máy */}
+              <div className="rounded-xl border border-slate-200/80 bg-slate-50 p-3.5 grid grid-cols-2 sm:grid-cols-4 gap-3 dark:border-white/10 dark:bg-[#141824]">
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Giảng viên:</span>
-                  <span className="font-bold text-blue-700">{selectedSchedule.lecturer}</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">Giảng viên:</span>
+                  <span className="mt-0.5 block font-bold text-blue-600 dark:text-blue-400 truncate">{selectedSchedule.lecturer}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Phòng máy:</span>
-                  <span className="font-bold text-slate-800">{selectedSchedule.room}</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">Phòng máy:</span>
+                  <span className="mt-0.5 block font-bold text-slate-800 dark:text-slate-200 truncate">{selectedSchedule.room}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Thời gian:</span>
-                  <span className="font-bold text-slate-800">{selectedSchedule.startTime} - {selectedSchedule.endTime}</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">Thời gian:</span>
+                  <span className="mt-0.5 block font-bold text-slate-800 dark:text-slate-200">{selectedSchedule.startTime} - {selectedSchedule.endTime}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Mã phòng:</span>
-                  <span className="font-mono font-bold text-blue-600 text-sm">{selectedSchedule.roomCode}</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">Mã phòng:</span>
+                  <span className="mt-0.5 block font-mono font-bold text-indigo-600 dark:text-indigo-400 text-sm">{selectedSchedule.roomCode}</span>
                 </div>
               </div>
 
-              {/* Thông tin Đề thi liên kết (Chỉ hiển thị thông tin định danh đề, bảo mật câu hỏi & testcase) */}
-              <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              {/* Box 2: Thông tin Đề thi liên kết */}
+              <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 space-y-1.5 dark:border-white/10 dark:bg-[#141824]">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Bộ đề thi liên kết
                 </span>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div>
-                    <h4 className="font-bold text-slate-900 sm:text-sm">
+                    <h4 className="font-bold text-slate-900 dark:text-white sm:text-sm">
                       {selectedSchedule.templateId} - {selectedSchedule.templateTitle}
                     </h4>
-                    <p className="text-slate-500 text-[11px]">
+                    <p className="text-slate-500 dark:text-slate-400 text-[11px] mt-0.5">
                       Phiên bản: {selectedSchedule.templateVersion} • Thời lượng: {selectedSchedule.durationMinutes} phút
                     </p>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                    <ShieldCheck className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                  <span className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                    <ShieldCheck className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                     Bảo mật câu hỏi &amp; Test Cases
                   </span>
                 </div>
               </div>
 
-              {/* Chính sách giám sát AI */}
+              {/* Box 3: Chính sách giám sát AI */}
               {selectedSchedule.proctoringPolicy && (
-                <div className="rounded-xl border border-purple-100 bg-purple-50/30 p-3.5 space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700">
+                <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3.5 space-y-2 dark:border-white/10 dark:bg-[#141824]">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
                     Chính sách giám sát AI áp dụng
                   </span>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                    <div className="rounded-lg bg-white border border-purple-100 p-2">
-                      <span className="block text-slate-400 text-[10px]">Webcam:</span>
-                      <strong className="text-purple-800">
+                    <div className="rounded-lg bg-white border border-slate-200/80 p-2 dark:border-white/10 dark:bg-[#0d1017]">
+                      <span className="block text-slate-500 dark:text-slate-400 text-[10px]">Webcam:</span>
+                      <strong className="text-purple-700 dark:text-purple-300 font-bold">
                         {selectedSchedule.proctoringPolicy.webcam === 'required' ? 'Bắt buộc' : 'Tùy chọn'}
                       </strong>
                     </div>
-                    <div className="rounded-lg bg-white border border-purple-100 p-2">
-                      <span className="block text-slate-400 text-[10px]">Chia sẻ màn hình:</span>
-                      <strong className="text-purple-800">
+                    <div className="rounded-lg bg-white border border-slate-200/80 p-2 dark:border-white/10 dark:bg-[#0d1017]">
+                      <span className="block text-slate-500 dark:text-slate-400 text-[10px]">Chia sẻ màn hình:</span>
+                      <strong className="text-purple-700 dark:text-purple-300 font-bold">
                         {selectedSchedule.proctoringPolicy.screenShare === 'required' ? 'Toàn màn hình' : 'Không'}
                       </strong>
                     </div>
-                    <div className="rounded-lg bg-white border border-purple-100 p-2">
-                      <span className="block text-slate-400 text-[10px]">Chặn Clipboard:</span>
-                      <strong className="text-purple-800">
+                    <div className="rounded-lg bg-white border border-slate-200/80 p-2 dark:border-white/10 dark:bg-[#0d1017]">
+                      <span className="block text-slate-500 dark:text-slate-400 text-[10px]">Chặn Clipboard:</span>
+                      <strong className="text-purple-700 dark:text-purple-300 font-bold">
                         {selectedSchedule.proctoringPolicy.clipboard === 'block' ? 'Chặn sao chép' : 'Cảnh báo'}
                       </strong>
                     </div>
-                    <div className="rounded-lg bg-white border border-purple-100 p-2">
-                      <span className="block text-slate-400 text-[10px]">Giới hạn đổi tab:</span>
-                      <strong className="text-purple-800">
+                    <div className="rounded-lg bg-white border border-slate-200/80 p-2 dark:border-white/10 dark:bg-[#0d1017]">
+                      <span className="block text-slate-500 dark:text-slate-400 text-[10px]">Giới hạn đổi tab:</span>
+                      <strong className="text-purple-700 dark:text-purple-300 font-bold">
                         Tối đa {selectedSchedule.proctoringPolicy.tabSwitchLimit || 2} lần
                       </strong>
                     </div>
@@ -684,31 +687,36 @@ export default function ScheduleManagerPage() {
               )}
             </div>
 
-            {/* Footer Buttons */}
-            <div className="mt-5 flex justify-end gap-2.5 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setSelectedSchedule(null)}
-                className="h-10 rounded-xl border border-slate-200 px-4 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-              >
-                Đóng
-              </button>
-              {selectedSchedule.status === 'ongoing' ? (
-                <Link
-                  href={`/admin/monitoring?session=${selectedSchedule.id}`}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-red-600 px-5 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-red-500/20 hover:bg-red-700 transition"
+            {/* Footer Modal */}
+            <div className="mt-5 flex items-center justify-between gap-2.5 pt-3.5 border-t border-slate-100 dark:border-white/10">
+              <div>
+                {selectedSchedule.status === 'ongoing' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+                    <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                    Đang diễn ra (Live)
+                  </span>
+                ) : selectedSchedule.status === 'completed' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Đã hoàn thành
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-400">
+                    <Clock className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                    Đã lên lịch
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSchedule(null)}
+                  className="h-10 rounded-xl border border-slate-200 px-5 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 transition cursor-pointer"
                 >
-                  <Radio className="h-4 w-4 animate-pulse" />
-                  Vào phòng giám sát Live
-                </Link>
-              ) : selectedSchedule.status === 'completed' ? (
-                <Link
-                  href={`/admin/reports?exam=${selectedSchedule.id}`}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-blue-600 px-5 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700 transition"
-                >
-                  Xem bảng điểm
-                </Link>
-              ) : null}
+                  Đóng
+                </button>
+              </div>
             </div>
           </div>
         </div>

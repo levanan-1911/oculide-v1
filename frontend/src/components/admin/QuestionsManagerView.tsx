@@ -633,11 +633,11 @@ export default function QuestionsManagerView() {
       {/* Main Header - Đồng bộ theo phân quyền Giảng viên vs Admin */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-blue-600">QUẢN LÝ ĐÀO TẠO</p>
-          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[28px]">
+          <p className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">QUẢN LÝ ĐÀO TẠO</p>
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-[28px]">
             Đề &amp; câu hỏi
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             {isAdmin
               ? 'Ghi nhận, quản lý thông tin định danh và theo dõi trạng thái các bộ đề thực hành & đề kiểm tra do giảng viên khởi tạo trên toàn hệ thống.'
               : 'Kho câu hỏi, bộ test case và đề thực hành chuẩn hóa, đồng bộ tự động tới các lớp học và lịch kiểm tra.'}
@@ -648,10 +648,11 @@ export default function QuestionsManagerView() {
           <button
             type="button"
             onClick={handleExportExcel}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+            title="Xuất danh sách bộ đề thực hành & kiểm tra ra file Excel/CSV"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 cursor-pointer"
           >
-            <Download className="h-4 w-4 text-slate-500" />
-            Xuất Excel
+            <Download className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+            <span>Xuất danh sách bộ đề</span>
           </button>
 
           {/* Chỉ Role Giảng viên mới có nút Tạo bộ đề mới */}
@@ -670,45 +671,47 @@ export default function QuestionsManagerView() {
 
       {/* KPI mini cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold text-slate-500">Tổng số bộ đề</p>
-          <p className="mt-1 text-2xl font-black text-slate-900">{templates.length}</p>
-          <p className="mt-0.5 text-[11px] text-slate-400">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tổng số bộ đề</p>
+          <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{templates.length}</p>
+          <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">
             {isAdmin ? 'Do giảng viên khởi tạo' : 'Đề thực hành & thi'}
           </p>
         </div>
-        <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4 shadow-sm">
-          <p className="text-xs font-semibold text-blue-700">Bộ đề Lab thực hành</p>
-          <p className="mt-1 text-2xl font-black text-blue-600">
+        <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 shadow-sm dark:border-blue-500/25 dark:bg-blue-500/10 transition-colors">
+          <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Bộ đề Lab thực hành</p>
+          <p className="mt-1 text-2xl font-black text-blue-600 dark:text-blue-400">
             {templates.filter((t) => t.type === 'lab').length}
           </p>
-          <p className="mt-0.5 text-[11px] text-blue-500">Phục vụ các bài lab trên lớp</p>
+          <p className="mt-0.5 text-[11px] text-blue-500/90 dark:text-blue-300/70">Phục vụ các bài lab trên lớp</p>
         </div>
-        <div className="rounded-2xl border border-purple-100 bg-purple-50/40 p-4 shadow-sm">
-          <p className="text-xs font-semibold text-purple-700">Đề kiểm tra &amp; thi</p>
-          <p className="mt-1 text-2xl font-black text-purple-600">
+        <div className="rounded-2xl border border-purple-100 bg-purple-50/50 p-4 shadow-sm dark:border-purple-500/25 dark:bg-purple-500/10 transition-colors">
+          <p className="text-xs font-semibold text-purple-700 dark:text-purple-300">Đề kiểm tra &amp; thi</p>
+          <p className="mt-1 text-2xl font-black text-purple-600 dark:text-purple-400">
             {templates.filter((t) => t.type === 'exam').length}
           </p>
-          <p className="mt-0.5 text-[11px] text-purple-500">Giữa kỳ, quá trình &amp; cuối kỳ</p>
+          <p className="mt-0.5 text-[11px] text-purple-500/90 dark:text-purple-300/70">Giữa kỳ, quá trình &amp; cuối kỳ</p>
         </div>
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm">
-          <p className="text-xs font-semibold text-emerald-700">Lớp &amp; lịch thi liên kết</p>
-          <p className="mt-1 text-2xl font-black text-emerald-600">
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4 shadow-sm dark:border-emerald-500/25 dark:bg-emerald-500/10 transition-colors">
+          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Lớp &amp; lịch thi liên kết</p>
+          <p className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">
             {new Set(Object.values(templateUsageMap).flatMap((list) => list.map((u) => u.classId))).size}
           </p>
-          <p className="mt-0.5 text-[11px] text-emerald-500">Đồng bộ tự động với lịch thi</p>
+          <p className="mt-0.5 text-[11px] text-emerald-500/90 dark:text-emerald-300/70">Đồng bộ tự động với lịch thi</p>
         </div>
       </div>
 
       {/* Filters and Search Bar - Chuẩn hóa chiều cao h-11 và typography text-sm */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#0d1017] transition-colors lg:flex-row lg:items-center lg:justify-between">
         {/* Type tabs */}
-        <div className="inline-flex h-11 items-center rounded-xl bg-slate-100 p-1 overflow-x-auto">
+        <div className="inline-flex h-11 items-center rounded-xl bg-slate-100 p-1 overflow-x-auto dark:bg-white/5">
           <button
             type="button"
             onClick={() => setTypeFilter('all')}
             className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
-              typeFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              typeFilter === 'all'
+                ? 'bg-white text-slate-900 shadow-sm dark:bg-blue-600 dark:text-white'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
             }`}
           >
             Tất cả ({templates.length})
@@ -717,7 +720,9 @@ export default function QuestionsManagerView() {
             type="button"
             onClick={() => setTypeFilter('lab')}
             className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
-              typeFilter === 'lab' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-blue-700'
+              typeFilter === 'lab'
+                ? 'bg-white text-blue-700 shadow-sm dark:bg-blue-600 dark:text-white'
+                : 'text-slate-600 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-300'
             }`}
           >
             🧪 Đề Lab thực hành ({templates.filter((t) => t.type === 'lab').length})
@@ -726,7 +731,9 @@ export default function QuestionsManagerView() {
             type="button"
             onClick={() => setTypeFilter('exam')}
             className={`h-full whitespace-nowrap rounded-lg px-3.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
-              typeFilter === 'exam' ? 'bg-white text-purple-700 shadow-sm' : 'text-slate-600 hover:text-purple-700'
+              typeFilter === 'exam'
+                ? 'bg-white text-purple-700 shadow-sm dark:bg-blue-600 dark:text-white'
+                : 'text-slate-600 hover:text-purple-700 dark:text-slate-400 dark:hover:text-purple-300'
             }`}
           >
             🎓 Đề thi lập trình ({templates.filter((t) => t.type === 'exam').length})
@@ -738,7 +745,7 @@ export default function QuestionsManagerView() {
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
+            className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-[#141824] dark:text-slate-200 dark:focus:border-blue-500 cursor-pointer"
           >
             <option value="all">Tất cả chuyên mục</option>
             {categories.map((cat) => (
@@ -749,7 +756,7 @@ export default function QuestionsManagerView() {
           </select>
 
           <div className="relative min-w-[260px] flex-1">
-            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
               type="text"
               value={searchTerm}
@@ -759,13 +766,13 @@ export default function QuestionsManagerView() {
                   ? 'Tìm theo mã đề, tên bộ đề, giảng viên...'
                   : 'Tìm theo mã, tên đề, câu hỏi...'
               }
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm font-medium outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm font-medium outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-[#141824] dark:text-slate-100 dark:placeholder-slate-500 dark:focus:border-blue-500"
             />
             {searchTerm && (
               <button
                 type="button"
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -777,10 +784,10 @@ export default function QuestionsManagerView() {
       {/* Templates List */}
       <div className="space-y-4">
         {filteredTemplates.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-12 text-center shadow-sm">
-            <FileCode2 className="mx-auto h-12 w-12 text-slate-300" />
-            <h3 className="mt-3 text-base font-bold text-slate-900">Không tìm thấy bộ đề phù hợp</h3>
-            <p className="mt-1 text-xs text-slate-500">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-12 text-center shadow-sm dark:border-white/10 dark:bg-[#0d1017]">
+            <FileCode2 className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+            <h3 className="mt-3 text-base font-bold text-slate-900 dark:text-white">Không tìm thấy bộ đề phù hợp</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Hãy thử tìm kiếm với từ khóa khác hoặc điều chỉnh bộ lọc phân loại.
             </p>
           </div>
@@ -799,95 +806,95 @@ export default function QuestionsManagerView() {
               <div
                 key={template.id}
                 id={`template-${template.id}`}
-                className={`rounded-2xl border bg-white p-5 shadow-sm transition hover:shadow-md ${
+                className={`rounded-2xl border bg-white p-5 shadow-sm transition hover:shadow-md dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-white/20 ${
                   isTargetHighlight
-                    ? 'border-blue-400 ring-2 ring-blue-100'
+                    ? 'border-blue-400 ring-2 ring-blue-100 dark:border-blue-500 dark:ring-blue-900/40'
                     : 'border-slate-200/80'
                 }`}
               >
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-2 min-w-0 flex-1">
+                  <div className="space-y-2.5 min-w-0 flex-1">
                     {/* Badge Row */}
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-xs font-black tracking-wider text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-md">
+                      <span className="font-mono text-xs font-black tracking-wider text-slate-800 bg-slate-100 px-2.5 py-0.5 rounded-md dark:bg-white/10 dark:text-slate-200 border border-slate-200/60 dark:border-white/10">
                         {template.id}
                       </span>
 
                       {template.type === 'lab' ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-700">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300">
                           🧪 Đề Lab thực hành
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-0.5 text-[11px] font-bold text-purple-700">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-0.5 text-[11px] font-bold text-purple-700 dark:border-purple-500/30 dark:bg-purple-500/15 dark:text-purple-300">
                           🎓 Đề thi lập trình
                         </span>
                       )}
 
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-white/5 dark:text-slate-300 border border-slate-200/50 dark:border-white/5">
                         {template.category}
                       </span>
 
-                      <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300">
                         GV: {template.lecturer || 'Thầy Nguyễn Văn Nam'}
                       </span>
 
                       {template.updatedAt && (
-                        <span className="text-[11px] text-slate-400">
+                        <span className="text-[11px] text-slate-400 dark:text-slate-500">
                           Cập nhật: {template.updatedAt}
                         </span>
                       )}
                     </div>
 
                     {/* Title */}
-                    <h3 className="text-base font-bold text-slate-900 sm:text-lg">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white sm:text-lg">
                       {template.title}
                     </h3>
 
                     {/* Description */}
                     {template.description && (
-                      <p className="text-xs text-slate-600 leading-relaxed max-w-3xl">
+                      <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed max-w-3xl">
                         {template.description}
                       </p>
                     )}
 
                     {/* Metadata Specs Bar */}
                     <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-600">
-                      <span className="inline-flex items-center gap-1 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">
-                        <Terminal className="h-3.5 w-3.5 text-slate-400" />
+                      <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200/60 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700 dark:border-white/5 dark:bg-white/5 dark:text-slate-300">
+                        <Terminal className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                         {template.language}
                       </span>
 
-                      <span className="inline-flex items-center gap-1 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">
-                        <Code2 className="h-3.5 w-3.5 text-slate-400" />
+                      <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200/60 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700 dark:border-white/5 dark:bg-white/5 dark:text-slate-300">
+                        <Code2 className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                         {(template.questions || []).length} bài tập coding ({totalTc} test cases)
                       </span>
 
                       {template.durationMinutes && (
-                        <span className="inline-flex items-center gap-1 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">
-                          <Clock className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200/60 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700 dark:border-white/5 dark:bg-white/5 dark:text-slate-300">
+                          <Clock className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                           {template.durationMinutes} phút
                         </span>
                       )}
 
                       {/* Linked classes badge */}
                       {usageList.length > 0 ? (
-                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/70 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                          <Layers className="h-3.5 w-3.5 text-emerald-600" />
+                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/70 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
+                          <Layers className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                           <span>Đang sử dụng trong lớp:</span>
                           <span className="font-bold underline">
                             {Array.from(new Set(usageList.map((u) => u.classId))).join(', ')}
                           </span>
                         </div>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-200 px-2.5 py-1 text-xs text-slate-400">
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-200 px-2.5 py-1 text-xs text-slate-400 dark:border-white/10 dark:text-slate-500">
                           Chưa có lớp nào sử dụng
                         </span>
                       )}
 
                       {/* Linked schedules badge */}
                       {scheduleList.length > 0 && (
-                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-1 text-xs font-semibold text-blue-800">
-                          <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
+                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-1 text-xs font-semibold text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                           <span>Lịch kiểm tra:</span>
                           <span className="font-bold">
                             {scheduleList.length} ca ({scheduleList.map((s) => s.roomCode || s.id).join(', ')})
@@ -904,12 +911,12 @@ export default function QuestionsManagerView() {
                         <button
                           type="button"
                           onClick={() => setViewingAdminTemplate(template)}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-700 cursor-pointer whitespace-nowrap"
+                          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 px-3.5 text-xs font-bold text-blue-700 shadow-xs transition hover:bg-blue-100 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300 dark:hover:bg-blue-500/25 cursor-pointer whitespace-nowrap"
                         >
-                          <Eye className="h-3.5 w-3.5 text-blue-600" />
+                          <Eye className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                           Xem thông tin bộ đề
                         </button>
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:text-amber-400 whitespace-nowrap">
                           🔒 Bảo mật câu hỏi & Test Cases
                         </span>
                       </>
@@ -928,7 +935,7 @@ export default function QuestionsManagerView() {
                           <button
                             type="button"
                             onClick={() => toggleExpand(template.id)}
-                            className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+                            className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 cursor-pointer"
                           >
                             {isExpanded ? 'Ẩn câu hỏi' : 'Xem câu hỏi'}
                             <ChevronDown
@@ -940,7 +947,7 @@ export default function QuestionsManagerView() {
                             type="button"
                             onClick={() => handleDeleteTemplate(template.id)}
                             title="Xóa bộ đề"
-                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-white/10 dark:hover:bg-red-950/20 dark:hover:text-red-400 transition cursor-pointer"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -1558,54 +1565,54 @@ export default function QuestionsManagerView() {
 
       {/* Modal: Xem thông tin bộ đề (Read-only Metadata cho Role Admin) */}
       {isAdmin && viewingAdminTemplate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5">
-            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5 dark:border-white/10 dark:bg-[#0d1017]">
+            <div className="flex items-start justify-between border-b border-slate-100 dark:border-white/10 pb-4">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs font-black tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200">
+                  <span className="font-mono text-xs font-black tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300">
                     {viewingAdminTemplate.id}
                   </span>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-white/5 dark:text-slate-300">
                     {viewingAdminTemplate.category}
                   </span>
-                  <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700">
+                  <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300">
                     GV: {viewingAdminTemplate.lecturer || 'Thầy Nguyễn Văn Nam'}
                   </span>
                 </div>
-                <h2 className="mt-2 text-lg font-bold text-slate-900">
+                <h2 className="mt-2 text-lg font-bold text-slate-900 dark:text-white">
                   {viewingAdminTemplate.title}
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setViewingAdminTemplate(null)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/10 dark:hover:text-white cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {viewingAdminTemplate.description && (
-              <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-white/5 rounded-xl p-3.5 border border-slate-100 dark:border-white/5">
                 {viewingAdminTemplate.description}
               </p>
             )}
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-slate-50 p-4 border border-slate-100 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-slate-50 dark:bg-white/5 p-4 border border-slate-100 dark:border-white/5 text-xs">
               <div>
-                <span className="block text-[10px] font-bold uppercase text-slate-400">Phân loại</span>
-                <span className="mt-1 block font-bold text-slate-800">
+                <span className="block text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500">Phân loại</span>
+                <span className="mt-1 block font-bold text-slate-800 dark:text-slate-200">
                   {viewingAdminTemplate.type === 'lab' ? 'Đề Lab thực hành' : 'Đề thi lập trình'}
                 </span>
               </div>
               <div>
-                <span className="block text-[10px] font-bold uppercase text-slate-400">Ngôn ngữ</span>
-                <span className="mt-1 block font-bold text-slate-800">{viewingAdminTemplate.language}</span>
+                <span className="block text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500">Ngôn ngữ</span>
+                <span className="mt-1 block font-bold text-slate-800 dark:text-slate-200">{viewingAdminTemplate.language}</span>
               </div>
               <div>
-                <span className="block text-[10px] font-bold uppercase text-slate-400">Quy mô câu hỏi</span>
-                <span className="mt-1 block font-bold text-blue-700">
+                <span className="block text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500">Quy mô câu hỏi</span>
+                <span className="mt-1 block font-bold text-blue-700 dark:text-blue-400">
                   {(viewingAdminTemplate.questions || []).length} bài tập (
                   {(viewingAdminTemplate.questions || []).reduce(
                     (s, q) => s + ((q.testCases || []).length || q.testCasesCount || 0),
@@ -1615,8 +1622,8 @@ export default function QuestionsManagerView() {
                 </span>
               </div>
               <div>
-                <span className="block text-[10px] font-bold uppercase text-slate-400">Thời lượng</span>
-                <span className="mt-1 block font-bold text-slate-800">
+                <span className="block text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500">Thời lượng</span>
+                <span className="mt-1 block font-bold text-slate-800 dark:text-slate-200">
                   {viewingAdminTemplate.durationMinutes ? `${viewingAdminTemplate.durationMinutes} phút` : '90 phút'}
                 </span>
               </div>
@@ -1624,59 +1631,59 @@ export default function QuestionsManagerView() {
 
             {/* Linked classes & exam schedules */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div className="rounded-xl border border-slate-200 p-3.5">
-                <div className="text-[11px] font-bold uppercase text-slate-400 mb-2">
+              <div className="rounded-xl border border-slate-200 dark:border-white/10 p-3.5">
+                <div className="text-[11px] font-bold uppercase text-slate-400 dark:text-slate-500 mb-2">
                   Lớp học đang gán bộ đề
                 </div>
                 {(templateUsageMap[viewingAdminTemplate.id] || []).length > 0 ? (
                   <div className="space-y-1.5">
                     {(templateUsageMap[viewingAdminTemplate.id] || []).map((u, idx) => (
-                      <div key={idx} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5">
-                        <span className="font-bold text-slate-800">{u.classId}</span>
-                        <span className="text-[11px] text-slate-500 truncate max-w-[180px]">{u.className}</span>
+                      <div key={idx} className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-white/5 px-2.5 py-1.5">
+                        <span className="font-bold text-slate-800 dark:text-slate-200">{u.classId}</span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[180px]">{u.className}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-slate-400 text-[11px]">Chưa có lớp học nào gán bộ đề này.</p>
+                  <p className="text-slate-400 dark:text-slate-500 text-[11px]">Chưa có lớp học nào gán bộ đề này.</p>
                 )}
               </div>
 
-              <div className="rounded-xl border border-slate-200 p-3.5">
-                <div className="text-[11px] font-bold uppercase text-slate-400 mb-2">
+              <div className="rounded-xl border border-slate-200 dark:border-white/10 p-3.5">
+                <div className="text-[11px] font-bold uppercase text-slate-400 dark:text-slate-500 mb-2">
                   Lịch kiểm tra sử dụng đề
                 </div>
                 {(templateScheduleMap[viewingAdminTemplate.id] || []).length > 0 ? (
                   <div className="space-y-1.5">
                     {(templateScheduleMap[viewingAdminTemplate.id] || []).map((sch) => (
-                      <div key={sch.id} className="flex items-center justify-between rounded-lg bg-blue-50/60 px-2.5 py-1.5">
+                      <div key={sch.id} className="flex items-center justify-between rounded-lg bg-blue-50/60 dark:bg-blue-500/10 px-2.5 py-1.5">
                         <div>
-                          <span className="font-mono font-bold text-blue-700">{sch.roomCode || sch.id}</span>
-                          <span className="ml-1.5 text-[11px] font-semibold text-slate-700">({sch.classId})</span>
+                          <span className="font-mono font-bold text-blue-700 dark:text-blue-300">{sch.roomCode || sch.id}</span>
+                          <span className="ml-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300">({sch.classId})</span>
                         </div>
-                        <span className="text-[11px] text-slate-500">{sch.date}</span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">{sch.date}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-slate-400 text-[11px]">Chưa có lịch kiểm tra nào sử dụng đề này.</p>
+                  <p className="text-slate-400 dark:text-slate-500 text-[11px]">Chưa có lịch kiểm tra nào sử dụng đề này.</p>
                 )}
               </div>
             </div>
 
             {/* Security notice */}
-            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 text-xs text-amber-900">
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 dark:border-amber-500/30 dark:bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-300">
               <div className="font-bold">🔒 Bảo mật nội dung câu hỏi & Test Cases</div>
-              <p className="mt-1 text-[11px] text-amber-800 leading-relaxed">
+              <p className="mt-1 text-[11px] text-amber-800 dark:text-amber-400 leading-relaxed">
                 Theo quy định phân quyền của hệ thống OCULIDE, Quản trị viên chỉ quản lý thông tin định danh bộ đề, lớp học và lịch kiểm tra liên kết. Nội dung đề bài và bộ Test Cases chấm điểm chỉ hiển thị cho Giảng viên biên soạn đề.
               </p>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
               <button
                 type="button"
                 onClick={() => setViewingAdminTemplate(null)}
-                className="h-10 rounded-xl border border-slate-200 bg-white px-5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                className="h-10 rounded-xl border border-slate-200 bg-white px-5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 cursor-pointer"
               >
                 Đóng
               </button>

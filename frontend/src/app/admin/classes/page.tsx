@@ -405,11 +405,11 @@ function ClassManagerContent() {
 
   function handleExportClasses() {
     if (classes.length === 0) return;
-    const header = 'Mã lớp,Tên lớp học phần,Học kỳ,Giảng viên,Sĩ số,Trạng thái,Mã phòng,Mật khẩu\n';
+    const header = 'STT,Mã lớp,Tên lớp học phần,Học kỳ,Giảng viên phụ trách,Sĩ số,Trạng thái\n';
     const rows = classes
       .map(
-        (c) =>
-          `${c.id},"${c.name}","${c.semester}","${c.lecturer || 'Long Phạm'}",${c.students.length},${c.status},${c.roomCode || ''},${c.roomPassword || ''}`
+        (c, idx) =>
+          `${idx + 1},"${c.id}","${c.name}","${c.semester}","${c.lecturer || 'Chưa phân công'}",${c.students.length},"${c.status}"`
       )
       .join('\n');
     const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
@@ -845,7 +845,7 @@ function ClassManagerContent() {
   const activeClasses = classes.filter((item) => item.status === 'Hoạt động').length;
 
   return (
-    <div className="flex min-h-screen w-full bg-[#f4f7f9] text-slate-800">
+    <div className="flex min-h-screen w-full bg-[#f4f7f9] dark:bg-[#090a0f] text-slate-800 dark:text-slate-100 transition-colors">
       <AdminSidebar activeModule="classes" />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -859,10 +859,10 @@ function ClassManagerContent() {
                 <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">
                   Quản lý đào tạo
                 </p>
-                <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[28px]">
+                <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-[28px]">
                   Lớp học &amp; sinh viên
                 </h1>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   Theo dõi lớp học, danh sách sinh viên và các phiên thực hành, kiểm tra lập trình.
                 </p>
               </div>
@@ -872,11 +872,11 @@ function ClassManagerContent() {
                 <button
                   type="button"
                   onClick={handleExportClasses}
-                  title="Xuất toàn bộ danh sách lớp học ra file Excel/CSV"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+                  title="Xuất danh sách lớp học ra file Excel/CSV"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 cursor-pointer"
                 >
                   <Download className="h-4 w-4 text-slate-500" />
-                  <span>Xuất Excel</span>
+                  <span>Xuất danh sách lớp học</span>
                 </button>
 
                 {/* Nút Nhập Excel / CSV */}
@@ -891,7 +891,7 @@ function ClassManagerContent() {
                     }
                   }}
                   title="Nhập danh sách sinh viên / lớp học từ file Excel/CSV"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 cursor-pointer"
                 >
                   <FileSpreadsheet className="h-4 w-4 text-slate-500" />
                   <span>Nhập Excel/CSV</span>
@@ -915,26 +915,26 @@ function ClassManagerContent() {
                   label: 'Tổng số lớp',
                   value: classes.length,
                   icon: BookOpen,
-                  color: 'bg-blue-50 text-blue-600',
+                  color: 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400',
                 },
                 {
                   label: 'Lớp hoạt động',
                   value: activeClasses,
                   icon: UserRoundCheck,
-                  color: 'bg-emerald-50 text-emerald-600',
+                  color: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400',
                 },
                 {
                   label: 'Tổng sinh viên',
                   value: totalStudents,
                   icon: GraduationCap,
-                  color: 'bg-violet-50 text-violet-600',
+                  color: 'bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400',
                 },
               ].map((item) => {
                 const Icon = item.icon;
                 return (
                   <div
                     key={item.label}
-                    className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 shadow-xs"
+                    className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 shadow-xs dark:border-white/10 dark:bg-[#0d1017] transition-colors"
                   >
                     <span
                       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${item.color}`}
@@ -943,7 +943,7 @@ function ClassManagerContent() {
                     </span>
                     <div className="min-w-0">
                       <p className="text-[11px] font-medium text-slate-400">{item.label}</p>
-                      <p className="text-lg font-bold text-slate-900 leading-tight">{item.value}</p>
+                      <p className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{item.value}</p>
                     </div>
                   </div>
                 );
@@ -953,12 +953,12 @@ function ClassManagerContent() {
             {/* Bảng danh sách lớp & Panel sinh viên */}
             <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
               {/* Danh sách lớp với Toolbar tích hợp tinh gọn */}
-              <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs">
+              <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs dark:border-white/10 dark:bg-[#0d1017] transition-colors">
                 {/* Toolbar tích hợp ngay trên đầu bảng */}
                 <div className="border-b border-slate-100 p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-sm font-bold text-slate-900">Danh sách lớp</h2>
+                      <h2 className="text-sm font-bold text-slate-900 dark:text-white">Danh sách lớp</h2>
                       <p className="mt-0.5 text-xs text-slate-500">
                         {filteredClasses.length} lớp học • Nhấp chọn hàng để xem sinh viên
                       </p>
@@ -1025,7 +1025,7 @@ function ClassManagerContent() {
                 {/* Bảng danh sách lớp */}
                 <div className="w-full overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50/80 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
+                    <thead className="bg-slate-50/80 dark:bg-white/5 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-white/10">
                       <tr>
                         <th scope="col" className="px-4 py-2.5">
                           Lớp học
@@ -1050,7 +1050,7 @@ function ClassManagerContent() {
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs">
+                    <tbody className="divide-y divide-slate-100 dark:divide-white/10 text-xs">
                       {filteredClasses.map((classItem) => {
                         const isSelected = selectedClassId === classItem.id;
                         return (
@@ -1062,8 +1062,8 @@ function ClassManagerContent() {
                             }}
                             className={`transition-colors cursor-pointer ${
                               isSelected
-                                ? 'bg-blue-50/70 font-medium'
-                                : 'hover:bg-slate-50/70'
+                                ? 'bg-blue-50/70 dark:bg-blue-500/15 font-medium'
+                                : 'hover:bg-slate-50/70 dark:hover:bg-white/5'
                             }`}
                           >
                             <td className="px-4 py-3">
@@ -1076,7 +1076,7 @@ function ClassManagerContent() {
                                 <div>
                                   <p
                                     className={`font-bold ${
-                                      isSelected ? 'text-blue-700' : 'text-slate-900'
+                                      isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-slate-900 dark:text-white'
                                     }`}
                                   >
                                     {classItem.id}
@@ -1227,11 +1227,11 @@ function ClassManagerContent() {
               </section>
 
               {/* Panel sinh viên trong lớp đang chọn */}
-              <section className="flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs">
+              <section className="flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs dark:border-white/10 dark:bg-[#0d1017] transition-colors">
                 <div className="border-b border-slate-100 p-3.5">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-sm font-bold text-slate-900">Sinh viên lớp</h2>
+                      <h2 className="text-sm font-bold text-slate-900 dark:text-white">Sinh viên lớp</h2>
                       {selectedClass ? (
                         <p className="mt-0.5 text-xs font-semibold text-blue-700 truncate">
                           {selectedClass.id} • {selectedClass.name}
@@ -1277,7 +1277,7 @@ function ClassManagerContent() {
                     filteredStudents.map((student) => (
                       <div
                         key={student.id}
-                        className="flex items-center gap-2.5 p-3 hover:bg-slate-50/70 transition"
+                        className="flex items-center gap-2.5 p-3 hover:bg-slate-50/70 dark:hover:bg-white/5 transition"
                       >
                         <div
                           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${getAvatarColor(
@@ -1288,7 +1288,7 @@ function ClassManagerContent() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-1">
-                            <p className="text-xs font-bold text-slate-800 truncate">
+                            <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
                               {student.name}
                             </p>
                             <span className="rounded bg-emerald-50 px-1.5 py-0.2 text-[9.5px] font-bold text-emerald-700 shrink-0">

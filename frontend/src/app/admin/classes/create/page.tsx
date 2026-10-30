@@ -237,7 +237,7 @@ export default function CreateClassPage() {
   }
 
   return (
-    <div className="flex min-h-screen w-full bg-[#f4f7f9] text-slate-800">
+    <div className="flex min-h-screen w-full bg-[#f4f7f9] dark:bg-[#090a0f] text-slate-800 dark:text-slate-100 transition-colors">
       <AdminSidebar activeModule="classes" />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -254,12 +254,12 @@ export default function CreateClassPage() {
                     href="/admin/classes"
                     title="Về danh sách lớp"
                     aria-label="Về danh sách lớp"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition hover:bg-blue-100 cursor-pointer"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition hover:bg-blue-100 dark:bg-blue-500/15 dark:text-blue-400 dark:hover:bg-blue-500/25 cursor-pointer"
                   >
                     <ArrowLeft className="h-5 w-5" />
                   </Link>
                   <div>
-                    <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                    <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
                       Tạo lớp • Thông tin
                     </h1>
                     <p className="mt-0.5 text-xs sm:text-sm text-slate-500">
@@ -269,7 +269,7 @@ export default function CreateClassPage() {
                 </div>
 
                 {/* Khung Form chính màu trắng */}
-                <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm">
+                <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm dark:border-white/10 dark:bg-[#0d1017]">
                   {/* Hàng 2x2: Mã lớp, Tên lớp, Học kỳ, Giảng viên phụ trách */}
                   <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                     <div>
@@ -376,8 +376,8 @@ export default function CreateClassPage() {
                   </div>
 
                   {/* Section con: Bước 2 • Danh sách sinh viên của lớp */}
-                  <div className="mt-8 rounded-2xl border border-slate-200/80 bg-[#f8fafc]/70 p-5 sm:p-7">
-                    <h3 className="text-base font-extrabold text-slate-900">
+                  <div className="mt-8 rounded-2xl border border-slate-200/80 bg-[#f8fafc]/70 p-5 sm:p-7 dark:border-white/10 dark:bg-white/5">
+                    <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
                       Bước 2 • Danh sách sinh viên của lớp
                     </h3>
                     <p className="mt-0.5 text-xs text-slate-500">
@@ -392,7 +392,7 @@ export default function CreateClassPage() {
                         className={`h-10 rounded-xl px-5 text-xs font-semibold transition cursor-pointer ${
                           studentInputMode === 'file'
                             ? 'bg-[#2563eb] text-white shadow-sm shadow-blue-500/20'
-                            : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                            : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10'
                         }`}
                       >
                         Nhập từ file
@@ -404,7 +404,7 @@ export default function CreateClassPage() {
                         className={`h-10 rounded-xl px-5 text-xs font-semibold transition cursor-pointer ${
                           studentInputMode === 'manual'
                             ? 'bg-[#2563eb] text-white shadow-sm shadow-blue-500/20'
-                            : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                            : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10'
                         }`}
                       >
                         Tạo nhanh
@@ -751,12 +751,12 @@ export default function CreateClassPage() {
                     onClick={() => setCreateStep(1)}
                     title="Quay lại sửa thông tin"
                     aria-label="Quay lại sửa thông tin"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition hover:bg-blue-100 cursor-pointer"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition hover:bg-blue-100 dark:bg-blue-500/15 dark:text-blue-400 dark:hover:bg-blue-500/25 cursor-pointer"
                   >
                     <ArrowLeft className="h-5 w-5" />
                   </button>
                   <div>
-                    <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                    <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
                       Tạo lớp • Xác nhận & Hoàn tất
                     </h1>
                     <p className="mt-0.5 text-xs sm:text-sm text-slate-500">
@@ -765,7 +765,7 @@ export default function CreateClassPage() {
                   </div>
                 </div>
 
-                <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm">
+                <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm dark:border-white/10 dark:bg-[#0d1017]">
                   {/* Tóm tắt thông tin lớp */}
                   <div className="grid grid-cols-2 gap-4 rounded-xl border border-slate-100 bg-[#f8fafc] p-4 text-xs sm:grid-cols-4">
                     <div>
@@ -808,7 +808,7 @@ export default function CreateClassPage() {
                     <button
                       type="button"
                       onClick={() => setCreateStep(1)}
-                      className="h-11 rounded-xl border border-slate-200 px-6 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+                      className="h-11 rounded-xl border border-slate-200 px-6 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 cursor-pointer"
                     >
                       Quay lại sửa thông tin
                     </button>

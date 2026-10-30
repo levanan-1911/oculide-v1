@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import type { ReactNode } from 'react';
+import React from 'react';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -19,9 +19,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({
   children,
-}: {
-  children: ReactNode;
-}) {
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html lang="vi">
       <body className="min-h-screen font-sans text-foreground antialiased">{children}</body>

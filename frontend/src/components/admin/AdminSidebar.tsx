@@ -79,12 +79,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         href: '/admin/monitoring',
         icon: Flag,
       },
-      {
-        id: 'reports',
-        label: 'Kết quả & báo cáo',
-        href: '/admin/reports',
-        icon: BookOpen,
-      },
     ],
   },
   {
@@ -308,7 +302,7 @@ export default function AdminSidebar({
                 Hồ sơ cá nhân
               </Link>
               <Link
-                href="/reset-password"
+                href="/admin/profile?tab=security"
                 onClick={() => setIsMenuOpen(false)}
                 className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600"
               >

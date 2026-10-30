@@ -252,7 +252,7 @@ export default function InstructorSidebar({
                 Hồ sơ cá nhân
               </Link>
               <Link
-                href="/reset-password"
+                href="/instructor/profile?tab=security"
                 onClick={() => setIsMenuOpen(false)}
                 className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600"
               >

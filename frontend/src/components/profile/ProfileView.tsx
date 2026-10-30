@@ -35,6 +35,77 @@ export interface ProfileViewProps {
   role: 'admin' | 'instructor' | 'student';
 }
 
+// Giới hạn số lần nhập sai mật khẩu cho Giảng viên
+const INSTRUCTOR_PASSWORD_MAX_ATTEMPTS = 5;
+const INSTRUCTOR_PASSWORD_LOCKOUT_MS = 15 * 60 * 1000;
+
+// Lưu trữ thông tin số lần nhập sai mật khẩu và thời gian khóa trong localStorage
+type InstructorPasswordAttemptRecord = {
+  failedAttempts: number;
+  lockedUntil: number | null;
+};
+// Lấy khóa lưu trữ cho người dùng hiện tại
+function getInstructorPasswordAttemptStorageKey(): string {
+  let userScope = 'current-user';
+
+  try {
+    const rawUser = localStorage.getItem('oculide_user');
+    const user = rawUser ? JSON.parse(rawUser) : null;
+
+    userScope = String(
+      user?.user_id ??
+      user?.email ??
+      user?.username ??
+      userScope
+    );
+  } catch {
+    // Dùng khóa mặc định nếu không đọc được thông tin người dùng.
+  }
+
+  return `oculide_instructor_password_attempts:${userScope}`;
+}
+// Đọc thông tin số lần nhập sai mật khẩu và thời gian khóa từ localStorage
+function readInstructorPasswordAttemptRecord(): InstructorPasswordAttemptRecord {
+  try {
+    const key = getInstructorPasswordAttemptStorageKey();
+    const raw = localStorage.getItem(key);
+
+    if (!raw) {
+      return { failedAttempts: 0, lockedUntil: null };
+    }
+
+    const record = JSON.parse(raw);
+
+    const failedAttempts = Number.isFinite(record?.failedAttempts)
+      ? Math.max(0, Math.floor(record.failedAttempts))
+      : 0;
+
+    const lockedUntil = Number.isFinite(record?.lockedUntil)
+      ? record.lockedUntil
+      : null;
+
+    if (lockedUntil !== null && lockedUntil <= Date.now()) {
+      localStorage.removeItem(key);
+
+      return { failedAttempts: 0, lockedUntil: null };
+    }
+
+    return { failedAttempts, lockedUntil };
+  } catch {
+    return { failedAttempts: 0, lockedUntil: null };
+  }
+}
+
+// Lưu thông tin số lần nhập sai mật khẩu và thời gian khóa vào localStorage
+function formatLockoutCountdown(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  return `${String(minutes).padStart(2, '0')}:${String(
+    remainingSeconds
+  ).padStart(2, '0')}`;
+}
+
 export default function ProfileView({ role }: ProfileViewProps) {
   const [activeTab, setActiveTab] = useState<'info' | 'security' | 'activity'>('info');
 
@@ -67,13 +138,68 @@ export default function ProfileView({ role }: ProfileViewProps) {
   const [major, setMajor] = useState('Kỹ thuật Phần mềm (Software Engineering)');
 
   // Đổi mật khẩu
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  // Đổi mật khẩu
+const [currentPassword, setCurrentPassword] = useState('');
+const [newPassword, setNewPassword] = useState('');
+const [confirmPassword, setConfirmPassword] = useState('');
+
+const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+const [showNewPassword, setShowNewPassword] = useState(false);
+const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+const [failedCurrentPasswordAttempts, setFailedCurrentPasswordAttempts] =
+  useState(0);
+
+const [passwordLockoutUntil, setPasswordLockoutUntil] =
+  useState<number | null>(null);
+
+const [lockoutClock, setLockoutClock] = useState(0);
+
+const [passwordMsg, setPasswordMsg] = useState<{
+  type: 'success' | 'error';
+  text: string;
+} | null>(null);
+
+const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+// Chính sách mật khẩu áp dụng cho Admin, Instructor và Student
+const passwordRequirements = [
+  {
+    label: 'Ít nhất 12 ký tự',
+    met: newPassword.length >= 12,
+  },
+  {
+    label: 'Có ít nhất 1 chữ hoa (A–Z)',
+    met: /[A-Z]/.test(newPassword),
+  },
+  {
+    label: 'Có ít nhất 1 chữ thường (a–z)',
+    met: /[a-z]/.test(newPassword),
+  },
+  {
+    label: 'Có ít nhất 1 chữ số (0–9)',
+    met: /[0-9]/.test(newPassword),
+  },
+  {
+    label: 'Có ít nhất 1 ký tự đặc biệt',
+    met: /[!@#$%^&*()_+\-=[\]{};:'",.<>/?\\|`~]/.test(newPassword),
+  },
+];
+
+const isPasswordStrong =
+  passwordRequirements.every((item) => item.met);
+
+const isInstructorPasswordLocked =
+  role === 'instructor' &&
+  passwordLockoutUntil !== null &&
+  passwordLockoutUntil > lockoutClock;
+
+const lockoutSecondsRemaining = isInstructorPasswordLocked
+  ? Math.max(
+      0,
+      Math.ceil((passwordLockoutUntil! - lockoutClock) / 1000)
+    )
+  : 0;
 
   // Cập nhật thông tin
   const [infoMsg, setInfoMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -102,6 +228,49 @@ export default function ProfileView({ role }: ProfileViewProps) {
       // ignore
     }
   }, []);
+
+  // Khôi phục số lần nhập sai và thời gian khóa.
+useEffect(() => {
+  if (role !== 'instructor') return;
+
+  const record = readInstructorPasswordAttemptRecord();
+
+  setFailedCurrentPasswordAttempts(record.failedAttempts);
+  setPasswordLockoutUntil(record.lockedUntil);
+  setLockoutClock(Date.now());
+}, [role]);
+
+// Cập nhật đồng hồ đếm ngược mỗi giây.
+useEffect(() => {
+  if (role !== 'instructor' || passwordLockoutUntil === null) {
+    return;
+  }
+
+  const updateCountdown = () => {
+    const now = Date.now();
+    setLockoutClock(now);
+
+    if (now >= passwordLockoutUntil) {
+      try {
+        localStorage.removeItem(
+          getInstructorPasswordAttemptStorageKey()
+        );
+      } catch {
+        // Vẫn cho phép mở khóa theo state trong component.
+      }
+
+      setFailedCurrentPasswordAttempts(0);
+      setPasswordLockoutUntil(null);
+      setPasswordMsg(null);
+    }
+  };
+
+  updateCountdown();
+
+  const intervalId = window.setInterval(updateCountdown, 1000);
+
+  return () => window.clearInterval(intervalId);
+}, [passwordLockoutUntil, role]);
 
   // Xử lý upload ảnh đại diện (Preview & lưu local)
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -161,35 +330,101 @@ export default function ProfileView({ role }: ProfileViewProps) {
 
   // Đổi mật khẩu
   const handlePasswordChange = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordMsg(null);
+  e.preventDefault();
+  setPasswordMsg(null);
 
-    if (!currentPassword) {
-      setPasswordMsg({ type: 'error', text: 'Vui lòng nhập mật khẩu hiện tại.' });
-      return;
-    }
-    if (newPassword.length < 8) {
-      setPasswordMsg({ type: 'error', text: 'Mật khẩu mới phải có ít nhất 8 ký tự.' });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordMsg({ type: 'error', text: 'Xác nhận mật khẩu mới không khớp.' });
-      return;
-    }
+  // Kiểm tra trạng thái khóa của Instructor.
+  if (role === 'instructor') {
+    const savedRecord = readInstructorPasswordAttemptRecord();
 
-    setIsChangingPassword(true);
-    setTimeout(() => {
-      setIsChangingPassword(false);
+    if (
+      savedRecord.lockedUntil !== null &&
+      savedRecord.lockedUntil > Date.now()
+    ) {
+      setFailedCurrentPasswordAttempts(savedRecord.failedAttempts);
+      setPasswordLockoutUntil(savedRecord.lockedUntil);
+      setLockoutClock(Date.now());
+
       setPasswordMsg({
-        type: 'success',
-        text: 'Đổi mật khẩu thành công! Hãy dùng mật khẩu mới trong lần đăng nhập tới.',
+        type: 'error',
+        text: 'Thao tác đổi mật khẩu đang bị khóa. Vui lòng thử lại sau.',
       });
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setTimeout(() => setPasswordMsg(null), 4000);
-    }, 600);
-  };
+
+      return;
+    }
+  }
+
+  if (!currentPassword) {
+    setPasswordMsg({
+      type: 'error',
+      text: 'Vui lòng nhập mật khẩu hiện tại.',
+    });
+    return;
+  }
+
+  // Tất cả role phải đáp ứng đầy đủ chính sách mật khẩu mới.
+  const unmetRequirement = passwordRequirements.find(
+    (item) => !item.met
+  );
+
+  if (unmetRequirement) {
+    setPasswordMsg({
+      type: 'error',
+      text: `Mật khẩu mới chưa đáp ứng yêu cầu: ${unmetRequirement.label}.`,
+    });
+    return;
+  }
+
+  if (newPassword === currentPassword) {
+    setPasswordMsg({
+      type: 'error',
+      text: 'Mật khẩu mới phải khác mật khẩu hiện tại.',
+    });
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    setPasswordMsg({
+      type: 'error',
+      text: 'Xác nhận mật khẩu mới không khớp.',
+    });
+    return;
+  }
+
+  // CHẾ ĐỘ GIẢ LẬP TẠM THỜI: tất cả role dùng cùng luồng như Admin/Student.
+  // Không gọi API và không thay đổi mật khẩu thật trong backend/database.
+  setIsChangingPassword(true);
+
+  window.setTimeout(() => {
+    setIsChangingPassword(false);
+
+    // Mô phỏng trạng thái thành công cho Instructor, đồng thời xóa bộ đếm cũ.
+    if (role === 'instructor') {
+      try {
+        localStorage.removeItem(getInstructorPasswordAttemptStorageKey());
+      } catch {
+        // Bỏ qua nếu không thể truy cập localStorage.
+      }
+      setFailedCurrentPasswordAttempts(0);
+      setPasswordLockoutUntil(null);
+      setLockoutClock(Date.now());
+    }
+
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+
+    setPasswordMsg({
+      type: 'success',
+      text: 'Đổi mật khẩu thành công! ',
+    });
+
+    window.setTimeout(() => setPasswordMsg(null), 5000);
+  }, 600);
+};
 
   const initials =
     name
@@ -371,7 +606,7 @@ export default function ProfileView({ role }: ProfileViewProps) {
               Chi tiết thông tin tài khoản ({roleMeta.title})
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Cập nhật thông tin định danh và liên lạc trong hệ thống Oculide
+              Mật khẩu mới phải có ít nhất 12 ký tự, bao gồm chữ cái in hoa, chữ cái in thường, số và ký tự đặc biệt.
             </p>
           </div>
 
@@ -541,7 +776,7 @@ export default function ProfileView({ role }: ProfileViewProps) {
               Đổi mật khẩu tài khoản
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Nên dùng mật khẩu có độ dài tối thiểu 8 ký tự, kết hợp chữ số và ký tự đặc biệt
+              Mật khẩu mới phải có ít nhất 12 ký tự, bao gồm chữ cái in hoa, chữ cái in thường, số và ký tự đặc biệt.
             </p>
           </div>
 
@@ -562,81 +797,236 @@ export default function ProfileView({ role }: ProfileViewProps) {
             </div>
           )}
 
+          {role === 'instructor' && isInstructorPasswordLocked && (
+            <div
+              role="alert"
+              className="mb-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+
+              <span>
+                Bạn đã nhập sai mật khẩu hiện tại quá nhiều lần.
+                Thao tác đổi mật khẩu đang bị khóa.
+                <span className="mt-1 block font-bold">
+                  Có thể thử lại sau{' '}
+                  {formatLockoutCountdown(lockoutSecondsRemaining)} (phút:giây).
+                </span>
+              </span>
+            </div>
+          )}
+
           <div className="max-w-md space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Mật khẩu hiện tại
-              </label>
-              <div className="relative">
-                <input
-                  type={showCurrentPassword ? 'text' : 'password'}
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 pr-10 text-xs text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                  placeholder="Nhập mật khẩu hiện tại"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCurrentPassword((prev) => !prev)}
-                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
+  {/* Mật khẩu hiện tại */}
+  <div>
+    <label className="mb-1.5 block text-xs font-bold text-slate-700">
+      Mật khẩu hiện tại
+    </label>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Mật khẩu mới
-              </label>
-              <div className="relative">
-                <input
-                  type={showNewPassword ? 'text' : 'password'}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 pr-10 text-xs text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                  placeholder="Tối thiểu 8 ký tự"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNewPassword((prev) => !prev)}
-                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
+    <div className="relative">
+      <input
+        type={showCurrentPassword ? 'text' : 'password'}
+        value={currentPassword}
+        onChange={(e) => setCurrentPassword(e.target.value)}
+        disabled={
+          role === 'instructor' &&
+          (isInstructorPasswordLocked || isChangingPassword)
+        }
+        autoComplete="current-password"
+        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 pr-10 text-xs text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:cursor-not-allowed disabled:bg-slate-50"
+        placeholder="Nhập mật khẩu hiện tại"
+      />
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Xác nhận mật khẩu mới
-              </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                placeholder="Nhập lại mật khẩu mới"
-              />
-            </div>
+      <button
+        type="button"
+        onClick={() => setShowCurrentPassword((prev) => !prev)}
+        disabled={isChangingPassword}
+        aria-label={
+          showCurrentPassword ? 'Ẩn mật khẩu hiện tại' : 'Hiện mật khẩu hiện tại'
+        }
+        className="absolute right-3 top-2.5 cursor-pointer text-slate-400 hover:text-slate-600"
+      >
+        {showCurrentPassword ? (
+          <EyeOff className="h-4 w-4" />
+        ) : (
+          <Eye className="h-4 w-4" />
+        )}
+      </button>
+    </div>
 
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={isChangingPassword}
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-xs transition hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
-              >
-                {isChangingPassword ? (
-                  <>Đang cập nhật...</>
-                ) : (
-                  <>
-                    <KeyRound className="h-4 w-4" />
-                    Cập nhật mật khẩu
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
+    {/* Hiển thị số lần thử còn lại */}
+    {role === 'instructor' &&
+      failedCurrentPasswordAttempts > 0 &&
+      !isInstructorPasswordLocked && (
+        <p className="mt-1.5 text-[11px] text-amber-700" aria-live="polite">
+          Đã nhập sai {failedCurrentPasswordAttempts}/
+          {INSTRUCTOR_PASSWORD_MAX_ATTEMPTS} lần. Còn{' '}
+          {INSTRUCTOR_PASSWORD_MAX_ATTEMPTS -
+            failedCurrentPasswordAttempts}{' '}
+          lần thử.
+        </p>
+      )}
+
+    {/* Thông báo khóa */}
+    {role === 'instructor' && isInstructorPasswordLocked && (
+      <p className="mt-1.5 text-xs font-semibold text-red-600" role="alert">
+        Đã vượt quá số lần thử. Vui lòng chờ{' '}
+        {formatLockoutCountdown(lockoutSecondsRemaining)} (phút:giây).
+      </p>
+    )}
+  </div>
+
+  {/* Mật khẩu mới */}
+  <div>
+    <label className="mb-1.5 block text-xs font-bold text-slate-700">
+      Mật khẩu mới
+    </label>
+
+    <div className="relative">
+      <input
+        type={showNewPassword ? 'text' : 'password'}
+        value={newPassword}
+        onChange={(e) => setNewPassword(e.target.value)}
+        disabled={
+          role === 'instructor' &&
+          (isInstructorPasswordLocked || isChangingPassword)
+        }
+        autoComplete="new-password"
+        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 pr-10 text-xs text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:cursor-not-allowed disabled:bg-slate-50"
+        placeholder="Nhập mật khẩu mới"
+      />
+
+      <button
+        type="button"
+        onClick={() => setShowNewPassword((prev) => !prev)}
+        disabled={isChangingPassword}
+        aria-label={showNewPassword ? 'Ẩn mật khẩu mới' : 'Hiện mật khẩu mới'}
+        className="absolute right-3 top-2.5 cursor-pointer text-slate-400 hover:text-slate-600"
+      >
+        {showNewPassword ? (
+          <EyeOff className="h-4 w-4" />
+        ) : (
+          <Eye className="h-4 w-4" />
+        )}
+      </button>
+    </div>
+
+    {/* Checklist chính sách mật khẩu áp dụng cho mọi role */}
+    <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+        <p className="mb-2 text-[11px] font-bold text-slate-700">
+          Yêu cầu mật khẩu
+        </p>
+
+        <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {passwordRequirements.map((requirement) => (
+            <li
+              key={requirement.label}
+              className={`flex items-center gap-1.5 text-[11px] ${
+                requirement.met
+                  ? 'text-emerald-700'
+                  : newPassword.length > 0
+                    ? 'text-red-600'
+                    : 'text-slate-500'
+              }`}
+            >
+              <span aria-hidden="true">
+                {requirement.met ? '✓' : '○'}
+              </span>
+              <span>{requirement.label}</span>
+            </li>
+          ))}
+        </ul>
+
+        {newPassword.length > 0 && (
+          <p
+            className={`mt-2 text-[11px] font-semibold ${
+              isPasswordStrong
+                ? 'text-emerald-700'
+                : 'text-slate-500'
+            }`}
+          >
+            {isPasswordStrong
+              ? 'Mật khẩu đã đáp ứng tất cả yêu cầu.'
+              : 'Hãy đáp ứng đầy đủ các yêu cầu trên.'}
+          </p>
+        )}
+    </div>
+  </div>
+
+  {/* Xác nhận mật khẩu mới */}
+  <div>
+    <label className="mb-1.5 block text-xs font-bold text-slate-700">
+      Xác nhận mật khẩu mới
+    </label>
+
+    <div className="relative">
+      <input
+        type={showConfirmPassword ? 'text' : 'password'}
+        value={confirmPassword}
+        onChange={(e) => setConfirmPassword(e.target.value)}
+        disabled={
+          role === 'instructor' &&
+          (isInstructorPasswordLocked || isChangingPassword)
+        }
+        autoComplete="new-password"
+        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 pr-10 text-xs text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:cursor-not-allowed disabled:bg-slate-50"
+        placeholder="Nhập lại mật khẩu mới"
+      />
+
+      <button
+        type="button"
+        onClick={() => setShowConfirmPassword((prev) => !prev)}
+        disabled={isChangingPassword}
+        aria-label={
+          showConfirmPassword
+            ? 'Ẩn mật khẩu xác nhận'
+            : 'Hiện mật khẩu xác nhận'
+        }
+        className="absolute right-3 top-2.5 cursor-pointer text-slate-400 hover:text-slate-600"
+      >
+        {showConfirmPassword ? (
+          <EyeOff className="h-4 w-4" />
+        ) : (
+          <Eye className="h-4 w-4" />
+        )}
+      </button>
+    </div>
+
+    {confirmPassword.length > 0 && (
+      <p
+        className={`mt-1.5 text-[11px] ${
+          confirmPassword === newPassword
+            ? 'text-emerald-700'
+            : 'text-red-600'
+        }`}
+      >
+        {confirmPassword === newPassword
+          ? 'Mật khẩu xác nhận khớp.'
+          : 'Mật khẩu xác nhận chưa khớp.'}
+      </p>
+    )}
+  </div>
+
+  {/* Nút cập nhật */}
+  <div className="pt-2">
+    <button
+      type="submit"
+      disabled={
+        isChangingPassword ||
+        (role === 'instructor' && isInstructorPasswordLocked)
+      }
+      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white shadow-xs transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {isChangingPassword ? (
+        <>Đang cập nhật...</>
+      ) : (
+        <>
+          <KeyRound className="h-4 w-4" />
+          Cập nhật mật khẩu
+        </>
+      )}
+    </button>
+  </div>
+</div>
         </form>
       )}
 

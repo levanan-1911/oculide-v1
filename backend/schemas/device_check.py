@@ -22,3 +22,17 @@ class DeviceCheckResponse(BaseModel):
     browser_info: Optional[str] = None
     is_passed: bool
     checked_at: datetime
+
+class RoomDeviceCheckItem(BaseModel):
+    check_id: int
+    session_id: int
+    student_id: int
+    full_name: Optional[str] = None
+    student_code: Optional[str] = None
+    camera_status: bool
+    mic_status: bool
+    network_latency_ms: Optional[int] = None
+    os_info: Optional[str] = None
+    browser_info: Optional[str] = None
+    is_passed: bool
+    checked_at: datetime

@@ -51,18 +51,19 @@ const nextConfig = {
     ];
   },
   async rewrites() {
+    const backendUrl = process.env.BACKEND_INTERNAL_URL || 'http://localhost:8000';
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:8000/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
       },
       {
         source: '/docs',
-        destination: 'http://localhost:8000/docs',
+        destination: `${backendUrl}/docs`,
       },
       {
         source: '/openapi.json',
-        destination: 'http://localhost:8000/openapi.json',
+        destination: `${backendUrl}/openapi.json`,
       },
     ];
   },

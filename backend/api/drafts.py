@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends, status
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from schemas.draft import DraftSaveRequest, DraftResponse
 from core.permissions import get_current_user
-from database.draft_db import upsert_code_draft, get_code_draft, delete_code_draft
+from database.draft_db import upsert_code_draft, get_code_draft, get_code_drafts_by_session, delete_code_draft
 from database.session_db import get_session_by_id
 
 router = APIRouter()
@@ -34,13 +34,28 @@ async def save_code_draft(
     )
     return draft
 
+@router.get("/session/{session_id}", response_model=List[DraftResponse])
+async def get_all_session_code_drafts(
+    session_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lấy toàn bộ các bản nháp code của phiên thi khi sinh viên tải lại trang (F5/Reload)"""
+    session = get_session_by_id(session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phiên làm bài")
+    
+    if current_user["role"] == "student" and session["student_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền truy cập bản nháp này")
+        
+    return get_code_drafts_by_session(session_id)
+
 @router.get("/session/{session_id}/question/{question_id}", response_model=DraftResponse)
 async def get_latest_code_draft(
     session_id: int,
     question_id: int,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    """Lấy bản nháp code gần nhất khi sinh viên tải lại trang (F5/Reload)"""
+    """Lấy bản nháp code gần nhất của một câu hỏi cụ thể"""
     session = get_session_by_id(session_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phiên làm bài")

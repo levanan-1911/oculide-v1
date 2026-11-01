@@ -182,13 +182,17 @@ def get_room_dashboard_data(room_id: int) -> List[Dict]:
                 s.started_at,
                 COALESCE(DATEDIFF(MINUTE, s.started_at, GETDATE()), 0) as duration_minutes,
                 COALESCE(v_stat.violation_count, 0) as violation_count,
+                COALESCE(v_stat.pending_violation_count, 0) as pending_violation_count,
+                COALESCE(v_stat.confirmed_violation_count, 0) as confirmed_violation_count,
                 v_stat.last_snapshot_url
             FROM Sessions s
             JOIN Users u ON s.student_id = u.user_id
             LEFT JOIN (
                 SELECT 
                     session_id,
-                    COUNT(violation_id) as violation_count,
+                    COUNT(CASE WHEN review_status != 'rejected' THEN 1 END) as violation_count,
+                    COUNT(CASE WHEN review_status = 'pending' THEN 1 END) as pending_violation_count,
+                    COUNT(CASE WHEN review_status = 'confirmed' THEN 1 END) as confirmed_violation_count,
                     MAX(snapshot_url) as last_snapshot_url
                 FROM Violations
                 GROUP BY session_id

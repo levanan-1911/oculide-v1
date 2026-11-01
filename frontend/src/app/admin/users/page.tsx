@@ -54,6 +54,22 @@ export interface UserRow {
 export interface ImportPreviewRow extends UserRow {
   rowNumber: number;
   missingFields: string[];
+  isAutoEmail?: boolean;
+}
+
+export interface ImportMappingInfo {
+  headerRowIndex: number;
+  codeColName?: string;
+  nameColName?: string;
+  splitLastNameColName?: string;
+  deptColName?: string;
+  emailColName?: string;
+  roleColName?: string;
+  phoneColName?: string;
+  ignoredColumns: string[];
+  detectedClass?: string;
+  detectedDomain?: string;
+  autoEmailCount: number;
 }
 
 const INITIAL_USERS: UserRow[] = [
@@ -166,6 +182,7 @@ export default function UserManagerPage() {
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [importError, setImportError] = useState('');
   const [isParsing, setIsParsing] = useState(false);
+  const [importMappingInfo, setImportMappingInfo] = useState<ImportMappingInfo | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
@@ -377,7 +394,7 @@ export default function UserManagerPage() {
     return extractedRows;
   }
 
-  // Tách dòng CSV/TSV giữ nguyên cả các cột rỗng (ví dụ: "SV001,,an@school.edu.vn")
+  // Tách dòng CSV/TSV/HTML/XML giữ nguyên cả các cột rỗng (ví dụ: "SV001,,an@school.edu.vn")
   function parseTextToRows(text: string): string[][] {
     const trimmedText = text.trim();
     if (!trimmedText) return [];
@@ -392,6 +409,24 @@ export default function UserManagerPage() {
             Array.from(tr.querySelectorAll('th, td')).map((cell) => (cell.textContent || '').trim())
           )
           .filter((r) => r.some((c) => c !== ''));
+      }
+    }
+
+    // Hỗ trợ trường hợp tệp .xls XML Spreadsheet 2003 (phổ biến ở các cổng đào tạo đại học)
+    if (trimmedText.includes('<Workbook') || trimmedText.includes('urn:schemas-microsoft-com:office:spreadsheet')) {
+      try {
+        const doc = new DOMParser().parseFromString(trimmedText, 'application/xml');
+        const rows = Array.from(doc.getElementsByTagName('Row'));
+        if (rows.length > 0) {
+          return rows
+            .map((r) => {
+              const cells = Array.from(r.getElementsByTagName('Cell'));
+              return cells.map((c) => (c.textContent || '').trim());
+            })
+            .filter((r) => r.some((c) => c !== ''));
+        }
+      } catch {
+        // Dự phòng tiếp tục phân tích dạng dòng text
       }
     }
 
@@ -422,7 +457,7 @@ export default function UserManagerPage() {
     });
   }
 
-  // Kiểm tra 4 trường bắt buộc (Mã SV/GV, Họ và tên, Email, Vai trò) và ghi nhận cảnh báo chi tiết nhưng vẫn cho phép nhập
+  // Đọc và đối chiếu chính xác các trường thuộc bảng Người dùng (User table), loại bỏ các trường thừa (điểm số, STT, ghi chú...)
   function evaluateExtractedRows(rows: string[][]) {
     if (rows.length === 0) {
       setImportError('Tệp rỗng hoặc không có dòng dữ liệu nào.');
@@ -430,133 +465,353 @@ export default function UserManagerPage() {
     }
 
     const warnings: string[] = [];
-    const firstRow = rows[0].map((c) => c.trim().toLowerCase());
+    let detectedDomain = 'school.edu.vn';
+    let detectedClass = '';
+    let headerRowIndex = -1;
 
-    const isHeaderRow = firstRow.some(
-      (cell) =>
-        cell.includes('mã') ||
-        cell.includes('mssv') ||
-        cell.includes('msgv') ||
-        cell.includes('code') ||
-        cell.includes('họ') ||
-        cell.includes('tên') ||
-        cell.includes('name') ||
-        cell === 'email' ||
-        cell.includes('địa chỉ email') ||
-        cell.includes('vai trò') ||
-        cell.includes('role')
-    );
+    // 1. Quét các dòng đầu (tối đa 35 dòng) để tìm dòng tiêu đề thực sự và trích xuất ngữ cảnh (Lớp, Tên trường)
+    for (let i = 0; i < Math.min(rows.length, 35); i++) {
+      const rowText = rows[i].join(' ').trim();
+      const lowerRowText = rowText.toLowerCase();
 
-    let codeIdx = 0;
-    let nameIdx = 1;
-    let emailIdx = 2;
-    let roleIdx = 3;
-
-    if (isHeaderRow) {
-      const foundCodeIdx = firstRow.findIndex(
-        (c) =>
-          c.includes('mã') ||
-          c.includes('mssv') ||
-          c.includes('msgv') ||
-          c.includes('code') ||
-          c === 'id' ||
-          c.includes('tài khoản')
-      );
-      const foundNameIdx = firstRow.findIndex(
-        (c, idx) =>
-          idx !== foundCodeIdx &&
-          (c.includes('họ') || c.includes('tên') || c.includes('name'))
-      );
-      const foundEmailIdx = firstRow.findIndex(
-        (c) => c.includes('email') || c.includes('mail') || c.includes('thư')
-      );
-      const foundRoleIdx = firstRow.findIndex(
-        (c) => c.includes('vai trò') || c.includes('role') || c.includes('chức vụ') || c.includes('phân quyền')
-      );
-
-      const missingHeaderCols: string[] = [];
-      if (foundCodeIdx === -1) missingHeaderCols.push('Mã sinh viên / Mã giảng viên');
-      if (foundNameIdx === -1) missingHeaderCols.push('Họ và tên');
-      if (foundEmailIdx === -1) missingHeaderCols.push('Email');
-      if (foundRoleIdx === -1) missingHeaderCols.push('Vai trò');
-
-      if (missingHeaderCols.length > 0) {
-        warnings.push(
-          `Tệp thiếu cột tiêu đề bắt buộc: [${missingHeaderCols.join(', ')}]. Các trường thiếu được đánh dấu để bổ sung sau.`
-        );
+      // Nhận diện tên trường/domain (ví dụ: Duy Tân / DTU)
+      if (lowerRowText.includes('duy tân') || lowerRowText.includes('dtu')) {
+        detectedDomain = 'dtu.edu.vn';
       }
 
-      codeIdx = foundCodeIdx;
-      nameIdx = foundNameIdx;
-      emailIdx = foundEmailIdx;
-      roleIdx = foundRoleIdx;
-    } else {
-      const maxCols = Math.max(...rows.map((r) => r.length));
-      if (maxCols < 4) {
-        const missingCount = 4 - maxCols;
-        warnings.push(
-          `Tệp chỉ có ${maxCols}/4 cột (thiếu ${missingCount} cột so với chuẩn: Mã SV/GV, Họ và tên, Email, Vai trò).`
-        );
+      // Trích xuất mã Lớp từ metadata (ví dụ: "LỚP: CMU-CS 316 AIS" hoặc "Lớp: SE1848")
+      const classMatch = rowText.match(/(?:lớp|class)\s*[:=]\s*([a-zA-Z0-9_\-\s]{3,35}?)(?:\s*[-–;]|\s*$)/i);
+      if (classMatch && !detectedClass) {
+        detectedClass = classMatch[1].trim();
+      }
+
+      // Kiểm tra xem dòng này có phải là dòng tiêu đề các cột dữ liệu không
+      const cells = rows[i].map((c) => (c || '').trim().toLowerCase());
+
+      const hasCodeCol = cells.some(
+        (c) =>
+          (c.includes('mã sv') ||
+            c.includes('mssv') ||
+            c.includes('mã sinh viên') ||
+            c.includes('mã gv') ||
+            c.includes('msgv') ||
+            c.includes('mã giảng viên') ||
+            c.includes('mã cán bộ') ||
+            c.includes('mã số sinh viên') ||
+            c.includes('mã số') ||
+            c === 'mã' ||
+            c === 'code' ||
+            c.includes('tài khoản')) &&
+          !c.includes('stt') &&
+          !c.includes('thứ tự') &&
+          !c.includes('môn') &&
+          !c.includes('học phần')
+      );
+
+      const hasNameCol = cells.some(
+        (c) =>
+          c.includes('họ và tên') ||
+          c.includes('họ & tên') ||
+          c.includes('họ tên') ||
+          c.includes('họ và tên đệm') ||
+          c.includes('full name') ||
+          c.includes('fullname')
+      );
+
+      // Nếu dòng có cả cột Mã và cột Họ Tên, hoặc có nhiều hơn 2 cột chuẩn
+      if (hasCodeCol && hasNameCol) {
+        headerRowIndex = i;
+        break;
+      }
+
+      const matchScore = [
+        hasCodeCol,
+        hasNameCol,
+        cells.some((c) => c === 'lớp' || c.includes('khoa') || c.includes('đơn vị')),
+        cells.some((c) => c.includes('email') || c.includes('mail')),
+        cells.some((c) => c.includes('vai trò') || c.includes('role')),
+      ].filter(Boolean).length;
+
+      if (matchScore >= 2 && headerRowIndex === -1) {
+        headerRowIndex = i;
       }
     }
 
-    const dataRows = isHeaderRow ? rows.slice(1) : rows;
+    let codeIdx = -1;
+    let nameIdx = -1;
+    let splitLastNameIdx = -1;
+    let deptIdx = -1;
+    let emailIdx = -1;
+    let roleIdx = -1;
+    let phoneIdx = -1;
+    const ignoredCols: string[] = [];
+
+    let headerRow: string[] = [];
+    let lowerHeader: string[] = [];
+
+    if (headerRowIndex >= 0) {
+      headerRow = rows[headerRowIndex].map((c) => (c || '').trim());
+      lowerHeader = headerRow.map((c) => c.toLowerCase());
+
+      // A. Cột Mã tài khoản (userCode) - LOẠI TRỪ STT
+      codeIdx = lowerHeader.findIndex(
+        (c) =>
+          (c.includes('mã sv') ||
+            c.includes('mssv') ||
+            c.includes('mã sinh viên') ||
+            c.includes('mã gv') ||
+            c.includes('msgv') ||
+            c.includes('mã giảng viên') ||
+            c.includes('mã số sinh viên') ||
+            c.includes('mã tài khoản') ||
+            c.includes('tài khoản sinh viên')) &&
+          !c.includes('stt') &&
+          !c.includes('thứ tự')
+      );
+      if (codeIdx === -1) {
+        codeIdx = lowerHeader.findIndex(
+          (c) =>
+            (c.includes('mã số') || c === 'mã' || c === 'code' || c === 'id' || c.includes('tài khoản')) &&
+          !c.includes('stt') &&
+          !c.includes('thứ tự') &&
+          !c.includes('môn') &&
+          !c.includes('lớp')
+        );
+      }
+
+      // B. Cột Họ và tên (fullName)
+      nameIdx = lowerHeader.findIndex(
+        (c, idx) =>
+          idx !== codeIdx &&
+          (c.includes('họ và tên') ||
+            c.includes('họ & tên') ||
+            c.includes('họ tên') ||
+            c.includes('họ và tên đệm') ||
+            c.includes('họ đệm') ||
+            c.includes('full name') ||
+            c.includes('fullname'))
+      );
+      if (nameIdx === -1) {
+        nameIdx = lowerHeader.findIndex(
+          (c, idx) => idx !== codeIdx && (c.includes('họ') || c.includes('name')) && !c.includes('stt')
+        );
+      }
+
+      // B.1. Cột Tên riêng ghép (Phổ biến ở mẫu điểm ĐH Duy Tân: Cột C là "Họ và tên", Cột D là "Tên" hoặc trống)
+      if (nameIdx >= 0 && nameIdx + 1 < headerRow.length) {
+        const nextHeader = lowerHeader[nameIdx + 1];
+        const isNextColExplicitTen = nextHeader === 'tên' || nextHeader === 'ten' || nextHeader === 'name';
+        const isNextColEmpty = nextHeader === '';
+
+        // Kiểm tra vài dòng dữ liệu đầu tiên sau tiêu đề để xác nhận cột kế tiếp là Tên riêng
+        const sampleRows = rows.slice(headerRowIndex + 1, headerRowIndex + 10);
+        const isNextColSingleWordName =
+          sampleRows.length > 0 &&
+          sampleRows.some((r) => {
+            const val = (r[nameIdx + 1] || '').trim();
+            return (
+              val.length > 0 &&
+              val.length <= 15 &&
+              !val.includes(' ') &&
+              !val.includes('%') &&
+              !/^\d+$/.test(val)
+            );
+          });
+
+        if (isNextColExplicitTen || (isNextColEmpty && isNextColSingleWordName)) {
+          splitLastNameIdx = nameIdx + 1;
+        }
+      }
+
+      // C. Cột Lớp / Đơn vị (department)
+      deptIdx = lowerHeader.findIndex(
+        (c, idx) =>
+          idx !== codeIdx &&
+          idx !== nameIdx &&
+          idx !== splitLastNameIdx &&
+          (c === 'lớp' ||
+            c.includes('lớp sinh hoạt') ||
+            c.includes('lớp sh') ||
+            c === 'khoa' ||
+            c.includes('khoa / viện') ||
+            c.includes('đơn vị') ||
+            c.includes('chuyên ngành') ||
+            c.includes('bộ môn') ||
+            c === 'class' ||
+            c === 'department') &&
+          !c.includes('mã lớp') &&
+          !c.includes('lớp hp') &&
+          !c.includes('xếp loại')
+      );
+
+      // D. Cột Email (email)
+      emailIdx = lowerHeader.findIndex(
+        (c, idx) =>
+          idx !== codeIdx &&
+          idx !== nameIdx &&
+          idx !== splitLastNameIdx &&
+          (c.includes('email') || c.includes('e-mail') || c.includes('thư điện tử') || c === 'mail')
+      );
+
+      // E. Cột Vai trò (role)
+      roleIdx = lowerHeader.findIndex(
+        (c, idx) =>
+          idx !== codeIdx &&
+          idx !== nameIdx &&
+          idx !== splitLastNameIdx &&
+          (c.includes('vai trò') ||
+            c.includes('role') ||
+            c.includes('chức vụ') ||
+            c.includes('phân quyền') ||
+            c.includes('loại tài khoản'))
+      );
+
+      // F. Cột Số điện thoại (phone)
+      phoneIdx = lowerHeader.findIndex(
+        (c, idx) =>
+          idx !== codeIdx &&
+          idx !== nameIdx &&
+          idx !== splitLastNameIdx &&
+          (c.includes('số điện thoại') ||
+            c.includes('sđt') ||
+            c.includes('điện thoại') ||
+            c.includes('phone') ||
+            c.includes('mobile'))
+      );
+
+      // G. Danh sách các cột thừa bị loại bỏ hoàn toàn (STT, Chuyên cần, Bài tập, Kiểm tra, KTHP, Ghi chú...)
+      const usedIndices = new Set(
+        [codeIdx, nameIdx, splitLastNameIdx, deptIdx, emailIdx, roleIdx, phoneIdx].filter((i) => i >= 0)
+      );
+      headerRow.forEach((colName, idx) => {
+        if (!usedIndices.has(idx)) {
+          const cleanName = colName.trim() || `Cột ${idx + 1}`;
+          if (cleanName) ignoredCols.push(cleanName);
+        }
+      });
+    } else {
+      // Trường hợp không phát hiện dòng tiêu đề, tự động phân tích theo cấu trúc cột dữ liệu
+      const maxCols = Math.max(...rows.map((r) => r.length));
+      const col0IsStt = rows.slice(0, 5).every((r) => /^\d{1,4}$/.test((r[0] || '').trim()));
+      codeIdx = col0IsStt && maxCols > 1 ? 1 : 0;
+      nameIdx = col0IsStt && maxCols > 2 ? 2 : 1;
+      emailIdx = maxCols > 3 ? 3 : -1;
+      roleIdx = maxCols > 4 ? 4 : -1;
+    }
+
+    if (codeIdx === -1 && nameIdx === -1) {
+      setImportError(
+        'Không tìm thấy cột Mã SV/GV hoặc Họ và tên trong tệp. Vui lòng đối chiếu lại tệp Excel / CSV.'
+      );
+      return;
+    }
+
+    const dataRows = headerRowIndex >= 0 ? rows.slice(headerRowIndex + 1) : rows;
     if (dataRows.length === 0) {
-      setImportError('Tệp chỉ có dòng tiêu đề, chưa có dữ liệu tài khoản nào.');
+      setImportError('Tệp chỉ có dòng tiêu đề hoặc không tìm thấy dữ liệu tài khoản nào.');
       return;
     }
 
     const parsed: ImportPreviewRow[] = [];
+    let autoEmailCount = 0;
+    let autoRoleCount = 0;
 
     dataRows.forEach((cols, index) => {
-      const displayRowNum = isHeaderRow ? index + 2 : index + 1;
+      const displayRowNum = headerRowIndex >= 0 ? headerRowIndex + 2 + index : index + 1;
+
+      // 1. Kiểm tra và bỏ qua dòng trọng số phần trăm (như 5.00%, 10.00% trong bảng điểm)
+      const percentCellCount = cols.filter((c) => (c || '').includes('%')).length;
+      if (percentCellCount >= 2) return;
+
       const rawCode = codeIdx >= 0 ? (cols[codeIdx] ?? '').trim() : '';
-      const rawName = nameIdx >= 0 ? (cols[nameIdx] ?? '').trim() : '';
-      const rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
+      let rawName = nameIdx >= 0 ? (cols[nameIdx] ?? '').trim() : '';
+
+      // Bỏ qua dòng trống hoặc dòng có chữ số phần trăm ở cột mã
+      if (!rawCode && !rawName) return;
+      if (/^\d+(\.\d+)?%$/.test(rawCode) || /^\d+(\.\d+)?%$/.test(rawName)) return;
+
+      // Bỏ qua các dòng tổng kết / chữ ký cuối bảng
+      const lowerRowFull = cols.join(' ').toLowerCase();
+      if (
+        lowerRowFull.includes('tổng số') ||
+        lowerRowFull.includes('tổng cộng') ||
+        lowerRowFull.includes('trưởng khoa') ||
+        lowerRowFull.includes('chữ ký giảng viên') ||
+        lowerRowFull.includes('ngày lập bảng')
+      ) {
+        return;
+      }
+
+      // Ghép tên riêng nếu có cột Tên tách biệt (VD: Cột C "Hồ Thị Diễm" + Cột D "An" -> "Hồ Thị Diễm An")
+      if (splitLastNameIdx >= 0 && cols[splitLastNameIdx]) {
+        const extraPart = (cols[splitLastNameIdx] ?? '').trim();
+        if (extraPart && !extraPart.includes('%')) {
+          rawName = `${rawName} ${extraPart}`.trim();
+        }
+      }
+
+      // Lớp / Đơn vị (ưu tiên cột Lớp trong bảng, sau đó là Lớp trích xuất từ tiêu đề)
+      let department = deptIdx >= 0 ? (cols[deptIdx] ?? '').trim() : '';
+      if (!department && detectedClass) {
+        department = detectedClass;
+      }
+
+      // Email
+      let rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
+      let isAutoEmail = false;
+      if (!rawEmail) {
+        if (rawCode) {
+          rawEmail = `${rawCode.toLowerCase()}@${detectedDomain}`;
+          isAutoEmail = true;
+          autoEmailCount++;
+        }
+      }
+
+      // Vai trò
       const rawRole = roleIdx >= 0 ? (cols[roleIdx] ?? '').trim() : '';
       const normalizedRole = rawRole.toLowerCase();
 
-      // Bỏ qua dòng hoàn toàn trống
-      if (!rawCode && !rawName && !rawEmail && !rawRole) return;
+      let role: UserRole = 'student';
+      if (rawRole) {
+        if (
+          normalizedRole.includes('giảng viên') ||
+          normalizedRole.includes('giang vien') ||
+          normalizedRole === 'gv' ||
+          normalizedRole.includes('instructor') ||
+          normalizedRole.includes('teacher') ||
+          normalizedRole.includes('lecturer')
+        ) {
+          role = 'instructor';
+        } else if (
+          normalizedRole.includes('quản trị') ||
+          normalizedRole.includes('quan tri') ||
+          normalizedRole === 'qt' ||
+          normalizedRole.includes('admin')
+        ) {
+          role = 'admin';
+        } else {
+          role = 'student';
+        }
+      } else {
+        // Tự động nhận diện vai trò từ ngữ cảnh cột mã hoặc tiêu đề
+        const codeHeaderStr = (lowerHeader[codeIdx] || '').toLowerCase();
+        if (codeHeaderStr.includes('gv') || codeHeaderStr.includes('giảng viên')) {
+          role = 'instructor';
+        } else {
+          role = 'student';
+        }
+        autoRoleCount++;
+      }
+
+      if (!department) {
+        department = role === 'instructor' ? 'Khoa CNTT' : 'Chưa phân lớp';
+      }
 
       const missingFields: string[] = [];
       if (!rawCode) missingFields.push('Thiếu Mã SV/GV');
       if (!rawName) missingFields.push('Thiếu Họ và tên');
-      if (!rawEmail) {
-        missingFields.push('Thiếu Email');
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+      if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
         missingFields.push('Email sai định dạng');
-      }
-
-      let role: UserRole = 'student';
-      if (!rawRole) {
-        missingFields.push('Thiếu Vai trò');
-      } else if (
-        normalizedRole.includes('giảng viên') ||
-        normalizedRole.includes('giang vien') ||
-        normalizedRole === 'gv' ||
-        normalizedRole.includes('instructor') ||
-        normalizedRole.includes('teacher') ||
-        normalizedRole.includes('lecturer')
-      ) {
-        role = 'instructor';
-      } else if (
-        normalizedRole.includes('quản trị') ||
-        normalizedRole.includes('quan tri') ||
-        normalizedRole === 'qt' ||
-        normalizedRole.includes('admin')
-      ) {
-        role = 'admin';
-      } else if (
-        normalizedRole.includes('sinh viên') ||
-        normalizedRole.includes('sinh vien') ||
-        normalizedRole === 'sv' ||
-        normalizedRole.includes('student') ||
-        normalizedRole.includes('học viên')
-      ) {
-        role = 'student';
-      } else {
-        missingFields.push(`Vai trò không hợp lệ (${rawRole})`);
       }
 
       if (missingFields.length > 0) {
@@ -566,30 +821,46 @@ export default function UserManagerPage() {
       const finalCode = rawCode ? rawCode.toUpperCase() : '';
       const finalName = rawName || '';
       const finalEmail = rawEmail || '';
+      const rawPhone = phoneIdx >= 0 ? (cols[phoneIdx] ?? '').trim() : '';
 
       parsed.push({
         id: Date.now() + index + Math.floor(Math.random() * 1000),
         rowNumber: displayRowNum,
         missingFields,
+        isAutoEmail,
         userCode: finalCode,
         fullName: finalName,
         email: finalEmail,
-        phone: 'Chưa cập nhật',
+        phone: rawPhone || 'Chưa cập nhật',
         role,
         status: 'active',
-        department: role === 'instructor' ? 'Khoa CNTT' : 'Chưa phân lớp',
+        department,
         lastLogin: 'Chưa đăng nhập',
         lastLoginIp: 'Chưa ghi nhận',
         lastPasswordChange: 'Hôm nay',
-
         password: generateRandomPassword(),
       });
     });
 
     if (parsed.length === 0) {
-      setImportError('Không tìm thấy dữ liệu người dùng nào trong tệp.');
+      setImportError('Không tìm thấy dữ liệu tài khoản hợp lệ nào trong tệp.');
       return;
     }
+
+    setImportMappingInfo({
+      headerRowIndex,
+      codeColName: codeIdx >= 0 ? headerRow[codeIdx] : undefined,
+      nameColName: nameIdx >= 0 ? headerRow[nameIdx] : undefined,
+      splitLastNameColName: splitLastNameIdx >= 0 ? headerRow[splitLastNameIdx] || 'Tên' : undefined,
+      deptColName: deptIdx >= 0 ? headerRow[deptIdx] : undefined,
+      emailColName: emailIdx >= 0 ? headerRow[emailIdx] : undefined,
+      roleColName: roleIdx >= 0 ? headerRow[roleIdx] : undefined,
+      phoneColName: phoneIdx >= 0 ? headerRow[phoneIdx] : undefined,
+      ignoredColumns: ignoredCols,
+      detectedClass,
+      detectedDomain,
+      autoEmailCount,
+    });
 
     setImportWarnings(warnings);
     setImportPreviewUsers(parsed);
@@ -676,20 +947,21 @@ export default function UserManagerPage() {
     setImportPreviewUsers([]);
     setImportWarnings([]);
     setImportError('');
+    setImportMappingInfo(null);
     setIsDragging(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   }
 
-  // Tải tệp biểu mẫu chuẩn UTF-8 (Đúng 4 trường: Mã SV/GV, Họ và tên, Email, Vai trò)
+  // Tải tệp biểu mẫu chuẩn UTF-8 (Đúng các trường của bảng Người dùng)
   function handleDownloadSample() {
-    const csvHeader = 'MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL,VAI TRÒ\n';
+    const csvHeader = 'MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL,LỚP / ĐƠN VỊ,VAI TRÒ\n';
     const csvRows = [
-      '100088,Trần Văn Hùng,hung.tv@school.edu.vn,Giảng viên',
-      '20241820,Ngô Phương Linh,linh.np@school.edu.vn,Sinh viên',
-      '20241821,Đặng Tuấn Kiệt,kiet.dt@school.edu.vn,Sinh viên',
-      'GV0092,Bùi Hồng Ánh,anh.bh@school.edu.vn,Giảng viên',
+      '100088,Trần Văn Hùng,hung.tv@school.edu.vn,Khoa CNTT,Giảng viên',
+      '20241820,Ngô Phương Linh,linh.np@school.edu.vn,Lớp SE1848,Sinh viên',
+      '20241821,Đặng Tuấn Kiệt,kiet.dt@school.edu.vn,Lớp SE1848,Sinh viên',
+      'GV0092,Bùi Hồng Ánh,anh.bh@school.edu.vn,Khoa Kỹ thuật phần mềm,Giảng viên',
     ].join('\n');
 
     const blob = new Blob(['\uFEFF' + csvHeader + csvRows], { type: 'text/csv;charset=utf-8;' });
@@ -701,7 +973,7 @@ export default function UserManagerPage() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showToast('Đã tải xuống tệp biểu mẫu 4 cột (Mã SV/GV, Họ và tên, Email, Vai trò).');
+    showToast('Đã tải xuống tệp biểu mẫu chuẩn (Mã SV/GV, Họ và tên, Email, Lớp/Đơn vị, Vai trò).');
   }
 
   // Xuất danh sách tài khoản hiện tại ra file Excel/CSV chuẩn UTF-8
@@ -1761,7 +2033,7 @@ export default function UserManagerPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="import-title"
-            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+            className="w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -1769,7 +2041,7 @@ export default function UserManagerPage() {
                   Nhập danh sách tài khoản bằng Excel / CSV
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Kéo thả tệp hoặc chọn từ máy tính để thêm nhanh hàng loạt tài khoản vào hệ thống.
+                  Tự động so sánh đối chiếu các trường trong bảng Người dùng (Mã SV/GV, Họ tên, Lớp, Email, Vai trò) và loại bỏ các cột điểm số, STT, ghi chú.
                 </p>
               </div>
               <button
@@ -1834,8 +2106,8 @@ export default function UserManagerPage() {
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-slate-900">{importFile.name}</p>
                         <p className="text-xs text-slate-500">
-                          {(importFile.size / 1024).toFixed(1)} KB · Đọc được {importPreviewUsers.length} dòng dữ liệu
-                          {importWarnings.length > 0 ? ` (${importWarnings.length} cảnh báo thiếu thông tin)` : ''}
+                          {(importFile.size / 1024).toFixed(1)} KB · Đọc được {importPreviewUsers.length} tài khoản hợp lệ
+                          {importWarnings.length > 0 ? ` (${importWarnings.length} dòng có cảnh báo)` : ''}
                         </p>
                       </div>
                     </div>
@@ -1859,19 +2131,115 @@ export default function UserManagerPage() {
                 </div>
               )}
 
-              {/* Thông báo cảnh báo chi tiết khi tệp thiếu cột hoặc dòng thiếu thông tin (Vẫn cho phép nhập) */}
+              {/* BẢNG ĐỐI CHIẾU CÁC TRƯỜNG ĐƯỢC PHÉP ĐỌC / BỎ QUA */}
+              {importMappingInfo && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <span className="text-xs font-bold text-slate-800">
+                        Kết quả đối chiếu trường dữ liệu với bảng Người dùng
+                      </span>
+                    </div>
+                    {importMappingInfo.headerRowIndex >= 0 && (
+                      <span className="text-[11px] font-semibold text-slate-500 bg-white px-2.5 py-0.5 rounded-md border border-slate-200">
+                        Dòng tiêu đề: Dòng {importMappingInfo.headerRowIndex + 1}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 1. Các trường được phép đọc */}
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1.5">
+                      <Check className="h-3.5 w-3.5" />
+                      Các trường được phép đọc và lưu vào bảng Người dùng:
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                      <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
+                        <span className="text-slate-500 text-[11px]">Mã SV / GV:</span>
+                        <span className="font-bold text-slate-900 truncate ml-2">
+                          {importMappingInfo.codeColName ? `Cột [${importMappingInfo.codeColName}]` : 'Tự động nhận diện'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
+                        <span className="text-slate-500 text-[11px]">Họ và tên:</span>
+                        <span className="font-bold text-slate-900 truncate ml-2">
+                          [${importMappingInfo.nameColName || 'Họ tên'}
+                          {importMappingInfo.splitLastNameColName ? ` + ${importMappingInfo.splitLastNameColName}` : ''}]
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
+                        <span className="text-slate-500 text-[11px]">Lớp / Đơn vị:</span>
+                        <span className="font-bold text-slate-900 truncate ml-2">
+                          {importMappingInfo.deptColName
+                            ? `Cột [${importMappingInfo.deptColName}]`
+                            : importMappingInfo.detectedClass
+                            ? `${importMappingInfo.detectedClass} (Tiêu đề)`
+                            : 'Tự động phân lớp'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
+                        <span className="text-slate-500 text-[11px]">Email:</span>
+                        <span className="font-bold text-slate-900 truncate ml-2">
+                          {importMappingInfo.emailColName
+                            ? `Cột [${importMappingInfo.emailColName}]`
+                            : `Tự sinh @${importMappingInfo.detectedDomain || 'dtu.edu.vn'}`}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
+                        <span className="text-slate-500 text-[11px]">Vai trò:</span>
+                        <span className="font-bold text-slate-900 truncate ml-2">
+                          {importMappingInfo.roleColName ? `Cột [${importMappingInfo.roleColName}]` : 'Sinh viên (Ngữ cảnh)'}
+                        </span>
+                      </div>
+                      {importMappingInfo.phoneColName && (
+                        <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
+                          <span className="text-slate-500 text-[11px]">Điện thoại:</span>
+                          <span className="font-bold text-slate-900 truncate ml-2">[${importMappingInfo.phoneColName}]</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 2. Các trường ngoài bảng được tự động loại bỏ */}
+                  {importMappingInfo.ignoredColumns.length > 0 && (
+                    <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                        <span className="text-amber-600 font-bold">✕</span>
+                        Các trường ngoài bảng tự động loại bỏ (Không lưu vào hồ sơ):
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {importMappingInfo.ignoredColumns.map((col, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600"
+                          >
+                            <span className="text-slate-400 mr-1">✕</span>
+                            {col}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Thông báo cảnh báo chi tiết khi tệp thiếu cột hoặc dòng thiếu thông tin */}
               {importWarnings.length > 0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3.5 text-xs text-amber-900 space-y-1.5">
                   <div className="flex items-center gap-2 font-bold text-amber-800">
                     <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
                     <span>
-                      Phát hiện {importWarnings.length} cảnh báo thiếu trường / cột dữ liệu (Vẫn cho phép nhập):
+                      Phát hiện {importWarnings.length} cảnh báo dữ liệu (Vẫn cho phép nhập):
                     </span>
                   </div>
-                  <ul className="max-h-28 overflow-y-auto list-disc pl-5 space-y-0.5 text-[11.5px] font-medium text-amber-800">
-                    {importWarnings.map((warn, idx) => (
+                  <ul className="max-h-24 overflow-y-auto list-disc pl-5 space-y-0.5 text-[11.5px] font-medium text-amber-800">
+                    {importWarnings.slice(0, 10).map((warn, idx) => (
                       <li key={idx}>{warn}</li>
                     ))}
+                    {importWarnings.length > 10 && (
+                      <li className="font-bold">...và {importWarnings.length - 10} cảnh báo tương tự khác.</li>
+                    )}
                   </ul>
                   <p className="text-[11px] text-amber-700 pt-0.5">
                     * Các trường bị thiếu đã được đánh dấu bên dưới. Bạn vẫn có thể nhấn <strong>Xác nhận nhập</strong> và chỉnh sửa bổ sung sau.
@@ -1884,22 +2252,23 @@ export default function UserManagerPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                      Xem trước 4 trường chuẩn ({importPreviewUsers.length} tài khoản)
+                      Xem trước dữ liệu người dùng ({importPreviewUsers.length} tài khoản)
                     </p>
                     {importWarnings.length > 0 ? (
                       <span className="text-[11px] font-semibold text-amber-600">
-                        ⚠ Có trường thiếu · Vẫn có thể nhập
+                        ⚠ Có {importWarnings.length} dòng cần lưu ý · Vẫn có thể nhập
                       </span>
                     ) : (
-                      <span className="text-[11px] font-semibold text-emerald-600">✓ Đủ 4 trường hợp lệ</span>
+                      <span className="text-[11px] font-semibold text-emerald-600">✓ Tất cả dữ liệu hợp lệ</span>
                     )}
                   </div>
-                  <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                  <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white">
                     <table className="w-full text-left text-xs">
                       <thead className="sticky top-0 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
                         <tr>
                           <th className="px-3 py-2.5">Mã SV / GV</th>
                           <th className="px-3 py-2.5">Họ và tên</th>
+                          <th className="px-3 py-2.5">Lớp / Đơn vị</th>
                           <th className="px-3 py-2.5">Email</th>
                           <th className="px-3 py-2.5">Vai trò</th>
                           <th className="px-3 py-2.5">Kiểm tra</th>
@@ -1929,7 +2298,7 @@ export default function UserManagerPage() {
                                   u.userCode
                                 )}
                               </td>
-                              <td className="px-3 py-2 text-slate-700">
+                              <td className="px-3 py-2 font-medium text-slate-800">
                                 {isMissingName ? (
                                   <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
                                     Thiếu Họ và tên
@@ -1937,6 +2306,11 @@ export default function UserManagerPage() {
                                 ) : (
                                   u.fullName
                                 )}
+                              </td>
+                              <td className="px-3 py-2 text-slate-600">
+                                <span className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                                  {u.department}
+                                </span>
                               </td>
                               <td className="px-3 py-2 text-slate-500">
                                 {isMissingEmail ? (
@@ -1946,7 +2320,14 @@ export default function UserManagerPage() {
                                       : 'Thiếu Email'}
                                   </span>
                                 ) : (
-                                  u.email
+                                  <div className="flex items-center gap-1.5">
+                                    <span>{u.email}</span>
+                                    {u.isAutoEmail && (
+                                      <span className="rounded bg-blue-50 px-1.5 py-0.2 text-[9px] font-bold text-blue-600">
+                                        Tự sinh
+                                      </span>
+                                    )}
+                                  </div>
                                 )}
                               </td>
                               <td className="px-3 py-2">
@@ -1979,7 +2360,7 @@ export default function UserManagerPage() {
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                                    ✓ Đủ thông tin
+                                    ✓ Hợp lệ
                                   </span>
                                 )}
                               </td>

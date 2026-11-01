@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import InstitutionalFooter from '@/components/common/InstitutionalFooter';
 import { 
   Eye, 
   EyeOff, 
@@ -444,6 +445,9 @@ export default function LoginPage() {
 
         </div>
       </main>
+
+      {/* ── FOOTER 4 CỘT CHUẨN NCKH ── */}
+      <InstitutionalFooter />
 
     </div>
   );

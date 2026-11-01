@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   User,
@@ -106,8 +107,18 @@ function formatLockoutCountdown(seconds: number): string {
   ).padStart(2, '0')}`;
 }
 
-export default function ProfileView({ role }: ProfileViewProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'security' | 'activity'>('info');
+function ProfileViewContent({ role }: ProfileViewProps) {
+  const searchParams = useSearchParams();
+  const tabParam = searchParams?.get('tab');
+  const [activeTab, setActiveTab] = useState<'info' | 'security' | 'activity'>(
+    tabParam === 'security' || tabParam === 'activity' ? tabParam : 'info'
+  );
+
+  useEffect(() => {
+    if (tabParam === 'security' || tabParam === 'info' || tabParam === 'activity') {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   // Thông tin chung
   const [name, setName] = useState(
@@ -1190,5 +1201,13 @@ useEffect(() => {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ProfileView(props: ProfileViewProps) {
+  return (
+    <Suspense fallback={null}>
+      <ProfileViewContent {...props} />
+    </Suspense>
   );
 }

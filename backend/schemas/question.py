@@ -39,7 +39,7 @@ class QuestionUpdateRequest(BaseModel):
     question_order: Optional[int] = None
     question_title: Optional[str] = None
     question_description: Optional[str] = None
-    question_type: Optional[str] = None
+    question_type: Optional[str] = Field(None, pattern="^(coding|essay)$")
     programming_language: Optional[str] = None
     max_points: Optional[float] = None
     time_limit_minutes: Optional[int] = None

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AuthBrandPanel from '@/components/auth/AuthBrandPanel';
 import { 
   Eye, 
@@ -17,6 +17,32 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [maintenanceInfo, setMaintenanceInfo] = useState<{
+    isActive: boolean;
+    message: string;
+  }>({ isActive: false, message: '' });
+
+  // Kiểm tra cờ bảo trì hệ thống
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('oculide_admin_system_settings');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.maintenanceMode) {
+            setMaintenanceInfo({
+              isActive: true,
+              message:
+                parsed.maintenanceMessage ||
+                'Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.',
+            });
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
 
   // Xử lý gửi form đăng nhập
   const handleSubmit = async (e: React.FormEvent) => {
@@ -53,6 +79,26 @@ export default function LoginPage() {
 
       if (!response.ok) {
         throw new Error(data.detail || 'Email/tài khoản hoặc mật khẩu không chính xác.');
+      }
+
+      // Kiểm tra Chế độ Bảo trì: Nếu đang bật bảo trì, chỉ duy nhất Admin được đăng nhập
+      if (typeof window !== 'undefined') {
+        try {
+          const rawSettings = localStorage.getItem('oculide_admin_system_settings');
+          if (rawSettings) {
+            const parsed = JSON.parse(rawSettings);
+            if (parsed.maintenanceMode && data.user?.role !== 'admin') {
+              throw new Error(
+                parsed.maintenanceMessage ||
+                  'Hệ thống đang trong chế độ bảo trì định kỳ. Cổng đăng nhập tạm thời chỉ dành riêng cho Quản trị viên.'
+              );
+            }
+          }
+        } catch (mErr: any) {
+          if (mErr.message?.includes('bảo trì') || mErr.message?.includes('Quản trị viên')) {
+            throw mErr;
+          }
+        }
       }
 
       // Lưu JWT Token và thông tin User
@@ -114,6 +160,22 @@ export default function LoginPage() {
               Sử dụng email do nhà trường cung cấp để tiếp tục
             </p>
           </div>
+
+          {/* Thông báo Chế độ Bảo trì (Nếu có) */}
+          {maintenanceInfo.isActive && (
+            <div className="mb-5 p-3.5 rounded-2xl bg-amber-50 border border-amber-200/90 text-amber-800 text-xs sm:text-sm flex items-start gap-2.5 shadow-2xs">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+              <div>
+                <span className="font-bold block text-amber-900">Hệ thống đang bảo trì định kỳ</span>
+                <span className="text-xs text-amber-700 leading-relaxed block mt-0.5">
+                  {maintenanceInfo.message}
+                </span>
+                <span className="text-[11px] text-amber-600 font-medium block mt-1">
+                  (Cổng đăng nhập tạm thời chỉ dành riêng cho Quản trị viên).
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Thông báo Lỗi / Thành công */}
           {errorMessage && (

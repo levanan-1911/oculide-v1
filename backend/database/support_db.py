@@ -29,6 +29,57 @@ def create_support_request(
         cursor.close()
         conn.close()
 
+def get_support_request_by_id(request_id: int) -> Optional[Dict]:
+    """Lấy chi tiết một yêu cầu hỗ trợ kỹ thuật"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT sr.request_id, sr.room_id, sr.student_id, sr.session_id,
+                   sr.issue_type, sr.message, sr.status, sr.resolved_by,
+                   sr.created_at, sr.resolved_at,
+                   u.full_name as student_name, u.student_id as student_code
+            FROM SupportRequests sr
+            JOIN Users u ON sr.student_id = u.user_id
+            WHERE sr.request_id = ?
+        """, (request_id,))
+        row = cursor.fetchone()
+        if row:
+            columns = [column[0] for column in cursor.description]
+            return dict(zip(columns, row))
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_support_requests_by_student(student_id: int, room_id: Optional[int] = None) -> List[Dict]:
+    """Sinh viên xem lại các yêu cầu hỗ trợ của mình"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            SELECT sr.request_id, sr.room_id, sr.student_id, sr.session_id,
+                   sr.issue_type, sr.message, sr.status, sr.resolved_by,
+                   sr.created_at, sr.resolved_at,
+                   u.full_name as student_name, u.student_id as student_code
+            FROM SupportRequests sr
+            JOIN Users u ON sr.student_id = u.user_id
+            WHERE sr.student_id = ?
+        """
+        params = [student_id]
+        if room_id:
+            query += " AND sr.room_id = ?"
+            params.append(room_id)
+        query += " ORDER BY sr.created_at DESC"
+        
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_support_requests_by_room(room_id: int, status_filter: Optional[str] = None) -> List[Dict]:
     """Giám thị lấy danh sách yêu cầu hỗ trợ trong phòng"""
     conn = get_db_connection()

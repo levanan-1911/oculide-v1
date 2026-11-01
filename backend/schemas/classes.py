@@ -8,6 +8,7 @@ class ClassCreateRequest(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
 
 class ClassUpdateRequest(BaseModel):
+    class_code: Optional[str] = Field(None, min_length=2, max_length=50)
     class_name: Optional[str] = Field(None, min_length=2, max_length=150)
     description: Optional[str] = Field(None, max_length=500)
 

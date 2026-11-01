@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status
 from typing import Dict, Any, List
 
-from schemas.device_check import DeviceCheckCreateRequest, DeviceCheckResponse
+from schemas.device_check import DeviceCheckCreateRequest, DeviceCheckResponse, RoomDeviceCheckItem
 from core.permissions import get_current_user, instructor_or_admin_required
 from database.device_check_db import (
     save_device_check,
@@ -9,6 +9,7 @@ from database.device_check_db import (
     get_device_checks_by_room
 )
 from database.session_db import get_session_by_id
+from database.room_db import get_room_by_id
 
 router = APIRouter()
 
@@ -55,10 +56,15 @@ async def get_session_device_check(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chưa có kết quả kiểm tra thiết bị cho phiên này")
     return result
 
-@router.get("/room/{room_id}", response_model=List[Dict[str, Any]])
+@router.get("/room/{room_id}", response_model=List[RoomDeviceCheckItem])
 async def get_room_device_checks(
     room_id: int,
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Giám thị theo dõi trạng thái thiết bị của toàn bộ sinh viên trong phòng"""
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem thiết bị của phòng này")
     return get_device_checks_by_room(room_id)

@@ -55,7 +55,7 @@ def get_violations_by_student(student_id: int, room_id: Optional[int] = None) ->
         if room_id:
             cursor.execute("""
                 SELECT v.violation_id, v.session_id, v.student_id, v.violation_type, v.severity,
-                       v.description, v.snapshot_url, v.detected_at, v.is_reviewed, v.reviewed_by, v.reviewed_at
+                       v.description, v.snapshot_url, v.detected_at, v.is_reviewed, v.review_status, v.reviewed_by, v.reviewed_at
                 FROM Violations v
                 JOIN Sessions s ON v.session_id = s.session_id
                 WHERE v.student_id = ? AND s.room_id = ?
@@ -69,6 +69,33 @@ def get_violations_by_student(student_id: int, room_id: Optional[int] = None) ->
                 WHERE student_id = ?
                 ORDER BY detected_at DESC
             """, (student_id,))
+        rows = cursor.fetchall()
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_violations_by_room(room_id: int, review_status: Optional[str] = None) -> List[Dict]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        where = ["s.room_id = ?"]
+        params = [room_id]
+        if review_status:
+            where.append("v.review_status = ?")
+            params.append(review_status)
+        where_sql = f"WHERE {' AND '.join(where)}"
+        cursor.execute(f"""
+            SELECT v.violation_id, v.session_id, v.student_id, v.violation_type, v.severity,
+                   v.description, v.snapshot_url, v.detected_at, v.is_reviewed, v.review_status,
+                   v.reviewed_by, v.reviewed_at, u.full_name as student_name, u.student_id as student_code
+            FROM Violations v
+            JOIN Sessions s ON v.session_id = s.session_id
+            JOIN Users u ON v.student_id = u.user_id
+            {where_sql}
+            ORDER BY v.detected_at DESC
+        """, tuple(params))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
         return [dict(zip(columns, row)) for row in rows]

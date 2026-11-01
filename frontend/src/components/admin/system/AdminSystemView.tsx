@@ -461,18 +461,18 @@ export default function AdminSystemView() {
       )}
 
       {/* Header Module & Navigation Tabs */}
-      <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs sm:p-7">
+      <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs sm:p-7 dark:border-white/10 dark:bg-[#141824]">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2.5">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                 <Settings className="h-5 w-5" />
               </span>
-              <h1 className="text-xl font-bold tracking-tight text-slate-900">
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
                 Hệ Thống & Nhật Ký Quản Trị
               </h1>
             </div>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Kiểm toán an ninh thông tin, theo dõi trạng thái dịch vụ thời gian thực và quản lý hạ tầng vận hành Oculide.
             </p>
           </div>
@@ -483,7 +483,7 @@ export default function AdminSystemView() {
                 type="button"
                 onClick={handlePingServices}
                 disabled={isPinging}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition dark:hover:bg-white/5 cursor-pointer dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
               >
                 <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${isPinging ? 'animate-spin' : ''}`} />
                 <span>Kiểm tra kết nối</span>
@@ -505,19 +505,19 @@ export default function AdminSystemView() {
         </div>
 
         {/* 4 Tabs Điều hướng chính */}
-        <div className="mt-6 flex flex-wrap gap-2 border-b border-slate-100 pb-0.5">
+        <div className="mt-6 flex flex-wrap gap-2 border-b border-slate-100 dark:border-white/10 pb-0.5">
           <button
             type="button"
             onClick={() => setActiveTab('logs')}
             className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-bold transition cursor-pointer ${
               activeTab === 'logs'
                 ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <Shield className="h-4 w-4" />
             <span>1. Nhật Ký Kiểm Toán (Audit Logs)</span>
-            <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+            <span className="ml-1 rounded-full bg-slate-100 dark:bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-300">
               {logs.length}
             </span>
           </button>
@@ -528,7 +528,7 @@ export default function AdminSystemView() {
             className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-bold transition cursor-pointer ${
               activeTab === 'health'
                 ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <Activity className="h-4 w-4" />
@@ -542,7 +542,7 @@ export default function AdminSystemView() {
             className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-bold transition cursor-pointer ${
               activeTab === 'settings'
                 ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <Sliders className="h-4 w-4" />
@@ -555,7 +555,7 @@ export default function AdminSystemView() {
             className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-bold transition cursor-pointer ${
               activeTab === 'backup'
                 ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <HardDrive className="h-4 w-4" />
@@ -571,35 +571,35 @@ export default function AdminSystemView() {
         <div className="space-y-5">
           {/* 4 Thẻ KPI tóm tắt sự kiện */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-              <span className="text-xs font-semibold text-slate-500">Tổng sự kiện ghi nhận</span>
-              <p className="mt-2 text-2xl font-black text-slate-900">{logs.length} logs</p>
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tổng sự kiện ghi nhận</span>
+              <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{logs.length} logs</p>
               <p className="mt-1 text-[11px] text-emerald-600 font-semibold">Tất cả dịch vụ đều ghi nhận</p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-              <span className="text-xs font-semibold text-slate-500">Cảnh báo An ninh & Ca thi</span>
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Cảnh báo An ninh & Ca thi</span>
               <p className="mt-2 text-2xl font-black text-amber-600">
                 {logs.filter((l) => l.severity === 'WARNING' || l.severity === 'CRITICAL').length} vụ việc
               </p>
               <p className="mt-1 text-[11px] text-amber-600 font-medium">Bao gồm rời màn hình & điện thoại</p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-              <span className="text-xs font-semibold text-slate-500">Thời hạn lưu trữ Log</span>
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Thời hạn lưu trữ Log</span>
               <p className="mt-2 text-2xl font-black text-indigo-600">{settings.auditLogRetentionDays} ngày</p>
-              <p className="mt-1 text-[11px] text-slate-400">Tự động dọn sau mỗi học kỳ</p>
+              <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">Tự động dọn sau mỗi học kỳ</p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-              <span className="text-xs font-semibold text-slate-500">Tỷ lệ truy cập hợp lệ</span>
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tỷ lệ truy cập hợp lệ</span>
               <p className="mt-2 text-2xl font-black text-emerald-600">98.5%</p>
               <p className="mt-1 text-[11px] text-emerald-600 font-medium">Không phát hiện tấn công DDoS</p>
             </div>
           </div>
 
           {/* Thanh tìm kiếm & Bộ lọc nâng cao */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-white/10 dark:bg-[#141824]">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -608,7 +608,7 @@ export default function AdminSystemView() {
                   value={searchLog}
                   onChange={(e) => setSearchLog(e.target.value)}
                   placeholder="Tìm theo tên tác nhân, hành động, địa chỉ IP (172.16...), mã phòng thi..."
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-[#f8fafc] pl-9 pr-4 text-xs text-slate-800 placeholder-slate-400 outline-none transition focus:border-blue-600 focus:bg-white focus:ring-1 focus:ring-blue-600"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-[#f8fafc] pl-9 pr-4 text-xs text-slate-800 placeholder-slate-400 outline-none transition focus:border-blue-600 focus:bg-white focus:ring-1 focus:ring-blue-600 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder-slate-500 dark:focus:bg-[#0d1017]"
                 />
               </div>
 
@@ -616,7 +616,7 @@ export default function AdminSystemView() {
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-600 cursor-pointer"
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-600 cursor-pointer dark:border-white/10 dark:bg-[#141824] dark:text-slate-200"
                 >
                   <option value="all">Tất cả danh mục</option>
                   <option value="AUTH">Xác thực (AUTH)</option>
@@ -628,7 +628,7 @@ export default function AdminSystemView() {
                 <select
                   value={filterSeverity}
                   onChange={(e) => setFilterSeverity(e.target.value)}
-                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-600 cursor-pointer"
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-600 cursor-pointer dark:border-white/10 dark:bg-[#141824] dark:text-slate-200"
                 >
                   <option value="all">Tất cả mức độ</option>
                   <option value="INFO">Thông tin (INFO)</option>
@@ -640,7 +640,7 @@ export default function AdminSystemView() {
                 <select
                   value={filterRole}
                   onChange={(e) => setFilterRole(e.target.value)}
-                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-600 cursor-pointer"
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-600 cursor-pointer dark:border-white/10 dark:bg-[#141824] dark:text-slate-200"
                 >
                   <option value="all">Tất cả vai trò</option>
                   <option value="admin">Admin</option>
@@ -653,11 +653,11 @@ export default function AdminSystemView() {
           </div>
 
           {/* Bảng Dữ liệu Nhật ký */}
-          <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs">
+          <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs dark:border-white/10 dark:bg-[#141824]">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-100 bg-[#f8fafc] text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <tr className="border-b border-slate-100 bg-[#f8fafc] text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
                     <th className="px-5 py-3.5">Thời gian</th>
                     <th className="px-4 py-3.5">Tác nhân & Vai trò</th>
                     <th className="px-4 py-3.5">Hành động & Sự kiện</th>
@@ -666,7 +666,7 @@ export default function AdminSystemView() {
                     <th className="px-4 py-3.5 text-right">Chi tiết</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                <tbody className="divide-y divide-slate-100 text-xs text-slate-700 dark:divide-white/5 dark:text-slate-300">
                   {filteredLogs.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-5 py-12 text-center text-slate-400">
@@ -675,13 +675,13 @@ export default function AdminSystemView() {
                     </tr>
                   ) : (
                     filteredLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-slate-50/80 transition">
-                        <td className="px-5 py-3.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                      <tr key={log.id} className="hover:bg-slate-50/80 transition dark:hover:bg-white/5">
+                        <td className="px-5 py-3.5 font-mono text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
                           {log.timestamp}
                         </td>
 
                         <td className="px-4 py-3.5">
-                          <div className="font-bold text-slate-900">{log.actorName}</div>
+                          <div className="font-bold text-slate-900 dark:text-white">{log.actorName}</div>
                           <span
                             className={`inline-block mt-0.5 rounded-full px-2 py-0.2 text-[10px] font-bold ${
                               log.actorRole === 'admin'
@@ -698,14 +698,14 @@ export default function AdminSystemView() {
                         </td>
 
                         <td className="px-4 py-3.5">
-                          <div className="font-semibold text-slate-900">{log.action}</div>
+                          <div className="font-semibold text-slate-900 dark:text-white">{log.action}</div>
                           <div className="text-[11px] text-slate-400 truncate max-w-[280px]">
                             {log.details}
                           </div>
                         </td>
 
                         <td className="px-4 py-3.5 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5 font-mono font-bold text-slate-800">
+                          <div className="flex items-center gap-1.5 font-mono font-bold text-slate-800 dark:text-slate-200">
                             <Globe className="h-3.5 w-3.5 text-slate-400" />
                             <span>{log.ipAddress}</span>
                           </div>
@@ -734,7 +734,7 @@ export default function AdminSystemView() {
                           <button
                             type="button"
                             onClick={() => setSelectedLog(log)}
-                            className="inline-flex items-center gap-1 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition cursor-pointer"
+                            className="inline-flex items-center gap-1 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition cursor-pointer dark:bg-white/10 dark:text-slate-200 dark:hover:bg-blue-600/20 dark:hover:text-blue-400"
                           >
                             <Eye className="h-3.5 w-3.5" />
                             <span>Xem Payload</span>
@@ -755,21 +755,21 @@ export default function AdminSystemView() {
       {/* ========================================================= */}
       {activeTab === 'health' && (
         <div className="space-y-5">
-          <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+          <div className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm shadow-emerald-500/20">
                 <CheckCircle2 className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-emerald-950">
+                <h3 className="text-sm font-bold text-emerald-950 dark:text-emerald-300">
                   Tất cả 5 dịch vụ lõi đang vận hành ổn định
                 </h3>
-                <p className="text-xs text-emerald-700">
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">
                   Không có sự cố gián đoạn kết nối hay nghẽn hàng đợi chấm bài trong 24 giờ qua.
                 </p>
               </div>
             </div>
-            <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold text-emerald-700 shadow-2xs">
+            <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold text-emerald-700 shadow-2xs dark:bg-emerald-950/60 dark:text-emerald-300">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
               Realtime Active
             </span>
@@ -780,12 +780,12 @@ export default function AdminSystemView() {
             {services.map((svc) => (
               <div
                 key={svc.id}
-                className="flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition hover:shadow-md"
+                className="flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition hover:shadow-md dark:border-white/10 dark:bg-[#141824]"
               >
                 <div>
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300">
                         {svc.id === 'backend_api' ? (
                           <Server className="h-4 w-4" />
                         ) : svc.id === 'code_sandbox' ? (
@@ -799,7 +799,7 @@ export default function AdminSystemView() {
                         )}
                       </span>
                       <div>
-                        <h4 className="text-xs font-bold text-slate-900 leading-tight">
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white dark:text-white leading-tight">
                           {svc.name}
                         </h4>
                         <span className="text-[10px] text-slate-400 font-medium">
@@ -814,18 +814,18 @@ export default function AdminSystemView() {
                     </span>
                   </div>
 
-                  <p className="mt-3 text-xs text-slate-500 leading-relaxed">
+                  <p className="mt-3 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                     {svc.description}
                   </p>
 
                   {/* Các chỉ số hiệu năng Metrics */}
-                  <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-[#f8fafc] p-2.5">
+                  <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-[#f8fafc] dark:bg-white/5 p-2.5">
                     {svc.metrics.map((m, idx) => (
                       <div key={idx} className="text-center">
                         <span className="block text-[10px] font-semibold text-slate-400">
                           {m.label}
                         </span>
-                        <span className="mt-0.5 block text-xs font-extrabold text-slate-800">
+                        <span className="mt-0.5 block text-xs font-extrabold text-slate-800 dark:text-slate-200">
                           {m.value}
                         </span>
                       </div>
@@ -833,9 +833,9 @@ export default function AdminSystemView() {
                   </div>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-[11px] text-slate-400">
+                <div className="mt-4 flex items-center justify-between border-t border-slate-100 dark:border-white/10 pt-3 text-[11px] text-slate-400 dark:text-slate-500">
                   <span>
-                    Độ trễ: <strong className="text-slate-700">{svc.latencyMs} ms</strong>
+                    Độ trễ: <strong className="text-slate-700 dark:text-slate-200">{svc.latencyMs} ms</strong>
                   </span>
                   <span>
                     Uptime: <strong className="text-emerald-600">{svc.uptimePercent}%</strong>
@@ -854,15 +854,15 @@ export default function AdminSystemView() {
         <form onSubmit={handleSaveSettings} className="space-y-6">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             {/* 1. Giới hạn Hạ tầng & Bảo vệ Máy chủ */}
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs">
-              <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3 mb-5">
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+              <div className="flex items-center gap-2.5 border-b border-slate-100 dark:border-white/10 pb-3 mb-5">
                 <Cpu className="h-5 w-5 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-900">1. Giới Hạn Hạ Tầng Máy Chủ</h3>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">1. Giới Hạn Hạ Tầng Máy Chủ</h3>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Dung lượng file code tối đa (Max File Size)
                   </label>
                   <div className="flex items-center gap-3">
@@ -880,17 +880,17 @@ export default function AdminSystemView() {
                       }
                       className="flex-1 accent-blue-600 cursor-pointer"
                     />
-                    <span className="w-16 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-center font-mono text-xs font-bold text-slate-800">
+                    <span className="w-16 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/10 px-2 py-1 text-center font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
                       {settings.maxCodeFileSizeMb} MB
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                     Ngăn chặn sinh viên upload các file rác khổng lồ làm đầy bộ nhớ máy chủ.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Số Sandbox Worker đồng thời tối đa
                   </label>
                   <div className="flex items-center gap-3">
@@ -908,17 +908,17 @@ export default function AdminSystemView() {
                       }
                       className="flex-1 accent-blue-600 cursor-pointer"
                     />
-                    <span className="w-20 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-center font-mono text-xs font-bold text-slate-800">
+                    <span className="w-20 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/10 px-2 py-1 text-center font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
                       {settings.maxSandboxWorkers} workers
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                     Giới hạn số container Docker chạy song song để tránh quá tải CPU của trường.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Băng thông Video tối đa mỗi luồng (Bitrate Cap / Stream)
                   </label>
                   <div className="flex items-center gap-3">
@@ -936,17 +936,17 @@ export default function AdminSystemView() {
                       }
                       className="flex-1 accent-blue-600 cursor-pointer"
                     />
-                    <span className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-center font-mono text-xs font-bold text-slate-800">
+                    <span className="w-24 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/10 px-2 py-1 text-center font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
                       {settings.maxLiveKitBitrateKbps} kbps
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                     Khống chế trần bitrate LiveKit cho mỗi luồng (màn hình / webcam) để tránh nghẽn Wifi phòng thi khi cả lớp cùng phát video.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Tự động xóa bản nháp code cũ (Auto-cleanup)
                   </label>
                   <div className="flex items-center gap-2">
@@ -961,17 +961,17 @@ export default function AdminSystemView() {
                           autoCleanupDraftsDays: parseInt(e.target.value, 10),
                         })
                       }
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none"
+                      className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
                     />
                     <span className="text-xs text-slate-500 whitespace-nowrap">ngày sau khi thi</span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                     Dọn dẹp bảng CodeDrafts của các ca thi đã kết thúc để tối ưu ổ cứng.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Thời hạn lưu trữ nhật ký kiểm toán (Log Retention)
                   </label>
                   <div className="flex items-center gap-3">
@@ -989,11 +989,11 @@ export default function AdminSystemView() {
                       }
                       className="flex-1 accent-blue-600 cursor-pointer"
                     />
-                    <span className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-center font-mono text-xs font-bold text-slate-800">
+                    <span className="w-24 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/10 px-2 py-1 text-center font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
                       {settings.auditLogRetentionDays} ngày
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                     Tự động dọn dẹp các bản ghi log cũ hơn 1 học kỳ (90 - 180 ngày) để bảo vệ hiệu năng máy chủ.
                   </p>
                 </div>
@@ -1001,15 +1001,15 @@ export default function AdminSystemView() {
             </div>
 
             {/* 2. Tích hợp Dịch vụ & Kết nối Trường học */}
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs">
-              <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3 mb-5">
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+              <div className="flex items-center gap-2.5 border-b border-slate-100 dark:border-white/10 pb-3 mb-5">
                 <Globe className="h-5 w-5 text-indigo-600" />
-                <h3 className="text-sm font-bold text-slate-900">2. Tích Hợp Dịch Vụ & Mạng</h3>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">2. Tích Hợp Dịch Vụ & Mạng</h3>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Máy chủ Streaming (LiveKit Server URL)
                   </label>
                   <input
@@ -1021,16 +1021,16 @@ export default function AdminSystemView() {
                         livekitServerUrl: e.target.value,
                       })
                     }
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 font-mono text-xs text-slate-800 outline-none"
+                    className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 font-mono text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
                     placeholder="wss://livekit.domain.edu.vn"
                   />
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                     Endpoint WebRTC phục vụ truyền webcam thời gian thực.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Máy chủ Gửi Email Khôi Phục (SMTP Host)
                   </label>
                   <div className="grid grid-cols-3 gap-2">
@@ -1043,7 +1043,7 @@ export default function AdminSystemView() {
                           smtpHost: e.target.value,
                         })
                       }
-                      className="col-span-2 rounded-xl border border-slate-200 px-3 py-2 font-mono text-xs text-slate-800 outline-none"
+                      className="col-span-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 font-mono text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
                       placeholder="smtp.school.edu.vn"
                     />
                     <input
@@ -1055,14 +1055,14 @@ export default function AdminSystemView() {
                           smtpPort: parseInt(e.target.value, 10),
                         })
                       }
-                      className="rounded-xl border border-slate-200 px-2 py-2 font-mono text-xs text-slate-800 outline-none text-center"
+                      className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2 py-2 font-mono text-xs text-slate-800 dark:text-white outline-none text-center focus:border-blue-500"
                       placeholder="587"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Email Người Gửi Hệ Thống (Sender Email)
                   </label>
                   <input
@@ -1074,13 +1074,13 @@ export default function AdminSystemView() {
                         smtpSenderEmail: e.target.value,
                       })
                     }
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none"
+                    className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
                     placeholder="noreply@oculide.edu.vn"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Tên miền Email trường được phép đăng ký
                   </label>
                   <input
@@ -1092,10 +1092,10 @@ export default function AdminSystemView() {
                         allowedEmailDomain: e.target.value,
                       })
                     }
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 font-mono text-xs text-slate-800 outline-none"
+                    className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 font-mono text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
                     placeholder="@school.edu.vn"
                   />
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                     Chỉ cho phép tài khoản có đuôi email này đăng nhập vào hệ thống trường.
                   </p>
                 </div>
@@ -1103,15 +1103,15 @@ export default function AdminSystemView() {
             </div>
 
             {/* 3. Chính sách Bảo mật & Vận hành */}
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs">
-              <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3 mb-5">
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+              <div className="flex items-center gap-2.5 border-b border-slate-100 dark:border-white/10 pb-3 mb-5">
                 <Lock className="h-5 w-5 text-amber-600" />
-                <h3 className="text-sm font-bold text-slate-900">3. Bảo Mật & Vận Hành</h3>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">3. Bảo Mật & Vận Hành</h3>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Đăng nhập sai tối đa trước khi khóa
                   </label>
                   <input
@@ -1125,15 +1125,15 @@ export default function AdminSystemView() {
                         maxLoginAttempts: parseInt(e.target.value, 10),
                       })
                     }
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none"
+                    className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
                   />
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                     Tự động khóa tạm 15 phút nếu nhập sai quá số lần quy định để chống Brute-force.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Thời hạn Access Token phiên làm việc
                   </label>
                   <div className="flex items-center gap-2">
@@ -1149,11 +1149,11 @@ export default function AdminSystemView() {
                           jwtTokenExpiryMinutes: parseInt(e.target.value, 10),
                         })
                       }
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none"
+                      className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
                     />
                     <span className="text-xs text-slate-500 whitespace-nowrap">phút</span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                     Hết hạn token sẽ yêu cầu cấp lại phiên để đảm bảo an toàn phiên làm việc.
                   </p>
                 </div>
@@ -1163,7 +1163,7 @@ export default function AdminSystemView() {
                   className={`rounded-xl border p-3.5 transition ${
                     settings.maintenanceMode
                       ? 'border-red-200 bg-red-50/70'
-                      : 'border-slate-200 bg-slate-50'
+                      : 'border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/5'
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -1220,7 +1220,7 @@ export default function AdminSystemView() {
             <button
               type="button"
               onClick={handleResetSettings}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
             >
               <RotateCcw className="h-4 w-4" />
               <span>Khôi phục mặc định</span>
@@ -1243,40 +1243,40 @@ export default function AdminSystemView() {
       {activeTab === 'backup' && (
         <div className="space-y-6">
           {/* Thống kê dung lượng ổ cứng lưu trữ */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-[#141824]">
             <h3 className="text-sm font-bold text-slate-900 mb-4">
               Phân bổ Dung lượng Lưu trữ Hệ thống (Storage Quota)
             </h3>
 
             <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-              <div className="space-y-2 rounded-xl border border-slate-100 bg-[#f8fafc] p-4">
+              <div className="space-y-2 rounded-xl border border-slate-100 dark:border-white/5 bg-[#f8fafc] dark:bg-white/5 p-4">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-700">Mã nguồn bài nộp (Code)</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Mã nguồn bài nộp (Code)</span>
                   <span className="font-mono text-slate-500">1.2 GB / 50 GB (2.4%)</span>
                 </div>
-                <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
                   <div className="h-full bg-blue-600 rounded-full" style={{ width: '2.4%' }} />
                 </div>
                 <p className="text-[11px] text-slate-400">Các file .cpp, .java, .py của sinh viên.</p>
               </div>
 
-              <div className="space-y-2 rounded-xl border border-slate-100 bg-[#f8fafc] p-4">
+              <div className="space-y-2 rounded-xl border border-slate-100 dark:border-white/5 bg-[#f8fafc] dark:bg-white/5 p-4">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-700">Ảnh Bằng chứng AI Proctoring</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Ảnh Bằng chứng AI Proctoring</span>
                   <span className="font-mono text-slate-500">14.8 GB / 100 GB (14.8%)</span>
                 </div>
-                <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
                   <div className="h-full bg-indigo-600 rounded-full" style={{ width: '14.8%' }} />
                 </div>
                 <p className="text-[11px] text-slate-400">Ảnh chụp webcam khi phát hiện gian lận.</p>
               </div>
 
-              <div className="space-y-2 rounded-xl border border-slate-100 bg-[#f8fafc] p-4">
+              <div className="space-y-2 rounded-xl border border-slate-100 dark:border-white/5 bg-[#f8fafc] dark:bg-white/5 p-4">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-700">Cơ sở Dữ liệu & Nhật ký</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Cơ sở Dữ liệu & Nhật ký</span>
                   <span className="font-mono text-slate-500">128 MB / 10 GB (1.28%)</span>
                 </div>
-                <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
                   <div className="h-full bg-emerald-600 rounded-full" style={{ width: '1.28%' }} />
                 </div>
                 <p className="text-[11px] text-slate-400">Bảng dữ liệu người dùng, ca thi, audit logs.</p>
@@ -1285,10 +1285,10 @@ export default function AdminSystemView() {
           </div>
 
           {/* Bảng Danh sách Bản sao lưu */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-[#141824]">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                   Lịch Sử Các Bản Sao Lưu (Database Backups)
                 </h3>
                 <p className="text-xs text-slate-500">
@@ -1296,7 +1296,7 @@ export default function AdminSystemView() {
                 </p>
               </div>
 
-              <span className="text-xs font-semibold text-slate-500">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                 Tổng cộng: <strong className="text-slate-800">{backups.length} bản sao lưu</strong>
               </span>
             </div>
@@ -1316,7 +1316,7 @@ export default function AdminSystemView() {
                 <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                   {backups.map((bk) => (
                     <tr key={bk.id} className="hover:bg-slate-50 transition">
-                      <td className="px-4 py-3.5 font-mono font-bold text-slate-900 flex items-center gap-2">
+                      <td className="px-4 py-3.5 font-mono font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <Database className="h-4 w-4 text-slate-400" />
                         <span>{bk.filename}</span>
                       </td>
@@ -1325,7 +1325,7 @@ export default function AdminSystemView() {
                         {bk.createdAt}
                       </td>
 
-                      <td className="px-4 py-3.5 font-semibold text-slate-800">
+                      <td className="px-4 py-3.5 font-semibold text-slate-800 dark:text-slate-200">
                         {bk.sizeMb} MB
                       </td>
 
@@ -1351,7 +1351,7 @@ export default function AdminSystemView() {
                           onClick={() =>
                             showToast(`Đang tải xuống bản sao lưu ${bk.filename}...`)
                           }
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
                         >
                           <Download className="h-3.5 w-3.5 text-blue-600" />
                           <span>Tải về</span>
@@ -1371,14 +1371,14 @@ export default function AdminSystemView() {
       {/* ========================================================= */}
       {selectedLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl sm:p-7">
+          <div className="w-full max-w-2xl rounded-3xl bg-white dark:bg-[#141824] border border-slate-200/80 dark:border-white/10 p-6 shadow-2xl sm:p-7">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 font-bold">
                   <Terminal className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
                     Chi Tiết Bản Ghi Nhật Ký [{selectedLog.id}]
                   </h3>
                   <span className="text-xs text-slate-400 font-mono">
@@ -1397,10 +1397,10 @@ export default function AdminSystemView() {
             </div>
 
             <div className="mt-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4 rounded-2xl bg-[#f8fafc] p-4 text-xs">
+              <div className="grid grid-cols-2 gap-4 rounded-2xl bg-[#f8fafc] dark:bg-white/5 p-4 text-xs">
                 <div>
                   <span className="text-slate-400 font-medium">Tác nhân:</span>
-                  <div className="font-bold text-slate-900 mt-0.5">{selectedLog.actorName}</div>
+                  <div className="font-bold text-slate-900 dark:text-white mt-0.5">{selectedLog.actorName}</div>
                   <span className="text-[10px] text-blue-600 font-mono font-bold">
                     Vai trò: {selectedLog.actorRole.toUpperCase()}
                   </span>
@@ -1408,7 +1408,7 @@ export default function AdminSystemView() {
 
                 <div>
                   <span className="text-slate-400 font-medium">Hành động:</span>
-                  <div className="font-bold text-slate-900 mt-0.5">{selectedLog.action}</div>
+                  <div className="font-bold text-slate-900 dark:text-white mt-0.5">{selectedLog.action}</div>
                   <span className="text-[10px] text-emerald-600 font-mono font-bold">
                     Mức độ: {selectedLog.severity}
                   </span>
@@ -1437,7 +1437,7 @@ export default function AdminSystemView() {
                 <span className="block text-xs font-bold text-slate-700 mb-1.5">
                   Mô tả sự kiện:
                 </span>
-                <p className="rounded-xl border border-slate-100 bg-white p-3 text-xs text-slate-700 leading-relaxed">
+                <p className="rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-white/5 p-3 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
                   {selectedLog.details}
                 </p>
               </div>
@@ -1456,7 +1456,7 @@ export default function AdminSystemView() {
               <button
                 type="button"
                 onClick={() => setSelectedLog(null)}
-                className="rounded-xl bg-slate-900 px-5 py-2 text-xs font-bold text-white hover:bg-slate-800 transition cursor-pointer"
+                className="rounded-xl bg-slate-900 dark:bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-slate-800 dark:hover:bg-blue-700 transition cursor-pointer"
               >
                 Đóng cửa sổ
               </button>

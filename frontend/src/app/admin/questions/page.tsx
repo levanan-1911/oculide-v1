@@ -7,7 +7,7 @@ import QuestionsManagerView from '@/components/admin/QuestionsManagerView';
 
 export default function AdminQuestionsPage() {
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] font-sans text-slate-800">
+    <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] dark:bg-[#090a0f] font-sans text-slate-800 dark:text-slate-100 transition-colors">
       <AdminSidebar activeModule="questions" />
       <div className="flex flex-1 flex-col overflow-hidden">
         <AdminTopbar title="Đề & câu hỏi" />

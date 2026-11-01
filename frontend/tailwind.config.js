@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class',
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -14,7 +15,7 @@ module.exports = {
       fontSize: {
         xs: ['0.8125rem', { lineHeight: '1.25rem' }],
         sm: ['0.9375rem', { lineHeight: '1.5rem' }],
-        base: ['1.0625rem', { lineHeight: '1.625rem' }],
+        base: ['1rem', { lineHeight: '1.6rem' }],
       },
       fontFamily: {
         sans: [

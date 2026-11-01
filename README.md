@@ -72,17 +72,23 @@ backend/
 ├── 📂 schemas/                      # Tầng Pydantic DTO (Data Transfer Objects) - Validate dữ liệu Request/Response
 │   ├── 📄 auth.py                   # Schema Đăng ký, Đăng nhập, Đổi mật khẩu, Token
 │   ├── 📄 admin.py                  # Schema Thống kê quản trị, Cập nhật trạng thái người dùng
-│   ├── 📄 room.py                   # Schema Tạo phòng, Cập nhật phòng, Lọc phòng thi/thực hành
-│   ├── 📄 question.py               # Schema Câu hỏi lập trình (coding, essay), Test case (đã loại bỏ trắc nghiệm)
-│   ├── 📄 submission.py             # Schema Nộp bài, Kết quả chạy test case tự động
-│   ├── 📄 session.py                # Schema Quản lý phiên làm bài của thí sinh
-│   ├── 📄 violation.py              # Schema Ghi nhận cảnh báo AI & Duyệt vi phạm (review_status)
+│   ├── 📄 user.py                   # Schema Quản lý người dùng, hồ sơ cá nhân (Users)
+│   ├── 📄 room.py                   # Schema Tạo phòng, Cập nhật phòng, Lọc phòng thi/thực hành (Rooms)
+│   ├── 📄 question.py               # Schema Câu hỏi lập trình (coding, essay) (Questions)
+│   ├── 📄 test_case.py              # Schema Bộ dữ liệu kiểm thử test case (TestCases)
+│   ├── 📄 enrollment.py             # Schema Ghi danh sinh viên vào phòng (Enrollments)
+│   ├── 📄 submission.py             # Schema Nộp bài code (Submissions)
+│   ├── 📄 grading_result.py         # Schema Kết quả chấm chi tiết từng test case (GradingResults)
+│   ├── 📄 session.py                # Schema Quản lý phiên làm bài của thí sinh (Sessions)
+│   ├── 📄 violation.py              # Schema Ghi nhận cảnh báo AI & Duyệt vi phạm (Violations)
+│   ├── 📄 snapshot.py               # Schema Bản ghi ảnh webcam định kỳ (Snapshots)
+│   ├── 📄 chat.py                   # Schema Tin nhắn trao đổi phòng thi / Chat riêng (Messages)
+│   ├── 📄 system_log.py             # Schema Nhật ký kiểm toán hệ thống (SystemLogs)
+│   ├── 📄 livekit.py                # Schema Yêu cầu cấp phát Token LiveKit SFU (LiveKitTokens)
+│   ├── 📄 classes.py                # Schema Quản lý lớp học phần (Classes)
 │   ├── 📄 draft.py                  # Schema Lưu/Khôi phục bài nháp code tự động (CodeDrafts)
 │   ├── 📄 device_check.py           # Schema Kết quả kiểm tra thiết bị phần cứng trước khi thi (DeviceChecks)
-│   ├── 📄 support.py                # Schema Yêu cầu cứu hộ & Hỗ trợ kỹ thuật khẩn cấp (SupportRequests)
-│   ├── 📄 classes.py                # Schema Quản lý lớp học phần (Classes)
-│   ├── 📄 chat.py                   # Schema Tin nhắn trao đổi phòng thi / Chat riêng
-│   └── 📄 livekit.py                # Schema Yêu cầu cấp phát Token LiveKit SFU
+│   └── 📄 support.py                # Schema Yêu cầu cứu hộ & Hỗ trợ kỹ thuật khẩn cấp (SupportRequests)
 │
 ├── 📂 database/                     # Tầng Truy Cập Dữ Liệu (DAL / Repositories) giao tiếp T-SQL SQL Server
 │   ├── 📄 user_db.py                # Thao tác CRUD bảng Users, kiểm tra trùng lặp tài khoản
@@ -99,20 +105,26 @@ backend/
 │   ├── 📄 chat_db.py                # Thao tác bảng Messages, lưu vết lịch sử trò chuyện
 │   └── 📄 admin_db.py               # Truy vấn thống kê dashboard quản trị hệ thống
 │
-├── 📂 api/                          # Tầng Điều Khiển REST API (Controllers / Routers)
-│   ├── 📄 auth.py                   # Endpoint /api/v1/auth (login, register, me, refresh)
-│   ├── 📄 admin.py                  # Endpoint /api/v1/admin (users, stats, system monitoring)
-│   ├── 📄 rooms.py                  # Endpoint /api/v1/rooms (quản lý phòng thi, danh sách sinh viên)
-│   ├── 📄 questions.py              # Endpoint /api/v1/questions (ngân hàng đề bài, cấu hình test cases)
-│   ├── 📄 submissions.py            # Endpoint /api/v1/submissions (nộp bài, xem kết quả chấm điểm)
-│   ├── 📄 sessions.py               # Endpoint /api/v1/sessions (bắt đầu làm bài, kết thúc phiên, chống IDOR)
-│   ├── 📄 violations.py             # Endpoint /api/v1/violations (nhận cảnh báo AI, duyệt vi phạm, thống kê)
-│   ├── 📄 drafts.py                 # Endpoint /api/v1/drafts (tự động lưu nháp code, phục hồi khi reload trang)
-│   ├── 📄 device_checks.py          # Endpoint /api/v1/device-checks (kiểm tra webcam/mic/mạng trước khi thi)
-│   ├── 📄 support.py                # Endpoint /api/v1/support (gửi yêu cầu cứu hộ kỹ thuật, giám thị xử lý)
-│   ├── 📄 classes.py                # Endpoint /api/v1/classes (quản lý lớp học phần cho giảng viên)
-│   ├── 📄 chat.py                   # Endpoint /api/v1/chat (kênh chat công khai phòng hoặc riêng tư)
-│   └── 📄 livekit.py                # Endpoint /api/v1/livekit (cấp token LiveKit SFU cho thí sinh và giám thị)
+├── 📂 api/                          # Tầng Điều Khiển REST API (Controllers / Routers chuẩn hóa 1-1 theo 17 bảng CSDL)
+│   ├── 📄 auth.py                   # Endpoint /api/v1/auth (Xác thực đăng nhập, đăng ký, JWT token)
+│   ├── 📄 admin.py                  # Endpoint /api/v1/admin (Quản trị hệ thống, thống kê tổng thể)
+│   ├── 📄 users.py                  # Endpoint /api/v1/users (Bảng Users: Quản lý người dùng, xem & sửa hồ sơ)
+│   ├── 📄 rooms.py                  # Endpoint /api/v1/rooms (Bảng Rooms: Quản lý phòng thi và phòng thực hành)
+│   ├── 📄 questions.py              # Endpoint /api/v1/questions (Bảng Questions: Ngân hàng đề bài lập trình)
+│   ├── 📄 test_cases.py             # Endpoint /api/v1/test-cases (Bảng TestCases: Quản lý bộ dữ liệu kiểm thử chấm bài)
+│   ├── 📄 enrollments.py            # Endpoint /api/v1/enrollments (Bảng Enrollments: Ghi danh & kiểm tra thí sinh trong phòng)
+│   ├── 📄 submissions.py            # Endpoint /api/v1/submissions (Bảng Submissions: Nộp bài & xem tiến độ chấm điểm)
+│   ├── 📄 grading_results.py        # Endpoint /api/v1/grading-results (Bảng GradingResults: Kết quả chi tiết từng test case)
+│   ├── 📄 sessions.py               # Endpoint /api/v1/sessions (Bảng Sessions: Quản lý phiên làm bài của thí sinh)
+│   ├── 📄 violations.py             # Endpoint /api/v1/violations (Bảng Violations: Cảnh báo AI & Giám thị duyệt vi phạm)
+│   ├── 📄 snapshots.py              # Endpoint /api/v1/snapshots (Bảng Snapshots: Ảnh webcam định kỳ trong phiên thi)
+│   ├── 📄 chat.py                   # Endpoint /api/v1/chat (Bảng Messages: Kênh chat realtime công khai & riêng tư)
+│   ├── 📄 system_logs.py            # Endpoint /api/v1/system-logs (Bảng SystemLogs: Nhật ký kiểm toán hệ thống)
+│   ├── 📄 livekit.py                # Endpoint /api/v1/livekit (Bảng LiveKitTokens: Cấp token LiveKit SFU WebRTC)
+│   ├── 📄 classes.py                # Endpoint /api/v1/classes (Bảng Classes: Quản lý lớp học phần cho giảng viên)
+│   ├── 📄 drafts.py                 # Endpoint /api/v1/drafts (Bảng CodeDrafts: Tự động lưu nháp mã nguồn của thí sinh)
+│   ├── 📄 device_checks.py          # Endpoint /api/v1/device-checks (Bảng DeviceChecks: Kiểm tra webcam/mic/mạng trước khi thi)
+│   └── 📄 support.py                # Endpoint /api/v1/support (Bảng SupportRequests: Cứu hộ sự cố kỹ thuật khẩn cấp)
 │
 ├── 📂 tasks/                        # Celery Background Tasks
 │   ├── 📄 ai_proctoring_tasks.py    # Phân tích khung hình webcam, phát hiện bất thường, gửi cảnh báo

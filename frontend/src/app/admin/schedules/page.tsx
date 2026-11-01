@@ -533,16 +533,6 @@ export default function ScheduleManagerPage() {
                                   </Link>
                                 )}
 
-                                {/* Nếu đã kết thúc -> Nút Xem bảng điểm */}
-                                {item.status === 'completed' && (
-                                  <Link
-                                    href={`/admin/reports?exam=${item.id}`}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
-                                  >
-                                    Xem bảng điểm
-                                  </Link>
-                                )}
-
                                 {/* Nút xem chi tiết ca thi (áp dụng cho mọi trạng thái) */}
                                 <button
                                   type="button"

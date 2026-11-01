@@ -415,7 +415,7 @@ export default function StudentDashboardPage() {
                 ))
               ) : (
                 <div className="py-8 text-center text-xs text-slate-400">
-                  Không có kỳ thi nào ở trạng thái "{activeFilter}".
+                  Không có kỳ thi nào ở trạng thái &quot;{activeFilter}&quot;.
                 </div>
               )}
             </div>

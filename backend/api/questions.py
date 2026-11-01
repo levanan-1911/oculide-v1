@@ -91,6 +91,9 @@ async def update_question_details(
     q = get_question_by_id(question_id)
     if not q:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
+    room = get_room_by_id(q["room_id"])
+    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa câu hỏi trong phòng này")
     
     updated = update_question(question_id, **question_data.model_dump(exclude_unset=True))
     return updated
@@ -104,6 +107,9 @@ async def remove_question(
     q = get_question_by_id(question_id)
     if not q:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
+    room = get_room_by_id(q["room_id"])
+    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xóa câu hỏi của phòng này")
     delete_question(question_id)
     return None
 
@@ -114,6 +120,12 @@ async def list_test_cases(
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Giảng viên xem toàn bộ danh sách test cases (bao gồm ẩn và công khai)"""
+    q = get_question_by_id(question_id)
+    if not q:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
+    room = get_room_by_id(q["room_id"])
+    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem test case của phòng này")
     return get_test_cases_by_question(question_id, include_hidden=True)
 
 @router.post("/{question_id}/test-cases", response_model=TestCaseResponse, status_code=status.HTTP_201_CREATED)
@@ -126,6 +138,9 @@ async def add_test_case(
     q = get_question_by_id(question_id)
     if not q:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
+    room = get_room_by_id(q["room_id"])
+    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền thêm test case cho phòng này")
     return create_test_case(
         question_id=question_id,
         input_data=tc_data.input_data,
@@ -145,6 +160,12 @@ async def update_test_case_endpoint(
     tc = get_test_case_by_id(test_case_id)
     if not tc or tc["question_id"] != question_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy test case")
+    q = get_question_by_id(question_id)
+    if not q:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
+    room = get_room_by_id(q["room_id"])
+    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa test case của phòng này")
         
     updated = update_test_case(
         test_case_id=test_case_id,
@@ -162,6 +183,15 @@ async def remove_test_case(
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Xóa test case"""
+    tc = get_test_case_by_id(test_case_id)
+    if not tc or tc["question_id"] != question_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy test case")
+    q = get_question_by_id(question_id)
+    if not q:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
+    room = get_room_by_id(q["room_id"])
+    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xóa test case của phòng này")
     delete_test_case(test_case_id)
     return None
 

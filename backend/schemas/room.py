@@ -57,6 +57,8 @@ class RoomDashboardStudentItem(BaseModel):
     student_code: Optional[str] = None
     status: str = "active"
     violation_count: int = 0
+    pending_violation_count: int = 0
+    confirmed_violation_count: int = 0
     duration_minutes: int = 0
     last_snapshot_url: Optional[str] = None
 

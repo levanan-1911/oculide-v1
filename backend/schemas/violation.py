@@ -15,6 +15,9 @@ class SnapshotAnalyzeRequest(BaseModel):
     is_typing: Optional[bool] = False
     client_event: Optional[str] = None  # tab_switch, fullscreen_exit, blur, periodic
 
+class ViolationReviewRequest(BaseModel):
+    review_status: str = Field(..., pattern="^(confirmed|rejected)$")
+
 class ViolationResponse(BaseModel):
     violation_id: int
     session_id: int
@@ -28,6 +31,8 @@ class ViolationResponse(BaseModel):
     review_status: str = 'pending'
     reviewed_by: Optional[int] = None
     reviewed_at: Optional[datetime] = None
+    student_name: Optional[str] = None
+    student_code: Optional[str] = None
 
 class ViolationStatsItem(BaseModel):
     violation_type: str

@@ -1,5 +1,5 @@
 from core.config import get_db_connection
-from typing import Optional, Dict
+from typing import Optional, List, Dict
 
 def upsert_code_draft(
     session_id: int,
@@ -49,6 +49,24 @@ def get_code_draft(session_id: int, question_id: int) -> Optional[Dict]:
             columns = [column[0] for column in cursor.description]
             return dict(zip(columns, row))
         return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_code_drafts_by_session(session_id: int) -> List[Dict]:
+    """Lấy toàn bộ các bản nháp code trong phiên thi"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT draft_id, session_id, question_id, student_id, draft_code, language, last_saved_at
+            FROM CodeDrafts
+            WHERE session_id = ?
+            ORDER BY question_id ASC
+        """, (session_id,))
+        rows = cursor.fetchall()
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
     finally:
         cursor.close()
         conn.close()

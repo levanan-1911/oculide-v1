@@ -1,175 +1,655 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
-  title: Oculide Core REST API
-  description: >
-    Hệ thống API RESTful và WebSocket phục vụ Giám sát phòng thực hành lập trình & Gác thi bằng AI (Oculide v1).
-    Được thiết kế theo tiêu chuẩn IEEE 830-1998 Specification.
+  title: Oculide Core API
+  description: Backend Core API cho hệ thống Oculide v1 (IEEE 830 Specification)
   version: 1.0.0
-  contact:
-    name: Oculide Development Team
-    email: lean80469@gmail.com
-servers:
-  - url: https://api.oculide.id.vn/api/v1
-    description: Production API Server
-  - url: http://localhost:8000/api/v1
-    description: Local Development Server
-
 paths:
-  # ==========================================
-  # AUTHENTICATION
-  # ==========================================
-  /auth/register:
+  /health:
+    get:
+      tags:
+      - Health
+      summary: Health Check
+      operationId: health_check_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /health/liveness:
+    get:
+      tags:
+      - Health
+      summary: Health Liveness
+      description: 'Liveness probe: Xác nhận tiến trình Web Server không bị treo/deadlock'
+      operationId: health_liveness_health_liveness_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /health/readiness:
+    get:
+      tags:
+      - Health
+      summary: Health Readiness
+      description: 'Readiness probe: Kiểm tra kết nối CSDL để sẵn sàng nhận request
+        từ Reverse Proxy/Load Balancer'
+      operationId: health_readiness_health_readiness_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/auth/register:
     post:
-      tags: [Authentication]
-      summary: Đăng ký tài khoản người dùng mới
+      tags:
+      - Authentication
+      summary: Register
+      description: Đăng ký tài khoản người dùng mới (Instructor / Student)
+      operationId: register_api_v1_auth_register_post
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/UserRegisterRequest'
+        required: true
       responses:
         '201':
-          description: Đăng ký thành công
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
-        '400':
-          $ref: '#/components/responses/400Error'
-
-  /auth/login:
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/login:
     post:
-      tags: [Authentication]
-      summary: Đăng nhập hệ thống lấy JWT Access Token
+      tags:
+      - Authentication
+      summary: Login
+      description: Đăng nhập hệ thống bằng username/email và password nhận cặp Access
+        + Refresh JWT token
+      operationId: login_api_v1_auth_login_post
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/LoginRequest'
+        required: true
       responses:
         '200':
-          description: Đăng nhập thành công
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenResponse'
-        '401':
-          description: Sai tên đăng nhập hoặc mật khẩu
-
-  /auth/me:
-    get:
-      tags: [Authentication]
-      summary: Lấy thông tin tài khoản đang đăng nhập
-      security:
-        - BearerAuth: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/refresh:
+    post:
+      tags:
+      - Authentication
+      summary: Refresh Access Token
+      description: Làm mới Access Token khi token cũ đã hết hạn bằng Refresh Token
+      operationId: refresh_access_token_api_v1_auth_refresh_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+        required: true
       responses:
         '200':
-          description: Thông tin người dùng hiện tại
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/me:
+    get:
+      tags:
+      - Authentication
+      summary: Get My Profile
+      description: Lấy thông tin tài khoản hiện tại
+      operationId: get_my_profile_api_v1_auth_me_get
+      responses:
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
-        '401':
-          $ref: '#/components/responses/401Error'
-
-  /auth/join:
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/auth/join:
     post:
-      tags: [Authentication]
-      summary: Sinh viên tham gia phòng nhanh bằng mã phòng và mã PIN
+      tags:
+      - Authentication
+      summary: Join Room Fast
+      description: Sinh viên tham gia phòng nhanh bằng room_code và passcode (Tạo
+        tài khoản khách duy nhất an toàn)
+      operationId: join_room_fast_api_v1_auth_join_post
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/JoinRoomRequest'
+        required: true
       responses:
         '200':
-          description: Cấp token truy cập phòng thành công
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenResponse'
-        '404':
-          description: Không tìm thấy phòng hoặc phòng đã kết thúc
-
-  /auth/profile:
-    put:
-      tags: [Authentication]
-      summary: Cập nhật thông tin tài khoản cá nhân
-      security:
-        - BearerAuth: []
-      requestBody:
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/login/google:
+    get:
+      tags:
+      - Authentication
+      summary: Login Google
+      description: Khởi tạo URL đăng nhập qua Google OAuth2
+      operationId: login_google_api_v1_auth_login_google_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/auth/callback/google:
+    get:
+      tags:
+      - Authentication
+      summary: Callback Google
+      description: Tiếp nhận mã xác thực từ Google OAuth2 và trả JWT token
+      operationId: callback_google_api_v1_auth_callback_google_get
+      parameters:
+      - name: code
+        in: query
         required: true
+        schema:
+          type: string
+          title: Code
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/login/github:
+    get:
+      tags:
+      - Authentication
+      summary: Login Github
+      description: Khởi tạo URL đăng nhập qua GitHub OAuth
+      operationId: login_github_api_v1_auth_login_github_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/auth/callback/github:
+    get:
+      tags:
+      - Authentication
+      summary: Callback Github
+      description: Tiếp nhận mã xác thực từ GitHub OAuth
+      operationId: callback_github_api_v1_auth_callback_github_get
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Code
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/profile:
+    put:
+      tags:
+      - Authentication
+      summary: Update Profile
+      description: Cập nhật thông tin tài khoản cá nhân
+      operationId: update_profile_api_v1_auth_profile_put
+      requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/UserProfileUpdateRequest'
+        required: true
       responses:
         '200':
-          description: Cập nhật thành công
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
-
-  /auth/change-password:
-    put:
-      tags: [Authentication]
-      summary: Đổi mật khẩu
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+  /api/v1/auth/change-password:
+    put:
+      tags:
+      - Authentication
+      summary: Change Password
+      description: Đổi mật khẩu người dùng
+      operationId: change_password_api_v1_auth_change_password_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/admin/users:
+    get:
+      tags:
+      - Admin Management
+      summary: List Users
+      description: Lấy danh sách người dùng hệ thống có tìm kiếm và phân trang
+      operationId: list_users_api_v1_admin_users_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      - name: role
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Role
+      - name: search
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Search
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUsersResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Admin Management
+      summary: Create User By Admin
+      description: Admin tạo tài khoản người dùng mới
+      operationId: create_user_by_admin_api_v1_admin_users_post
+      security:
+      - OAuth2PasswordBearer: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ChangePasswordRequest'
+              $ref: '#/components/schemas/AdminUserCreateRequest'
       responses:
-        '200':
-          description: Đổi mật khẩu thành công
-
-  # ==========================================
-  # ROOMS
-  # ==========================================
-  /rooms:
-    get:
-      tags: [Rooms]
-      summary: Lấy danh sách các phòng học/phòng thi
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: room_type
-          in: query
-          schema:
-            type: string
-            enum: [exam, classroom]
-        - name: skip
-          in: query
-          schema:
-            type: integer
-            default: 0
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 100
-      responses:
-        '200':
-          description: Danh sách phòng
+        '201':
+          description: Successful Response
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/RoomResponse'
-
-    post:
-      tags: [Rooms]
-      summary: Tạo mới một phòng thi hoặc phòng thực hành
+                $ref: '#/components/schemas/UserResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/users/{user_id}:
+    get:
+      tags:
+      - Admin Management
+      summary: Get User Details
+      description: Xem thông tin chi tiết người dùng
+      operationId: get_user_details_api_v1_admin_users__user_id__get
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: User Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Admin Management
+      summary: Remove User
+      description: Xóa tài khoản người dùng khỏi hệ thống
+      operationId: remove_user_api_v1_admin_users__user_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: User Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/users/{user_id}/status:
+    put:
+      tags:
+      - Admin Management
+      summary: Toggle User Status
+      description: Kích hoạt hoặc vô hiệu hóa tài khoản người dùng
+      operationId: toggle_user_status_api_v1_admin_users__user_id__status_put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: User Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserStatusUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/users/{user_id}/role:
+    put:
+      tags:
+      - Admin Management
+      summary: Change User Role
+      description: Cập nhật quyền vai trò người dùng (admin, instructor, student)
+      operationId: change_user_role_api_v1_admin_users__user_id__role_put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: User Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserRoleUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/users/{user_id}/reset-password:
+    post:
+      tags:
+      - Admin Management
+      summary: Reset User Password
+      description: Đặt lại mật khẩu người dùng về mật khẩu ngẫu nhiên
+      operationId: reset_user_password_api_v1_admin_users__user_id__reset_password_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: User Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/users/batch-import:
+    post:
+      tags:
+      - Admin Management
+      summary: Batch Import Users
+      description: Nhập danh sách tài khoản theo lô
+      operationId: batch_import_users_api_v1_admin_users_batch_import_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchImportRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchImportResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/admin/system/overview:
+    get:
+      tags:
+      - Admin Management
+      summary: System Overview
+      description: Lấy số liệu thống kê tổng quan hệ thống cho Admin
+      operationId: system_overview_api_v1_admin_system_overview_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/admin/logs:
+    get:
+      tags:
+      - Admin Management
+      summary: List System Logs
+      description: Lấy danh sách nhật ký kiểm toán hệ thống từ bảng SystemLogs
+      operationId: list_system_logs_api_v1_admin_logs_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Page Size
+      - name: log_level
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Log Level
+      - name: module
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Module
+      - name: user_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: User Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rooms:
+    post:
+      tags:
+      - Rooms
+      summary: Create New Room
+      description: Tạo phòng thi hoặc phòng thực hành mới
+      operationId: create_new_room_api_v1_rooms_post
+      security:
+      - OAuth2PasswordBearer: []
       requestBody:
         required: true
         content:
@@ -178,63 +658,136 @@ paths:
               $ref: '#/components/schemas/RoomCreateRequest'
       responses:
         '201':
-          description: Phòng được tạo thành công
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RoomResponse'
-
-  /rooms/public/{room_code}:
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     get:
-      tags: [Rooms]
-      summary: Lấy thông tin công khai của phòng thi để sinh viên kiểm tra trước khi vào
+      tags:
+      - Rooms
+      summary: List Rooms
+      description: Lấy danh sách các phòng khả dụng
+      operationId: list_rooms_api_v1_rooms_get
+      security:
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: room_code
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: room_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Room Type
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Skip
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 100
+          title: Limit
       responses:
         '200':
-          description: Thông tin phòng
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoomResponse'
+                title: Response List Rooms Api V1 Rooms Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rooms/public/{room_code}:
+    get:
+      tags:
+      - Rooms
+      summary: Get Public Room Info
+      description: Lấy thông tin công khai của phòng thi trước khi đăng nhập hoặc
+        nhập passcode
+      operationId: get_public_room_info_api_v1_rooms_public__room_code__get
+      parameters:
+      - name: room_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Room Code
+      responses:
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicRoomResponse'
-        '404':
-          description: Không tìm thấy mã phòng
-
-  /rooms/{room_id}:
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rooms/{room_id}:
     get:
-      tags: [Rooms]
-      summary: Lấy chi tiết cấu hình phòng
+      tags:
+      - Rooms
+      summary: Get Room Details
+      description: Xem cấu hình chi tiết của phòng
+      operationId: get_room_details_api_v1_rooms__room_id__get
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: room_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
       responses:
         '200':
-          description: Chi tiết phòng
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RoomResponse'
-
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     put:
-      tags: [Rooms]
-      summary: Chỉnh sửa cấu hình phòng
+      tags:
+      - Rooms
+      summary: Update Room Details
+      description: Chỉnh sửa cấu hình phòng
+      operationId: update_room_details_api_v1_rooms__room_id__put
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: room_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
       requestBody:
         required: true
         content:
@@ -243,139 +796,326 @@ paths:
               $ref: '#/components/schemas/RoomUpdateRequest'
       responses:
         '200':
-          description: Cập nhật thành công
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RoomResponse'
-
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     delete:
-      tags: [Rooms]
-      summary: Xóa phòng
+      tags:
+      - Rooms
+      summary: Remove Room
+      description: Xóa phòng thi
+      operationId: remove_room_api_v1_rooms__room_id__delete
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: room_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
       responses:
         '204':
-          description: Đã xóa phòng
-
-  /rooms/{room_id}/dashboard:
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rooms/{room_id}/dashboard:
     get:
-      tags: [Rooms]
-      summary: Dữ liệu Lưới giám sát Panoptic Grid View thời gian thực
+      tags:
+      - Rooms
+      summary: Get Room Dashboard
+      description: Dữ liệu Panoptic Grid View tổng hợp giám sát phòng thi thời gian
+        thực (Zero N+1 query)
+      operationId: get_room_dashboard_api_v1_rooms__room_id__dashboard_get
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: room_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
       responses:
         '200':
-          description: Thông tin các sinh viên đang online, vi phạm và stream
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RoomDashboardResponse'
-
-  /rooms/{room_id}/scoreboard:
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rooms/{room_id}/scoreboard:
     get:
-      tags: [Rooms]
-      summary: Bảng điểm thời gian thực toàn bộ sinh viên trong phòng
+      tags:
+      - Rooms
+      summary: Get Scoreboard
+      description: Bảng điểm thời gian thực tổng hợp kết quả của sinh viên trong phòng
+      operationId: get_scoreboard_api_v1_rooms__room_id__scoreboard_get
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: room_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
       responses:
         '200':
-          description: Danh sách điểm bài thi của các sinh viên
-
-  # ==========================================
-  # QUESTIONS & TEST CASES
-  # ==========================================
-  /questions:
-    post:
-      tags: [Questions]
-      summary: Tạo mới đề bài / câu hỏi trong phòng
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rooms/{room_id}/config:
+    get:
+      tags:
+      - Rooms
+      summary: Get Room Config
+      description: Lấy cấu hình runtime môi trường phòng (danh sách ngôn ngữ, giới
+        hạn sandbox)
+      operationId: get_room_config_api_v1_rooms__room_id__config_get
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rooms/{room_id}/enrollments:
+    get:
+      tags:
+      - Rooms
+      summary: List Room Enrollments
+      description: Lấy danh sách sinh viên ghi danh trong phòng
+      operationId: list_room_enrollments_api_v1_rooms__room_id__enrollments_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Rooms
+      summary: Add Room Enrollments
+      description: Ghi danh danh sách sinh viên vào phòng
+      operationId: add_room_enrollments_api_v1_rooms__room_id__enrollments_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
       requestBody:
         required: true
         content:
           application/json:
             schema:
+              $ref: '#/components/schemas/RoomEnrollmentRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rooms/{room_id}/enrollments/{student_id}:
+    delete:
+      tags:
+      - Rooms
+      summary: Remove Student From Room
+      description: Xóa sinh viên khỏi phòng
+      operationId: remove_student_from_room_api_v1_rooms__room_id__enrollments__student_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
+      - name: student_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Student Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/questions:
+    post:
+      tags:
+      - Questions
+      summary: Create New Question
+      description: Tạo mới câu hỏi/đề bài lập trình cho phòng thi
+      operationId: create_new_question_api_v1_questions_post
+      requestBody:
+        content:
+          application/json:
+            schema:
               $ref: '#/components/schemas/QuestionCreateRequest'
+        required: true
       responses:
         '201':
-          description: Tạo câu hỏi thành công
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuestionResponse'
-
-  /questions/room/{room_id}:
-    get:
-      tags: [Questions]
-      summary: Lấy danh sách toàn bộ câu hỏi trong phòng
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+  /api/v1/questions/room/{room_id}:
+    get:
+      tags:
+      - Questions
+      summary: List Questions In Room
+      description: Lấy danh sách câu hỏi trong phòng (Sinh viên sẽ không thấy test
+        cases ẩn)
+      operationId: list_questions_in_room_api_v1_questions_room__room_id__get
+      security:
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: room_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
       responses:
         '200':
-          description: Danh sách câu hỏi
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/QuestionResponse'
-
-  /questions/{question_id}:
+                title: Response List Questions In Room Api V1 Questions Room  Room
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/questions/{question_id}:
     get:
-      tags: [Questions]
-      summary: Lấy chi tiết đề bài câu hỏi
+      tags:
+      - Questions
+      summary: Get Question Details
+      description: Lấy chi tiết đề bài câu hỏi
+      operationId: get_question_details_api_v1_questions__question_id__get
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: question_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Question Id
       responses:
         '200':
-          description: Chi tiết câu hỏi và sample test cases
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuestionResponse'
-
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     put:
-      tags: [Questions]
-      summary: Cập nhật đề bài
+      tags:
+      - Questions
+      summary: Update Question Details
+      description: Chỉnh sửa câu hỏi
+      operationId: update_question_details_api_v1_questions__question_id__put
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: question_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Question Id
       requestBody:
         required: true
         content:
@@ -384,50 +1124,90 @@ paths:
               $ref: '#/components/schemas/QuestionUpdateRequest'
       responses:
         '200':
-          description: Đã cập nhật câu hỏi
-
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     delete:
-      tags: [Questions]
-      summary: Xóa câu hỏi
+      tags:
+      - Questions
+      summary: Remove Question
+      description: Xóa câu hỏi khỏi đề thi
+      operationId: remove_question_api_v1_questions__question_id__delete
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: question_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Question Id
       responses:
         '204':
-          description: Đã xóa câu hỏi
-
-  /questions/{question_id}/test-cases:
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/questions/{question_id}/test-cases:
     get:
-      tags: [Questions]
-      summary: Lấy danh sách test cases của câu hỏi
+      tags:
+      - Questions
+      summary: List Test Cases
+      description: Giảng viên xem toàn bộ danh sách test cases (bao gồm ẩn và công
+        khai)
+      operationId: list_test_cases_api_v1_questions__question_id__test_cases_get
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: question_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Question Id
       responses:
         '200':
-          description: Danh sách test cases
-
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TestCaseResponse'
+                title: Response List Test Cases Api V1 Questions  Question Id  Test
+                  Cases Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     post:
-      tags: [Questions]
-      summary: Thêm test case cho câu hỏi
+      tags:
+      - Questions
+      summary: Add Test Case
+      description: Thêm test case mới cho câu hỏi
+      operationId: add_test_case_api_v1_questions__question_id__test_cases_post
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: question_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Question Id
       requestBody:
         required: true
         content:
@@ -436,736 +1216,3328 @@ paths:
               $ref: '#/components/schemas/TestCaseCreateRequest'
       responses:
         '201':
-          description: Đã tạo test case
-
-  # ==========================================
-  # SUBMISSIONS & AUTO-GRADER
-  # ==========================================
-  /submissions:
-    post:
-      tags: [Submissions]
-      summary: Nộp bài làm chính thức để chấm điểm tự động bằng Docker Sandbox
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestCaseResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/questions/{question_id}/test-cases/{test_case_id}:
+    put:
+      tags:
+      - Questions
+      summary: Update Test Case Endpoint
+      description: Chỉnh sửa thông tin test case (input, output, ẩn/hiện, điểm)
+      operationId: update_test_case_endpoint_api_v1_questions__question_id__test_cases__test_case_id__put
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Question Id
+      - name: test_case_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Test Case Id
       requestBody:
         required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestCaseCreateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestCaseResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Questions
+      summary: Remove Test Case
+      description: Xóa test case
+      operationId: remove_test_case_api_v1_questions__question_id__test_cases__test_case_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Question Id
+      - name: test_case_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Test Case Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/submissions:
+    post:
+      tags:
+      - Submissions
+      summary: Create Submission Endpoint
+      description: Sinh viên nộp bài làm chính thức để chấm điểm tự động
+      operationId: create_submission_endpoint_api_v1_submissions_post
+      requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SubmissionCreateRequest'
+        required: true
       responses:
         '201':
-          description: Bài nộp đã được tiếp nhận và đưa vào hàng đợi chấm
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubmissionResponse'
-
-  /submissions/run:
-    post:
-      tags: [Submissions]
-      summary: Chạy thử nghiệm code với Custom Input (không lưu điểm)
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+  /api/v1/submissions/run:
+    post:
+      tags:
+      - Submissions
+      summary: Run Custom Code
+      description: Chạy thử nghiệm code với Custom Input trong Docker Sandbox (không
+        lưu điểm)
+      operationId: run_custom_code_api_v1_submissions_run_post
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CodeRunRequest'
+        required: true
       responses:
         '200':
-          description: Kết quả thực thi trong Sandbox
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CodeRunResponse'
-
-  /submissions/{submission_id}:
-    get:
-      tags: [Submissions]
-      summary: Lấy chi tiết bài nộp và trạng thái chấm
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+  /api/v1/submissions/{submission_id}:
+    get:
+      tags:
+      - Submissions
+      summary: Get Submission
+      description: Lấy chi tiết bài nộp và kết quả chấm điểm
+      operationId: get_submission_api_v1_submissions__submission_id__get
+      security:
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: submission_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: submission_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Submission Id
       responses:
         '200':
-          description: Chi tiết bài nộp
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubmissionResponse'
-
-  /submissions/{submission_id}/results:
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/submissions/{submission_id}/results:
     get:
-      tags: [Submissions]
-      summary: Lấy kết quả chi tiết từng test case của bài nộp
+      tags:
+      - Submissions
+      summary: Get Submission Results
+      description: Lấy chi tiết kết quả chạy qua từng test case (Chống IDOR)
+      operationId: get_submission_results_api_v1_submissions__submission_id__results_get
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: submission_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: submission_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Submission Id
       responses:
         '200':
-          description: Danh sách kết quả test cases
-
-  # ==========================================
-  # SESSIONS
-  # ==========================================
-  /sessions:
-    post:
-      tags: [Sessions]
-      summary: Khởi tạo phiên thi khi sinh viên bắt đầu làm bài
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GradingResultResponse'
+                title: Response Get Submission Results Api V1 Submissions  Submission
+                  Id  Results Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/submissions/student/{student_id}:
+    get:
+      tags:
+      - Submissions
+      summary: Get Submissions By Student Endpoint
+      description: Lấy lịch sử nộp bài của sinh viên
+      operationId: get_submissions_by_student_endpoint_api_v1_submissions_student__student_id__get
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: student_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Student Id
+      - name: room_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubmissionResponse'
+                title: Response Get Submissions By Student Endpoint Api V1 Submissions
+                  Student  Student Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/submissions/question/{question_id}:
+    get:
+      tags:
+      - Submissions
+      summary: Get Submissions By Question Endpoint
+      description: Giảng viên xem toàn bộ bài nộp cho một câu hỏi
+      operationId: get_submissions_by_question_endpoint_api_v1_submissions_question__question_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Question Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubmissionResponse'
+                title: Response Get Submissions By Question Endpoint Api V1 Submissions
+                  Question  Question Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/submissions/{submission_id}/status:
+    patch:
+      tags:
+      - Submissions
+      summary: Update Status Endpoint
+      description: Cập nhật thủ công trạng thái bài nộp
+      operationId: update_status_endpoint_api_v1_submissions__submission_id__status_patch
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: submission_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Submission Id
       requestBody:
         required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+              title: Status Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions:
+    post:
+      tags:
+      - Sessions
+      summary: Start Session
+      description: Bắt đầu phiên làm bài thi / học của sinh viên với ràng buộc máy
+        trạng thái an toàn
+      operationId: start_session_api_v1_sessions_post
+      requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SessionCreateRequest'
+        required: true
       responses:
         '201':
-          description: Đã tạo phiên thi
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionResponse'
-
-  /sessions/{session_id}/end:
-    post:
-      tags: [Sessions]
-      summary: Kết thúc phiên thi
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+  /api/v1/sessions/room/{room_id}:
+    get:
+      tags:
+      - Sessions
+      summary: List Room Sessions
+      description: Lấy danh sách các phiên thi của toàn bộ sinh viên trong phòng
+      operationId: list_room_sessions_api_v1_sessions_room__room_id__get
+      security:
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
+      - name: active_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Active Only
       responses:
         '200':
-          description: Phiên thi đã kết thúc
-
-  # ==========================================
-  # VIOLATIONS & AI PROCTORING
-  # ==========================================
-  /violations:
-    post:
-      tags: [Violations]
-      summary: Ghi nhận sự kiện vi phạm
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionResponse'
+                title: Response List Room Sessions Api V1 Sessions Room  Room Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/student/{student_id}:
+    get:
+      tags:
+      - Sessions
+      summary: List Student Sessions
+      description: 'Lấy lịch sử các phiên thi của sinh viên (Chống IDOR: sinh viên
+        chỉ xem được của chính mình)'
+      operationId: list_student_sessions_api_v1_sessions_student__student_id__get
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: student_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Student Id
+      - name: room_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Room Id
+      - name: active_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Active Only
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionResponse'
+                title: Response List Student Sessions Api V1 Sessions Student  Student
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/{session_id}:
+    get:
+      tags:
+      - Sessions
+      summary: Get Session Details
+      description: Lấy thông tin chi tiết phiên thi (Chống IDOR)
+      operationId: get_session_details_api_v1_sessions__session_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/{session_id}/status:
+    patch:
+      tags:
+      - Sessions
+      summary: Change Session Status
+      description: Cập nhật trạng thái phiên thi (active, completed, terminated, abandoned)
+      operationId: change_session_status_api_v1_sessions__session_id__status_patch
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Session Id
       requestBody:
         required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStatusUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/{session_id}/end:
+    post:
+      tags:
+      - Sessions
+      summary: Finish Session
+      description: Kết thúc phiên làm bài thi (Chống IDOR)
+      operationId: finish_session_api_v1_sessions__session_id__end_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/violations:
+    post:
+      tags:
+      - Violations & AI Proctoring
+      summary: Log Violation
+      description: Ghi nhận sự kiện vi phạm (từ browser hoặc AI Worker)
+      operationId: log_violation_api_v1_violations_post
+      requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ViolationCreateRequest'
+        required: true
       responses:
         '201':
-          description: Ghi nhận vi phạm thành công
-
-  /violations/analyze:
-    post:
-      tags: [Violations]
-      summary: Gửi ảnh chụp webcam vào AI Worker để phân tích bất thường
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ViolationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+  /api/v1/violations/analyze:
+    post:
+      tags:
+      - Violations & AI Proctoring
+      summary: Analyze Webcam Snapshot
+      description: Tiếp nhận snapshot webcam và đẩy vào hàng đợi Celery AI Proctoring
+      operationId: analyze_webcam_snapshot_api_v1_violations_analyze_post
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SnapshotAnalyzeRequest'
+        required: true
       responses:
         '202':
-          description: Đã tiếp nhận ảnh vào hàng đợi phân tích
-
-  /violations/{violation_id}/review:
-    patch:
-      tags: [Violations]
-      summary: Giảng viên duyệt hoặc bỏ qua cảnh báo vi phạm
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: violation_id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Đã cập nhật trạng thái duyệt
-
-  # ==========================================
-  # LIVEKIT STREAMING
-  # ==========================================
-  /livekit/tokens:
-    post:
-      tags: [LiveKit]
-      summary: Tạo access token kết nối LiveKit SFU Server
-      security:
-        - BearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LiveKitTokenRequest'
-      responses:
-        '200':
-          description: Token kết nối LiveKit
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LiveKitTokenResponse'
-
-  # ==========================================
-  # CHAT
-  # ==========================================
-  /chat:
-    post:
-      tags: [Chat]
-      summary: Gửi tin nhắn chat trong phòng
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
-        - BearerAuth: []
-      requestBody:
+      - OAuth2PasswordBearer: []
+  /api/v1/violations/session/{session_id}:
+    get:
+      tags:
+      - Violations & AI Proctoring
+      summary: Get Session Violations
+      description: Lấy danh sách các vi phạm trong một phiên thi (Chống IDOR)
+      operationId: get_session_violations_api_v1_violations_session__session_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: session_id
+        in: path
         required: true
+        schema:
+          type: integer
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ViolationResponse'
+                title: Response Get Session Violations Api V1 Violations Session  Session
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/violations/student/{student_id}:
+    get:
+      tags:
+      - Violations & AI Proctoring
+      summary: Get Student Violations
+      description: Lấy các vi phạm của một sinh viên (Chống IDOR)
+      operationId: get_student_violations_api_v1_violations_student__student_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: student_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Student Id
+      - name: room_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ViolationResponse'
+                title: Response Get Student Violations Api V1 Violations Student  Student
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/violations/room/{room_id}:
+    get:
+      tags:
+      - Violations & AI Proctoring
+      summary: Get Room Violations
+      description: Giám thị / Giảng viên lấy toàn bộ danh sách vi phạm trong phòng
+        thi, có thể lọc theo review_status
+      operationId: get_room_violations_api_v1_violations_room__room_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
+      - name: review_status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            pattern: ^(pending|confirmed|rejected)$
+          - type: 'null'
+          title: Review Status
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ViolationResponse'
+                title: Response Get Room Violations Api V1 Violations Room  Room Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/violations/{violation_id}/review:
+    patch:
+      tags:
+      - Violations & AI Proctoring
+      summary: Review Violation
+      description: Giảng viên duyệt hoặc xác nhận sự kiện vi phạm (confirmed hoặc
+        rejected) qua JSON body hoặc Query param
+      operationId: review_violation_api_v1_violations__violation_id__review_patch
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: violation_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Violation Id
+      - name: review_status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Review Status
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/ViolationReviewRequest'
+              - type: 'null'
+              title: Review Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ViolationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/violations/room/{room_id}/stats:
+    get:
+      tags:
+      - Violations & AI Proctoring
+      summary: Get Room Violation Statistics
+      description: Thống kê chi tiết các vi phạm theo loại và mức độ cảnh báo qua
+        Stored Procedure
+      operationId: get_room_violation_statistics_api_v1_violations_room__room_id__stats_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
+      - name: student_id
+        in: query
+        required: true
+        schema:
+          type: integer
+          title: Student Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ViolationStatsItem'
+                title: Response Get Room Violation Statistics Api V1 Violations Room  Room
+                  Id  Stats Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/chat:
+    post:
+      tags:
+      - Chat
+      summary: Send Chat Message
+      description: Gửi tin nhắn trong phòng (lưu CSDL bảng Messages)
+      operationId: send_chat_message_api_v1_chat_post
+      requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ChatMessageRequest'
+        required: true
       responses:
         '201':
-          description: Đã gửi tin nhắn
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ChatMessageResponse'
-
-  /chat/room/{room_id}:
-    get:
-      tags: [Chat]
-      summary: Lấy lịch sử chat trong phòng
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
-        - BearerAuth: []
+      - OAuth2PasswordBearer: []
+  /api/v1/chat/room/{room_id}:
+    get:
+      tags:
+      - Chat
+      summary: List Room Messages
+      description: Lấy danh sách tin nhắn thông báo chung trong phòng
+      operationId: list_room_messages_api_v1_chat_room__room_id__get
+      security:
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: room_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+          title: Limit
       responses:
         '200':
-          description: Lịch sử tin nhắn
-
-components:
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-
-  responses:
-    400Error:
-      description: Yêu cầu không hợp lệ
-    401Error:
-      description: Chưa xác thực danh tính
-    403Error:
-      description: Không có quyền truy cập
-    404Error:
-      description: Không tìm thấy tài nguyên
-
-  schemas:
-    UserResponse:
-      type: object
-      properties:
-        user_id:
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatMessageResponse'
+                title: Response List Room Messages Api V1 Chat Room  Room Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/chat/conversation/{other_user_id}:
+    get:
+      tags:
+      - Chat
+      summary: Get Direct Messages
+      description: Lấy lịch sử hội thoại riêng tư giữa 2 người dùng
+      operationId: get_direct_messages_api_v1_chat_conversation__other_user_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: other_user_id
+        in: path
+        required: true
+        schema:
           type: integer
-        username:
+          title: Other User Id
+      - name: room_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Room Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatMessageResponse'
+                title: Response Get Direct Messages Api V1 Chat Conversation  Other
+                  User Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/livekit/tokens:
+    post:
+      tags:
+      - LiveKit Streaming
+      summary: Generate Livekit Token
+      description: Cấp phát Token kết nối máy chủ LiveKit SFU để truyền/nhận video
+        stream và ghi nhận kiểm toán CSDL
+      operationId: generate_livekit_token_api_v1_livekit_tokens_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiveKitTokenRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveKitTokenResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/livekit/tokens/revoke:
+    post:
+      tags:
+      - LiveKit Streaming
+      summary: Revoke Tokens Endpoint
+      description: Thu hồi quyền truyền phát video của sinh viên khi bị giám thị đình
+        chỉ/trục xuất
+      operationId: revoke_tokens_endpoint_api_v1_livekit_tokens_revoke_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Data
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/livekit/webhook:
+    post:
+      tags:
+      - LiveKit Streaming
+      summary: Livekit Webhook
+      description: Tiếp nhận sự kiện thời gian thực từ LiveKit SFU (participant_joined,
+        participant_left, track_published)
+      operationId: livekit_webhook_api_v1_livekit_webhook_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/livekit/rooms:
+    post:
+      tags:
+      - LiveKit Streaming
+      summary: Create Livekit Room
+      description: Khởi tạo phòng LiveKit SFU
+      operationId: create_livekit_room_api_v1_livekit_rooms_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties:
+                type: string
+              type: object
+              title: Data
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/livekit/rooms/{room_name}:
+    delete:
+      tags:
+      - LiveKit Streaming
+      summary: Delete Livekit Room
+      description: Đóng phòng LiveKit SFU
+      operationId: delete_livekit_room_api_v1_livekit_rooms__room_name__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: room_name
+        in: path
+        required: true
+        schema:
           type: string
-        email:
-          type: string
-        full_name:
-          type: string
-        role:
-          type: string
-          enum: [admin, instructor, student]
-        student_id:
-          type: string
-          nullable: true
-        is_active:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-
-    UserRegisterRequest:
-      type: object
-      required: [username, password, email, full_name, role]
+          title: Room Name
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/drafts:
+    post:
+      tags:
+      - Code Drafts
+      summary: Save Code Draft
+      description: Tự động lưu bản nháp code định kỳ (Auto-save) phòng mất điện, sập
+        mạng
+      operationId: save_code_draft_api_v1_drafts_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftSaveRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DraftResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/drafts/session/{session_id}:
+    get:
+      tags:
+      - Code Drafts
+      summary: Get All Session Code Drafts
+      description: Lấy toàn bộ các bản nháp code của phiên thi khi sinh viên tải lại
+        trang (F5/Reload)
+      operationId: get_all_session_code_drafts_api_v1_drafts_session__session_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DraftResponse'
+                title: Response Get All Session Code Drafts Api V1 Drafts Session  Session
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/drafts/session/{session_id}/question/{question_id}:
+    get:
+      tags:
+      - Code Drafts
+      summary: Get Latest Code Draft
+      description: Lấy bản nháp code gần nhất của một câu hỏi cụ thể
+      operationId: get_latest_code_draft_api_v1_drafts_session__session_id__question__question_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Session Id
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Question Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DraftResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Code Drafts
+      summary: Remove Code Draft
+      description: Xóa bản nháp sau khi đã nộp bài chính thức
+      operationId: remove_code_draft_api_v1_drafts_session__session_id__question__question_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Session Id
+      - name: question_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Question Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/device-checks:
+    post:
+      tags:
+      - Device Checks
+      summary: Submit Device Check
+      description: Gửi kết quả kiểm tra thiết bị (Webcam, Mic, Mạng) trước khi bắt
+        đầu thi
+      operationId: submit_device_check_api_v1_device_checks_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCheckCreateRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceCheckResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/device-checks/session/{session_id}:
+    get:
+      tags:
+      - Device Checks
+      summary: Get Session Device Check
+      description: Lấy kết quả kiểm tra thiết bị của một phiên thi cụ thể
+      operationId: get_session_device_check_api_v1_device_checks_session__session_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceCheckResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/device-checks/room/{room_id}:
+    get:
+      tags:
+      - Device Checks
+      summary: Get Room Device Checks
+      description: Giám thị theo dõi trạng thái thiết bị của toàn bộ sinh viên trong
+        phòng
+      operationId: get_room_device_checks_api_v1_device_checks_room__room_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoomDeviceCheckItem'
+                title: Response Get Room Device Checks Api V1 Device Checks Room  Room
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/support:
+    post:
+      tags:
+      - Support Requests
+      summary: Submit Support Request
+      description: Sinh viên gửi yêu cầu hỗ trợ kỹ thuật khẩn cấp trong phòng thi/thực
+        hành
+      operationId: submit_support_request_api_v1_support_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportRequestCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportRequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/support/my-requests:
+    get:
+      tags:
+      - Support Requests
+      summary: List My Support Requests
+      description: Sinh viên xem danh sách các yêu cầu hỗ trợ kỹ thuật của mình
+      operationId: list_my_support_requests_api_v1_support_my_requests_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: room_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SupportRequestResponse'
+                title: Response List My Support Requests Api V1 Support My Requests
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/support/room/{room_id}:
+    get:
+      tags:
+      - Support Requests
+      summary: List Room Support Requests
+      description: Giám thị / Giảng viên xem các yêu cầu cứu hộ trong phòng thi
+      operationId: list_room_support_requests_api_v1_support_room__room_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SupportRequestResponse'
+                title: Response List Room Support Requests Api V1 Support Room  Room
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/support/{request_id}/status:
+    patch:
+      tags:
+      - Support Requests
+      summary: Change Support Status
+      description: Giám thị cập nhật trạng thái xử lý yêu cầu (in_progress, resolved,
+        rejected)
+      operationId: change_support_status_api_v1_support__request_id__status_patch
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Request Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportStatusUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportRequestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/classes:
+    get:
+      tags:
+      - Classes
+      summary: List Classes
+      description: Lấy danh sách các lớp học (Giảng viên thấy lớp của mình, Admin
+        thấy toàn bộ)
+      operationId: list_classes_api_v1_classes_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ClassResponse'
+                type: array
+                title: Response List Classes Api V1 Classes Get
+      security:
+      - OAuth2PasswordBearer: []
+    post:
+      tags:
+      - Classes
+      summary: Add Class
+      description: Giảng viên tạo lớp học phần mới
+      operationId: add_class_api_v1_classes_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/classes/{class_id}:
+    get:
+      tags:
+      - Classes
+      summary: Get Class Details
+      description: Lấy thông tin chi tiết một lớp học
+      operationId: get_class_details_api_v1_classes__class_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: class_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Class Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Classes
+      summary: Edit Class
+      description: Giảng viên cập nhật thông tin lớp học
+      operationId: edit_class_api_v1_classes__class_id__put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: class_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Class Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Classes
+      summary: Remove Class
+      description: Giảng viên xóa lớp học
+      operationId: remove_class_api_v1_classes__class_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: class_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Class Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    AdminUserCreateRequest:
       properties:
         username:
           type: string
+          maxLength: 50
+          minLength: 3
+          title: Username
         password:
           type: string
+          minLength: 6
+          title: Password
         email:
           type: string
           format: email
+          title: Email
         full_name:
           type: string
+          maxLength: 100
+          minLength: 2
+          title: Full Name
         role:
           type: string
-          enum: [instructor, student]
+          pattern: ^(admin|instructor|student)$
+          title: Role
         student_id:
-          type: string
-          nullable: true
-
-    LoginRequest:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Id
+        is_active:
+          type: boolean
+          title: Is Active
+          default: true
       type: object
-      required: [username, password]
+      required:
+      - username
+      - password
+      - email
+      - full_name
+      - role
+      title: AdminUserCreateRequest
+    AdminUserRoleUpdate:
+      properties:
+        role:
+          type: string
+          pattern: ^(admin|instructor|student)$
+          title: Role
+      type: object
+      required:
+      - role
+      title: AdminUserRoleUpdate
+    AdminUserStatusUpdate:
+      properties:
+        is_active:
+          type: boolean
+          title: Is Active
+      type: object
+      required:
+      - is_active
+      title: AdminUserStatusUpdate
+    BatchImportRequest:
+      properties:
+        role:
+          type: string
+          pattern: ^(student|instructor)$
+          title: Role
+          default: student
+        users:
+          items:
+            $ref: '#/components/schemas/BatchImportUserItem'
+          type: array
+          title: Users
+      type: object
+      required:
+      - users
+      title: BatchImportRequest
+    BatchImportResult:
+      properties:
+        total_imported:
+          type: integer
+          title: Total Imported
+        failed_count:
+          type: integer
+          title: Failed Count
+        errors:
+          items:
+            type: string
+          type: array
+          title: Errors
+          default: []
+      type: object
+      required:
+      - total_imported
+      - failed_count
+      title: BatchImportResult
+    BatchImportUserItem:
       properties:
         username:
           type: string
+          title: Username
         password:
-          type: string
-
-    TokenResponse:
-      type: object
-      properties:
-        access_token:
-          type: string
-        token_type:
-          type: string
-          default: bearer
-        user:
-          $ref: '#/components/schemas/UserResponse'
-
-    JoinRoomRequest:
-      type: object
-      required: [room_code]
-      properties:
-        room_code:
-          type: string
-        passcode:
-          type: string
-          nullable: true
-        full_name:
-          type: string
-          nullable: true
-        student_id:
-          type: string
-          nullable: true
-
-    UserProfileUpdateRequest:
-      type: object
-      properties:
-        full_name:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Password
         email:
           type: string
-        student_id:
+          format: email
+          title: Email
+        full_name:
           type: string
-
-    ChangePasswordRequest:
+          title: Full Name
+        student_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Id
       type: object
-      required: [current_password, new_password]
+      required:
+      - username
+      - email
+      - full_name
+      title: BatchImportUserItem
+    ChangePasswordRequest:
       properties:
         current_password:
           type: string
+          title: Current Password
         new_password:
           type: string
-
-    RoomResponse:
+          minLength: 6
+          title: New Password
       type: object
-      properties:
-        room_id:
-          type: integer
-        room_code:
-          type: string
-        room_name:
-          type: string
-        room_type:
-          type: string
-          enum: [exam, classroom]
-        instructor_id:
-          type: integer
-        description:
-          type: string
-          nullable: true
-        start_time:
-          type: string
-          format: date-time
-        end_time:
-          type: string
-          format: date-time
-        duration_minutes:
-          type: integer
-        max_attempts:
-          type: integer
-        is_active:
-          type: boolean
-        livekit_room_name:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-
-    PublicRoomResponse:
-      type: object
-      properties:
-        room_id:
-          type: integer
-        room_code:
-          type: string
-        room_name:
-          type: string
-        room_type:
-          type: string
-        start_time:
-          type: string
-          format: date-time
-        end_time:
-          type: string
-          format: date-time
-        duration_minutes:
-          type: integer
-        requires_passcode:
-          type: boolean
-
-    RoomCreateRequest:
-      type: object
-      required: [room_code, room_name, start_time, end_time, duration_minutes]
-      properties:
-        room_code:
-          type: string
-        room_name:
-          type: string
-        room_type:
-          type: string
-          default: exam
-          enum: [exam, classroom]
-        description:
-          type: string
-        start_time:
-          type: string
-          format: date-time
-        end_time:
-          type: string
-          format: date-time
-        duration_minutes:
-          type: integer
-        max_attempts:
-          type: integer
-          default: 1
-        passcode:
-          type: string
-          nullable: true
-
-    RoomUpdateRequest:
-      type: object
-      properties:
-        room_name:
-          type: string
-        description:
-          type: string
-        start_time:
-          type: string
-          format: date-time
-        end_time:
-          type: string
-          format: date-time
-        duration_minutes:
-          type: integer
-        max_attempts:
-          type: integer
-        is_active:
-          type: boolean
-        passcode:
-          type: string
-
-    RoomDashboardResponse:
-      type: object
-      properties:
-        room_id:
-          type: integer
-        room_code:
-          type: string
-        active_count:
-          type: integer
-        students:
-          type: array
-          items:
-            type: object
-            properties:
-              student_id:
-                type: integer
-              student_name:
-                type: string
-              status:
-                type: string
-              violation_count:
-                type: integer
-              last_snapshot:
-                type: string
-
-    QuestionResponse:
-      type: object
-      properties:
-        question_id:
-          type: integer
-        room_id:
-          type: integer
-        question_order:
-          type: integer
-        question_title:
-          type: string
-        question_description:
-          type: string
-        question_type:
-          type: string
-          enum: [coding, multiple_choice, essay]
-        programming_language:
-          type: string
-        max_points:
-          type: number
-        time_limit_minutes:
-          type: integer
-        memory_limit_mb:
-          type: integer
-
-    QuestionCreateRequest:
-      type: object
-      required: [room_id, question_order, question_title, question_description, question_type]
-      properties:
-        room_id:
-          type: integer
-        question_order:
-          type: integer
-        question_title:
-          type: string
-        question_description:
-          type: string
-        question_type:
-          type: string
-          enum: [coding, multiple_choice, essay]
-        programming_language:
-          type: string
-        max_points:
-          type: number
-          default: 10.0
-        time_limit_minutes:
-          type: integer
-        memory_limit_mb:
-          type: integer
-
-    QuestionUpdateRequest:
-      type: object
-      properties:
-        question_title:
-          type: string
-        question_description:
-          type: string
-        max_points:
-          type: number
-
-    TestCaseCreateRequest:
-      type: object
-      required: [input_data, expected_output]
-      properties:
-        input_data:
-          type: string
-        expected_output:
-          type: string
-        is_hidden:
-          type: boolean
-          default: false
-        points:
-          type: number
-          default: 0.0
-
-    SubmissionCreateRequest:
-      type: object
-      required: [room_id, question_id, code_content, language]
-      properties:
-        room_id:
-          type: integer
-        question_id:
-          type: integer
-        code_content:
-          type: string
-        language:
-          type: string
-          enum: [python, cpp, java, c]
-        attempt_number:
-          type: integer
-          default: 1
-
-    SubmissionResponse:
-      type: object
-      properties:
-        submission_id:
-          type: integer
-        room_id:
-          type: integer
-        student_id:
-          type: integer
-        question_id:
-          type: integer
-        attempt_number:
-          type: integer
-        code_content:
-          type: string
-        language:
-          type: string
-        submitted_at:
-          type: string
-          format: date-time
-        status:
-          type: string
-          enum: [pending, grading, completed, failed, saved]
-        total_points:
-          type: number
-          nullable: true
-        max_points:
-          type: number
-          nullable: true
-
-    CodeRunRequest:
-      type: object
-      required: [code_content, language]
-      properties:
-        code_content:
-          type: string
-        language:
-          type: string
-        custom_input:
-          type: string
-          default: ''
-
-    CodeRunResponse:
-      type: object
-      properties:
-        stdout:
-          type: string
-        error:
-          type: string
-          nullable: true
-        execution_ms:
-          type: integer
-
-    SessionCreateRequest:
-      type: object
-      required: [room_id]
-      properties:
-        room_id:
-          type: integer
-        browser_fingerprint:
-          type: string
-          nullable: true
-
-    SessionResponse:
-      type: object
-      properties:
-        session_id:
-          type: integer
-        room_id:
-          type: integer
-        student_id:
-          type: integer
-        started_at:
-          type: string
-          format: date-time
-        ended_at:
-          type: string
-          format: date-time
-          nullable: true
-        status:
-          type: string
-          enum: [active, completed, terminated, abandoned]
-
-    ViolationCreateRequest:
-      type: object
-      required: [session_id, violation_type]
-      properties:
-        session_id:
-          type: integer
-        violation_type:
-          type: string
-          enum: [tab_switch, copy_paste, no_face_detected, multiple_faces, phone_detected, suspicious_object, fullscreen_exit, camera_blocked, time_exceeded, inactive_30s, multiple_people]
-        severity:
-          type: string
-          enum: [low, medium, high, critical]
-          default: warning
-        description:
-          type: string
-          nullable: true
-        snapshot_url:
-          type: string
-          nullable: true
-
-    SnapshotAnalyzeRequest:
-      type: object
-      required: [session_id, snapshot_data]
-      properties:
-        session_id:
-          type: integer
-        snapshot_data:
-          type: string
-          description: Base64-encoded webcam frame JPEG/PNG
-
-    LiveKitTokenRequest:
-      type: object
-      required: [room_id]
-      properties:
-        room_id:
-          type: integer
-
-    LiveKitTokenResponse:
-      type: object
-      properties:
-        token:
-          type: string
-        server_url:
-          type: string
-        participant_name:
-          type: string
-
+      required:
+      - current_password
+      - new_password
+      title: ChangePasswordRequest
     ChatMessageRequest:
-      type: object
-      required: [room_id, message_content]
       properties:
         room_id:
           type: integer
+          title: Room Id
         message_content:
           type: string
+          maxLength: 1000
+          minLength: 1
+          title: Message Content
         recipient_id:
-          type: integer
-          nullable: true
-
-    ChatMessageResponse:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Recipient Id
+        message_type:
+          type: string
+          pattern: ^(text|system|announcement)$
+          title: Message Type
+          default: text
       type: object
+      required:
+      - room_id
+      - message_content
+      title: ChatMessageRequest
+    ChatMessageResponse:
       properties:
         message_id:
           type: integer
+          title: Message Id
         room_id:
           type: integer
+          title: Room Id
         sender_id:
           type: integer
+          title: Sender Id
         sender_name:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sender Name
         message_content:
           type: string
+          title: Message Content
+        message_type:
+          type: string
+          title: Message Type
+          default: text
+        is_private:
+          type: boolean
+          title: Is Private
+          default: false
+        recipient_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Recipient Id
         sent_at:
           type: string
           format: date-time
+          title: Sent At
+      type: object
+      required:
+      - message_id
+      - room_id
+      - sender_id
+      - message_content
+      - sent_at
+      title: ChatMessageResponse
+    ClassCreateRequest:
+      properties:
+        class_code:
+          type: string
+          maxLength: 50
+          minLength: 2
+          title: Class Code
+        class_name:
+          type: string
+          maxLength: 150
+          minLength: 2
+          title: Class Name
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+      type: object
+      required:
+      - class_code
+      - class_name
+      title: ClassCreateRequest
+    ClassResponse:
+      properties:
+        class_id:
+          type: integer
+          title: Class Id
+        class_code:
+          type: string
+          title: Class Code
+        class_name:
+          type: string
+          title: Class Name
+        instructor_id:
+          type: integer
+          title: Instructor Id
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        instructor_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Instructor Name
+      type: object
+      required:
+      - class_id
+      - class_code
+      - class_name
+      - instructor_id
+      - created_at
+      - updated_at
+      title: ClassResponse
+    ClassUpdateRequest:
+      properties:
+        class_code:
+          anyOf:
+          - type: string
+            maxLength: 50
+            minLength: 2
+          - type: 'null'
+          title: Class Code
+        class_name:
+          anyOf:
+          - type: string
+            maxLength: 150
+            minLength: 2
+          - type: 'null'
+          title: Class Name
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+      type: object
+      title: ClassUpdateRequest
+    CodeRunRequest:
+      properties:
+        code_content:
+          type: string
+          minLength: 1
+          title: Code Content
+        language:
+          type: string
+          pattern: ^(python|cpp|c|java)$
+          title: Language
+        custom_input:
+          type: string
+          title: Custom Input
+          default: ''
+      type: object
+      required:
+      - code_content
+      - language
+      title: CodeRunRequest
+    CodeRunResponse:
+      properties:
+        stdout:
+          type: string
+          title: Stdout
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+        execution_ms:
+          type: integer
+          title: Execution Ms
+      type: object
+      required:
+      - stdout
+      - execution_ms
+      title: CodeRunResponse
+    DeviceCheckCreateRequest:
+      properties:
+        session_id:
+          type: integer
+          title: Session Id
+        camera_status:
+          type: boolean
+          title: Camera Status
+          default: false
+        mic_status:
+          type: boolean
+          title: Mic Status
+          default: false
+        network_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Network Latency Ms
+        os_info:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Os Info
+        browser_info:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Browser Info
+        is_passed:
+          type: boolean
+          title: Is Passed
+          default: false
+      type: object
+      required:
+      - session_id
+      title: DeviceCheckCreateRequest
+    DeviceCheckResponse:
+      properties:
+        check_id:
+          type: integer
+          title: Check Id
+        session_id:
+          type: integer
+          title: Session Id
+        student_id:
+          type: integer
+          title: Student Id
+        camera_status:
+          type: boolean
+          title: Camera Status
+        mic_status:
+          type: boolean
+          title: Mic Status
+        network_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Network Latency Ms
+        os_info:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Os Info
+        browser_info:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Browser Info
+        is_passed:
+          type: boolean
+          title: Is Passed
+        checked_at:
+          type: string
+          format: date-time
+          title: Checked At
+      type: object
+      required:
+      - check_id
+      - session_id
+      - student_id
+      - camera_status
+      - mic_status
+      - is_passed
+      - checked_at
+      title: DeviceCheckResponse
+    DraftResponse:
+      properties:
+        draft_id:
+          type: integer
+          title: Draft Id
+        session_id:
+          type: integer
+          title: Session Id
+        question_id:
+          type: integer
+          title: Question Id
+        student_id:
+          type: integer
+          title: Student Id
+        draft_code:
+          type: string
+          title: Draft Code
+        language:
+          type: string
+          title: Language
+        last_saved_at:
+          type: string
+          format: date-time
+          title: Last Saved At
+      type: object
+      required:
+      - draft_id
+      - session_id
+      - question_id
+      - student_id
+      - draft_code
+      - language
+      - last_saved_at
+      title: DraftResponse
+    DraftSaveRequest:
+      properties:
+        session_id:
+          type: integer
+          title: Session Id
+        question_id:
+          type: integer
+          title: Question Id
+        draft_code:
+          type: string
+          title: Draft Code
+        language:
+          type: string
+          maxLength: 20
+          title: Language
+          default: python
+      type: object
+      required:
+      - session_id
+      - question_id
+      - draft_code
+      title: DraftSaveRequest
+    GradingResultResponse:
+      properties:
+        result_id:
+          type: integer
+          title: Result Id
+        submission_id:
+          type: integer
+          title: Submission Id
+        test_case_id:
+          type: integer
+          title: Test Case Id
+        is_passed:
+          type: boolean
+          title: Is Passed
+        actual_output:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Actual Output
+        execution_time_ms:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Execution Time Ms
+        memory_used_mb:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Memory Used Mb
+        error_message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Message
+        graded_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Graded At
+      type: object
+      required:
+      - result_id
+      - submission_id
+      - test_case_id
+      - is_passed
+      title: GradingResultResponse
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    JoinRoomRequest:
+      properties:
+        room_code:
+          type: string
+          maxLength: 20
+          minLength: 3
+          title: Room Code
+        passcode:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Passcode
+        full_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Full Name
+        student_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Id
+      type: object
+      required:
+      - room_code
+      title: JoinRoomRequest
+    LiveKitTokenRequest:
+      properties:
+        room_id:
+          type: integer
+          title: Room Id
+      type: object
+      required:
+      - room_id
+      title: LiveKitTokenRequest
+    LiveKitTokenResponse:
+      properties:
+        token:
+          type: string
+          title: Token
+        server_url:
+          type: string
+          title: Server Url
+        participant_identity:
+          type: string
+          title: Participant Identity
+        room_name:
+          type: string
+          title: Room Name
+      type: object
+      required:
+      - token
+      - server_url
+      - participant_identity
+      - room_name
+      title: LiveKitTokenResponse
+    LoginRequest:
+      properties:
+        username:
+          type: string
+          title: Username
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - username
+      - password
+      title: LoginRequest
+    PaginatedUsersResponse:
+      properties:
+        users:
+          items:
+            $ref: '#/components/schemas/UserResponse'
+          type: array
+          title: Users
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total_pages:
+          type: integer
+          title: Total Pages
+      type: object
+      required:
+      - users
+      - total
+      - page
+      - page_size
+      - total_pages
+      title: PaginatedUsersResponse
+    PublicRoomResponse:
+      properties:
+        room_id:
+          type: integer
+          title: Room Id
+        room_code:
+          type: string
+          title: Room Code
+        room_name:
+          type: string
+          title: Room Name
+        room_type:
+          type: string
+          title: Room Type
+        start_time:
+          type: string
+          format: date-time
+          title: Start Time
+        end_time:
+          type: string
+          format: date-time
+          title: End Time
+        duration_minutes:
+          type: integer
+          title: Duration Minutes
+        requires_passcode:
+          type: boolean
+          title: Requires Passcode
+      type: object
+      required:
+      - room_id
+      - room_code
+      - room_name
+      - room_type
+      - start_time
+      - end_time
+      - duration_minutes
+      - requires_passcode
+      title: PublicRoomResponse
+    QuestionCreateRequest:
+      properties:
+        room_id:
+          type: integer
+          title: Room Id
+        question_order:
+          type: integer
+          minimum: 1.0
+          title: Question Order
+        question_title:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Question Title
+        question_description:
+          type: string
+          title: Question Description
+        question_type:
+          type: string
+          pattern: ^(coding|essay)$
+          title: Question Type
+          default: coding
+        programming_language:
+          anyOf:
+          - type: string
+            maxLength: 20
+          - type: 'null'
+          title: Programming Language
+          default: python
+        max_points:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Max Points
+          default: 10.0
+        time_limit_minutes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Time Limit Minutes
+        memory_limit_mb:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Memory Limit Mb
+        test_cases:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/TestCaseCreateRequest'
+            type: array
+          - type: 'null'
+          title: Test Cases
+          default: []
+      type: object
+      required:
+      - room_id
+      - question_order
+      - question_title
+      - question_description
+      title: QuestionCreateRequest
+    QuestionResponse:
+      properties:
+        question_id:
+          type: integer
+          title: Question Id
+        room_id:
+          type: integer
+          title: Room Id
+        question_order:
+          type: integer
+          title: Question Order
+        question_title:
+          type: string
+          title: Question Title
+        question_description:
+          type: string
+          title: Question Description
+        question_type:
+          type: string
+          title: Question Type
+        programming_language:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Programming Language
+        max_points:
+          type: number
+          title: Max Points
+        time_limit_minutes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Time Limit Minutes
+        memory_limit_mb:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Memory Limit Mb
+        is_active:
+          type: boolean
+          title: Is Active
+        test_cases:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/TestCaseResponse'
+            type: array
+          - type: 'null'
+          title: Test Cases
+          default: []
+        created_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Created At
+        updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated At
+      type: object
+      required:
+      - question_id
+      - room_id
+      - question_order
+      - question_title
+      - question_description
+      - question_type
+      - programming_language
+      - max_points
+      - time_limit_minutes
+      - memory_limit_mb
+      - is_active
+      title: QuestionResponse
+    QuestionUpdateRequest:
+      properties:
+        question_order:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Question Order
+        question_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Question Title
+        question_description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Question Description
+        question_type:
+          anyOf:
+          - type: string
+            pattern: ^(coding|essay)$
+          - type: 'null'
+          title: Question Type
+        programming_language:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Programming Language
+        max_points:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Max Points
+        time_limit_minutes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Time Limit Minutes
+        memory_limit_mb:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Memory Limit Mb
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Active
+      type: object
+      title: QuestionUpdateRequest
+    RefreshTokenRequest:
+      properties:
+        refresh_token:
+          type: string
+          title: Refresh Token
+      type: object
+      required:
+      - refresh_token
+      title: RefreshTokenRequest
+    RoomCreateRequest:
+      properties:
+        room_code:
+          type: string
+          maxLength: 20
+          minLength: 3
+          title: Room Code
+        room_name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Room Name
+        room_type:
+          type: string
+          pattern: ^(exam|classroom)$
+          title: Room Type
+          default: exam
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        start_time:
+          type: string
+          format: date-time
+          title: Start Time
+        end_time:
+          type: string
+          format: date-time
+          title: End Time
+        duration_minutes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Duration Minutes
+        max_attempts:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Max Attempts
+          default: 1
+        passcode:
+          anyOf:
+          - type: string
+            maxLength: 50
+          - type: 'null'
+          title: Passcode
+      type: object
+      required:
+      - room_code
+      - room_name
+      - start_time
+      - end_time
+      - duration_minutes
+      title: RoomCreateRequest
+    RoomDashboardResponse:
+      properties:
+        room_id:
+          type: integer
+          title: Room Id
+        room_code:
+          type: string
+          title: Room Code
+        room_name:
+          type: string
+          title: Room Name
+        room_type:
+          type: string
+          title: Room Type
+        active_students_count:
+          type: integer
+          title: Active Students Count
+        students:
+          items:
+            $ref: '#/components/schemas/RoomDashboardStudentItem'
+          type: array
+          title: Students
+          default: []
+      type: object
+      required:
+      - room_id
+      - room_code
+      - room_name
+      - room_type
+      - active_students_count
+      title: RoomDashboardResponse
+    RoomDashboardStudentItem:
+      properties:
+        student_id:
+          type: integer
+          title: Student Id
+        student_name:
+          type: string
+          title: Student Name
+        student_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Code
+        status:
+          type: string
+          title: Status
+          default: active
+        violation_count:
+          type: integer
+          title: Violation Count
+          default: 0
+        pending_violation_count:
+          type: integer
+          title: Pending Violation Count
+          default: 0
+        confirmed_violation_count:
+          type: integer
+          title: Confirmed Violation Count
+          default: 0
+        duration_minutes:
+          type: integer
+          title: Duration Minutes
+          default: 0
+        last_snapshot_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Snapshot Url
+      type: object
+      required:
+      - student_id
+      - student_name
+      title: RoomDashboardStudentItem
+    RoomDeviceCheckItem:
+      properties:
+        check_id:
+          type: integer
+          title: Check Id
+        session_id:
+          type: integer
+          title: Session Id
+        student_id:
+          type: integer
+          title: Student Id
+        full_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Full Name
+        student_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Code
+        camera_status:
+          type: boolean
+          title: Camera Status
+        mic_status:
+          type: boolean
+          title: Mic Status
+        network_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Network Latency Ms
+        os_info:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Os Info
+        browser_info:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Browser Info
+        is_passed:
+          type: boolean
+          title: Is Passed
+        checked_at:
+          type: string
+          format: date-time
+          title: Checked At
+      type: object
+      required:
+      - check_id
+      - session_id
+      - student_id
+      - camera_status
+      - mic_status
+      - is_passed
+      - checked_at
+      title: RoomDeviceCheckItem
+    RoomEnrollmentRequest:
+      properties:
+        student_ids:
+          items:
+            type: integer
+          type: array
+          title: Student Ids
+      type: object
+      required:
+      - student_ids
+      title: RoomEnrollmentRequest
+    RoomResponse:
+      properties:
+        room_id:
+          type: integer
+          title: Room Id
+        room_code:
+          type: string
+          title: Room Code
+        room_name:
+          type: string
+          title: Room Name
+        room_type:
+          type: string
+          title: Room Type
+        instructor_id:
+          type: integer
+          title: Instructor Id
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        start_time:
+          type: string
+          format: date-time
+          title: Start Time
+        end_time:
+          type: string
+          format: date-time
+          title: End Time
+        duration_minutes:
+          type: integer
+          title: Duration Minutes
+        max_attempts:
+          type: integer
+          title: Max Attempts
+        is_active:
+          type: boolean
+          title: Is Active
+        passcode:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Passcode
+        livekit_room_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Livekit Room Name
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - room_id
+      - room_code
+      - room_name
+      - room_type
+      - instructor_id
+      - start_time
+      - end_time
+      - duration_minutes
+      - max_attempts
+      - is_active
+      - created_at
+      - updated_at
+      title: RoomResponse
+    RoomUpdateRequest:
+      properties:
+        room_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Room Name
+        room_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Room Type
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        start_time:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Time
+        end_time:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Time
+        duration_minutes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Duration Minutes
+        max_attempts:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Attempts
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Active
+        passcode:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Passcode
+      type: object
+      title: RoomUpdateRequest
+    SessionCreateRequest:
+      properties:
+        room_id:
+          type: integer
+          title: Room Id
+        browser_fingerprint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Browser Fingerprint
+      type: object
+      required:
+      - room_id
+      title: SessionCreateRequest
+    SessionResponse:
+      properties:
+        session_id:
+          type: integer
+          title: Session Id
+        room_id:
+          type: integer
+          title: Room Id
+        student_id:
+          type: integer
+          title: Student Id
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        ended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ended At
+        ip_address:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ip Address
+        user_agent:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User Agent
+        browser_fingerprint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Browser Fingerprint
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - session_id
+      - room_id
+      - student_id
+      - started_at
+      - status
+      title: SessionResponse
+    SessionStatusUpdate:
+      properties:
+        status:
+          type: string
+          pattern: ^(active|completed|terminated|abandoned)$
+          title: Status
+      type: object
+      required:
+      - status
+      title: SessionStatusUpdate
+    SnapshotAnalyzeRequest:
+      properties:
+        session_id:
+          type: integer
+          title: Session Id
+        snapshot_data:
+          type: string
+          title: Snapshot Data
+        is_typing:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Typing
+          default: false
+        client_event:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Event
+      type: object
+      required:
+      - session_id
+      - snapshot_data
+      title: SnapshotAnalyzeRequest
+    SubmissionCreateRequest:
+      properties:
+        room_id:
+          type: integer
+          title: Room Id
+        question_id:
+          type: integer
+          title: Question Id
+        code_content:
+          type: string
+          minLength: 1
+          title: Code Content
+        language:
+          type: string
+          pattern: ^(python|cpp|c|java)$
+          title: Language
+        attempt_number:
+          type: integer
+          minimum: 1.0
+          title: Attempt Number
+          default: 1
+      type: object
+      required:
+      - room_id
+      - question_id
+      - code_content
+      - language
+      title: SubmissionCreateRequest
+    SubmissionResponse:
+      properties:
+        submission_id:
+          type: integer
+          title: Submission Id
+        room_id:
+          type: integer
+          title: Room Id
+        student_id:
+          type: integer
+          title: Student Id
+        question_id:
+          type: integer
+          title: Question Id
+        attempt_number:
+          type: integer
+          title: Attempt Number
+        code_content:
+          type: string
+          title: Code Content
+        language:
+          type: string
+          title: Language
+        submitted_at:
+          type: string
+          format: date-time
+          title: Submitted At
+        status:
+          type: string
+          title: Status
+        total_points:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Total Points
+        max_points:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Max Points
+        score_percentage:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Score Percentage
+        grading_results:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GradingResultResponse'
+            type: array
+          - type: 'null'
+          title: Grading Results
+          default: []
+      type: object
+      required:
+      - submission_id
+      - room_id
+      - student_id
+      - question_id
+      - attempt_number
+      - code_content
+      - language
+      - submitted_at
+      - status
+      title: SubmissionResponse
+    SupportRequestCreate:
+      properties:
+        room_id:
+          type: integer
+          title: Room Id
+        session_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Session Id
+        issue_type:
+          type: string
+          pattern: ^(technical|exam_question|permission|other)$
+          title: Issue Type
+        message:
+          type: string
+          maxLength: 1000
+          minLength: 2
+          title: Message
+      type: object
+      required:
+      - room_id
+      - issue_type
+      - message
+      title: SupportRequestCreate
+    SupportRequestResponse:
+      properties:
+        request_id:
+          type: integer
+          title: Request Id
+        room_id:
+          type: integer
+          title: Room Id
+        student_id:
+          type: integer
+          title: Student Id
+        session_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Session Id
+        issue_type:
+          type: string
+          title: Issue Type
+        message:
+          type: string
+          title: Message
+        status:
+          type: string
+          title: Status
+        resolved_by:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Resolved By
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        resolved_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Resolved At
+        student_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Name
+        student_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Code
+      type: object
+      required:
+      - request_id
+      - room_id
+      - student_id
+      - issue_type
+      - message
+      - status
+      - created_at
+      title: SupportRequestResponse
+    SupportStatusUpdate:
+      properties:
+        status:
+          type: string
+          pattern: ^(open|in_progress|resolved|rejected)$
+          title: Status
+      type: object
+      required:
+      - status
+      title: SupportStatusUpdate
+    TestCaseCreateRequest:
+      properties:
+        input_data:
+          type: string
+          title: Input Data
+        expected_output:
+          type: string
+          title: Expected Output
+        is_hidden:
+          type: boolean
+          title: Is Hidden
+          default: false
+        points:
+          type: number
+          title: Points
+          default: 0.0
+      type: object
+      required:
+      - input_data
+      - expected_output
+      title: TestCaseCreateRequest
+    TestCaseResponse:
+      properties:
+        test_case_id:
+          type: integer
+          title: Test Case Id
+        question_id:
+          type: integer
+          title: Question Id
+        input_data:
+          type: string
+          title: Input Data
+        expected_output:
+          type: string
+          title: Expected Output
+        is_hidden:
+          type: boolean
+          title: Is Hidden
+        points:
+          type: number
+          title: Points
+        created_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Created At
+      type: object
+      required:
+      - test_case_id
+      - question_id
+      - input_data
+      - expected_output
+      - is_hidden
+      - points
+      title: TestCaseResponse
+    TokenResponse:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        refresh_token:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Refresh Token
+        token_type:
+          type: string
+          title: Token Type
+          default: bearer
+        user:
+          $ref: '#/components/schemas/UserResponse'
+      type: object
+      required:
+      - access_token
+      - user
+      title: TokenResponse
+    UserProfileUpdateRequest:
+      properties:
+        full_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Full Name
+        email:
+          anyOf:
+          - type: string
+            format: email
+          - type: 'null'
+          title: Email
+        student_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Id
+      type: object
+      title: UserProfileUpdateRequest
+    UserRegisterRequest:
+      properties:
+        username:
+          type: string
+          maxLength: 50
+          minLength: 3
+          title: Username
+        password:
+          type: string
+          minLength: 6
+          title: Password
+        email:
+          type: string
+          format: email
+          title: Email
+        full_name:
+          type: string
+          maxLength: 100
+          minLength: 2
+          title: Full Name
+        role:
+          type: string
+          pattern: ^(instructor|student)$
+          title: Role
+        student_id:
+          anyOf:
+          - type: string
+            maxLength: 20
+          - type: 'null'
+          title: Student Id
+      type: object
+      required:
+      - username
+      - password
+      - email
+      - full_name
+      - role
+      title: UserRegisterRequest
+    UserResponse:
+      properties:
+        user_id:
+          type: integer
+          title: User Id
+        username:
+          type: string
+          title: Username
+        email:
+          type: string
+          title: Email
+        full_name:
+          type: string
+          title: Full Name
+        role:
+          type: string
+          title: Role
+        student_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Id
+        is_active:
+          type: boolean
+          title: Is Active
+          default: true
+        created_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Created At
+        last_login:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Login
+      type: object
+      required:
+      - user_id
+      - username
+      - email
+      - full_name
+      - role
+      title: UserResponse
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    ViolationCreateRequest:
+      properties:
+        session_id:
+          type: integer
+          title: Session Id
+        violation_type:
+          type: string
+          pattern: ^(tab_switch|copy_paste|no_face_detected|multiple_faces|phone_detected|suspicious_object|fullscreen_exit|camera_blocked|time_exceeded|inactive_30s|multiple_people)$
+          title: Violation Type
+        severity:
+          type: string
+          pattern: ^(low|medium|high|critical)$
+          title: Severity
+          default: warning
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        snapshot_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Snapshot Url
+      type: object
+      required:
+      - session_id
+      - violation_type
+      title: ViolationCreateRequest
+    ViolationResponse:
+      properties:
+        violation_id:
+          type: integer
+          title: Violation Id
+        session_id:
+          type: integer
+          title: Session Id
+        student_id:
+          type: integer
+          title: Student Id
+        violation_type:
+          type: string
+          title: Violation Type
+        severity:
+          type: string
+          title: Severity
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        snapshot_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Snapshot Url
+        detected_at:
+          type: string
+          format: date-time
+          title: Detected At
+        is_reviewed:
+          type: boolean
+          title: Is Reviewed
+          default: false
+        review_status:
+          type: string
+          title: Review Status
+          default: pending
+        reviewed_by:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Reviewed By
+        reviewed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Reviewed At
+        student_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Name
+        student_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Code
+      type: object
+      required:
+      - violation_id
+      - session_id
+      - student_id
+      - violation_type
+      - severity
+      - detected_at
+      title: ViolationResponse
+    ViolationReviewRequest:
+      properties:
+        review_status:
+          type: string
+          pattern: ^(confirmed|rejected)$
+          title: Review Status
+      type: object
+      required:
+      - review_status
+      title: ViolationReviewRequest
+    ViolationStatsItem:
+      properties:
+        violation_type:
+          type: string
+          title: Violation Type
+        severity:
+          type: string
+          title: Severity
+        violation_count:
+          type: integer
+          title: Violation Count
+        first_occurrence:
+          type: string
+          format: date-time
+          title: First Occurrence
+        last_occurrence:
+          type: string
+          format: date-time
+          title: Last Occurrence
+      type: object
+      required:
+      - violation_type
+      - severity
+      - violation_count
+      - first_occurrence
+      - last_occurrence
+      title: ViolationStatsItem
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: /api/v1/auth/login

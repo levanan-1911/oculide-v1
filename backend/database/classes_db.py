@@ -79,6 +79,7 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
 
 def update_class(
     class_id: int,
+    class_code: Optional[str] = None,
     class_name: Optional[str] = None,
     description: Optional[str] = None
 ) -> Optional[Dict]:
@@ -88,19 +89,14 @@ def update_class(
     try:
         cursor.execute("""
             UPDATE Classes
-            SET class_name = COALESCE(?, class_name),
+            SET class_code = COALESCE(?, class_code),
+                class_name = COALESCE(?, class_name),
                 description = COALESCE(?, description),
                 updated_at = GETDATE()
-            OUTPUT inserted.class_id, inserted.class_code, inserted.class_name,
-                   inserted.instructor_id, inserted.description, inserted.created_at, inserted.updated_at
             WHERE class_id = ?
-        """, (class_name, description, class_id))
-        row = cursor.fetchone()
+        """, (class_code, class_name, description, class_id))
         conn.commit()
-        if row:
-            columns = [column[0] for column in cursor.description]
-            return dict(zip(columns, row))
-        return None
+        return get_class_by_id(class_id)
     finally:
         cursor.close()
         conn.close()

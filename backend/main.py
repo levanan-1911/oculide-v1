@@ -179,6 +179,10 @@ app.include_router(sessions.router, prefix="/api/sessions", tags=["Sessions (Leg
 app.include_router(violations.router, prefix="/api/violations", tags=["Violations (Legacy)"], include_in_schema=False)
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat (Legacy)"], include_in_schema=False)
 app.include_router(livekit.router, prefix="/api/livekit", tags=["LiveKit (Legacy)"], include_in_schema=False)
+app.include_router(drafts.router, prefix="/api/drafts", tags=["Code Drafts (Legacy)"], include_in_schema=False)
+app.include_router(device_checks.router, prefix="/api/device-checks", tags=["Device Checks (Legacy)"], include_in_schema=False)
+app.include_router(support.router, prefix="/api/support", tags=["Support Requests (Legacy)"], include_in_schema=False)
+app.include_router(classes.router, prefix="/api/classes", tags=["Classes (Legacy)"], include_in_schema=False)
 
 # Cấu hình Mount phục vụ ảnh tĩnh Webcam Snapshots
 uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")

@@ -9,7 +9,6 @@ import {
   Table2,
   FileCode2,
   Clock,
-  Flag,
   BookOpen,
   Settings,
   ChevronLeft,
@@ -66,17 +65,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: 'Lịch & phiên kiểm tra',
         href: '/admin/schedules',
         icon: Clock,
-      },
-    ],
-  },
-  {
-    groupLabel: 'THEO DÕI & ĐÁNH GIÁ',
-    items: [
-      {
-        id: 'monitoring',
-        label: 'Giám sát & hỗ trợ',
-        href: '/admin/monitoring',
-        icon: Flag,
       },
     ],
   },
@@ -166,8 +154,6 @@ export default function AdminSidebar({
       ? 'questions'
       : pathname.startsWith('/admin/schedules') 
       ? 'schedules'
-      : pathname.startsWith('/admin/monitoring') 
-      ? 'monitoring'
       : pathname.startsWith('/admin/reports') 
       ? 'reports'
       : pathname.startsWith('/admin/system') 

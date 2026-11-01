@@ -522,15 +522,22 @@ export default function ScheduleManagerPage() {
                             {/* Cột 6: Thao tác (Admin chỉ xem & giám sát) */}
                             <td className="px-5 py-4 text-right whitespace-nowrap">
                               <div className="inline-flex items-center gap-2">
-                                {/* Nếu ca thi đang diễn ra -> Nút Giám sát Live */}
+                                {/* Nếu ca thi đang diễn ra -> Nút Giám sát Live (Đợi phòng live từ Giảng viên) */}
                                 {item.status === 'ongoing' && (
-                                  <Link
-                                    href={`/admin/monitoring?session=${item.id}`}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-red-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-red-500/20 hover:bg-red-700 transition"
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setNotification({
+                                        message: `Ca thi ${item.title} (${item.roomCode || 'Phòng thi'}): Đang đợi giảng viên mở phòng thi trực tiếp.`,
+                                        type: 'info',
+                                      })
+                                    }
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-red-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-red-500/20 hover:bg-red-700 transition cursor-pointer"
+                                    title="Xem phòng thi trực tiếp (Khởi tạo bởi Giảng viên)"
                                   >
                                     <Radio className="h-3.5 w-3.5 animate-pulse" />
-                                    Giám sát Live
-                                  </Link>
+                                    <span>Giám sát Live</span>
+                                  </button>
                                 )}
 
                                 {/* Nút xem chi tiết ca thi (áp dụng cho mọi trạng thái) */}

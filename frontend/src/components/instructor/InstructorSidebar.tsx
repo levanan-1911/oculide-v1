@@ -154,9 +154,9 @@ export default function InstructorSidebar({
       : 'overview');
 
   return (
-    <aside className="relative flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white font-sans text-slate-800 shadow-sm z-30 select-none">
+    <aside className="relative flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white font-sans text-slate-800 shadow-sm z-30 select-none dark:border-white/10 dark:bg-[#0d1017] dark:text-slate-200 transition-colors">
       {/* Header Logo */}
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-100 px-5">
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-100 dark:border-white/10 px-5">
         <Link
           href="/instructor/dashboard"
           className="flex items-center gap-2.5 transition hover:opacity-90"
@@ -166,14 +166,14 @@ export default function InstructorSidebar({
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-base font-bold tracking-tight text-slate-900">
+              <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
                 Oculide
               </span>
-              <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
+              <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/40">
                 GV
               </span>
             </div>
-            <p className="text-[11px] font-medium text-slate-600">
+            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
               Cổng Giảng Viên
             </p>
           </div>
@@ -185,7 +185,7 @@ export default function InstructorSidebar({
         <nav className="space-y-5">
           {INSTRUCTOR_NAV_GROUPS.map((group) => (
             <div key={group.groupLabel} className="space-y-1">
-              <h3 className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+              <h3 className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 {group.groupLabel}
               </h3>
               <div className="mt-1 space-y-0.5">
@@ -199,20 +199,20 @@ export default function InstructorSidebar({
                       href={item.href}
                       className={`group flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition ${
                         isActive
-                          ? 'bg-[#eff6ff] text-[#2563eb]'
-                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                          ? 'bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 hover:text-slate-900 dark:hover:bg-white/5 dark:hover:text-white'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Icon
                           className={`h-4 w-4 shrink-0 ${
-                            isActive ? 'text-[#2563eb]' : 'text-slate-400'
+                            isActive ? 'text-[#2563eb] dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
                           }`}
                         />
                         <span className="truncate">{item.label}</span>
                       </div>
                       {isActive && (
-                        <ChevronRight className="h-3.5 w-3.5 text-[#2563eb]" />
+                        <ChevronRight className="h-3.5 w-3.5 text-[#2563eb] dark:text-blue-400" />
                       )}
                     </Link>
                   );
@@ -226,27 +226,27 @@ export default function InstructorSidebar({
       {/* User Card */}
       <div
         ref={userMenuRef}
-        className="relative shrink-0 p-4 border-t border-slate-100 bg-white"
+        className="relative shrink-0 p-4 border-t border-slate-100 bg-white dark:border-white/10 dark:bg-[#0d1017] transition-colors"
       >
         {isMenuOpen && (
-          <div className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-50 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-xl shadow-slate-900/10">
-            <div className="px-3 py-2 border-b border-slate-100">
-              <p className="text-xs font-bold text-slate-900 truncate">
+          <div className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-50 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-xl shadow-slate-900/10 dark:border-white/10 dark:bg-[#0d1017] dark:text-white">
+            <div className="px-3 py-2 border-b border-slate-100 dark:border-white/10">
+              <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
                 {currentUser.name}
               </p>
-              <p className="text-[11px] text-slate-500 truncate">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                 {currentUser.email}
               </p>
-              <span className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+              <span className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                 Giảng viên
               </span>
             </div>
 
-            <div className="mt-1.5 space-y-0.5 text-xs font-medium text-slate-700">
+            <div className="mt-1.5 space-y-0.5 text-xs font-medium text-slate-700 dark:text-slate-300">
               <Link
                 href="/instructor/profile"
                 onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600"
+                className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600 dark:hover:bg-white/5 dark:hover:text-blue-400"
               >
                 <User className="h-4 w-4 text-slate-400" />
                 Hồ sơ cá nhân
@@ -254,7 +254,7 @@ export default function InstructorSidebar({
               <Link
                 href="/instructor/profile?tab=security"
                 onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600"
+                className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600 dark:hover:bg-white/5 dark:hover:text-blue-400"
               >
                 <Settings className="h-4 w-4 text-slate-400" />
                 Đổi mật khẩu
@@ -262,7 +262,7 @@ export default function InstructorSidebar({
               <button
                 type="button"
                 onClick={handleLogout}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-red-600 transition hover:bg-red-50 cursor-pointer"
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/20 cursor-pointer"
               >
                 <LogOut className="h-4 w-4" />
                 Đăng xuất
@@ -274,20 +274,20 @@ export default function InstructorSidebar({
         <button
           type="button"
           onClick={() => setIsMenuOpen((prev) => !prev)}
-          className="flex w-full items-center gap-3 rounded-2xl p-1.5 text-left transition hover:bg-slate-50 cursor-pointer"
+          className="flex w-full items-center gap-3 rounded-2xl p-1.5 text-left transition hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-bold text-white shadow-sm">
             {initials}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-slate-900 truncate">
+            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
               {currentUser.name}
             </p>
-            <p className="text-[11px] text-slate-500 truncate">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
               {currentUser.email}
             </p>
           </div>
-          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-white/10 dark:text-slate-400">
             <span className="text-[10px] font-bold">⋮</span>
           </div>
         </button>
@@ -295,4 +295,3 @@ export default function InstructorSidebar({
     </aside>
   );
 }
-

@@ -271,7 +271,7 @@ export default function InstructorDashboardPage() {
         {/* Thẻ 1: Ca học hôm nay */}
         <Link
           href="/instructor/schedules"
-          className="group rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition hover:border-blue-400 hover:shadow-sm cursor-pointer flex flex-col justify-between"
+          className="group rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition hover:border-blue-400 hover:shadow-sm cursor-pointer flex flex-col justify-between dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-blue-500/40"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -283,7 +283,7 @@ export default function InstructorDashboardPage() {
           </div>
           <div className="mt-2.5">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl font-bold text-slate-900">{sessions.length}</span>
+              <span className="text-2xl font-bold text-slate-900 dark:text-white">{sessions.length}</span>
               <span className="text-xs font-medium text-slate-500">ca học phần</span>
             </div>
             <p className="mt-1 text-xs text-blue-600 font-medium flex items-center justify-between">
@@ -320,7 +320,7 @@ export default function InstructorDashboardPage() {
             <div className="flex items-baseline gap-1.5">
               <span
                 className={`text-2xl font-bold ${
-                  pendingViolations.length > 0 ? 'text-amber-700' : 'text-slate-900'
+                  pendingViolations.length > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-slate-900 dark:text-white'
                 }`}
               >
                 {pendingViolations.length || 3}
@@ -337,7 +337,7 @@ export default function InstructorDashboardPage() {
         {/* Thẻ 3: Bài thi chờ công bố điểm */}
         <Link
           href="/instructor/reports"
-          className="group rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition hover:border-blue-400 hover:shadow-sm cursor-pointer flex flex-col justify-between"
+          className="group rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition hover:border-blue-400 hover:shadow-sm cursor-pointer flex flex-col justify-between dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-blue-500/40"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -349,7 +349,7 @@ export default function InstructorDashboardPage() {
           </div>
           <div className="mt-2.5">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl font-bold text-slate-900">1</span>
+              <span className="text-2xl font-bold text-slate-900 dark:text-white">1</span>
               <span className="text-xs font-medium text-slate-500">bài thi đã nộp</span>
             </div>
             <p className="mt-1 text-xs text-indigo-600 font-medium flex items-center justify-between">
@@ -362,7 +362,7 @@ export default function InstructorDashboardPage() {
         {/* Thẻ 4: Tỷ lệ chuyên cần vào phòng */}
         <Link
           href="/instructor/classes"
-          className="group rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition hover:border-blue-400 hover:shadow-sm cursor-pointer flex flex-col justify-between"
+          className="group rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition hover:border-blue-400 hover:shadow-sm cursor-pointer flex flex-col justify-between dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-blue-500/40"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -388,10 +388,10 @@ export default function InstructorDashboardPage() {
       {/* ── 3. KHU VỰC CHÍNH: LỊCH CA HỌC HÔM NAY + NHẮC VIỆC CẦN XỬ LÝ GẤP ── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* CỘT TRÁI (2 Cột): DANH SÁCH CA HỌC HÔM NAY */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs space-y-3.5">
+        <div className="lg:col-span-2 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs space-y-3.5 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
-              <h2 className="text-sm sm:text-base font-bold text-slate-900">
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
                 Lịch Thực Hành &amp; Kiểm Tra Trực Tiếp Hôm Nay
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -436,7 +436,7 @@ export default function InstructorDashboardPage() {
                         {item.type === 'EXAM' ? 'Bài Kiểm Tra' : 'Thực Hành Lab'}
                       </span>
                       <div>
-                        <h3 className="font-bold text-slate-900 text-xs sm:text-sm">
+                        <h3 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
                           {item.classCode} • {item.title}
                         </h3>
                       </div>
@@ -708,7 +708,7 @@ export default function InstructorDashboardPage() {
           </div>
 
           {/* Hộp 2: Lối Tắt Thao Tác Nhanh (Quick Shortcuts) */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 shadow-xs space-y-2.5">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 shadow-xs space-y-2.5 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-600">
               Lối Tắt Nhanh
             </h2>

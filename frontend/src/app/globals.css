@@ -2,20 +2,317 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* ==========================================================================
+   OCULIDE DUAL THEME SYSTEM (DARK & LIGHT MODE)
+   ========================================================================== */
+
+:root,
+html[data-theme="light"] {
   --background: #f4f7f9;
-  --foreground: #1e293b;
+  --foreground: #0f172a;
+}
+
+html.dark,
+html[data-theme="dark"] {
+  --background: #090a0f;
+  --foreground: #f8fafc;
 }
 
 html {
-  font-size: 112.5%;
+  font-size: 100%;
 }
 
 body {
   color: var(--foreground);
-  background: var(--background);
-  font-size: 1rem;
-  line-height: 1.6;
+  background-color: var(--background);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.5;
   margin: 0;
   padding: 0;
+  transition: background-color 0.25s ease, color 0.2s ease;
+}
+
+/* ==========================================================================
+   DARK MODE GLOBAL ADAPTATION FOR ALL DASHBOARDS & MODULES
+   ========================================================================== */
+
+html.dark body {
+  background-color: #090a0f;
+  color: #f8fafc;
+}
+
+html.dark .bg-\[\#f4f7f9\] {
+  background-color: #090a0f !important;
+}
+
+/* Smooth transitions for shell elements */
+html.dark main,
+html.dark aside,
+html.dark header {
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Dashboard Cards & Surfaces in Dark Mode */
+html.dark main .bg-white {
+  background-color: #0d1017;
+}
+
+html.dark main .border-slate-200,
+html.dark main .border-slate-200\/80,
+html.dark main .border-slate-200\/75,
+html.dark main .border-slate-200\/70,
+html.dark main .border-slate-200\/90,
+html.dark main .border-slate-100 {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark main .text-slate-900,
+html.dark main .text-slate-800 {
+  color: #f1f5f9;
+}
+
+html.dark main .text-slate-700,
+html.dark main .text-slate-600 {
+  color: #cbd5e1;
+}
+
+html.dark main .text-slate-500,
+html.dark main .text-slate-400 {
+  color: #94a3b8;
+}
+
+html.dark main .bg-slate-50,
+html.dark main .bg-slate-100,
+html.dark main [class*="bg-slate-50"],
+html.dark main [class*="bg-slate-100"] {
+  background-color: #141824;
+}
+
+/* ==========================================================================
+   UNIVERSAL HOVER & ROW STYLING IN DARK MODE
+   Eliminate bright white flashes when hovering over rows, buttons or items!
+   ========================================================================== */
+html.dark tr:hover,
+html.dark tbody tr:hover,
+html.dark [class*="hover:bg-slate"]:hover,
+html.dark [class*="hover:bg-gray"]:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Hover on selected rows in dark mode keeps high contrast */
+html.dark tr.bg-blue-50\/60:hover,
+html.dark tr[class*="bg-blue"]:hover {
+  background-color: rgba(59, 130, 246, 0.22) !important;
+}
+
+/* Soft styling for neutral secondary buttons in dark mode */
+html.dark button.bg-white:not(.landing-login-btn),
+html.dark a.bg-white:not(.landing-login-btn) {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+}
+html.dark button.bg-white:not(.landing-login-btn):hover,
+html.dark a.bg-white:not(.landing-login-btn):hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+/* Form Inputs & Selects in Dark Mode */
+html.dark main input:not([type="checkbox"]):not([type="radio"]),
+html.dark main select,
+html.dark main textarea {
+  background-color: #141824;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+}
+
+html.dark main input::placeholder,
+html.dark main textarea::placeholder {
+  color: #64748b;
+}
+
+/* Modals & Dialog overlays */
+html.dark .fixed .bg-white {
+  background-color: #0d1017;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #f1f5f9;
+}
+
+html.dark .fixed .border-slate-200,
+html.dark .fixed .border-slate-100 {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .fixed .text-slate-900,
+html.dark .fixed .text-slate-800 {
+  color: #f1f5f9;
+}
+
+html.dark .fixed .text-slate-700,
+html.dark .fixed .text-slate-600 {
+  color: #cbd5e1;
+}
+
+html.dark .fixed .text-slate-500,
+html.dark .fixed .text-slate-400 {
+  color: #94a3b8;
+}
+
+html.dark .fixed input:not([type="checkbox"]):not([type="radio"]),
+html.dark .fixed select,
+html.dark .fixed textarea {
+  background-color: #141824;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+}
+
+/* ==========================================================================
+   HIGH-CONTRAST ACCENT TOKENS FOR BADGES & STATS IN DARK MODE
+   ========================================================================== */
+
+/* Blue accent */
+html.dark .text-blue-700,
+html.dark .text-blue-600 {
+  color: #60a5fa !important;
+}
+html.dark .bg-blue-50,
+html.dark .bg-blue-50\/40,
+html.dark .bg-blue-50\/50,
+html.dark .bg-blue-50\/60,
+html.dark .bg-blue-50\/70,
+html.dark .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+/* Purple accent */
+html.dark .text-purple-700,
+html.dark .text-purple-600 {
+  color: #c084fc !important;
+}
+html.dark .bg-purple-50,
+html.dark .bg-purple-50\/40,
+html.dark .bg-purple-50\/50,
+html.dark .bg-purple-100 {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+  border-color: rgba(168, 85, 247, 0.3) !important;
+}
+
+/* Emerald / Green accent */
+html.dark .text-emerald-700,
+html.dark .text-emerald-800,
+html.dark .text-emerald-600 {
+  color: #34d399 !important;
+}
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-50\/30,
+html.dark .bg-emerald-50\/40,
+html.dark .bg-emerald-50\/50,
+html.dark .bg-emerald-50\/70,
+html.dark .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+/* Indigo accent */
+html.dark .text-indigo-700,
+html.dark .text-indigo-600 {
+  color: #818cf8 !important;
+}
+html.dark .bg-indigo-50,
+html.dark .bg-indigo-100 {
+  background-color: rgba(99, 102, 241, 0.15) !important;
+  border-color: rgba(99, 102, 241, 0.3) !important;
+}
+
+/* Amber / Warning accent */
+html.dark .text-amber-700,
+html.dark .text-amber-800 {
+  color: #fbbf24 !important;
+}
+html.dark .bg-amber-50,
+html.dark .bg-amber-50\/20,
+html.dark .bg-amber-50\/40,
+html.dark .bg-amber-50\/70,
+html.dark .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+/* Red / Danger accent */
+html.dark .text-red-700,
+html.dark .text-red-600 {
+  color: #f87171 !important;
+}
+html.dark .bg-red-50,
+html.dark .bg-red-50\/40,
+html.dark .bg-red-50\/50,
+html.dark .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+/* Rose accent & lock button */
+html.dark .text-rose-700,
+html.dark .text-rose-600 {
+  color: #fb7185 !important;
+}
+html.dark .bg-rose-50,
+html.dark .bg-rose-50\/40,
+html.dark .bg-rose-50\/50,
+html.dark .bg-rose-100 {
+  background-color: rgba(244, 63, 94, 0.15) !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
+}
+html.dark .hover\:bg-rose-100:hover,
+html.dark .hover\:bg-rose-50:hover {
+  background-color: rgba(244, 63, 94, 0.25) !important;
+}
+html.dark .hover\:bg-amber-100:hover,
+html.dark .hover\:bg-amber-50:hover {
+  background-color: rgba(245, 158, 11, 0.25) !important;
+}
+
+/* Violet accent */
+html.dark .text-violet-600,
+html.dark .text-violet-700 {
+  color: #a78bfa !important;
+}
+html.dark .bg-violet-50,
+html.dark .bg-violet-100 {
+  background-color: rgba(139, 92, 246, 0.15) !important;
+  border-color: rgba(139, 92, 246, 0.3) !important;
+}
+
+/* Table headers across all modules in Dark Mode */
+html.dark thead,
+html.dark thead tr,
+html.dark thead th {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  color: #94a3b8 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Landing Page Login Action Button */
+html.dark .landing-login-btn {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Custom Scrollbar */
+html.dark ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+html.dark ::-webkit-scrollbar-track {
+  background: transparent;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }

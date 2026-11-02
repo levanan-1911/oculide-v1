@@ -98,15 +98,24 @@ export default function AuthBrandPanel({
         <h1 className="text-[29px] font-extrabold leading-[1.3] tracking-[-0.02em] sm:text-4xl">
           Hệ thống giám sát học tập và kiểm tra lập trình trực tuyến
         </h1>
-        <div className="mt-8 space-y-3 text-sm leading-6 text-[#c8d5ea]">
-          <p>Một tài khoản do nhà trường cấp.</p>
-          <p>Truy cập chức năng theo vai trò được phân công.</p>
-        </div>
+        <p className="mt-3 text-sm text-slate-300 sm:text-base">
+          Môi trường thi code an toàn với giám sát AI, chấm testcase tự động và quản lý lớp học tập trung.
+        </p>
       </div>
 
-      <div className="relative z-10 mt-10 hidden items-center gap-2 text-xs text-slate-400 lg:absolute lg:bottom-16 lg:left-16 lg:flex">
-        <ShieldCheck className="h-4 w-4 text-blue-400" aria-hidden="true" />
-        <span>Kết nối được bảo mật bởi Oculide</span>
+      <div className="relative z-10 mt-10 space-y-3 sm:mt-14">
+        {[
+          'Giám sát hành vi gian lận với AI theo thời gian thực',
+          'Biên dịch và chạy thử thách code trong sandbox bảo mật',
+          'Tự động đồng bộ kết quả ca thi và báo cáo chi tiết',
+        ].map((feature) => (
+          <div key={feature} className="flex items-center gap-3 text-sm text-slate-200">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/20 text-xs text-blue-300">
+              ✓
+            </span>
+            <span>{feature}</span>
+          </div>
+        ))}
       </div>
     </section>
   );

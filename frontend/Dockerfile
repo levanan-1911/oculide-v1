@@ -2,7 +2,10 @@
 # Dockerfile - Oculide Frontend (Next.js 14)
 # ==============================================================================
 
-FROM node:18-alpine AS base
+FROM node:20-alpine AS base
+
+# Cài đặt libc6-compat nếu cần cho các thư viện native
+RUN apk add --no-cache libc6-compat
 
 WORKDIR /app
 
@@ -13,10 +16,12 @@ RUN npm install
 # 2. Sao chép mã nguồn frontend
 COPY . .
 
-EXPOSE 3000
-
+# 3. Cấu hình cổng và hostname cho Next.js container
 ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 ENV NODE_ENV=development
 
-# Khởi chạy Next.js development server
+EXPOSE 3000
+
+# 4. Khởi chạy Next.js server
 CMD ["npm", "run", "dev"]

@@ -1,8 +1,9 @@
-"use client";
+'use client';
 
-import { usePathname } from "next/navigation";
-import StudentSidebar from "@/components/student/StudentSidebar";
-import StudentTopbar from "@/components/student/StudentTopbar";
+import React from 'react';
+import { usePathname } from 'next/navigation';
+import StudentSidebar, { STUDENT_NAV_GROUPS } from '@/components/student/StudentSidebar';
+import StudentTopbar from '@/components/student/StudentTopbar';
 
 export default function StudentLayout({
   children,
@@ -11,8 +12,8 @@ export default function StudentLayout({
 }) {
   const pathname = usePathname();
 
-  // Nếu là trang phòng thi (exam-room) -> Tự động ẨN hoàn toàn Sidebar & Topbar
-  const isExamRoom = pathname.includes("/exam-room");
+  // Nếu là trang phòng thi (exam-room) -> Tự động ẨN hoàn toàn Sidebar & Topbar để làm bài toàn màn hình
+  const isExamRoom = pathname.includes('/exam-room');
 
   if (isExamRoom) {
     return (
@@ -22,13 +23,39 @@ export default function StudentLayout({
     );
   }
 
-  // Giao diện Dashboard chuẩn có Sidebar & Topbar cho các trang khác
+  // Cổng tham gia nhanh qua liên kết mời (/student/join) có header và bố cục trang đích độc lập
+  if (pathname.startsWith('/student/join')) {
+    return <>{children}</>;
+  }
+
+  // Tìm tiêu đề tương ứng với route
+  const currentItem = STUDENT_NAV_GROUPS.flatMap((g) => g.items).find((item) =>
+    item.href === '/student'
+      ? pathname === '/student' || pathname === '/student/dashboard'
+      : pathname.startsWith(item.href)
+  );
+
+  const title = currentItem
+    ? currentItem.label
+    : pathname.startsWith('/student/join')
+    ? 'Tham gia phòng thi'
+    : pathname.startsWith('/student/device-check')
+    ? 'Kiểm tra thiết bị'
+    : pathname.startsWith('/student/waiting-room')
+    ? 'Phòng chờ thi'
+    : pathname.startsWith('/student/profile')
+    ? 'Hồ sơ cá nhân Sinh viên'
+    : 'Không gian Sinh viên';
+
+  // Giao diện Dashboard chuẩn có Sidebar & Topbar (đồng bộ kiến trúc với Admin & Giảng viên)
   return (
-    <div className="min-h-screen bg-slate-50 lg:flex font-sans">
+    <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] dark:bg-[#090a0f] font-sans text-slate-800 dark:text-slate-100 transition-colors">
       <StudentSidebar />
-      <div className="min-w-0 flex-1 flex flex-col">
-        <StudentTopbar />
-        <div className="flex-1">{children}</div>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <StudentTopbar title={title} />
+        <main className="flex-1 overflow-y-auto px-6 py-6 lg:px-8 lg:py-7">
+          {children}
+        </main>
       </div>
     </div>
   );

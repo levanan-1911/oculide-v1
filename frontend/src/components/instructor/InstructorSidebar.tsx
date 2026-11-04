@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   LayoutGrid,
   Table2,
@@ -10,11 +10,8 @@ import {
   Clock,
   Flag,
   BookOpen,
+  ChevronLeft,
   ChevronRight,
-  User,
-  LogOut,
-  Settings,
-  GraduationCap,
 } from 'lucide-react';
 
 export interface InstructorNavItem {
@@ -84,58 +81,42 @@ export default function InstructorSidebar({
   activeModule?: string;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const [currentUser, setCurrentUser] = useState<{
-    name: string;
-    email: string;
-    role: string;
-  }>({
-    name: 'Thầy Nguyễn Văn Nam',
-    email: 'nam.nv@school.edu.vn',
-    role: 'Giảng viên',
-  });
+  // ── TRẠNG THÁI THU GỌN SIDEBAR (PERSIST VÀO LOCALSTORAGE) ──
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('oculide_user');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setCurrentUser({
-          name: parsed.name || parsed.username || 'Thầy Nguyễn Văn Nam',
-          email: parsed.email || 'nam.nv@school.edu.vn',
-          role: 'Giảng viên',
+    setMounted(true);
+    const saved = localStorage.getItem('oculide_instructor_sidebar_collapsed');
+    if (saved !== null) {
+      setIsCollapsed(saved === 'true');
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setIsCollapsed((prev) => {
+          const next = !prev;
+          localStorage.setItem('oculide_instructor_sidebar_collapsed', String(next));
+          return next;
         });
       }
-    } catch {
-      // ignore
-    }
+    };
 
-    function handleClickOutside(event: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
-  function handleLogout() {
-    localStorage.removeItem('oculide_token');
-    localStorage.removeItem('oculide_user');
-    localStorage.removeItem('oculide_refresh_token');
-    router.push('/login');
-  }
-
-  const initials =
-    currentUser.name
-      .split(' ')
-      .filter(Boolean)
-      .slice(-2)
-      .map((w) => w[0]?.toUpperCase())
-      .join('') || 'GV';
+  const toggleCollapse = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('oculide_instructor_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   const currentActiveModule =
     activeModule ??
@@ -154,29 +135,56 @@ export default function InstructorSidebar({
       : 'overview');
 
   return (
-    <aside className="relative flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white font-sans text-slate-800 shadow-sm z-30 select-none dark:border-white/10 dark:bg-[#0d1017] dark:text-slate-200 transition-colors">
+    <aside
+      className={`relative flex h-screen shrink-0 flex-col border-r border-slate-200 bg-white font-sans text-slate-800 shadow-sm z-30 select-none dark:border-white/10 dark:bg-[#0d1017] dark:text-slate-200 transition-all duration-300 ease-in-out ${
+        isCollapsed ? 'w-[72px]' : 'w-64'
+      }`}
+    >
       {/* Header Logo */}
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-100 dark:border-white/10 px-5">
+      <div className={`flex h-[68px] shrink-0 items-center border-b border-slate-100 dark:border-white/10 transition-all ${
+        isCollapsed ? 'justify-center px-2' : 'justify-between px-5'
+      }`}>
         <Link
           href="/instructor/dashboard"
           className="flex items-center gap-2.5 transition hover:opacity-90"
+          title="Oculide Giảng viên"
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
-            <GraduationCap className="h-5 w-5" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+              />
+            </svg>
           </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
-                Oculide
-              </span>
-              <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/40">
-                GV
-              </span>
+          {!isCollapsed && (
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-base font-black tracking-tight text-slate-900 dark:text-white">
+                  OCULIDE
+                </span>
+                <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/40">
+                  GV
+                </span>
+              </div>
+              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                Cổng Giảng Viên
+              </p>
             </div>
-            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-              Cổng Giảng Viên
-            </p>
-          </div>
+          )}
         </Link>
       </div>
 
@@ -185,34 +193,44 @@ export default function InstructorSidebar({
         <nav className="space-y-5">
           {INSTRUCTOR_NAV_GROUPS.map((group) => (
             <div key={group.groupLabel} className="space-y-1">
-              <h3 className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                {group.groupLabel}
-              </h3>
-              <div className="mt-1 space-y-0.5">
+              {!isCollapsed ? (
+                <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 truncate">
+                  {group.groupLabel}
+                </p>
+              ) : (
+                <div className="my-2 border-t border-slate-100 dark:border-white/5 mx-2" />
+              )}
+              <div className="space-y-1">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const isActive = currentActiveModule === item.id;
+                  const isActive =
+                    currentActiveModule === item.id ||
+                    (item.id === 'overview' && pathname === '/instructor');
 
                   return (
                     <Link
                       key={item.id}
                       href={item.href}
-                      className={`group flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                      title={isCollapsed ? item.label : undefined}
+                      className={`flex w-full items-center rounded-xl transition-all cursor-pointer ${
+                        isCollapsed
+                          ? 'justify-center p-2.5'
+                          : 'gap-3 px-3.5 py-2.5 text-xs font-semibold'
+                      } ${
                         isActive
-                          ? 'bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400'
-                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 hover:text-slate-900 dark:hover:bg-white/5 dark:hover:text-white'
+                          ? 'bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400 shadow-2xs font-bold'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100'
                       }`}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Icon
-                          className={`h-4 w-4 shrink-0 ${
-                            isActive ? 'text-[#2563eb] dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
-                          }`}
-                        />
+                      <Icon
+                        className={`h-4.5 w-4.5 shrink-0 transition-transform ${
+                          isActive
+                            ? 'text-[#2563eb] dark:text-blue-400 scale-105'
+                            : 'text-slate-400 dark:text-slate-500'
+                        }`}
+                      />
+                      {!isCollapsed && (
                         <span className="truncate">{item.label}</span>
-                      </div>
-                      {isActive && (
-                        <ChevronRight className="h-3.5 w-3.5 text-[#2563eb] dark:text-blue-400" />
                       )}
                     </Link>
                   );
@@ -223,74 +241,39 @@ export default function InstructorSidebar({
         </nav>
       </div>
 
-      {/* User Card */}
-      <div
-        ref={userMenuRef}
-        className="relative shrink-0 p-4 border-t border-slate-100 bg-white dark:border-white/10 dark:bg-[#0d1017] transition-colors"
-      >
-        {isMenuOpen && (
-          <div className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-50 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-xl shadow-slate-900/10 dark:border-white/10 dark:bg-[#0d1017] dark:text-white">
-            <div className="px-3 py-2 border-b border-slate-100 dark:border-white/10">
-              <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                {currentUser.name}
-              </p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {currentUser.email}
-              </p>
-              <span className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                Giảng viên
-              </span>
+      {/* Phần chân Sidebar: Nút Thu gọn / Mở rộng Sidebar (Đồng bộ chuẩn 100% như AdminSidebar) */}
+      <div className={`shrink-0 border-t border-slate-100 bg-white dark:border-white/10 dark:bg-[#0d1017] transition-all ${
+        isCollapsed ? 'p-2' : 'p-3'
+      }`}>
+        {mounted && (
+          <button
+            type="button"
+            onClick={toggleCollapse}
+            title={isCollapsed ? 'Mở rộng menu Sidebar (Ctrl + B)' : 'Thu gọn menu Sidebar (Ctrl + B)'}
+            aria-label={isCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
+            className={`flex w-full items-center rounded-xl border border-slate-200/80 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 transition-all cursor-pointer ${
+              isCollapsed
+                ? 'h-10 justify-center'
+                : 'h-10 justify-between px-3 text-xs font-semibold'
+            }`}
+          >
+            <div className="flex items-center gap-2 overflow-hidden">
+              {isCollapsed ? (
+                <ChevronRight className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+              ) : (
+                <>
+                  <ChevronLeft className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                  <span className="truncate">Thu gọn menu</span>
+                </>
+              )}
             </div>
-
-            <div className="mt-1.5 space-y-0.5 text-xs font-medium text-slate-700 dark:text-slate-300">
-              <Link
-                href="/instructor/profile"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600 dark:hover:bg-white/5 dark:hover:text-blue-400"
-              >
-                <User className="h-4 w-4 text-slate-400" />
-                Hồ sơ cá nhân
-              </Link>
-              <Link
-                href="/instructor/profile?tab=security"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600 dark:hover:bg-white/5 dark:hover:text-blue-400"
-              >
-                <Settings className="h-4 w-4 text-slate-400" />
-                Đổi mật khẩu
-              </Link>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/20 cursor-pointer"
-              >
-                <LogOut className="h-4 w-4" />
-                Đăng xuất
-              </button>
-            </div>
-          </div>
+            {!isCollapsed && (
+              <kbd className="hidden sm:inline-block rounded bg-slate-200/60 dark:bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 font-normal">
+                Ctrl B
+              </kbd>
+            )}
+          </button>
         )}
-
-        <button
-          type="button"
-          onClick={() => setIsMenuOpen((prev) => !prev)}
-          className="flex w-full items-center gap-3 rounded-2xl p-1.5 text-left transition hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer"
-        >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-bold text-white shadow-sm">
-            {initials}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-              {currentUser.name}
-            </p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-              {currentUser.email}
-            </p>
-          </div>
-          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-white/10 dark:text-slate-400">
-            <span className="text-[10px] font-bold">⋮</span>
-          </div>
-        </button>
       </div>
     </aside>
   );

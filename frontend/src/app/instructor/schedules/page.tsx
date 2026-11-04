@@ -299,41 +299,41 @@ function SessionDetailModal({
   const attendance = getAttendanceSummary(session);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]">
-      <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between border-b border-slate-100 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0d1017] dark:text-white transition-all">
+        <div className="flex items-start justify-between border-b border-slate-100 dark:border-white/10 p-6">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">
+              <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30">
                 {session.classCode}
               </span>
               <span
                 className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${
                   session.status === 'Đang diễn ra'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/20 dark:text-emerald-300'
                     : session.status === 'Sắp diễn ra'
-                    ? 'border-amber-200 bg-amber-50 text-amber-700'
-                    : 'border-slate-200 bg-slate-100 text-slate-600'
+                    ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-300'
+                    : 'border-slate-200 bg-slate-100 text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-slate-300'
                 }`}
               >
                 {session.status}
               </span>
               {session.isAiProctored && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700">
+                <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30">
                   <ShieldCheck className="h-3 w-3" />
                   AI Proctor
                 </span>
               )}
             </div>
 
-            <h2 className="mt-2 text-lg font-black text-slate-900">{session.title}</h2>
-            <p className="mt-1 text-xs text-slate-500">{session.className}</p>
+            <h2 className="mt-2 text-lg font-black text-slate-900 dark:text-white">{session.title}</h2>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{session.className}</p>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl px-3 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100"
+            className="rounded-xl px-3 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white cursor-pointer transition-colors"
             aria-label="Đóng chi tiết phiên"
           >
             ✕
@@ -341,37 +341,37 @@ function SessionDetailModal({
         </div>
 
         <div className="grid gap-4 p-6 sm:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Thời gian
             </p>
-            <p className="mt-2 text-lg font-black text-slate-900">
+            <p className="mt-2 text-lg font-black text-slate-900 dark:text-white font-mono tabular-nums">
               {session.startTime} - {session.endTime}
             </p>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               {formatDateDisplay(getSessionDateKey(session))}
             </p>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Phòng & Ngôn ngữ
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Phòng &amp; Ngôn ngữ
             </p>
-            <p className="mt-2 font-mono text-sm font-black text-blue-700">{session.roomCode}</p>
-            <p className="mt-1 text-xs text-slate-500">
-              {session.language} • Passcode {session.passcode}
+            <p className="mt-2 font-mono text-sm font-black text-blue-700 dark:text-blue-400 tabular-nums">{session.roomCode}</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 font-mono">
+              {session.language} • Passcode <span className="font-bold tabular-nums text-slate-700 dark:text-slate-300">{session.passcode}</span>
             </p>
           </div>
         </div>
 
         <div className="px-6 pb-2">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-[#121824]">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Tiến độ phiên
                 </p>
-                <p className="mt-1 text-sm font-black text-slate-900">
+                <p className="mt-1 text-sm font-black text-slate-900 dark:text-white">
                   {session.status === 'Đang diễn ra'
                     ? `Còn khoảng ${formatDuration(remainingMinutes)}`
                     : session.status === 'Sắp diễn ra'
@@ -379,10 +379,10 @@ function SessionDetailModal({
                     : 'Phiên đã kết thúc'}
                 </p>
               </div>
-              <span className="text-sm font-black text-slate-700">{progress}%</span>
+              <span className="text-sm font-black text-slate-700 dark:text-slate-200 font-mono tabular-nums">{progress}%</span>
             </div>
 
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
               <div
                 className={`h-full rounded-full transition-all ${
                   session.status === 'Đang diễn ra'
@@ -398,43 +398,43 @@ function SessionDetailModal({
         </div>
 
         <div className="grid gap-3 p-6 sm:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-[#121824]">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Tổng
             </p>
-            <p className="mt-2 text-2xl font-black text-slate-900">{session.enrolledStudents}</p>
-            <p className="text-[11px] text-slate-500">SV đăng ký</p>
+            <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">{session.enrolledStudents}</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">SV đăng ký</p>
           </div>
 
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
               Đúng giờ
             </p>
-            <p className="mt-2 text-2xl font-black text-emerald-700">{attendance.onTime}</p>
-            <p className="text-[11px] text-emerald-700">SV</p>
+            <p className="mt-2 text-2xl font-black text-emerald-700 dark:text-emerald-300 font-mono tabular-nums">{attendance.onTime}</p>
+            <p className="text-[11px] text-emerald-700 dark:text-emerald-400">SV</p>
           </div>
 
-          <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
               Đi muộn
             </p>
-            <p className="mt-2 text-2xl font-black text-amber-700">{attendance.late}</p>
-            <p className="text-[11px] text-amber-700">SV</p>
+            <p className="mt-2 text-2xl font-black text-amber-700 dark:text-amber-300 font-mono tabular-nums">{attendance.late}</p>
+            <p className="text-[11px] text-amber-700 dark:text-amber-400">SV</p>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               {session.status === 'Sắp diễn ra' ? 'Chưa vào' : 'Vắng'}
             </p>
-            <p className="mt-2 text-2xl font-black text-slate-700">
+            <p className="mt-2 text-2xl font-black text-slate-700 dark:text-slate-300 font-mono tabular-nums">
               {session.status === 'Sắp diễn ra' ? attendance.notArrived : attendance.absent}
             </p>
-            <p className="text-[11px] text-slate-500">SV</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">SV</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/60 px-6 py-4">
-          <div className="flex items-center gap-2 text-[11px] text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.02] px-6 py-4">
+          <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
             <Users className="h-3.5 w-3.5" />
             <span>
               {session.attendedStudents}/{session.enrolledStudents} SV đã vào phòng
@@ -447,14 +447,14 @@ function SessionDetailModal({
                 <button
                   type="button"
                   onClick={onExtend}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3.5 text-xs font-bold text-amber-800 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50 cursor-pointer transition-colors"
                 >
                   <Clock className="h-3.5 w-3.5" />
                   Gia hạn
                 </button>
                 <Link
                   href={`/instructor/monitoring?room=${encodeURIComponent(session.roomCode)}`}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
                 >
                   <Video className="h-3.5 w-3.5" />
                   Giám sát ngay
@@ -465,7 +465,7 @@ function SessionDetailModal({
             {session.status === 'Sắp diễn ra' && (
               <Link
                 href={`/instructor/room/${encodeURIComponent(session.roomCode)}`}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white hover:bg-blue-700 shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
               >
                 <Users className="h-3.5 w-3.5" />
                 Vào phòng chờ
@@ -475,7 +475,7 @@ function SessionDetailModal({
             {session.status === 'Đã kết thúc' && (
               <Link
                 href="/instructor/reports"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-900 px-4 text-xs font-bold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 shadow-sm transition-all cursor-pointer"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 Xem báo cáo
@@ -485,7 +485,7 @@ function SessionDetailModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100"
+              className="h-9 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 cursor-pointer transition-colors"
             >
               Đóng
             </button>
@@ -769,97 +769,97 @@ export default function InstructorSchedulesPage() {
         </div>
       )}
 
-      <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-center">
+      <div className="flex flex-col justify-between gap-4 border-b border-slate-200 dark:border-white/10 pb-4 sm:flex-row sm:items-center">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
             Không gian Giảng viên
           </p>
-          <h1 className="mt-0.5 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
-            Lịch & Phiên Kiểm Tra Trực Tuyến
+          <h1 className="mt-0.5 text-xl font-black tracking-tight text-slate-900 dark:text-white sm:text-2xl">
+            Lịch &amp; Phiên Kiểm Tra Trực Tuyến
           </h1>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             Quản lý ca thực hành Lab, kích hoạt phòng thi và giám sát AI trực tiếp theo thời gian thực.
           </p>
         </div>
 
         <Link
           href="/instructor/room"
-          className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700"
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-xs font-bold text-white shadow-sm shadow-blue-500/20 transition-all hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
         >
-          <Plus className="h-3.5 w-3.5" />
-          <span>Tạo & Lên Lịch Phòng Mới</span>
+          <Plus className="h-4 w-4" />
+          <span>Tạo &amp; Lên Lịch Phòng Mới</span>
         </Link>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#0d1017]">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Tổng số ca
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
               <Calendar className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{stats.total}</span>
-            <span className="text-xs font-semibold text-slate-600">tất cả phiên</span>
+            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">{stats.total}</span>
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">tất cả phiên</span>
           </div>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
             {stats.upcoming} sắp diễn ra • {stats.completed} đã kết thúc
           </p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#0d1017]">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Đang diễn ra
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
               <Clock className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-600">{stats.active}</span>
-            <span className="text-xs font-semibold text-slate-600">phòng hoạt động</span>
+            <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">{stats.active}</span>
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">phòng hoạt động</span>
           </div>
-          <p className="mt-1 text-xs text-slate-500">
-            {stats.totalAttended}/{stats.totalEnrolled} lượt tham gia trong toàn bộ danh sách
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 font-medium font-mono tabular-nums">
+            {stats.totalAttended}/{stats.totalEnrolled} lượt tham gia
           </p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#0d1017]">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Tổng sinh viên
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
               <Users className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{stats.totalEnrolled}</span>
-            <span className="text-xs font-semibold text-slate-600">lượt đăng ký</span>
+            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">{stats.totalEnrolled}</span>
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">lượt đăng ký</span>
           </div>
-          <p className="mt-1 text-xs text-slate-500">Điểm danh tự động qua MSSV</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 font-medium">Điểm danh tự động qua MSSV</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#0d1017]">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Giám sát AI
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
               <ShieldCheck className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">
+            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">
               {stats.aiEnabled}/{stats.total}
             </span>
-            <span className="text-xs font-semibold text-amber-600">phiên bật AI</span>
+            <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">phiên bật AI</span>
           </div>
-          <p className="mt-1 text-xs text-slate-500">Bắt tab & nhận diện khuôn mặt</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 font-medium">Bắt tab &amp; nhận diện khuôn mặt</p>
         </div>
       </div>
 

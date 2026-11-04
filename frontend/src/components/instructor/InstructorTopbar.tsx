@@ -14,7 +14,6 @@ import {
   Sun,
   Moon,
   User,
-  Settings,
   LogOut,
 } from 'lucide-react';
 import { useMonitoring } from './monitoring/MonitoringContext';
@@ -350,14 +349,6 @@ export default function InstructorTopbar({
                 >
                   <User className="h-4 w-4 text-slate-400" />
                   <span>Hồ sơ cá nhân</span>
-                </Link>
-                <Link
-                  href="/instructor/profile?tab=security"
-                  onClick={() => setIsProfileOpen(false)}
-                  className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/5 transition"
-                >
-                  <Settings className="h-4 w-4 text-slate-400" />
-                  <span>Bảo mật & Đổi mật khẩu</span>
                 </Link>
               </div>
 

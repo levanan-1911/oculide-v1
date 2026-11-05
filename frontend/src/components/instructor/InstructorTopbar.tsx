@@ -7,14 +7,21 @@ import {
   Search,
   GraduationCap,
   AlertTriangle,
+  Video,
+  Clock,
   ShieldAlert,
   CheckCircle2,
+  X,
   ExternalLink,
-  Sun,
-  Moon,
 } from 'lucide-react';
 import { useMonitoring } from './monitoring/MonitoringContext';
 import { INSTRUCTOR_ROOMS_STORAGE_KEY, RoomSession } from '@/components/instructor/classes/types';
+import {
+  DEFAULT_INSTRUCTOR_PROFILE_NAME,
+  getInstructorInitials,
+  INSTRUCTOR_PROFILE_UPDATED_EVENT,
+  readInstructorProfileIdentity,
+} from '@/utils/instructorProfile';
 
 interface InstructorTopbarProps {
   title?: string;
@@ -23,41 +30,14 @@ interface InstructorTopbarProps {
 export default function InstructorTopbar({
   title = 'Không gian Giảng viên',
 }: InstructorTopbarProps) {
-  const [initials, setInitials] = useState('GV');
+  const [initials, setInitials] = useState(() =>
+    getInstructorInitials(DEFAULT_INSTRUCTOR_PROFILE_NAME)
+  );
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [mounted, setMounted] = useState(false);
-
   const { violations, reviewViolation } = useMonitoring();
   const [activeRunningRoom, setActiveRunningRoom] = useState<{ roomCode: string; remainingMinutes: number } | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
-    const saved = localStorage.getItem('oculide_theme') as 'dark' | 'light' | null;
-    const initial = saved || 'dark';
-    setTheme(initial);
-    applyTheme(initial);
-  }, []);
-
-  const applyTheme = (t: 'dark' | 'light') => {
-    const html = document.documentElement;
-    if (t === 'dark') {
-      html.classList.add('dark');
-      html.setAttribute('data-theme', 'dark');
-    } else {
-      html.classList.remove('dark');
-      html.setAttribute('data-theme', 'light');
-    }
-  };
-
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    localStorage.setItem('oculide_theme', next);
-    applyTheme(next);
-  };
 
   useEffect(() => {
     function checkActiveRoom() {
@@ -92,22 +72,14 @@ export default function InstructorTopbar({
   const pendingViolations = violations.filter((v) => v.status === 'pending');
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('oculide_user');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const name = parsed.name || parsed.username || 'Giảng viên';
-        const init = name
-          .split(' ')
-          .filter(Boolean)
-          .slice(-2)
-          .map((w: string) => w[0]?.toUpperCase())
-          .join('') || 'GV';
-        setInitials(init);
-      }
-    } catch {
-      // ignore
-    }
+    const syncInstructorIdentity = () => {
+      const profile = readInstructorProfileIdentity();
+      setInitials(getInstructorInitials(profile.name));
+    };
+
+    syncInstructorIdentity();
+    window.addEventListener('storage', syncInstructorIdentity);
+    window.addEventListener(INSTRUCTOR_PROFILE_UPDATED_EVENT, syncInstructorIdentity);
 
     function handleClickOutside(event: MouseEvent) {
       if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
@@ -115,18 +87,22 @@ export default function InstructorTopbar({
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('storage', syncInstructorIdentity);
+      window.removeEventListener(INSTRUCTOR_PROFILE_UPDATED_EVENT, syncInstructorIdentity);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   return (
-    <header className="flex h-[68px] w-full shrink-0 items-center justify-between border-b border-slate-200/80 bg-white px-6 lg:px-8 relative z-30 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+    <header className="flex h-[68px] w-full shrink-0 items-center justify-between border-b border-slate-200/80 bg-white px-4 sm:px-6 lg:px-8 relative z-30 dark:border-white/10 dark:bg-[#121824]">
       {/* Tiêu đề bên trái & Tag trạng thái phiên đang giám sát */}
       <div className="flex items-center gap-3">
-        <h1 className="text-[17px] font-bold tracking-tight text-slate-900 dark:text-white">
+        <h1 className="text-[17px] font-bold tracking-tight text-slate-900 dark:text-slate-100">
           {title}
         </h1>
 
-        <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/40">
+        <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/20">
           <GraduationCap className="h-3.5 w-3.5" />
           Giảng viên
         </span>
@@ -135,46 +111,27 @@ export default function InstructorTopbar({
         {activeRunningRoom && (
           <Link
             href={`/instructor/monitoring?room=${encodeURIComponent(activeRunningRoom.roomCode)}`}
-            className="hidden md:inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 transition dark:border-emerald-800/40 dark:bg-emerald-950/30 dark:text-emerald-300"
+            className="hidden md:inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-800 shadow-2xs dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-500/15 transition"
             title="Bấm để vào trực tiếp phòng giám sát LiveKit"
           >
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="h-2 w-2 rounded-full bg-red-600 animate-pulse dark:bg-red-400" />
             <span>Đang giám sát:</span>
-            <span className="font-mono text-emerald-900 dark:text-emerald-200">{activeRunningRoom.roomCode}</span>
-            <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">({activeRunningRoom.remainingMinutes}p)</span>
+            <span className="font-mono text-red-900 dark:text-red-200">{activeRunningRoom.roomCode}</span>
+            <span className="text-[11px] font-medium text-red-700 dark:text-red-300">({activeRunningRoom.remainingMinutes}p)</span>
           </Link>
         )}
       </div>
 
-      {/* Cụm tìm kiếm + Đổi theme sáng/tối + thông báo + avatar bên phải */}
+      {/* Cụm tìm kiếm + thông báo + avatar bên phải */}
       <div className="flex items-center gap-3">
         <div className="relative hidden lg:block">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             placeholder="Tìm kiếm lớp học, bài lab, đề thi..."
-            className="h-9 w-[240px] xl:w-[280px] rounded-full border border-slate-200/70 bg-[#f4f7f9] pl-9 pr-4 text-xs text-slate-700 placeholder-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:outline-none dark:border-white/10 dark:bg-[#141824] dark:text-slate-100 dark:placeholder-slate-500 dark:focus:border-blue-500"
+            className="h-10 w-[240px] xl:w-[280px] rounded-xl border border-slate-200/70 bg-[#f4f7f9] pl-9 pr-4 text-xs text-slate-700 placeholder-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:bg-[#121824]"
           />
         </div>
-
-        {/* Nút chuyển đổi giao diện Sáng / Tối trực tiếp */}
-        {mounted ? (
-          <button
-            type="button"
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Chuyển sang giao diện Sáng (Light)' : 'Chuyển sang giao diện Tối (Dark)'}
-            aria-label="Chuyển đổi giao diện Sáng / Tối"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:scale-105 hover:bg-slate-50 active:scale-95 dark:border-white/10 dark:bg-[#141824] dark:text-amber-400 dark:hover:bg-[#1a2030] cursor-pointer"
-          >
-            {theme === 'dark' ? (
-              <Sun className="h-4 w-4 text-amber-400 transition-transform rotate-0 hover:rotate-45" />
-            ) : (
-              <Moon className="h-4 w-4 text-slate-700 transition-transform rotate-0 hover:-rotate-12" />
-            )}
-          </button>
-        ) : (
-          <div className="h-9 w-9 rounded-full bg-slate-100 dark:bg-white/5 opacity-50" />
-        )}
 
         {/* Chuông thông báo & Dropdown thông báo vi phạm */}
         <div className="relative" ref={notifRef}>
@@ -182,11 +139,11 @@ export default function InstructorTopbar({
             type="button"
             aria-label="Thông báo vi phạm AI"
             onClick={() => setIsNotifOpen((prev) => !prev)}
-            className="relative flex h-9 w-9 items-center justify-center rounded-full bg-[#eff6ff] text-[#2563eb] transition-colors hover:bg-blue-100/80 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 cursor-pointer"
+            className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb] transition-colors hover:bg-blue-100/80 cursor-pointer dark:bg-blue-500/15 dark:text-blue-300 dark:hover:bg-blue-500/25"
           >
             <Bell className="h-4 w-4" />
             {pendingViolations.length > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white ring-2 ring-white dark:ring-[#0d1017] animate-bounce">
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white ring-2 ring-white animate-bounce dark:ring-[#121824]">
                 {pendingViolations.length}
               </span>
             )}
@@ -194,21 +151,20 @@ export default function InstructorTopbar({
 
           {/* Panel danh sách cảnh báo vi phạm */}
           {isNotifOpen && (
-            <div className="absolute right-0 top-12 z-50 w-80 sm:w-96 rounded-3xl border border-slate-200/90 bg-white p-4 shadow-2xl shadow-slate-900/10 dark:border-white/10 dark:bg-[#0d1017] dark:text-white">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-3">
+            <div className="absolute right-0 top-12 z-50 w-80 sm:w-96 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xl shadow-slate-900/10 dark:border-white/10 dark:bg-[#121824]">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/10">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-300">
                     <ShieldAlert className="h-4 w-4" />
                   </div>
-                  <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
                     Cảnh báo vi phạm phòng thi
                   </h3>
                 </div>
-
                 <Link
                   href="/instructor/monitoring"
                   onClick={() => setIsNotifOpen(false)}
-                  className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-0.5"
+                  className="text-[11px] font-bold text-blue-600 hover:underline inline-flex items-center gap-0.5 dark:text-blue-300"
                 >
                   <span>Màn hình giám sát</span>
                   <ExternalLink className="h-3 w-3" />
@@ -219,7 +175,7 @@ export default function InstructorTopbar({
                 {violations.length === 0 ? (
                   <div className="p-6 text-center text-xs text-slate-400 dark:text-slate-500">
                     <CheckCircle2 className="mx-auto h-7 w-7 text-emerald-500" />
-                    <p className="mt-2 font-bold text-slate-700 dark:text-slate-300">Không có vi phạm nào</p>
+                    <p className="mt-2 font-bold text-slate-700 dark:text-slate-200">Không có vi phạm nào</p>
                   </div>
                 ) : (
                   violations.slice(0, 5).map((v) => (
@@ -227,26 +183,26 @@ export default function InstructorTopbar({
                       key={v.id}
                       className={`rounded-2xl border p-3 text-xs space-y-1.5 transition ${
                         v.status === 'pending'
-                          ? 'border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-950/20'
-                          : 'border-slate-100 bg-slate-50 opacity-70 dark:border-white/5 dark:bg-white/5'
+                          ? 'border-red-200 bg-red-50/50 dark:border-red-500/30 dark:bg-red-500/10'
+                          : 'border-slate-100 bg-slate-50 opacity-70 dark:border-white/10 dark:bg-white/5'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-extrabold text-slate-900 dark:text-white truncate">
+                        <span className="font-extrabold text-slate-900 truncate dark:text-slate-100">
                           {v.studentName} ({v.studentId})
                         </span>
-                        <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
+                        <span className="font-mono text-[10px] text-slate-400 shrink-0 dark:text-slate-500">
                           {v.timestamp}
                         </span>
                       </div>
 
-                      <p className="text-[11px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1">
+                      <p className="text-[11px] font-bold text-red-600 flex items-center gap-1 dark:text-red-400">
                         <AlertTriangle className="h-3 w-3 shrink-0" />
                         {v.type}
                       </p>
 
                       <div className="flex items-center justify-between pt-1 border-t border-slate-200/50 dark:border-white/10">
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                        <span className="text-[10px] text-slate-500 font-mono dark:text-slate-400">
                           Phòng: {v.roomCode}
                         </span>
                         {v.status === 'pending' ? (
@@ -274,7 +230,7 @@ export default function InstructorTopbar({
         {/* Avatar Giảng viên */}
         <Link
           href="/instructor/profile"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-bold text-white shadow-sm hover:opacity-90 transition"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-sm hover:opacity-90 transition"
           title="Xem hồ sơ Giảng viên"
         >
           {initials}

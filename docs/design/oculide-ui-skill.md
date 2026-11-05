@@ -140,6 +140,12 @@ flowchart TD
 3. **Bảng Kết quả Test Case (Test Runner Panel)**:
    - Chia 2 tab rõ ràng: `Test case mẫu (Public)` và `Kết quả chạy (Console Output)`.
    - Hiển thị trực quan: `Passed (Màu xanh)` / `Failed (Màu đỏ)` / `Time Limit Exceeded`.
+4. **Màn hình Xem Mã Nguồn & Chi tiết Chấm Điểm (`/student/submissions/[id]`)**:
+   - Tiêu đề học thuật: `Bài làm [mã_bài] [tên_bài] của [tác_giả]`, hiển thị rõ thời gian nộp và ngôn ngữ biên dịch (`C++20`, `Python 3.11`, `Java 17`).
+   - Hỗ trợ 2 chế độ xem song song qua Tabs/Action links:
+     - **Xem code**: Khung code có số dòng, syntax highlighting độ tương phản cao, nút sao chép `Copy` ở góc trên, tùy chọn bật/tắt `Xem mã nguồn thô` và nút `Tải mã nguồn`.
+     - **Xem kết quả**: Hàng biểu tượng trạng thái trực quan (`✔ ✔ ✔ ✔ ✖`), danh sách Test cases dạng Accordion cho phép mở rộng xem Input, Output kỳ vọng, Output thực tế, phân tích sai lệch (WA/TLE/RTE), và thẻ tổng kết tài nguyên (CPU runtime, RAM usage, Điểm số cuối cùng).
+   - Nút **"Nộp lại"** (`bg-blue-600`) cho phép quay lại không gian phòng thi hoặc làm lại bài giải.
 
 ---
 

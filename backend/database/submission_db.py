@@ -230,3 +230,24 @@ def mark_submission_failed(submission_id: int, error_message: str = "Hệ thốn
         return True
 
 
+
+def get_grading_result_by_id(result_id: int) -> Optional[Dict]:
+    """Lấy chi tiết một kết quả chấm bài theo result_id"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT result_id, submission_id, test_case_id, is_passed,
+                   actual_output, execution_time_ms, memory_used_mb,
+                   error_message, graded_at
+            FROM GradingResults
+            WHERE result_id = ?
+        """, (result_id,))
+        row = cursor.fetchone()
+        if row:
+            columns = [column[0] for column in cursor.description]
+            return dict(zip(columns, row))
+        return None
+    finally:
+        cursor.close()
+        conn.close()

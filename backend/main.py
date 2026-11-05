@@ -13,7 +13,11 @@ except ImportError:
 
 from core.config import settings, get_cors_origins
 from core.security import decode_access_token
-from api import auth, admin, rooms, questions, submissions, sessions, violations, chat, livekit, drafts, device_checks, support, classes
+from api import (
+    auth, admin, rooms, questions, submissions, sessions, violations, chat, livekit,
+    drafts, device_checks, support, classes, snapshots, test_cases, enrollments,
+    grading_results, system_logs, users
+)
 from websocket.connection_manager import manager
 from database.chat_db import create_message
 from database.room_db import get_room_by_id
@@ -168,6 +172,12 @@ app.include_router(drafts.router, prefix=f"{settings.API_V1_PREFIX}/drafts", tag
 app.include_router(device_checks.router, prefix=f"{settings.API_V1_PREFIX}/device-checks", tags=["Device Checks"])
 app.include_router(support.router, prefix=f"{settings.API_V1_PREFIX}/support", tags=["Support Requests"])
 app.include_router(classes.router, prefix=f"{settings.API_V1_PREFIX}/classes", tags=["Classes"])
+app.include_router(snapshots.router, prefix=f"{settings.API_V1_PREFIX}/snapshots", tags=["Snapshots"])
+app.include_router(test_cases.router, prefix=f"{settings.API_V1_PREFIX}/test-cases", tags=["Test Cases"])
+app.include_router(enrollments.router, prefix=f"{settings.API_V1_PREFIX}/enrollments", tags=["Enrollments"])
+app.include_router(grading_results.router, prefix=f"{settings.API_V1_PREFIX}/grading-results", tags=["Grading Results"])
+app.include_router(system_logs.router, prefix=f"{settings.API_V1_PREFIX}/system-logs", tags=["System Logs"])
+app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["Users"])
 
 # Tương thích ngược với tiền tố cũ /api/...
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication (Legacy)"], include_in_schema=False)
@@ -179,6 +189,16 @@ app.include_router(sessions.router, prefix="/api/sessions", tags=["Sessions (Leg
 app.include_router(violations.router, prefix="/api/violations", tags=["Violations (Legacy)"], include_in_schema=False)
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat (Legacy)"], include_in_schema=False)
 app.include_router(livekit.router, prefix="/api/livekit", tags=["LiveKit (Legacy)"], include_in_schema=False)
+app.include_router(drafts.router, prefix="/api/drafts", tags=["Code Drafts (Legacy)"], include_in_schema=False)
+app.include_router(device_checks.router, prefix="/api/device-checks", tags=["Device Checks (Legacy)"], include_in_schema=False)
+app.include_router(support.router, prefix="/api/support", tags=["Support Requests (Legacy)"], include_in_schema=False)
+app.include_router(classes.router, prefix="/api/classes", tags=["Classes (Legacy)"], include_in_schema=False)
+app.include_router(snapshots.router, prefix="/api/snapshots", tags=["Snapshots (Legacy)"], include_in_schema=False)
+app.include_router(test_cases.router, prefix="/api/test-cases", tags=["Test Cases (Legacy)"], include_in_schema=False)
+app.include_router(enrollments.router, prefix="/api/enrollments", tags=["Enrollments (Legacy)"], include_in_schema=False)
+app.include_router(grading_results.router, prefix="/api/grading-results", tags=["Grading Results (Legacy)"], include_in_schema=False)
+app.include_router(system_logs.router, prefix="/api/system-logs", tags=["System Logs (Legacy)"], include_in_schema=False)
+app.include_router(users.router, prefix="/api/users", tags=["Users (Legacy)"], include_in_schema=False)
 
 # Cấu hình Mount phục vụ ảnh tĩnh Webcam Snapshots
 uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")

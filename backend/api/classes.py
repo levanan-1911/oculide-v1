@@ -70,8 +70,18 @@ async def edit_class(
     if current_user["role"] != "admin" and cls["instructor_id"] != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa lớp của giảng viên khác")
         
-    updated = update_class(class_id, class_name=data.class_name, description=data.description)
-    return updated
+    try:
+        updated = update_class(
+            class_id,
+            class_code=data.class_code,
+            class_name=data.class_name,
+            description=data.description
+        )
+        return updated
+    except Exception as e:
+        if "UNIQUE" in str(e).upper() or "UQ" in str(e).upper():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mã lớp học đã tồn tại")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.delete("/{class_id}", status_code=status.HTTP_200_OK)
 async def remove_class(

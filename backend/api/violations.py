@@ -1,13 +1,13 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Query
 from typing import Optional, List, Dict, Any
 
 from schemas.violation import (
-    ViolationCreateRequest, SnapshotAnalyzeRequest, ViolationResponse, ViolationStatsItem
+    ViolationCreateRequest, SnapshotAnalyzeRequest, ViolationResponse, ViolationStatsItem, ViolationReviewRequest
 )
 from core.permissions import get_current_user, instructor_or_admin_required
 from database.violation_db import (
     create_violation, get_violations_by_session, get_violations_by_student,
-    update_violation_review, get_student_violation_stats
+    get_violations_by_room, update_violation_review, get_student_violation_stats
 )
 from database.session_db import get_session_by_id
 from database.room_db import get_room_by_id
@@ -37,6 +37,7 @@ async def log_violation(
             "snapshot_url": None,
             "detected_at": session["started_at"],
             "is_reviewed": True,
+            "review_status": "rejected",
             "reviewed_by": None,
             "reviewed_at": None
         }
@@ -103,17 +104,32 @@ async def get_student_violations(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem vi phạm của sinh viên khác")
     return get_violations_by_student(student_id, room_id=room_id)
 
+@router.get("/room/{room_id}", response_model=List[ViolationResponse])
+async def get_room_violations(
+    room_id: int,
+    review_status: Optional[str] = Query(None, pattern="^(pending|confirmed|rejected)$"),
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Giám thị / Giảng viên lấy toàn bộ danh sách vi phạm trong phòng thi, có thể lọc theo review_status"""
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem vi phạm của phòng này")
+    return get_violations_by_room(room_id, review_status=review_status)
 
 @router.patch("/{violation_id}/review", response_model=ViolationResponse)
 async def review_violation(
     violation_id: int,
-    review_status: str = "confirmed",
+    review_data: Optional[ViolationReviewRequest] = None,
+    review_status: Optional[str] = Query(None),
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
-    """Giảng viên duyệt hoặc xác nhận sự kiện vi phạm (confirmed hoặc rejected)"""
-    if review_status not in ["confirmed", "rejected"]:
+    """Giảng viên duyệt hoặc xác nhận sự kiện vi phạm (confirmed hoặc rejected) qua JSON body hoặc Query param"""
+    status_val = (review_data.review_status if review_data else None) or review_status or "confirmed"
+    if status_val not in ["confirmed", "rejected"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Trạng thái duyệt phải là confirmed hoặc rejected")
-    updated = update_violation_review(violation_id, reviewed_by=current_user["user_id"], review_status=review_status)
+    updated = update_violation_review(violation_id, reviewed_by=current_user["user_id"], review_status=status_val)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bản ghi vi phạm")
     return updated

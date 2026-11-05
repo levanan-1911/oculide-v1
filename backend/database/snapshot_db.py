@@ -72,3 +72,16 @@ def cleanup_old_snapshots(days: int = 30) -> int:
     with get_db_cursor(commit=True) as cursor:
         cursor.execute(sql, (days,))
         return cursor.rowcount
+
+def get_snapshot_by_id(snapshot_id: int) -> Optional[Dict[str, Any]]:
+    """Lấy thông tin chi tiết một bản ghi snapshot theo snapshot_id"""
+    sql = """
+        SELECT snapshot_id, session_id, student_id, image_url,
+               face_detected, face_count, looking_at_screen, confidence_score, captured_at
+        FROM Snapshots
+        WHERE snapshot_id = ?
+    """
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute(sql, (snapshot_id,))
+        row = cursor.fetchone()
+        return row_to_dict(cursor, row)

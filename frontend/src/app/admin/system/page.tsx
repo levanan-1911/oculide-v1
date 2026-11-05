@@ -7,7 +7,7 @@ import AdminSystemView from '@/components/admin/system/AdminSystemView';
 
 export default function SystemManagerPage() {
   return (
-    <div className="flex min-h-screen w-full bg-[#f4f7f9] text-slate-800">
+    <div className="flex min-h-screen w-full bg-[#f4f7f9] text-slate-800 dark:bg-[#0d1017] dark:text-slate-100">
       <AdminSidebar activeModule="system" />
       <div className="flex min-w-0 flex-1 flex-col">
         <AdminTopbar title="Hệ thống & nhật ký" />

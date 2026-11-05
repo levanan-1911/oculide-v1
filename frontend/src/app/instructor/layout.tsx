@@ -31,7 +31,7 @@ export default function InstructorLayout({
 
   return (
     <MonitoringProvider>
-      <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] font-sans text-slate-800">
+      <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] dark:bg-[#090a0f] font-sans text-slate-800 dark:text-slate-100 transition-colors">
         <InstructorSidebar />
         <div className="flex flex-1 flex-col overflow-hidden">
           <InstructorTopbar title={title} />

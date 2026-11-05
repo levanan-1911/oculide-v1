@@ -11,6 +11,7 @@ import {
   Code2,
   LayoutDashboard,
   LogOut,
+  Settings,
   ShieldAlert,
   UserRound,
 } from "lucide-react";
@@ -227,6 +228,14 @@ export default function StudentSidebar({
               >
                 <UserRound size={16} className="text-slate-400" />
                 <span>Hồ sơ cá nhân</span>
+              </Link>
+              <Link
+                href="/student/profile?tab=security"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-2.5 rounded-lg px-3 py-2 transition hover:bg-slate-50 dark:hover:bg-white/[0.04] hover:text-blue-600 dark:hover:text-blue-400"
+              >
+                <Settings size={16} className="text-slate-400" />
+                <span>Đổi mật khẩu</span>
               </Link>
 
               <button

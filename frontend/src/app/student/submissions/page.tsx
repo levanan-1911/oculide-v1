@@ -34,6 +34,17 @@ type Submission = {
 
 const sampleSubmissions: Submission[] = [
   {
+    id: "cb_111",
+    problem: "Tính tổng các số trong chuỗi",
+    exam: "Thực hành thuật toán nâng cao",
+    language: "C++20",
+    submittedAt: "2026-10-31T20:51:00",
+    status: "failed",
+    score: 80,
+    runtime: "0.004s",
+    memory: "1.82 MB",
+  },
+  {
     id: "SUB-1001",
     problem: "Tìm phần tử lớn nhất",
     exam: "Thực hành thuật toán cơ bản",

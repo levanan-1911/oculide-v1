@@ -151,29 +151,22 @@ function AnimatedVirtualKeyboard() {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200/90 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-[#0c0e14]/60">
-      <div className="flex items-center justify-between mb-3 text-xs">
-        <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          Bàn phím giả lập gõ lệnh Sandbox
-        </span>
-        <span className="text-[11px] font-mono text-slate-400">Autotyping: ON</span>
-      </div>
-
-      <div className="space-y-1.5 max-w-md mx-auto">
+    <div className="w-fit mx-auto my-2 rounded-2xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-2.5 shadow-sm dark:border-white/5 dark:bg-[#0c0f17]/80 backdrop-blur-sm transition-all select-none">
+      {/* 3 Hàng phím chữ QWERTY mini */}
+      <div className="flex flex-col items-center gap-1">
         {KEY_ROWS.map((row, rIdx) => (
-          <div key={rIdx} className="flex justify-center gap-1 sm:gap-1.5">
+          <div key={rIdx} className="flex justify-center gap-1">
             {row.map((k) => {
-              const isActive = activeKey === k;
+              const isPressed = activeKey === k;
               return (
                 <button
-                  type="button"
                   key={k}
+                  type="button"
                   onClick={() => handleManualKeyPress(k)}
-                  className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg text-[10px] sm:text-xs font-mono font-bold transition-all ${
-                    isActive
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/50 scale-110 -translate-y-0.5'
-                      : 'border border-slate-200 bg-white text-slate-700 hover:border-blue-400 dark:border-white/10 dark:bg-[#141824] dark:text-slate-300'
+                  className={`flex h-5 w-5 sm:h-5.5 sm:w-5.5 items-center justify-center rounded-md font-mono text-[9px] font-bold transition-all duration-75 cursor-pointer ${
+                    isPressed
+                      ? 'bg-white text-slate-950 shadow-[0_0_10px_rgba(255,255,255,0.95)] scale-90 dark:bg-white dark:text-slate-950 ring-1 ring-white/60'
+                      : 'border border-slate-200/60 bg-white/90 text-slate-500 shadow-[0_1px_0_rgba(0,0,0,0.05)] hover:bg-white dark:border-white/5 dark:bg-[#161a24] dark:text-slate-400 dark:shadow-[0_1px_0_rgba(0,0,0,0.5)] dark:hover:border-white/15 dark:hover:text-white'
                   }`}
                 >
                   {k}
@@ -183,18 +176,17 @@ function AnimatedVirtualKeyboard() {
           </div>
         ))}
 
-        <div className="flex justify-center pt-1">
+        {/* Phím Spacebar thu nhỏ */}
+        <div className="mt-0.5 flex justify-center">
           <button
             type="button"
             onClick={() => handleManualKeyPress('SPACE')}
-            className={`h-6 sm:h-7 w-48 sm:w-60 rounded-md text-[10px] font-mono font-semibold tracking-wider transition-all ${
+            className={`h-4 w-24 sm:w-32 rounded-full border transition-all duration-75 cursor-pointer ${
               activeKey === 'SPACE'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/50 scale-105'
-                : 'border border-slate-200 bg-white text-slate-500 hover:border-blue-400 dark:border-white/10 dark:bg-[#141824] dark:text-slate-400'
+                ? 'bg-white shadow-[0_0_10px_rgba(255,255,255,0.95)] scale-95 dark:bg-white ring-1 ring-white/60'
+                : 'border-slate-200/60 bg-white/80 dark:border-white/5 dark:bg-[#161a24] hover:bg-white dark:hover:border-white/15'
             }`}
-          >
-            SPACE
-          </button>
+          />
         </div>
       </div>
     </div>

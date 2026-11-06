@@ -1,0 +1,171 @@
+flowchart TB
+    %% ========================================================
+    %% ACTORS (TRÊN CÙNG)
+    %% ========================================================
+    subgraph Layer_Actors[" "]
+        direction LR
+        Act_Student["👤 Student"]:::actorStyle
+        Act_Instructor["👤 Instructor"]:::actorStyle
+        Act_Admin["👤 Admin"]:::actorStyle
+    end
+
+    %% ========================================================
+    %% 1. WEB UI CONTAINER
+    %% ========================================================
+    subgraph Box_WebUI["Web UI"]
+        direction TB
+
+        UI_Landing["«component»<br/>Landing Page"]:::compStyle
+
+        %% Col 1: Auth
+        subgraph Col_Auth["Auth"]
+            direction TB
+            UI_Auth["«component»<br/>Auth"]:::compStyle
+            UI_Login["«component»<br/>Login"]:::compStyle
+            UI_Forgot["«component»<br/>Forgot Password"]:::compStyle
+            UI_Reset["«component»<br/>Reset Password"]:::compStyle
+            UI_Auth --> UI_Login --> UI_Forgot --> UI_Reset
+        end
+
+        %% Col 2: Student
+        subgraph Col_Student["Student Workspace"]
+            direction LR
+            UI_StuHome["«component»<br/>Student Home"]:::compStyle
+            UI_StuJoin["«component»<br/>Join (PIN)"]:::compStyle
+            UI_StuDev["«component»<br/>Device Check"]:::compStyle
+            UI_StuExam["«component»<br/>Exam Room (Monaco)"]:::compStyle
+            UI_StuCam["«component»<br/>Webcam Stream"]:::compStyle
+            UI_StuSub["«component»<br/>Submissions"]:::compStyle
+            UI_StuVio["«component»<br/>Violations"]:::compStyle
+
+            UI_StuHome --> UI_StuJoin
+            UI_StuHome --> UI_StuDev
+            UI_StuHome --> UI_StuExam
+            UI_StuHome --> UI_StuCam
+            UI_StuHome --> UI_StuSub
+            UI_StuHome --> UI_StuVio
+        end
+
+        %% Col 3: Profile
+        UI_Profile["«component»<br/>Profile"]:::compStyle
+
+        %% Col 4: Instructor
+        subgraph Col_Instructor["Instructor Portal"]
+            direction LR
+            UI_InstHome["«component»<br/>Instructor Home"]:::compStyle
+            UI_InstCls["«component»<br/>Manage Classes"]:::compStyle
+            UI_InstQues["«component»<br/>Manage Questions"]:::compStyle
+            UI_InstRoom["«component»<br/>Manage Rooms"]:::compStyle
+            UI_InstMon["«component»<br/>Monitoring Panoptic"]:::compStyle
+            UI_InstRep["«component»<br/>Reports & Scores"]:::compStyle
+
+            UI_InstHome --> UI_InstCls
+            UI_InstHome --> UI_InstQues
+            UI_InstHome --> UI_InstRoom
+            UI_InstHome --> UI_InstMon
+            UI_InstHome --> UI_InstRep
+        end
+
+        %% Col 5: Admin
+        subgraph Col_Admin["Admin Page"]
+            direction LR
+            UI_AdminHome["«component»<br/>Admin Page"]:::compStyle
+            UI_AdminUsr["«component»<br/>Manage Users"]:::compStyle
+            UI_AdminCls["«component»<br/>Manage Classes"]:::compStyle
+            UI_AdminSub["«component»<br/>Manage Subjects"]:::compStyle
+            UI_AdminLog["«component»<br/>System Logs"]:::compStyle
+            UI_AdminSys["«component»<br/>System Settings"]:::compStyle
+
+            UI_AdminHome --> UI_AdminUsr
+            UI_AdminHome --> UI_AdminCls
+            UI_AdminHome --> UI_AdminSub
+            UI_AdminHome --> UI_AdminLog
+            UI_AdminHome --> UI_AdminSys
+        end
+
+        UI_Landing -.-> UI_Auth
+        UI_Landing -.-> UI_StuHome
+        UI_Landing -.-> UI_Profile
+        UI_Landing -.-> UI_InstHome
+        UI_Landing -.-> UI_AdminHome
+    end
+
+    %% Actors interact with Landing Page
+    Act_Student -.->|interacting| UI_Landing
+    Act_Instructor -.->|interacting| UI_Landing
+    Act_Admin -.->|interacting| UI_Landing
+
+    %% ========================================================
+    %% 2. MODULE CONTAINER
+    %% ========================================================
+    subgraph Box_Module["Module"]
+        direction LR
+        Mod_Auth(["auth"]):::modStyle
+
+        Mod_Rooms(["rooms (lab/exam)"]):::modStyle
+        Mod_Device(["device-check"]):::modStyle
+        subgraph Mod_ExamEng["exam-engine"]
+            direction TB
+            Mod_Drafts(["code-drafts"]):::modStyle
+            Mod_Sandbox(["sandbox-runner"]):::modStyle
+        end
+        Mod_Streaming(["livekit-sfu"]):::modStyle
+        Mod_Submissions(["submissions"]):::modStyle
+        Mod_Proctoring(["ai-proctoring"]):::modStyle
+
+        Mod_Users(["users"]):::modStyle
+
+        Mod_Classes(["classes"]):::modStyle
+        Mod_Questions(["questions"]):::modStyle
+        Mod_InstRoom(["room-manager"]):::modStyle
+        Mod_Monitoring(["panoptic-monitor"]):::modStyle
+        Mod_Reports(["reports"]):::modStyle
+
+        Mod_Email(["email-service<br/>(Send Credentials)"]):::emailStyle
+        Mod_Subjects(["subjects"]):::modStyle
+        Mod_Logs(["system-logs"]):::modStyle
+        Mod_Settings(["system-settings"]):::modStyle
+    end
+
+    %% ========================================================
+    %% 1-TO-1 CALLING ARROWS
+    %% ========================================================
+    UI_Reset --> Mod_Auth
+    UI_Profile --> Mod_Users
+
+    %% Student Calling (Black)
+    UI_StuJoin -->|Calling (Student)| Mod_Rooms
+    UI_StuDev -->|Calling (Student)| Mod_Device
+    UI_StuExam -->|Calling (Student)| Mod_Drafts
+    UI_StuCam -->|Calling (Student)| Mod_Streaming
+    UI_StuSub -->|Calling (Student)| Mod_Submissions
+    UI_StuVio -->|Calling (Student)| Mod_Proctoring
+
+    %% Instructor Calling (Blue)
+    UI_InstCls -->|Calling (Instructor)| Mod_Classes
+    UI_InstQues -->|Calling (Instructor)| Mod_Questions
+    UI_InstRoom -->|Calling (Instructor)| Mod_InstRoom
+    UI_InstMon -->|Calling (Instructor)| Mod_Monitoring
+    UI_InstRep -->|Calling (Instructor)| Mod_Reports
+
+    %% Admin Calling (Red)
+    UI_AdminUsr -->|Gửi TK/MK SV| Mod_Email
+    UI_AdminCls -->|Calling (Admin)| Mod_Classes
+    UI_AdminSub -->|Calling (Admin)| Mod_Subjects
+    UI_AdminLog -->|Calling (Admin)| Mod_Logs
+    UI_AdminSys -->|Calling (Admin)| Mod_Settings
+
+    %% Gửi Email tài khoản/mật khẩu tới Sinh viên
+    Mod_Email -.->|Gửi email tài khoản & mật khẩu| Act_Student
+
+    %% ========================================================
+    %% 3. DATABASE
+    %% ========================================================
+    DB[("Database<br/><i>(SQL Server & Storage)</i>")]:::dbStyle
+    Box_Module === DB
+
+    classDef actorStyle fill:#F9FAFB,stroke:#374151,stroke-width:1.5px,color:#111827;
+    classDef compStyle fill:#DBEAFE,stroke:#3B82F6,stroke-width:1.5px,color:#1E3A8A;
+    classDef modStyle fill:#FEF3C7,stroke:#F59E0B,stroke-width:1.5px,color:#78350F;
+    classDef emailStyle fill:#FFEDD5,stroke:#EA580C,stroke-width:1.5px,color:#9A3412;
+    classDef dbStyle fill:#FCE7F3,stroke:#EC4899,stroke-width:2px,color:#831843;

@@ -82,7 +82,6 @@ erDiagram
         string hoc_vi "Thac si / Tien si (Chi danh cho Giang Vien)"
         string so_dien_thoai "SDT lien he ca nhan"
         string anh_dai_dien "Link avatar ca nhan"
-        string ma_van_tay_thiet_bi "Device fingerprint"
         int ma_vai_tro FK "Lien ket VaiTro (1-n)"
         boolean dang_hoat_dong "Trang thai hoat dong"
         boolean yeu_cau_doi_mat_khau "Bat buoc doi MK lan dau"
@@ -283,5 +282,4 @@ erDiagram
 | **`hoc_vi`** | `NVARCHAR(50)` | *(Ẩn - NULL)* | **Học vị** *(Tiến sĩ / Thạc sĩ)* | *(Ẩn - NULL)* |
 | **`so_dien_thoai`** | `NVARCHAR(20)` | SĐT cá nhân | SĐT liên hệ công tác | SĐT nội bộ |
 | **`anh_dai_dien`** | `NVARCHAR(500)` | Link avatar sinh viên | Link avatar giảng viên | Link avatar admin |
-| **`ma_van_tay_thiet_bi`** | `NVARCHAR(255)` | Mã thiết bị thi | Mã thiết bị giám thị | *(Tùy chọn)* |
 

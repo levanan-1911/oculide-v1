@@ -1,0 +1,285 @@
+# 📘 TÀI LIỆU ĐẶC TẢ CƠ SỞ DỮ LIỆU OCULIDE v2 (TỐI ƯU HÓA 19 BẢNG)
+
+> **Dự án**: Oculide - Laboratory Monitoring & Online Exam System  
+> **Phiên bản CSDL**: v2.0 (Chuẩn hóa cho cả Buổi thực hành Lab & Kỳ thi Exam, tích hợp Profile 3 Roles vào bảng Người Dùng)  
+> **Hệ quản trị CSDL**: Microsoft SQL Server (T-SQL)  
+
+---
+
+## 1. SƠ ĐỒ QUAN HỆ THỰC THỂ (MERMAID ERD v2)
+
+```mermaid
+erDiagram
+    %% ========================================================
+    %% 1. TÀI KHOẢN, XÁC THỰC, VAI TRÒ & HỒ SƠ DÙNG CHUNG 3 ROLES
+    %% ========================================================
+    VaiTro ||--o{ NguoiDung : "phan_vai_tro"
+    NguoiDung ||--o{ TokenXacThuc : "so_huu"
+    NguoiDung ||--o{ NhatKyHeThong : "ghi_audit_log"
+
+    %% ========================================================
+    %% 2. LỚP HỌC & SINH VIÊN (ADMIN TẠO & PHÂN CÔNG)
+    %% ========================================================
+    NguoiDung ||--o{ LopHoc : "giang_vien_phu_trach"
+    LopHoc ||--o{ SinhVienLopHoc : "danh_sach_sinh_vien"
+    NguoiDung ||--o{ SinhVienLopHoc : "tham_gia_lop"
+
+    %% ========================================================
+    %% 3. NGÂN HÀNG CÂU HỎI & BỘ ĐỀ (LAB & EXAM)
+    %% ========================================================
+    NguoiDung ||--o{ CauHoi : "bien_soan"
+    CauHoi ||--o{ BoKiemThu : "chua_testcases"
+    NguoiDung ||--o{ BoDeMau : "tao_bo_de"
+    BoDeMau ||--o{ CauHoiTrongDe : "gom_cac_cau"
+    CauHoi ||--o{ CauHoiTrongDe : "duoc_gan_vao"
+
+    %% ========================================================
+    %% 4. PHÒNG (LAB & EXAM) DO GIẢNG VIÊN TẠO & ĐIỀU PHỐI
+    %% ========================================================
+    LopHoc ||--o{ Phong : "to_chuc_phong"
+    BoDeMau ||--o{ Phong : "ap_dung_cho"
+    NguoiDung ||--o{ Phong : "giang_vien_tao_phong"
+    Phong ||--o{ CanBoPhuTrachPhong : "danh_sach_can_bo"
+    NguoiDung ||--o{ CanBoPhuTrachPhong : "lam_nhiem_vu"
+    Phong ||--o{ TinNhanPhong : "trao_doi_trong"
+    NguoiDung ||--o{ TinNhanPhong : "nguoi_gui"
+
+    %% ========================================================
+    %% 5. PHIÊN LÀM BÀI, GIÁM SÁT REAL-TIME & CHẤM ĐIỂM
+    %% ========================================================
+    Phong ||--o{ PhienLamBai : "chua_cac_phien"
+    NguoiDung ||--o{ PhienLamBai : "sinh_vien_thi"
+    PhienLamBai ||--o{ BanNhapCode : "tu_dong_luu_nhap"
+    CauHoi ||--o{ BanNhapCode : "ma_nguon_theo_cau"
+    PhienLamBai ||--o{ YeuCauTroGiup : "gui_sos"
+    
+    Phong ||--o{ ViPhamGiamSat : "canh_bao_trong_phong"
+    NguoiDung ||--o{ ViPhamGiamSat : "sinh_vien_vi_pham"
+    PhienLamBai ||--o{ ViPhamGiamSat : "phat_sinh_trong_phien"
+
+    PhienLamBai ||--o{ BaiNop : "nop_bai"
+    CauHoi ||--o{ BaiNop : "bai_giai_cho"
+    BaiNop ||--o{ KetQuaChamDiem : "chi_tiet_cham"
+    BoKiemThu ||--o{ KetQuaChamDiem : "danh_gia_theo"
+
+    %% ========================================================
+    %% CHI TIẾT CÁC THỰC THỂ VÀ CỘT
+    %% ========================================================
+    VaiTro {
+        int ma_vai_tro PK
+        string ten_vai_tro UK "admin / instructor / student"
+        string mo_ta
+    }
+
+    NguoiDung {
+        int ma_nguoi_dung PK
+        string ten_dang_nhap UK "Username dang nhap"
+        string email UK "Email ca nhan"
+        string mat_khau_hash "Bcrypt hash"
+        string ho_va_ten "Ho ten hien thi tren Profile"
+        string ma_dinh_danh "UserCode: MSSV hoac Ma Giang Vien hoac Ma Admin"
+        string khoa_bo_mon "Chuyen nganh SV hoac Khoa Bo mon GV hoac Don vi Admin"
+        string hoc_vi "Thac si / Tien si (Chi danh cho Giang Vien)"
+        string so_dien_thoai "SDT lien he ca nhan"
+        string anh_dai_dien "Link avatar ca nhan"
+        int ma_vai_tro FK "Lien ket VaiTro (1-n)"
+        boolean dang_hoat_dong "Trang thai hoat dong"
+        boolean yeu_cau_doi_mat_khau "Bat buoc doi MK lan dau"
+        string trang_thai_gui_mail "chua_gui / da_gui / that_bai"
+        datetime dang_nhap_cuoi
+        datetime ngay_tao
+    }
+
+    TokenXacThuc {
+        int ma_token PK
+        int ma_nguoi_dung FK
+        string ma_token_hash UK
+        string loai_token "refresh / reset_password / verify"
+        string thong_tin_thiet_bi
+        datetime ngay_het_han
+        boolean da_su_dung
+        datetime ngay_thu_hoi
+        datetime ngay_tao
+    }
+
+    LopHoc {
+        int ma_lop PK
+        string ma_lop_hoc UK
+        string ten_lop
+        string ma_mon_hoc
+        string hoc_ky
+        int ma_giang_vien FK
+        string trang_thai
+        datetime ngay_tao
+    }
+
+    SinhVienLopHoc {
+        int ma_dong PK
+        int ma_lop FK
+        int ma_sinh_vien FK
+        string trang_thai
+        datetime ngay_tham_gia
+    }
+
+    CauHoi {
+        int ma_cau_hoi PK
+        string ma_bai_toan UK
+        string tieu_de
+        string noi_dung_de
+        string do_kho
+        int gioi_han_thoi_gian_ms
+        int gioi_han_bo_nho_mb
+        string ngon_ngu_cho_phep
+        int nguoi_soan FK
+        datetime ngay_tao
+    }
+
+    BoKiemThu {
+        int ma_test_case PK
+        int ma_cau_hoi FK
+        string du_lieu_dau_vao
+        string ket_qua_mong_doi
+        boolean la_test_vi_du
+        boolean la_test_an
+    }
+
+    BoDeMau {
+        int ma_de_thi PK
+        string ma_de UK
+        string tieu_de
+        string loai_de "lab hoac exam"
+        int tong_thoi_gian_phut
+        decimal tong_diem
+        int nguoi_tao FK
+        datetime ngay_tao
+    }
+
+    CauHoiTrongDe {
+        int ma_dong PK
+        int ma_de_thi FK
+        int ma_cau_hoi FK
+        int thu_tu_cau
+        decimal so_diem
+    }
+
+    Phong {
+        int ma_phong PK
+        string ma_phong_code UK "Ma PIN vao phong"
+        string tieu_de "VD: Lab 03 hoac Thi giua ky"
+        string loai_phong "lab hoac exam"
+        string mat_ma_phong "Passcode mo phong"
+        int ma_lop FK
+        int ma_de_mau FK
+        int nguoi_tao FK "Giang vien tao phong"
+        datetime gio_bat_dau
+        datetime gio_ket_thuc
+        string cau_hinh_giam_sat "JSON webcam/screen/clip"
+        string trang_thai "chua_mo / dang_dien_ra / da_dong"
+    }
+
+    CanBoPhuTrachPhong {
+        int ma_dong PK
+        int ma_phong FK
+        int ma_giang_vien FK
+        string vai_tro_trong_phong "giang_vien_chinh / tro_giang / giam_thi"
+    }
+
+    TinNhanPhong {
+        int ma_tin_nhan PK
+        int ma_phong FK
+        int nguoi_gui FK
+        string loai_tin_nhan "chat / thong_bao_noi / canh_bao"
+        string noi_dung
+        datetime thoi_gian_gui
+    }
+
+    PhienLamBai {
+        int ma_phien PK
+        int ma_phong FK
+        int ma_sinh_vien FK
+        string trang_thai "dang_lam / da_nop / bi_khoa"
+        int so_phut_duoc_cong "Gia han them gio"
+        string ma_dinh_danh_livekit
+        boolean da_check_thiet_bi "Gop tu KiemTraThietBi"
+        string trang_thai_camera "hoat_dong / loi"
+        string trang_thai_micro "hoat_dong / loi"
+        decimal do_khop_khuon_mat "Face ID score"
+        datetime thoi_gian_bat_dau
+        datetime thoi_gian_nop_bai
+    }
+
+    BanNhapCode {
+        int ma_ban_nhap PK
+        int ma_phien FK
+        int ma_cau_hoi FK
+        string ngon_ngu_lap_trinh
+        string ma_nguon_nhap
+        datetime lan_luu_cuoi
+    }
+
+    YeuCauTroGiup {
+        int ma_yeu_cau PK
+        int ma_phien FK
+        string danh_muc_su_co
+        string tin_nhan_sos
+        string trang_thai "cho_xu_ly / dang_ho_tro / da_xong"
+        datetime thoi_gian_gui
+    }
+
+    ViPhamGiamSat {
+        int ma_vi_pham PK
+        int ma_phien FK
+        int ma_phong FK "Toi uu query theo phong"
+        int ma_sinh_vien FK "Toi uu query theo sinh vien"
+        string loai_vi_pham "mat_mat / nguoi_la / chuyen_tab / chup_thu_cong"
+        decimal do_tin_cay_ai
+        string link_anh_bang_chung
+        string trang_thai_duyet "pending / confirmed / rejected"
+        datetime thoi_gian_phat_hien
+    }
+
+    BaiNop {
+        string ma_bai_nop PK
+        int ma_phien FK
+        int ma_cau_hoi FK
+        string ma_nguon_nop
+        string ngon_ngu
+        string trang_thai_cham
+        decimal tong_diem
+        int thoi_gian_chay_toi_da_ms
+        int bo_nho_chay_toi_da_kb
+        datetime thoi_gian_nop
+    }
+
+    KetQuaChamDiem {
+        int ma_ket_qua PK
+        string ma_bai_nop FK
+        int ma_test_case FK
+        string trang_thai "AC / WA / TLE / RTE / MLE"
+        decimal diem_dat_duoc
+        int thoi_gian_chay_ms
+    }
+
+    NhatKyHeThong {
+        int ma_nhat_ky PK
+        int ma_nguoi_dung FK
+        string muc_do "INFO / WARNING / CRITICAL / SECURITY"
+        string hanh_dong
+        string dia_chi_ip
+        string du_lieu_chi_tiet
+        datetime thoi_gian
+    }
+```
+
+---
+
+## 2. BẢNG MAPPING THÔNG TIN PROFILE CỦA 3 ROLES TỪ `NguoiDung`
+
+| Cột trong `NguoiDung` | Kiểu dữ liệu | Nhãn hiển thị Sinh Viên | Nhãn hiển thị Giảng Viên | Nhãn hiển thị Admin |
+|:---|:---:|:---|:---|:---|
+| **`ma_dinh_danh`** | `NVARCHAR(50)` | **Mã sinh viên (MSSV)** *(SE184801)* | **Mã giảng viên / Cán bộ** *(GV_NAMNV)* | **Mã quản trị viên** *(ADM_001)* |
+| **`khoa_bo_mon`** | `NVARCHAR(150)` | **Chuyên ngành** *(Kỹ thuật phần mềm)* | **Khoa / Bộ môn** *(Bộ môn CNPM)* | **Đơn vị công tác** *(Phòng Khảo thí)* |
+| **`hoc_vi`** | `NVARCHAR(50)` | *(Ẩn - NULL)* | **Học vị** *(Tiến sĩ / Thạc sĩ)* | *(Ẩn - NULL)* |
+| **`so_dien_thoai`** | `NVARCHAR(20)` | SĐT cá nhân | SĐT liên hệ công tác | SĐT nội bộ |
+| **`anh_dai_dien`** | `NVARCHAR(500)` | Link avatar sinh viên | Link avatar giảng viên | Link avatar admin |
+

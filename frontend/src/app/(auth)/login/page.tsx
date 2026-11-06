@@ -136,6 +136,7 @@ export default function LoginPage() {
         }
       }
 
+      // Lưu JWT Token và thông tin User
       if (data.access_token) {
         localStorage.setItem('oculide_token', data.access_token);
         localStorage.setItem('oculide_user', JSON.stringify(data.user));
@@ -324,6 +325,22 @@ export default function LoginPage() {
                   Sử dụng email do nhà trường cung cấp để tiếp tục
                 </p>
               </div>
+
+              {/* Thông báo Chế độ Bảo trì (Nếu có) */}
+              {maintenanceInfo.isActive && (
+                <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-amber-200/90 bg-amber-50 p-3.5 text-xs text-amber-800 shadow-2xs dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300 sm:text-sm">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <div>
+                    <span className="block font-bold text-amber-900 dark:text-amber-200">Hệ thống đang bảo trì định kỳ</span>
+                    <span className="mt-0.5 block text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+                      {maintenanceInfo.message}
+                    </span>
+                    <span className="mt-1 block text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                      (Cổng đăng nhập tạm thời chỉ dành riêng cho Quản trị viên).
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Thông báo lỗi nếu có */}
               {errorMessage && (

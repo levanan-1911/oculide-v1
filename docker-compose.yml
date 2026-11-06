@@ -34,15 +34,13 @@ services:
           "-P",
           "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}",
           "-No",
-          "-d",
-          "ExamSystem",
           "-Q",
-          "SELECT 1 FROM VaiTro"
+          "SELECT 1"
         ]
       interval: 10s
       timeout: 5s
-      retries: 8
-      start_period: 30s
+      retries: 6
+      start_period: 20s
 
   # ─── Redis ────────────────────────────────────────────────────────────────────
   redis:

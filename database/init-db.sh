@@ -26,7 +26,23 @@ if [ $IS_READY -eq 0 ]; then
     exit 1
 fi
 
-# 2. Kiểm tra xem CSDL ExamSystem và bảng VaiTro (21 bảng mới) đã có chưa
+# 2. Chờ SQL Server hoàn tất quá trình phục hồi (recovery) của toàn bộ CSDL
+echo "[init-db] Đang chờ SQL Server hoàn tất phục hồi các CSDL..."
+for i in $(seq 1 20); do
+    RECOVERY_PENDING=$(/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${SA_PASSWORD}" -No -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.databases WHERE state_desc != 'ONLINE'" 2>/dev/null | tr -d '[:space:]')
+    if [ "$RECOVERY_PENDING" = "0" ] || [ -z "$RECOVERY_PENDING" ]; then
+        break
+    fi
+    sleep 2
+done
+
+# Dọn dẹp file .mdf/.ldf mồ côi nếu CSDL ExamSystem không tồn tại trong danh mục hệ thống
+DB_EXISTS=$(/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${SA_PASSWORD}" -No -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.databases WHERE name = 'ExamSystem'" 2>/dev/null | tr -d '[:space:]')
+if [ "$DB_EXISTS" = "0" ]; then
+    rm -f /var/opt/mssql/data/ExamSystem.mdf /var/opt/mssql/data/ExamSystem_log.ldf
+fi
+
+# 3. Kiểm tra xem CSDL ExamSystem và bảng VaiTro (21 bảng mới) đã có chưa
 CHECK_TABLE=$(/opt/mssql-tools18/bin/sqlcmd \
     -S localhost -U sa -P "${SA_PASSWORD}" \
     -No -d ExamSystem -h -1 \
@@ -39,7 +55,7 @@ if [ "$CHECK_TABLE" = "1" ] && [ "$INIT_DB_FORCE" != "1" ]; then
     exit 0
 fi
 
-# 3. Tự động xả schema.sql
+# 4. Tự động xả schema.sql
 echo "[init-db] Bắt đầu xả schema.sql (21 bảng chuẩn hóa ERD v2) vào SQL Server..."
 /opt/mssql-tools18/bin/sqlcmd \
     -S localhost -U sa -P "${SA_PASSWORD}" \

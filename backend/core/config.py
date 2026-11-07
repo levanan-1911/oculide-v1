@@ -46,6 +46,16 @@ try:
         SANDBOX_TIME_LIMIT_S: int = 10
         SANDBOX_NANO_CPUS: int = 500000000
 
+        # SMTP & Email Settings (Brevo / Sendinblue Relay default)
+        SMTP_HOST: str = "smtp-relay.brevo.com"
+        SMTP_PORT: int = 587
+        SMTP_USER: str = ""
+        SMTP_PASSWORD: str = ""
+        SMTP_FROM_NAME: str = "Hệ thống Khảo thí Oculide"
+        SMTP_FROM_EMAIL: str = ""
+        SMTP_TLS: bool = True
+        FRONTEND_URL: str = "http://localhost:3000"
+
         class Config:
             env_file = ".env"
             case_sensitive = True
@@ -90,6 +100,16 @@ except ImportError:
         SANDBOX_MEM_LIMIT: str = os.getenv("SANDBOX_MEM_LIMIT", "128m")
         SANDBOX_TIME_LIMIT_S: int = int(os.getenv("SANDBOX_TIME_LIMIT_S", "10"))
         SANDBOX_NANO_CPUS: int = int(os.getenv("SANDBOX_NANO_CPUS", "500000000"))
+
+        # SMTP & Email Settings (Brevo / Sendinblue Relay default)
+        SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp-relay.brevo.com")
+        SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+        SMTP_USER: str = os.getenv("SMTP_USER", "")
+        SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+        SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "Hệ thống Khảo thí Oculide")
+        SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "")
+        SMTP_TLS: bool = os.getenv("SMTP_TLS", "True").lower() == "true"
+        FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 settings = Settings()
 

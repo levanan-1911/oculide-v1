@@ -69,15 +69,10 @@ function ResetPasswordContent() {
     setIsSubmitting(true);
     try {
       // Gọi API đặt lại mật khẩu của hệ thống
-      const endpoint = resetTokenFromUrl
-        ? '/api/v1/auth/reset-password'
-        : '/api/v1/auth/complete-password-reset';
-
-      const response = await fetch(endpoint, {
+      const response = await fetch('/api/v1/auth/reset-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(resetTokenFromUrl ? {} : { Authorization: `Bearer ${activeToken}` }),
         },
         body: JSON.stringify({
           token: activeToken,
@@ -87,16 +82,6 @@ function ResetPasswordContent() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        // Fallback môi trường phát triển khi API Backend chưa có
-        if (response.status === 404 || response.status === 405) {
-          localStorage.removeItem('oculide_token');
-          localStorage.removeItem('oculide_refresh_token');
-          localStorage.removeItem('oculide_user');
-          setPassword('');
-          setConfirmPassword('');
-          setIsSubmitted(true);
-          return;
-        }
         throw new Error(data.detail || 'Không thể cập nhật mật khẩu mới.');
       }
 
@@ -107,20 +92,6 @@ function ResetPasswordContent() {
       setConfirmPassword('');
       setIsSubmitted(true);
     } catch (requestError: any) {
-      // Cho phép test thành công ở môi trường phát triển nếu server offline
-      if (
-        requestError.message &&
-        (requestError.message.includes('Failed to fetch') ||
-          requestError.message.includes('Không thể cập nhật'))
-      ) {
-        localStorage.removeItem('oculide_token');
-        localStorage.removeItem('oculide_refresh_token');
-        localStorage.removeItem('oculide_user');
-        setPassword('');
-        setConfirmPassword('');
-        setIsSubmitted(true);
-        return;
-      }
       setError(
         requestError instanceof Error
           ? requestError.message

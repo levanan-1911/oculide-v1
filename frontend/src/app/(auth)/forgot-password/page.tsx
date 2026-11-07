@@ -6,7 +6,6 @@ import AuthBrandPanel from '@/components/auth/AuthBrandPanel';
 import {
   ArrowLeft,
   CheckCircle2,
-  ExternalLink,
   Loader2,
   Mail,
   Send,
@@ -17,7 +16,6 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [resetLink, setResetLink] = useState('');
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -47,24 +45,12 @@ export default function ForgotPasswordPage() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        // Fallback môi trường phát triển khi Backend API chưa có
-        if (response.status === 404 || response.status === 405) {
-          const devToken = `dev_token_${Date.now()}`;
-          setResetLink(`/reset-password?token=${devToken}`);
-          setIsSubmitted(true);
-          return;
-        }
         throw new Error(data.detail || 'Không thể tiếp nhận yêu cầu khôi phục.');
       }
 
-      const linkFromApi = data.reset_link || (data.token ? `/reset-password?token=${data.token}` : '');
-      setResetLink(linkFromApi);
       setIsSubmitted(true);
     } catch (requestError: any) {
-      // Hỗ trợ kiểm thử trực tiếp giao diện khi backend chưa chạy
-      const devToken = `dev_token_${Date.now()}`;
-      setResetLink(`/reset-password?token=${devToken}`);
-      setIsSubmitted(true);
+      setError(requestError.message || 'Có lỗi xảy ra khi gửi yêu cầu. Vui lòng thử lại sau.');
     } finally {
       setIsSubmitting(false);
     }
@@ -93,29 +79,6 @@ export default function ForgotPasswordPage() {
               <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-3.5 text-xs text-blue-700">
                 💡 <span className="font-semibold">Lưu ý:</span> Liên kết chỉ có hiệu lực trong vòng <strong>15 phút</strong>. Nếu không thấy email trong Hộp thư đến, vui lòng kiểm tra thư mục Spam hoặc Thư rác.
               </div>
-
-              {resetLink && (
-                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold text-emerald-800">
-                      ⚡ Liên kết trực tiếp (Môi trường phát triển)
-                    </p>
-                    <span className="rounded-md bg-emerald-200/60 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                      DEV PREVIEW
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-600">
-                    Bạn có thể nhấp thẳng vào nút bên dưới để trải nghiệm ngay quy trình đổi mật khẩu qua link:
-                  </p>
-                  <Link
-                    href={resetLink}
-                    className="mt-3 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700"
-                  >
-                    <span>Mở liên kết khôi phục mật khẩu</span>
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              )}
 
               <button
                 type="button"

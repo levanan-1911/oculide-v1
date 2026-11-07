@@ -126,7 +126,9 @@ export default function InstructorSidebar({
     localStorage.removeItem('oculide_token');
     localStorage.removeItem('oculide_user');
     localStorage.removeItem('oculide_refresh_token');
-    router.push('/login');
+    document.cookie = 'oculide_token=; path=/; max-age=0';
+    document.cookie = 'oculide_role=; path=/; max-age=0';
+    window.location.replace('/login');
   }
 
   const initials =

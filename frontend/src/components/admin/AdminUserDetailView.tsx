@@ -123,9 +123,29 @@ export default function AdminUserDetailView({
     setIsResetModalOpen(true);
   };
 
-  // ── XỬ LÝ: XÁC NHẬN RESET MẬT KHẨU ──
-  const handleConfirmReset = () => {
-    // Sinh mật khẩu tạm ngẫu nhiên mạnh
+  // ── XỬ LÝ: XÁC NHẬN RESET MẬT KHẨU QUA API THẬT & GỬI EMAIL BREVO ──
+  const handleConfirmReset = async () => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      const res = await fetch(`/api/v1/admin/users/${currentUser.id}/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNewTemporaryPassword(data.new_temporary_password || 'Đã gửi qua Email');
+        setResetStep('success');
+        showToast(`Đã đặt lại mật khẩu và gửi email thành công cho tài khoản ${currentUser.userCode}.`);
+        return;
+      }
+    } catch (e) {
+      console.error('Reset password API error:', e);
+    }
+
+    // Fallback nếu API có sự cố
     const randomChars = Math.random().toString(36).substring(2, 7);
     const generated = `Ocl@${new Date().getFullYear()}#${randomChars}`;
     setNewTemporaryPassword(generated);

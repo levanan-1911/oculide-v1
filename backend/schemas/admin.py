@@ -4,8 +4,8 @@ from datetime import datetime
 from schemas.auth import UserResponse
 
 class AdminUserCreateRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
-    password: str = Field(..., min_length=6)
+    username: Optional[str] = None
+    password: Optional[str] = None
     email: EmailStr
     full_name: str = Field(..., min_length=2, max_length=100)
     role: str = Field(..., pattern="^(admin|instructor|student)$")
@@ -26,7 +26,7 @@ class PaginatedUsersResponse(BaseModel):
     total_pages: int
 
 class BatchImportUserItem(BaseModel):
-    username: str
+    username: Optional[str] = None
     password: Optional[str] = None
     email: EmailStr
     full_name: str

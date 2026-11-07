@@ -139,6 +139,8 @@ export default function LoginPage() {
       if (data.access_token) {
         localStorage.setItem('oculide_token', data.access_token);
         localStorage.setItem('oculide_user', JSON.stringify(data.user));
+        document.cookie = `oculide_token=${data.access_token}; path=/; max-age=86400; SameSite=Lax`;
+        document.cookie = `oculide_role=${data.user?.role || ''}; path=/; max-age=86400; SameSite=Lax`;
         if (data.refresh_token) {
           localStorage.setItem('oculide_refresh_token', data.refresh_token);
         }
@@ -156,6 +158,15 @@ export default function LoginPage() {
           window.location.href = '/reset-password';
           return;
         }
+
+        // Kiểm tra xem có URL redirect trước đó không
+        const params = new URLSearchParams(window.location.search);
+        const redirectUrl = params.get('redirect');
+        if (redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//')) {
+          window.location.href = redirectUrl;
+          return;
+        }
+
         const role = data.user?.role;
         if (role === 'admin') {
           window.location.href = '/admin/dashboard';
@@ -344,24 +355,27 @@ export default function LoginPage() {
               {/* Form Đăng nhập */}
               <form onSubmit={handleSubmit} className="space-y-4 text-left">
                 
-                {/* Input 1: Email hoặc tài khoản (Ảnh 2) */}
+                {/* Input 1: Email hoặc tên đăng nhập */}
                 <div className="space-y-1.5">
                   <label 
                     htmlFor="login-email" 
                     className="block text-xs font-semibold text-slate-700 dark:text-slate-300 sm:text-sm"
                   >
-                    Email hoặc tài khoản
+                    Email hoặc Tên đăng nhập
                   </label>
                   <input
                     id="login-email"
                     type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="abcd@school.edu.vn"
+                    placeholder="VD: phamvanlong@dtu.edu.vn hoặc phamvanlong"
                     disabled={isLoading}
                     autoComplete="username"
                     className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 disabled:bg-slate-50 disabled:text-slate-400 dark:border-white/15 dark:bg-[#121622] dark:text-slate-100 dark:placeholder-slate-500"
                   />
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                    * Đăng nhập bằng Email trường hoặc Tên đăng nhập (không sử dụng Mã SV/GV).
+                  </p>
                 </div>
 
                 {/* Input 2: Mật khẩu (Ảnh 2) */}

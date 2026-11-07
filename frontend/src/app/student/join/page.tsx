@@ -43,25 +43,41 @@ function JoinClassContent() {
   const [errorMsg, setErrorMsg] = useState('');
   const [joinedSession, setJoinedSession] = useState<JoinedSession | null>(null);
   const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // Tự động điền thông tin nếu sinh viên đã có trong localStorage
+  // Lấy thông tin sinh viên từ phiên đăng nhập
   useEffect(() => {
     try {
+      const token = localStorage.getItem('oculide_token');
       const storedUser = localStorage.getItem('oculide_user');
-      if (storedUser) {
+      if (token && storedUser) {
+        setIsLoggedIn(true);
         const parsed = JSON.parse(storedUser);
         if (parsed.email) setStudentEmail(parsed.email);
-        if (parsed.name) setStudentName(parsed.name);
-        if (parsed.studentId) setStudentId(parsed.studentId);
+        if (parsed.name || parsed.fullName || parsed.full_name) {
+          setStudentName(parsed.name || parsed.fullName || parsed.full_name);
+        }
+        if (parsed.studentId || parsed.student_id || parsed.userCode) {
+          setStudentId(parsed.studentId || parsed.student_id || parsed.userCode);
+        }
+      } else {
+        setIsLoggedIn(false);
       }
     } catch {
-      // ignore
+      setIsLoggedIn(false);
     }
   }, []);
 
   function handleJoin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMsg('');
+
+    // Ràng buộc bắt buộc đăng nhập
+    const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+    if (!token) {
+      setErrorMsg('Bạn chưa đăng nhập. Thí sinh bắt buộc phải đăng nhập bằng Email trường trước khi tham gia phòng thi.');
+      return;
+    }
 
     const trimmedCode = roomCode.trim().toUpperCase();
     const trimmedPass = passcode.trim();
@@ -608,6 +624,23 @@ function JoinClassContent() {
                 <div className="mt-5 flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-700">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
                   <p className="font-semibold leading-relaxed">{errorMsg}</p>
+                </div>
+              )}
+
+              {!isLoggedIn && (
+                <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-xs text-amber-900">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-lg">🔒</span>
+                    <p className="font-semibold leading-snug">
+                      Hệ thống yêu cầu xác thực danh tính: Thí sinh phải đăng nhập tài khoản trường trước khi vào phòng thi.
+                    </p>
+                  </div>
+                  <Link
+                    href={`/login?redirect=/student/join${roomCode ? `?code=${roomCode}` : ''}`}
+                    className="shrink-0 rounded-xl bg-blue-600 px-4 py-2 text-center font-bold text-white shadow-sm transition hover:bg-blue-700"
+                  >
+                    Đăng nhập ngay
+                  </Link>
                 </div>
               )}
 

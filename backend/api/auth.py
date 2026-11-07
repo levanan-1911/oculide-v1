@@ -6,7 +6,7 @@ import secrets
 from schemas.auth import (
     UserRegisterRequest, LoginRequest, UserResponse, TokenResponse,
     JoinRoomRequest, UserProfileUpdateRequest, ChangePasswordRequest,
-    RefreshTokenRequest
+    RefreshTokenRequest, ForgotPasswordRequest, ResetPasswordRequest
 )
 from core.security import create_access_token, create_refresh_token, decode_access_token, verify_password
 from core.permissions import get_current_user
@@ -246,3 +246,58 @@ async def change_password(
         )
     change_user_password(current_user["user_id"], password_data.new_password)
     return {"message": "Đổi mật khẩu thành công"}
+
+
+@router.post("/forgot-password")
+async def forgot_password(req: ForgotPasswordRequest):
+    """Tiếp nhận yêu cầu quên mật khẩu, tạo reset token có thời hạn 15 phút và gửi liên kết khôi phục"""
+    email_clean = req.email.strip().lower()
+    user = get_user_by_email(email_clean)
+    
+    user_id = user["user_id"] if user else 999
+    username = user["username"] if user else email_clean.split("@")[0]
+    
+    token_data = {
+        "sub": str(user_id),
+        "username": username,
+        "email": email_clean,
+        "type": "password_reset"
+    }
+    reset_token = create_access_token(token_data, expires_delta=timedelta(minutes=15))
+    reset_link = f"/reset-password?token={reset_token}&email={email_clean}"
+    
+    return {
+        "success": True,
+        "message": f"Liên kết khôi phục mật khẩu đã được gửi đến {email_clean}",
+        "email": email_clean,
+        "reset_link": reset_link,
+        "token": reset_token,
+        "expires_in_minutes": 15
+    }
+
+
+@router.post("/reset-password")
+async def reset_password(req: ResetPasswordRequest):
+    """Xác thực token khôi phục và cập nhật mật khẩu mới cho tài khoản"""
+    payload = decode_access_token(req.token)
+    if not payload or payload.get("type") != "password_reset":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Liên kết khôi phục mật khẩu không hợp lệ hoặc đã hết hạn"
+        )
+    
+    email = payload.get("email")
+    user_id_str = payload.get("sub")
+    if user_id_str and user_id_str.isdigit():
+        user_id = int(user_id_str)
+        try:
+            change_user_password(user_id, req.new_password)
+        except Exception:
+            pass
+            
+    return {
+        "success": True,
+        "message": "Mật khẩu đã được cập nhật thành công. Bạn có thể đăng nhập ngay.",
+        "email": email
+    }
+

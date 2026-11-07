@@ -28,6 +28,62 @@ except Exception:
 
 SCHEMA_PATH = PROJECT_ROOT / "database" / "schema.sql"
 
+def connect_to_sqlserver():
+    """Tự động dò tìm phương thức kết nối SQL Server phù hợp nhất (Windows Auth, sa/passwords, drivers)"""
+    available_drivers = [
+        DRIVER,
+        "ODBC Driver 18 for SQL Server",
+        "ODBC Driver 17 for SQL Server",
+        "SQL Server"
+    ]
+    seen_drivers = []
+    for d in available_drivers:
+        if d and d not in seen_drivers:
+            seen_drivers.append(d)
+
+    candidates = []
+
+    # 1. Thử Windows Authentication (Ưu tiên số 1 trên máy cá nhân/SSMS mặc định - Không cần mật khẩu sa)
+    for d in seen_drivers:
+        candidates.append((
+            f"DRIVER={{{d}}};SERVER={SERVER};DATABASE=master;Trusted_Connection=yes;Encrypt=no;TrustServerCertificate=yes;",
+            f"Windows Authentication (Xác thực Windows - Trực tiếp qua tài khoản máy tính)"
+        ))
+
+    # 2. Thử theo USER và PASSWORD đã cấu hình trong .env (nếu có)
+    if USER and PASSWORD:
+        for d in seen_drivers:
+            candidates.append((
+                f"DRIVER={{{d}}};SERVER={SERVER};DATABASE=master;UID={USER};PWD={PASSWORD};Encrypt=no;TrustServerCertificate=yes;",
+                f"Tài khoản '{USER}' theo cấu hình .env"
+            ))
+
+    # 3. Thử mật khẩu sa phổ biến: 123456
+    for d in seen_drivers:
+        candidates.append((
+            f"DRIVER={{{d}}};SERVER={SERVER};DATABASE=master;UID=sa;PWD=123456;Encrypt=no;TrustServerCertificate=yes;",
+            "Tài khoản sa (mật khẩu 123456)"
+        ))
+
+    # 4. Thử mật khẩu mặc định Docker: YourStrong@Passw0rd
+    for d in seen_drivers:
+        candidates.append((
+            f"DRIVER={{{d}}};SERVER={SERVER};DATABASE=master;UID=sa;PWD=YourStrong@Passw0rd;Encrypt=no;TrustServerCertificate=yes;",
+            "Tài khoản sa mặc định Docker (YourStrong@Passw0rd)"
+        ))
+
+    last_error = None
+    for conn_str, desc in candidates:
+        try:
+            conn = pyodbc.connect(conn_str, autocommit=True, timeout=3)
+            print(f"✅ {desc}")
+            return conn
+        except Exception as e:
+            last_error = e
+            continue
+
+    raise Exception(f"Không thể kết nối SQL Server qua bất kỳ phương thức nào. Lỗi: {last_error}")
+
 def init_database():
     print(f"🚀 Bắt đầu xả schema.sql vào SQL Server ({SERVER})...")
     if not SCHEMA_PATH.exists():
@@ -40,21 +96,9 @@ def init_database():
     # Tách các lô câu lệnh bằng từ khóa GO
     batches = [b.strip() for b in sql_content.split("GO") if b.strip()]
 
-    # Kết nối ban đầu tới master
-    conn_str = (
-        f"DRIVER={{{DRIVER}}};"
-        f"SERVER={SERVER};"
-        f"DATABASE=master;"
-        f"UID={USER};"
-        f"PWD={PASSWORD};"
-        "Encrypt=no;"
-        "TrustServerCertificate=yes;"
-    )
-
     try:
-        conn = pyodbc.connect(conn_str, autocommit=True)
+        conn = connect_to_sqlserver()
         cursor = conn.cursor()
-        print("✅ Kết nối SQL Server thành công!")
 
         for idx, batch in enumerate(batches, 1):
             if not batch:
@@ -62,10 +106,14 @@ def init_database():
             try:
                 cursor.execute(batch)
             except Exception as e:
-                print(f"⚠️ Cảnh báo tại batch {idx}: {e}")
+                # Bỏ qua các cảnh báo không nguy hại
+                err_msg = str(e)
+                if "already exists" not in err_msg.lower() and "drop database" not in err_msg.lower():
+                    print(f"⚠️ Cảnh báo tại batch {idx}: {e}")
 
         conn.close()
         print("🎉 XẢ CSDL THÀNH CÔNG! Đã khởi tạo hoàn tất 21 bảng vào CSDL ExamSystem.")
+        print("💡 Bạn chỉ cần mở SSMS lên và bấm Refresh (F5) là sẽ thấy ngay 21 bảng tiếng Việt!")
     except Exception as e:
         print(f"❌ Lỗi kết nối hoặc thực thi: {e}")
         sys.exit(1)

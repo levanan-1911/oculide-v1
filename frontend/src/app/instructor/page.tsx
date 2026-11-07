@@ -346,26 +346,22 @@ export default function InstructorDashboardPage() {
         </div>
       )}
 
-      {/* Page heading */}
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">
-            <GraduationCap className="h-4 w-4" />
-            Không gian giảng viên
-          </div>
-          <h1 className={`text-xl font-extrabold tracking-tight sm:text-2xl ${primaryTextClass}`}>
-            Xin chào, {instructorName}
-          </h1>
-          <p className={`max-w-2xl text-xs leading-relaxed sm:text-[13px] ${mutedTextClass}`}>
-            Theo dõi lịch giảng dạy, tình trạng phòng và các công việc cần xử lý trong ngày.
+      {/* Page heading - Đồng bộ hoàn hảo với Admin */}
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-[22px] font-extrabold tracking-tight text-slate-900 dark:text-white">
+            Tổng quan giảng dạy
+          </h2>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Xin chào, {instructorName}. Theo dõi lịch giảng dạy, tình trạng phòng và các công việc cần xử lý trong ngày.
           </p>
         </div>
         <Link
           href="/instructor/room"
-          className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-[#0b0f17]"
+          className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700"
         >
           <Plus className="h-4 w-4" />
-          Tạo phòng mới
+          <span>Tạo phòng mới</span>
         </Link>
       </section>
 
@@ -441,62 +437,108 @@ export default function InstructorDashboardPage() {
         </section>
       )}
 
-      {/* KPI cards */}
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Tổng quan số liệu">
-        <Link href="/instructor/schedules" className={`${panelClass} group flex min-h-[132px] flex-col justify-between p-4 transition hover:border-blue-300 hover:shadow-md dark:hover:border-blue-500/40`}>
-          <div className="flex items-center justify-between gap-3">
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${mutedTextClass}`}>Ca giảng dạy</span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"><CalendarDays className="h-4 w-4" /></span>
+      {/* KPI cards - Chuẩn hóa đồng bộ 100% với Admin */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Tổng quan số liệu">
+        {/* Card 1: Ca giảng dạy */}
+        <Link
+          href="/instructor/schedules"
+          className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] transition-all hover:border-blue-400 hover:shadow-md dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-blue-500/40"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400">
+              <CalendarDays className="h-4 w-4" />
+            </div>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Ca giảng dạy
+            </span>
           </div>
-          <div>
-            <p className={`font-mono text-2xl font-black tabular-nums ${primaryTextClass}`}>{sessions.length}</p>
-            <p className="mt-1 flex items-center justify-between gap-2 text-xs font-medium text-blue-700 dark:text-blue-300"><span>Trong danh sách hiện tại</span><ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" /></p>
-          </div>
-        </Link>
-
-        <Link href="/instructor/reports" className={`${panelClass} group flex min-h-[132px] flex-col justify-between p-4 transition hover:border-amber-300 hover:shadow-md dark:hover:border-amber-500/40`}>
-          <div className="flex items-center justify-between gap-3">
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${mutedTextClass}`}>Cảnh báo AI chờ duyệt</span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"><ShieldAlert className="h-4 w-4" /></span>
-          </div>
-          <div>
-            <p className={`font-mono text-2xl font-black tabular-nums ${pendingViolations.length > 0 ? 'text-amber-700 dark:text-amber-300' : primaryTextClass}`}>{pendingViolations.length}</p>
-            <p className="mt-1 flex items-center justify-between gap-2 text-xs font-medium text-amber-700 dark:text-amber-300"><span>Cần giảng viên thẩm định</span><ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" /></p>
-          </div>
-        </Link>
-
-        <Link href="/instructor/monitoring" className={`${panelClass} group flex min-h-[132px] flex-col justify-between p-4 transition hover:border-red-300 hover:shadow-md dark:hover:border-red-500/40`}>
-          <div className="flex items-center justify-between gap-3">
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${mutedTextClass}`}>Phòng đang giám sát</span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300"><Activity className="h-4 w-4" /></span>
-          </div>
-          <div>
-            <p className={`font-mono text-2xl font-black tabular-nums ${activeSessions.length > 0 ? 'text-red-700 dark:text-red-300' : primaryTextClass}`}>
-              {activeSessions.length}<span className={`ml-1 text-sm font-bold ${mutedTextClass}`}>/1</span>
-            </p>
-            <p className="mt-1 flex items-center justify-between gap-2 text-xs font-medium text-red-700 dark:text-red-300"><span>Giới hạn một phiên đồng thời</span><ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" /></p>
+          <div className="mt-4 flex items-baseline gap-3">
+            <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+              {sessions.length}
+            </span>
+            <span className="text-xs font-semibold text-[#2563eb] dark:text-blue-400">
+              Trong danh sách hiện tại
+            </span>
           </div>
         </Link>
 
-        <Link href="/instructor/classes" className={`${panelClass} group flex min-h-[132px] flex-col justify-between p-4 transition hover:border-emerald-300 hover:shadow-md dark:hover:border-emerald-500/40`}>
-          <div className="flex items-center justify-between gap-3">
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${mutedTextClass}`}>Tỷ lệ điểm danh</span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"><UserCheck className="h-4 w-4" /></span>
+        {/* Card 2: Cảnh báo AI chờ duyệt */}
+        <Link
+          href="/instructor/reports"
+          className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] transition-all hover:border-amber-400 hover:shadow-md dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-amber-500/40"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fffbeb] text-[#d97706] dark:bg-amber-500/15 dark:text-amber-400">
+              <ShieldAlert className="h-4 w-4" />
+            </div>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Cảnh báo AI chờ duyệt
+            </span>
           </div>
-          <div>
-            <p className="font-mono text-2xl font-black tabular-nums text-emerald-700 dark:text-emerald-300">{attendanceRate.toFixed(1)}%</p>
-            <p className={`mt-1 flex items-center justify-between gap-2 text-xs font-medium ${mutedTextClass}`}><span>{attendedStudents}/{totalStudents} sinh viên đã vào phòng</span><ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" /></p>
+          <div className="mt-4 flex items-baseline gap-3">
+            <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+              {pendingViolations.length}
+            </span>
+            <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+              Cần giảng viên thẩm định
+            </span>
+          </div>
+        </Link>
+
+        {/* Card 3: Phòng đang giám sát */}
+        <Link
+          href="/instructor/monitoring"
+          className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] transition-all hover:border-red-400 hover:shadow-md dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-red-500/40"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#ecfdf5] text-[#059669] dark:bg-emerald-500/15 dark:text-emerald-400">
+              <Activity className="h-4 w-4" />
+            </div>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Phòng đang giám sát
+            </span>
+          </div>
+          <div className="mt-4 flex items-baseline gap-3">
+            <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+              {activeSessions.length}<span className="text-sm font-bold text-slate-400">/1</span>
+            </span>
+            <span className="text-xs font-semibold text-[#059669] dark:text-emerald-400">
+              Giới hạn một phiên đồng thời
+            </span>
+          </div>
+        </Link>
+
+        {/* Card 4: Tỷ lệ điểm danh */}
+        <Link
+          href="/instructor/classes"
+          className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] transition-all hover:border-emerald-400 hover:shadow-md dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-emerald-500/40"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f0fdf4] text-[#16a34a] dark:bg-emerald-500/15 dark:text-emerald-400">
+              <UserCheck className="h-4 w-4" />
+            </div>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Tỷ lệ điểm danh
+            </span>
+          </div>
+          <div className="mt-4 flex items-baseline gap-3">
+            <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+              {attendanceRate.toFixed(1)}%
+            </span>
+            <span className="text-xs font-semibold text-[#16a34a] dark:text-emerald-400">
+              {attendedStudents}/{totalStudents} sinh viên đã vào
+            </span>
           </div>
         </Link>
       </section>
 
       {/* Schedule list and task panel */}
       <section className="grid grid-cols-1 items-start gap-5 xl:grid-cols-3">
-        <div className={`${panelClass} min-w-0 p-4 sm:p-5 xl:col-span-2`}>
+        <div className={`${panelClass} min-w-0 p-5 sm:p-6 xl:col-span-2`}>
           <div className="flex flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between dark:border-white/10">
             <div>
-              <h2 className={`text-sm font-bold sm:text-base ${primaryTextClass}`}>Lịch thực hành và kiểm tra</h2>
-              <p className={`mt-0.5 text-xs leading-relaxed ${mutedTextClass}`}>Theo dõi trạng thái phòng, điểm danh và thao tác giám sát.</p>
+              <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">Lịch thực hành và kiểm tra</h2>
+              <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">Theo dõi trạng thái phòng, điểm danh và thao tác giám sát.</p>
             </div>
             <Link href="/instructor/schedules" className="inline-flex h-9 items-center gap-1.5 self-start rounded-lg px-2.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-500/10 sm:self-center">
               Xem lịch đầy đủ <ArrowRight className="h-3.5 w-3.5" />
@@ -609,13 +651,16 @@ export default function InstructorDashboardPage() {
         </div>
 
         <div className="space-y-5">
-          <section className={`${panelClass} p-4 sm:p-5`}>
+          <section className={`${panelClass} p-5 sm:p-6`}>
             <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-white/10">
               <div>
-                <h2 className={`flex items-center gap-2 text-sm font-bold ${primaryTextClass}`}><BellRing className="h-4 w-4 text-amber-600 dark:text-amber-400" />Việc cần xử lý</h2>
-                <p className={`mt-0.5 text-[11px] ${mutedTextClass}`}>Các đầu việc cần giảng viên chú ý</p>
+                <h2 className="flex items-center gap-2 text-[16px] font-bold text-slate-900 dark:text-white">
+                  <BellRing className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  Việc cần xử lý
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">Các đầu việc cần giảng viên chú ý</p>
               </div>
-              <span className="rounded-lg bg-amber-50 px-2 py-1 font-mono text-[11px] font-bold tabular-nums text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">3 việc</span>
+              <span className="rounded-lg bg-amber-50 px-2.5 py-1 font-mono text-[11px] font-bold tabular-nums text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">3 việc</span>
             </div>
             <div className="space-y-3 pt-3">
               <div className="rounded-xl border-l-4 border-red-500 bg-slate-50/80 p-3 dark:bg-white/[0.04]">

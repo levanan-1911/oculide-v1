@@ -71,418 +71,448 @@ export default function StudentDashboardPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-slate-50/80 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-[1600px] space-y-6">
-        
-        {/* Banner Chào mừng - Khung rộng max-w-[1600px] */}
-        <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 p-6 text-white shadow-sm sm:p-8">
-          <div className="relative z-10 flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
-            <div className="space-y-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold backdrop-blur-sm">
-                <Sparkles size={13} className="text-blue-200" />
-                STUDENT WORKSPACE
-              </span>
-              <h1 className="text-2xl font-bold sm:text-3xl">
-                Xin chào, sinh viên!
-              </h1>
-              <p className="max-w-2xl text-xs sm:text-sm text-blue-100/90 leading-relaxed">
-                Theo dõi tiến độ học tập, chuẩn bị thiết bị và tham gia các ca thi lập trình trực tuyến an toàn.
-              </p>
-            </div>
-
-            <Link
-              href="/student/exams"
-              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-xs sm:text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50 active:scale-[0.98]"
-            >
-              <Code2 size={18} />
-              Vào phòng thi
-              <ArrowRight size={16} />
-            </Link>
+    <div className="mx-auto max-w-[1440px] space-y-6">
+      
+      {/* Tiêu đề trang & Nút hành động chính */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+              <Sparkles className="h-3 w-3" />
+              KHÔNG GIAN SINH VIÊN
+            </span>
           </div>
-        </section>
+          <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-[26px]">
+            Xin chào, sinh viên!
+          </h1>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 sm:text-[13.5px]">
+            Theo dõi tiến độ học tập, chuẩn bị thiết bị và tham gia các ca thi lập trình trực tuyến an toàn.
+          </p>
+        </div>
 
-        {/* 1. THẺ THỐNG KÊ TƯƠNG TÁC (Tương tự Lịch thi) */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">Tổng quan kỳ thi</h2>
-              <p className="text-xs text-slate-500">Nhấn vào từng thẻ để lọc nhanh danh sách bên dưới</p>
-            </div>
-            {activeFilter !== "Tất cả" && (
-              <button
-                type="button"
-                onClick={() => setActiveFilter("Tất cả")}
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition"
-              >
-                <RotateCcw size={12} /> Bỏ lọc ({activeFilter})
-              </button>
-            )}
+        <Link
+          href="/student/exams"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+        >
+          <Code2 className="h-4 w-4" />
+          Vào phòng thi
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+
+      {/* 1. THẺ THỐNG KÊ TƯƠNG TÁC (Đồng bộ chuẩn Admin) */}
+      <section className="space-y-3" aria-label="Tổng quan kỳ thi">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">Tổng quan kỳ thi</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Nhấn vào từng thẻ để lọc nhanh danh sách bên dưới</p>
           </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {/* Tất cả */}
+          {activeFilter !== "Tất cả" && (
             <button
               type="button"
               onClick={() => setActiveFilter("Tất cả")}
-              className={`flex items-center justify-between rounded-2xl border p-5 text-left transition ${
-                activeFilter === "Tất cả"
-                  ? "border-blue-500 bg-blue-50/40 ring-2 ring-blue-500/20 shadow-sm"
-                  : "border-slate-200/80 bg-white hover:border-slate-300"
-              }`}
+              className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition"
             >
-              <div>
-                <p className="text-xs font-medium text-slate-500">Tổng số kỳ thi</p>
-                <p className="mt-2 text-3xl font-bold text-slate-900">{counts.all}</p>
-                <p className="mt-1 text-[11px] text-slate-400">Danh sách bài thi cá nhân</p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                <BookOpen size={22} />
-              </div>
+              <RotateCcw className="h-3 w-3" /> Bỏ lọc ({activeFilter})
             </button>
+          )}
+        </div>
 
-            {/* Sắp diễn ra */}
-            <button
-              type="button"
-              onClick={() => setActiveFilter("Sắp diễn ra")}
-              className={`flex items-center justify-between rounded-2xl border p-5 text-left transition ${
-                activeFilter === "Sắp diễn ra"
-                  ? "border-amber-500 bg-amber-50/40 ring-2 ring-amber-500/20 shadow-sm"
-                  : "border-slate-200/80 bg-white hover:border-slate-300"
-              }`}
-            >
-              <div>
-                <p className="text-xs font-medium text-slate-500">Sắp diễn ra</p>
-                <p className="mt-2 text-3xl font-bold text-amber-600">{counts.upcoming}</p>
-                <p className="mt-1 text-[11px] text-slate-400">Chuẩn bị trước giờ thi</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {/* Thẻ 1: Tất cả */}
+          <button
+            type="button"
+            onClick={() => setActiveFilter("Tất cả")}
+            className={`rounded-2xl border p-5 text-left transition-all cursor-pointer ${
+              activeFilter === "Tất cả"
+                ? "border-blue-500 bg-blue-50/40 ring-2 ring-blue-500/20 shadow-sm dark:bg-blue-500/10 dark:border-blue-500/40"
+                : "border-slate-200/75 bg-white hover:border-slate-300 shadow-[0_2px_10px_rgba(15,23,42,0.02)] dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-white/20"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400">
+                <BookOpen className="h-4 w-4" />
               </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                <CalendarDays size={22} />
-              </div>
-            </button>
-
-            {/* Đang diễn ra */}
-            <button
-              type="button"
-              onClick={() => setActiveFilter("Đang diễn ra")}
-              className={`flex items-center justify-between rounded-2xl border p-5 text-left transition ${
-                activeFilter === "Đang diễn ra"
-                  ? "border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20 shadow-sm"
-                  : "border-slate-200/80 bg-white hover:border-slate-300"
-              }`}
-            >
-              <div>
-                <p className="text-xs font-medium text-slate-500">Đang diễn ra</p>
-                <p className="mt-2 text-3xl font-bold text-emerald-600">{counts.ongoing}</p>
-                <p className="mt-1 text-[11px] text-slate-400">Có thể tham gia ngay</p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <Clock3 size={22} />
-              </div>
-            </button>
-
-            {/* Đã hoàn thành */}
-            <button
-              type="button"
-              onClick={() => setActiveFilter("Đã hoàn thành")}
-              className={`flex items-center justify-between rounded-2xl border p-5 text-left transition ${
-                activeFilter === "Đã hoàn thành"
-                  ? "border-violet-500 bg-violet-50/40 ring-2 ring-violet-500/20 shadow-sm"
-                  : "border-slate-200/80 bg-white hover:border-slate-300"
-              }`}
-            >
-              <div>
-                <p className="text-xs font-medium text-slate-500">Đã hoàn thành</p>
-                <p className="mt-2 text-3xl font-bold text-violet-600">{counts.completed}</p>
-                <p className="mt-1 text-[11px] text-slate-400">Bài thi đã nộp</p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                <CheckCircle2 size={22} />
-              </div>
-            </button>
-          </div>
-        </section>
-
-        {/* 2. BIỂU ĐỒ THỐNG KÊ */}
-        <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Biểu đồ điểm số */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm lg:col-span-2 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
-                  <BarChart3 size={18} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Biểu đồ kết quả làm bài</h3>
-                  <p className="text-xs text-slate-400">Điểm số 5 bài thi gần nhất</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 border border-slate-200/60">
-                <TrendingUp size={14} className="text-emerald-600" />
-                ĐTB: <span className="text-blue-600 font-bold">{avgScore}/100</span>
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <div className="grid h-44 grid-cols-5 items-end gap-3 sm:gap-6 border-b border-slate-100 pb-2">
-                {scoreHistory.map((item) => (
-                  <div key={item.exam} className="group relative flex h-full flex-col justify-end items-center">
-                    <div className="absolute -top-9 hidden rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white shadow-md group-hover:block transition z-10 whitespace-nowrap">
-                      {item.exam}: {item.score} điểm
-                    </div>
-
-                    <div className="w-full max-w-[42px] rounded-t-lg bg-slate-100 flex flex-col justify-end overflow-hidden">
-                      <div
-                        style={{ height: `${item.score}%` }}
-                        className={`w-full transition-all duration-500 rounded-t-lg ${
-                          item.score >= 90
-                            ? "bg-emerald-500 group-hover:bg-emerald-600"
-                            : item.score >= 70
-                            ? "bg-blue-600 group-hover:bg-blue-700"
-                            : "bg-amber-500 group-hover:bg-amber-600"
-                        }`}
-                      />
-                    </div>
-                    <span className="mt-2 text-[11px] font-medium text-slate-500 truncate max-w-full">
-                      {item.date}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Xuất sắc (&ge;90)
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-blue-600" /> Đạt (&ge;70)
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Trung bình
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Biểu đồ Ngôn ngữ */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm space-y-4 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                <div className="rounded-lg bg-violet-50 p-2 text-violet-600">
-                  <PieChart size={18} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Ngôn ngữ nộp bài</h3>
-                  <p className="text-xs text-slate-400">Tỷ lệ sử dụng trong các bài thi</p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-slate-100">
-                {languageDistribution.map((lang) => (
-                  <div
-                    key={lang.name}
-                    style={{ width: `${lang.percentage}%` }}
-                    className={`h-full ${lang.color}`}
-                    title={`${lang.name}: ${lang.percentage}%`}
-                  />
-                ))}
-              </div>
-
-              <div className="mt-5 space-y-3">
-                {languageDistribution.map((lang) => (
-                  <div key={lang.name} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className={`h-2.5 w-2.5 rounded-full ${lang.color}`} />
-                      <span className="font-semibold text-slate-700">{lang.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400">{lang.count}</span>
-                      <span className="font-bold text-slate-800">{lang.percentage}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-500 flex items-center gap-1">
-                <Award size={14} className="text-amber-500" /> Ngôn ngữ sở trường:
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Tổng số kỳ thi
               </span>
-              <span className="font-bold text-slate-900">C++ (55%)</span>
+            </div>
+            <div className="mt-4 flex items-baseline gap-3">
+              <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+                {counts.all}
+              </span>
+              <span className="text-xs font-semibold text-[#2563eb] dark:text-blue-400">
+                Bài thi cá nhân
+              </span>
+            </div>
+          </button>
+
+          {/* Thẻ 2: Sắp diễn ra */}
+          <button
+            type="button"
+            onClick={() => setActiveFilter("Sắp diễn ra")}
+            className={`rounded-2xl border p-5 text-left transition-all cursor-pointer ${
+              activeFilter === "Sắp diễn ra"
+                ? "border-amber-500 bg-amber-50/40 ring-2 ring-amber-500/20 shadow-sm dark:bg-amber-500/10 dark:border-amber-500/40"
+                : "border-slate-200/75 bg-white hover:border-slate-300 shadow-[0_2px_10px_rgba(15,23,42,0.02)] dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-white/20"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fefce8] text-[#ca8a04] dark:bg-amber-500/15 dark:text-amber-400">
+                <CalendarDays className="h-4 w-4" />
+              </div>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Sắp diễn ra
+              </span>
+            </div>
+            <div className="mt-4 flex items-baseline gap-3">
+              <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+                {counts.upcoming}
+              </span>
+              <span className="text-xs font-semibold text-[#ca8a04] dark:text-amber-400">
+                Chuẩn bị thi
+              </span>
+            </div>
+          </button>
+
+          {/* Thẻ 3: Đang diễn ra */}
+          <button
+            type="button"
+            onClick={() => setActiveFilter("Đang diễn ra")}
+            className={`rounded-2xl border p-5 text-left transition-all cursor-pointer ${
+              activeFilter === "Đang diễn ra"
+                ? "border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20 shadow-sm dark:bg-emerald-500/10 dark:border-emerald-500/40"
+                : "border-slate-200/75 bg-white hover:border-slate-300 shadow-[0_2px_10px_rgba(15,23,42,0.02)] dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-white/20"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#ecfdf5] text-[#059669] dark:bg-emerald-500/15 dark:text-emerald-400">
+                <Clock3 className="h-4 w-4" />
+              </div>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Đang diễn ra
+              </span>
+            </div>
+            <div className="mt-4 flex items-baseline gap-3">
+              <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+                {counts.ongoing}
+              </span>
+              <span className="text-xs font-semibold text-[#059669] dark:text-emerald-400">
+                Tham gia ngay
+              </span>
+            </div>
+          </button>
+
+          {/* Thẻ 4: Đã hoàn thành */}
+          <button
+            type="button"
+            onClick={() => setActiveFilter("Đã hoàn thành")}
+            className={`rounded-2xl border p-5 text-left transition-all cursor-pointer ${
+              activeFilter === "Đã hoàn thành"
+                ? "border-violet-500 bg-violet-50/40 ring-2 ring-violet-500/20 shadow-sm dark:bg-violet-500/10 dark:border-violet-500/40"
+                : "border-slate-200/75 bg-white hover:border-slate-300 shadow-[0_2px_10px_rgba(15,23,42,0.02)] dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-white/20"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f5f3ff] text-[#7c3aed] dark:bg-violet-500/15 dark:text-violet-400">
+                <CheckCircle2 className="h-4 w-4" />
+              </div>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Đã hoàn thành
+              </span>
+            </div>
+            <div className="mt-4 flex items-baseline gap-3">
+              <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+                {counts.completed}
+              </span>
+              <span className="text-xs font-semibold text-[#7c3aed] dark:text-violet-400">
+                Bài thi đã nộp
+              </span>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      {/* 2. BIỂU ĐỒ THỐNG KÊ */}
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Biểu đồ điểm số */}
+        <div className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] lg:col-span-2 space-y-4 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/5">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400">
+                <BarChart3 className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Biểu đồ kết quả làm bài</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500">Điểm số 5 bài thi gần nhất</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 border border-slate-200/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300">
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              ĐTB: <span className="text-blue-600 dark:text-blue-400 font-bold">{avgScore}/100</span>
             </div>
           </div>
-        </section>
 
-        {/* 3. DANH SÁCH BÀI THI & CỘT TIỆN ÍCH */}
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          
-          {/* Cột trái (2/3): Bảng bài thi */}
-          <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6 xl:col-span-2 space-y-4">
-            <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Filter size={16} className="text-blue-600" />
-                <h2 className="text-base font-bold text-slate-900">
-                  {activeFilter === "Tất cả" ? "Tất cả kỳ thi" : `Kỳ thi: ${activeFilter}`}
-                </h2>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                  {filteredExams.length}
-                </span>
-              </div>
+          <div className="pt-2">
+            <div className="grid h-44 grid-cols-5 items-end gap-3 sm:gap-6 border-b border-slate-100 pb-2 dark:border-white/5">
+              {scoreHistory.map((item) => (
+                <div key={item.exam} className="group relative flex h-full flex-col justify-end items-center">
+                  <div className="absolute -top-9 hidden rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white shadow-md group-hover:block transition z-10 whitespace-nowrap dark:bg-slate-800">
+                    {item.exam}: {item.score} điểm
+                  </div>
 
-              <Link
-                href="/student/schedule"
-                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 transition"
-              >
-                Xem lịch thi <ArrowRight size={14} />
-              </Link>
+                  <div className="w-full max-w-[42px] rounded-t-lg bg-slate-100 dark:bg-white/5 flex flex-col justify-end overflow-hidden">
+                    <div
+                      style={{ height: `${item.score}%` }}
+                      className={`w-full transition-all duration-500 rounded-t-lg ${
+                        item.score >= 90
+                          ? "bg-emerald-500 group-hover:bg-emerald-600"
+                          : item.score >= 70
+                          ? "bg-blue-600 group-hover:bg-blue-700"
+                          : "bg-amber-500 group-hover:bg-amber-600"
+                      }`}
+                    />
+                  </div>
+                  <span className="mt-2 text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-full">
+                    {item.date}
+                  </span>
+                </div>
+              ))}
             </div>
 
-            <div className="divide-y divide-slate-100">
-              {filteredExams.length > 0 ? (
-                filteredExams.map((exam: StudentExam) => (
-                  <article
-                    key={exam.id}
-                    className="flex flex-col justify-between gap-4 py-4 transition hover:bg-slate-50/70 sm:flex-row sm:items-center"
-                  >
-                    <div className="flex min-w-0 items-start gap-3.5">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 mt-0.5">
-                        <Code2 size={21} />
-                      </div>
-
-                      <div className="min-w-0 space-y-1">
-                        <h3 className="font-bold text-slate-900 text-sm truncate">
-                          {exam.title}
-                        </h3>
-
-                        <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                          <span>{exam.subject}</span>
-                          <span>•</span>
-                          <span className="flex items-center gap-1">
-                            <GraduationCap size={13} className="text-slate-400" />
-                            {exam.instructor}
-                          </span>
-                        </p>
-
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 pt-1">
-                          <span className="inline-flex items-center gap-1 text-slate-600">
-                            <CalendarDays size={13} className="text-blue-600" />
-                            {exam.startTime}
-                          </span>
-
-                          <span className="inline-flex items-center gap-1 text-slate-600">
-                            <Clock3 size={13} className="text-violet-600" />
-                            {exam.duration} phút
-                          </span>
-
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="text-slate-400">Mã phòng:</span>
-                            <code className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-slate-700">
-                              {exam.roomCode}
-                            </code>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold border ${statusStyles[exam.status]}`}
-                      >
-                        {exam.status}
-                      </span>
-
-                      {exam.status !== "Đã hoàn thành" ? (
-                        <Link
-                          href={`/student/exams?code=${encodeURIComponent(exam.roomCode)}`}
-                          className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-blue-600 hover:text-blue-700 transition"
-                        >
-                          {exam.status === "Đang diễn ra" ? (
-                            <>
-                              <Play size={13} /> Vào thi
-                            </>
-                          ) : (
-                            "Chi tiết"
-                          )}
-                          <ArrowRight size={14} />
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-slate-400 font-medium">
-                          Đã kết thúc
-                        </span>
-                      )}
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <div className="py-8 text-center text-xs text-slate-400">
-                  Không có kỳ thi nào ở trạng thái &quot;{activeFilter}&quot;.
-                </div>
-              )}
+            <div className="mt-3 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Xuất sắc (&ge;90)
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-blue-600" /> Đạt (&ge;70)
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Trung bình
+              </span>
             </div>
-          </section>
-
-          {/* Cột phải (1/3): Checklist & Quy chế */}
-          <div className="space-y-5">
-            {/* Checklist chuẩn bị */}
-            <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm space-y-4">
-              <div className="flex items-center gap-3 pb-2 border-b border-slate-100">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                  <ShieldCheck size={20} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm">
-                    Chuẩn bị trước khi thi
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Yêu cầu kỹ thuật bắt buộc
-                  </p>
-                </div>
-              </div>
-
-              <ul className="space-y-2.5 text-xs text-slate-600">
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-600" />
-                  <span>Webcam hoạt động rõ nét và đủ ánh sáng</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-600" />
-                  <span>Kết nối Internet ổn định suốt ca thi</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-600" />
-                  <span>Sử dụng trình duyệt Chrome hoặc Edge</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-600" />
-                  <span>Sẵn sàng cấp quyền chia sẻ màn hình</span>
-                </li>
-              </ul>
-
-              <Link
-                href="/student/device-check"
-                className="block text-center text-xs font-semibold text-blue-600 hover:text-blue-700 transition pt-1"
-              >
-                Kiểm tra thiết bị ngay →
-              </Link>
-            </section>
-
-            {/* Thẻ lưu ý quy chế */}
-            <section className="rounded-2xl border border-blue-100 bg-blue-50/70 p-5 space-y-2">
-              <div className="flex items-center gap-2 text-blue-900">
-                <Code2 size={18} className="text-blue-600" />
-                <h3 className="font-bold text-xs">Lưu ý khi làm bài</h3>
-              </div>
-              <p className="text-xs text-blue-800 leading-relaxed">
-                Chỉ nộp bài khi đã hoàn thành các câu hỏi. Hệ thống sẽ tự động ghi nhận nhật ký thao tác và vi phạm nếu chuyển tab/cửa sổ.
-              </p>
-            </section>
           </div>
         </div>
 
-        <footer className="pt-2 text-center text-xs text-slate-400">
-          Oculide · Hệ thống thi lập trình trực tuyến
-        </footer>
+        {/* Biểu đồ Ngôn ngữ */}
+        <div className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] space-y-4 flex flex-col justify-between dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+          <div>
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3 dark:border-white/5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f5f3ff] text-[#7c3aed] dark:bg-violet-500/15 dark:text-violet-400">
+                <PieChart className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Ngôn ngữ nộp bài</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500">Tỷ lệ sử dụng trong các bài thi</p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+              {languageDistribution.map((lang) => (
+                <div
+                  key={lang.name}
+                  style={{ width: `${lang.percentage}%` }}
+                  className={`h-full ${lang.color}`}
+                  title={`${lang.name}: ${lang.percentage}%`}
+                />
+              ))}
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {languageDistribution.map((lang) => (
+                <div key={lang.name} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 rounded-full ${lang.color}`} />
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">{lang.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400 dark:text-slate-500">{lang.count}</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">{lang.percentage}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 flex items-center justify-between text-xs dark:bg-white/5 dark:border-white/10">
+            <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1">
+              <Award className="h-3.5 w-3.5 text-amber-500" /> Ngôn ngữ sở trường:
+            </span>
+            <span className="font-bold text-slate-900 dark:text-white">C++ (55%)</span>
+          </div>
+        </div>
+      </section>
+
+      {/* 3. DANH SÁCH BÀI THI & CỘT TIỆN ÍCH */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        
+        {/* Cột trái (2/3): Bảng bài thi */}
+        <section className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] sm:p-6 xl:col-span-2 space-y-4 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+          <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-white/5">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                {activeFilter === "Tất cả" ? "Tất cả kỳ thi" : `Kỳ thi: ${activeFilter}`}
+              </h2>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                {filteredExams.length}
+              </span>
+            </div>
+
+            <Link
+              href="/student/schedule"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition"
+            >
+              Xem lịch thi <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+
+          <div className="divide-y divide-slate-100 dark:divide-white/5">
+            {filteredExams.length > 0 ? (
+              filteredExams.map((exam: StudentExam) => (
+                <article
+                  key={exam.id}
+                  className="flex flex-col justify-between gap-4 py-4 transition hover:bg-slate-50/70 dark:hover:bg-white/[0.02] sm:flex-row sm:items-center"
+                >
+                  <div className="flex min-w-0 items-start gap-3.5">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400 mt-0.5">
+                      <Code2 className="h-5 w-5" />
+                    </div>
+
+                    <div className="min-w-0 space-y-1">
+                      <h3 className="font-bold text-slate-900 dark:text-white text-sm truncate">
+                        {exam.title}
+                      </h3>
+
+                      <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                        <span>{exam.subject}</span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <GraduationCap className="h-3.5 w-3.5 text-slate-400" />
+                          {exam.instructor}
+                        </span>
+                      </p>
+
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 dark:text-slate-400 pt-1">
+                        <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                          <CalendarDays className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                          {exam.startTime}
+                        </span>
+
+                        <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                          <Clock3 className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+                          {exam.duration} phút
+                        </span>
+
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="text-slate-400 dark:text-slate-500">Mã phòng:</span>
+                          <code className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                            {exam.roomCode}
+                          </code>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold border ${statusStyles[exam.status]}`}
+                    >
+                      {exam.status}
+                    </span>
+
+                    {exam.status !== "Đã hoàn thành" ? (
+                      <Link
+                        href={`/student/exams?code=${encodeURIComponent(exam.roomCode)}`}
+                        className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition"
+                      >
+                        {exam.status === "Đang diễn ra" ? (
+                          <>
+                            <Play className="h-3.5 w-3.5" /> Vào thi
+                          </>
+                        ) : (
+                          "Chi tiết"
+                        )}
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                        Đã kết thúc
+                      </span>
+                    )}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className="py-8 text-center text-xs text-slate-400 dark:text-slate-500">
+                Không có kỳ thi nào ở trạng thái &quot;{activeFilter}&quot;.
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Cột phải (1/3): Checklist & Quy chế */}
+        <div className="space-y-5">
+          {/* Checklist chuẩn bị */}
+          <section className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] space-y-4 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+            <div className="flex items-center gap-3 pb-2 border-b border-slate-100 dark:border-white/5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                  Chuẩn bị trước khi thi
+                </h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  Yêu cầu kỹ thuật bắt buộc
+                </p>
+              </div>
+            </div>
+
+            <ul className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>Webcam hoạt động rõ nét và đủ ánh sáng</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>Kết nối Internet ổn định suốt ca thi</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>Sử dụng trình duyệt Chrome hoặc Edge</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>Sẵn sàng cấp quyền chia sẻ màn hình</span>
+              </li>
+            </ul>
+
+            <Link
+              href="/student/device-check"
+              className="block text-center text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition pt-1"
+            >
+              Kiểm tra thiết bị ngay →
+            </Link>
+          </section>
+
+          {/* Thẻ lưu ý quy chế */}
+          <section className="rounded-2xl border border-blue-200/80 bg-blue-50/70 p-5 space-y-2 dark:border-blue-500/30 dark:bg-blue-500/10">
+            <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200">
+              <Code2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <h3 className="font-bold text-xs">Lưu ý khi làm bài</h3>
+            </div>
+            <p className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
+              Chỉ nộp bài khi đã hoàn thành các câu hỏi. Hệ thống sẽ tự động ghi nhận nhật ký thao tác và vi phạm nếu chuyển tab/cửa sổ.
+            </p>
+          </section>
+        </div>
       </div>
-    </main>
+
+      <footer className="pt-2 text-center text-xs text-slate-400 dark:text-slate-600">
+        Oculide · Hệ thống thi lập trình trực tuyến
+      </footer>
+    </div>
   );
 }

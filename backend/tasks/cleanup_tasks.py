@@ -8,9 +8,9 @@ from database.snapshot_db import cleanup_old_snapshots
 def auto_close_expired_rooms() -> int:
     """Tự động đóng các phòng thi đã vượt quá thời gian end_time"""
     sql = """
-        UPDATE Rooms
-        SET is_active = 0, updated_at = GETDATE()
-        WHERE is_active = 1 AND end_time < GETDATE()
+        UPDATE Phong
+        SET dang_hoat_dong = 0, ngay_cap_nhat = GETDATE()
+        WHERE dang_hoat_dong = 1 AND gio_ket_thuc < GETDATE()
     """
     closed_count = 0
     try:
@@ -38,10 +38,10 @@ def terminate_abandoned_sessions() -> int:
     """Đóng các phiên thi mồ côi (sinh viên không nộp bài khi phòng đã kết thúc)"""
     sql = """
         UPDATE s
-        SET s.status = 'abandoned', s.ended_at = GETDATE()
-        FROM Sessions s
-        JOIN Rooms r ON s.room_id = r.room_id
-        WHERE s.status = 'active' AND (r.is_active = 0 OR r.end_time < GETDATE())
+        SET s.trang_thai = 'abandoned', s.thoi_gian_ket_thuc = GETDATE(), s.thoi_gian_nop_bai = GETDATE()
+        FROM PhienLamBai s
+        JOIN Phong r ON s.ma_phong = r.ma_phong
+        WHERE s.trang_thai IN ('active', 'dang_lam') AND (r.dang_hoat_dong = 0 OR r.gio_ket_thuc < GETDATE())
     """
     abandoned_count = 0
     try:

@@ -5,10 +5,7 @@ from typing import Optional, Dict, Any
 from core.config import settings
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Xác thực mật khẩu người dùng với chuỗi hash bcrypt"""
-    # Hỗ trợ tài khoản mặc định trong môi trường phát triển
-    if plain_password in ("admin123", "instructor123", "student123", "12345678"):
-        return True
+    """Xác thực mật khẩu người dùng với chuỗi hash bcrypt an toàn"""
     try:
         if hashed_password and hashed_password.startswith("$2"):
             return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))

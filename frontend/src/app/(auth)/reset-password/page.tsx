@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import InstitutionalFooter from '@/components/common/InstitutionalFooter';
 import AuthShowcasePanel from '@/components/auth/AuthShowcasePanel';
-import { completePasswordResetApi } from '@/utils/authPasswordReset';
 import {
   AlertCircle,
   ArrowLeft,
@@ -94,11 +93,31 @@ function ResetPasswordFormContent() {
       return;
     }
 
+    if (!tokenFromUrl) {
+      setError('Liên kết khôi phục không hợp lệ hoặc thiếu mã xác thực (Token). Vui lòng kiểm tra lại đường link trong email.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const activeToken = tokenFromUrl || `token_mock_${Date.now()}`;
-      await completePasswordResetApi(activeToken, emailFromUrl, password);
+      const response = await fetch('/api/v1/auth/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          token: tokenFromUrl,
+          new_password: password,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Không thể cập nhật mật khẩu mới. Vui lòng thử lại.');
+      }
+
       setIsSubmitted(true);
     } catch (err: any) {
       setError(err.message || 'Không thể cập nhật mật khẩu mới. Vui lòng thử lại sau.');

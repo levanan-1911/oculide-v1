@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { usePathname } from 'next/navigation';
+import AuthGuard from '@/components/auth/AuthGuard';
 import InstructorSidebar, { INSTRUCTOR_NAV_GROUPS } from '@/components/instructor/InstructorSidebar';
 import InstructorTopbar from '@/components/instructor/InstructorTopbar';
 import { MonitoringProvider } from '@/components/instructor/monitoring/MonitoringContext';
@@ -30,18 +31,20 @@ export default function InstructorLayout({
     : 'Không gian Giảng viên';
 
   return (
-    <MonitoringProvider>
-      <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] dark:bg-[#090a0f] font-sans text-slate-800 dark:text-slate-100 transition-colors">
-        <InstructorSidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <InstructorTopbar title={title} />
-          <main className="flex-1 overflow-y-auto px-6 py-6 lg:px-8 lg:py-7">
-            {children}
-          </main>
+    <AuthGuard allowedRoles={['instructor', 'admin']}>
+      <MonitoringProvider>
+        <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] dark:bg-[#090a0f] font-sans text-slate-800 dark:text-slate-100 transition-colors">
+          <InstructorSidebar />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <InstructorTopbar title={title} />
+            <main className="flex-1 overflow-y-auto px-6 py-6 lg:px-8 lg:py-7">
+              {children}
+            </main>
+          </div>
         </div>
-      </div>
-      {/* Cảnh báo vi phạm AI nổi bật trên mọi màn hình của Giảng viên */}
-      <InstructorGlobalAlerts />
-    </MonitoringProvider>
+        {/* Cảnh báo vi phạm AI nổi bật trên mọi màn hình của Giảng viên */}
+        <InstructorGlobalAlerts />
+      </MonitoringProvider>
+    </AuthGuard>
   );
 }

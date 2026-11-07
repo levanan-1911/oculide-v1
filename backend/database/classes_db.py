@@ -7,21 +7,28 @@ def create_class(
     instructor_id: int,
     description: Optional[str] = None
 ) -> Dict:
-    """Giảng viên tạo một lớp học phần mới"""
+    """Giảng viên tạo một lớp học phần mới trong bảng LopHoc"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO Classes (class_code, class_name, instructor_id, description)
-            OUTPUT inserted.class_id, inserted.class_code, inserted.class_name,
-                   inserted.instructor_id, inserted.description, inserted.created_at, inserted.updated_at
+            INSERT INTO LopHoc (ma_lop_hoc, ten_lop, ma_giang_vien, mo_ta)
+            OUTPUT inserted.ma_lop, inserted.ma_lop_hoc, inserted.ten_lop,
+                   inserted.ma_giang_vien, inserted.mo_ta, inserted.ngay_tao, inserted.ngay_cap_nhat
             VALUES (?, ?, ?, ?)
         """, (class_code, class_name, instructor_id, description))
         row = cursor.fetchone()
         conn.commit()
         if row:
-            columns = [column[0] for column in cursor.description]
-            return dict(zip(columns, row))
+            return {
+                "class_id": row[0],
+                "class_code": row[1],
+                "class_name": row[2],
+                "instructor_id": row[3],
+                "description": row[4],
+                "created_at": row[5],
+                "updated_at": row[6]
+            }
         raise Exception("Không thể tạo lớp học")
     finally:
         cursor.close()
@@ -33,11 +40,17 @@ def get_class_by_id(class_id: int) -> Optional[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT c.class_id, c.class_code, c.class_name, c.instructor_id,
-                   c.description, c.created_at, c.updated_at, u.full_name as instructor_name
-            FROM Classes c
-            JOIN Users u ON c.instructor_id = u.user_id
-            WHERE c.class_id = ?
+            SELECT c.ma_lop AS class_id, 
+                   c.ma_lop_hoc AS class_code, 
+                   c.ten_lop AS class_name, 
+                   c.ma_giang_vien AS instructor_id,
+                   c.mo_ta AS description, 
+                   c.ngay_tao AS created_at, 
+                   c.ngay_cap_nhat AS updated_at, 
+                   u.ho_va_ten AS instructor_name
+            FROM LopHoc c
+            JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
+            WHERE c.ma_lop = ?
         """, (class_id,))
         row = cursor.fetchone()
         if row:
@@ -55,20 +68,32 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
     try:
         if instructor_id:
             cursor.execute("""
-                SELECT c.class_id, c.class_code, c.class_name, c.instructor_id,
-                       c.description, c.created_at, c.updated_at, u.full_name as instructor_name
-                FROM Classes c
-                JOIN Users u ON c.instructor_id = u.user_id
-                WHERE c.instructor_id = ?
-                ORDER BY c.created_at DESC
+                SELECT c.ma_lop AS class_id, 
+                       c.ma_lop_hoc AS class_code, 
+                       c.ten_lop AS class_name, 
+                       c.ma_giang_vien AS instructor_id,
+                       c.mo_ta AS description, 
+                       c.ngay_tao AS created_at, 
+                       c.ngay_cap_nhat AS updated_at, 
+                       u.ho_va_ten AS instructor_name
+                FROM LopHoc c
+                JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
+                WHERE c.ma_giang_vien = ?
+                ORDER BY c.ngay_tao DESC
             """, (instructor_id,))
         else:
             cursor.execute("""
-                SELECT c.class_id, c.class_code, c.class_name, c.instructor_id,
-                       c.description, c.created_at, c.updated_at, u.full_name as instructor_name
-                FROM Classes c
-                JOIN Users u ON c.instructor_id = u.user_id
-                ORDER BY c.created_at DESC
+                SELECT c.ma_lop AS class_id, 
+                       c.ma_lop_hoc AS class_code, 
+                       c.ten_lop AS class_name, 
+                       c.ma_giang_vien AS instructor_id,
+                       c.mo_ta AS description, 
+                       c.ngay_tao AS created_at, 
+                       c.ngay_cap_nhat AS updated_at, 
+                       u.ho_va_ten AS instructor_name
+                FROM LopHoc c
+                JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
+                ORDER BY c.ngay_tao DESC
             """)
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -88,12 +113,12 @@ def update_class(
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            UPDATE Classes
-            SET class_code = COALESCE(?, class_code),
-                class_name = COALESCE(?, class_name),
-                description = COALESCE(?, description),
-                updated_at = GETDATE()
-            WHERE class_id = ?
+            UPDATE LopHoc
+            SET ma_lop_hoc = COALESCE(?, ma_lop_hoc),
+                ten_lop = COALESCE(?, ten_lop),
+                mo_ta = COALESCE(?, mo_ta),
+                ngay_cap_nhat = GETDATE()
+            WHERE ma_lop = ?
         """, (class_code, class_name, description, class_id))
         conn.commit()
         return get_class_by_id(class_id)
@@ -106,7 +131,7 @@ def delete_class(class_id: int) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM Classes WHERE class_id = ?", (class_id,))
+        cursor.execute("DELETE FROM LopHoc WHERE ma_lop = ?", (class_id,))
         conn.commit()
         return cursor.rowcount > 0
     finally:

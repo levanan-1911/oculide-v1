@@ -7,11 +7,20 @@ load_dotenv()
 
 try:
     from pydantic_settings import BaseSettings
+    from pydantic import field_validator
+
     class Settings(BaseSettings):
         APP_NAME: str = "Oculide Core API"
         APP_VERSION: str = "1.0.0"
         API_V1_PREFIX: str = "/api/v1"
         DEBUG: bool = True
+
+        @field_validator("DEBUG", mode="before")
+        @classmethod
+        def parse_debug(cls, v):
+            if isinstance(v, str):
+                return v.strip().lower() in ("true", "1", "t", "yes", "y", "debug")
+            return bool(v)
 
         DATABASE_DRIVER: str = "ODBC Driver 18 for SQL Server"
         DATABASE_SERVER: str = "localhost"

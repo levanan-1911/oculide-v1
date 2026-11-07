@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import InstitutionalFooter from '@/components/common/InstitutionalFooter';
+import { checkMockPasswordLogin } from '@/utils/authPasswordReset';
 import { 
   Eye, 
   EyeOff, 
@@ -97,6 +98,28 @@ export default function LoginPage() {
     }
 
     setIsLoading(true);
+
+    // 1. Ưu tiên kiểm tra tài khoản vừa đổi mật khẩu qua luồng Quên mật khẩu
+    const mockResetUser = checkMockPasswordLogin(email, password);
+    if (mockResetUser) {
+      const mockToken = 'mock_token_' + Date.now();
+      localStorage.setItem('oculide_token', mockToken);
+      localStorage.setItem('oculide_user', JSON.stringify(mockResetUser));
+      document.cookie = `oculide_token=${mockToken}; path=/; max-age=86400; SameSite=Lax`;
+      document.cookie = `oculide_role=${mockResetUser.role || ''}; path=/; max-age=86400; SameSite=Lax`;
+      setSuccessMessage('Đăng nhập thành công với mật khẩu mới! Đang chuyển hướng...');
+      setTimeout(() => {
+        const role = mockResetUser.role;
+        if (role === 'admin') {
+          window.location.href = '/admin/dashboard';
+        } else if (role === 'instructor') {
+          window.location.href = '/instructor/dashboard';
+        } else {
+          window.location.href = '/student/dashboard';
+        }
+      }, 1000);
+      return;
+    }
 
     try {
       const response = await fetch('/api/v1/auth/login', {

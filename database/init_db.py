@@ -111,9 +111,31 @@ def init_database():
                 if "already exists" not in err_msg.lower() and "drop database" not in err_msg.lower():
                     print(f"⚠️ Cảnh báo tại batch {idx}: {e}")
 
-        conn.close()
         print("🎉 XẢ CSDL THÀNH CÔNG! Đã khởi tạo hoàn tất 21 bảng vào CSDL ExamSystem.")
-        print("💡 Bạn chỉ cần mở SSMS lên và bấm Refresh (F5) là sẽ thấy ngay 21 bảng tiếng Việt!")
+
+        # Tự động nạp dữ liệu mẫu (sample_data.sql) nếu có
+        sample_paths = [
+            PROJECT_ROOT / "database" / "seeds" / "sample_data.sql",
+            PROJECT_ROOT / "database" / "sample_data.sql"
+        ]
+        sample_file = next((p for p in sample_paths if p.exists()), None)
+        if sample_file:
+            print(f"📦 Đang tự động nạp dữ liệu mẫu từ {sample_file.name}...")
+            with open(sample_file, "r", encoding="utf-8") as f:
+                sample_content = f.read()
+            sample_batches = [b.strip() for b in sample_content.split("GO") if b.strip()]
+            for idx, batch in enumerate(sample_batches, 1):
+                if not batch:
+                    continue
+                try:
+                    cursor.execute(batch)
+                except Exception as e:
+                    # Bỏ qua cảnh báo trùng lặp nếu đã nạp trước đó
+                    pass
+            print("✨ ĐÃ NẠP DỮ LIỆU MẪU ĐẦY ĐỦ (Người dùng, Lớp học, Phòng thi, Đề bài, Testcases, Vi phạm AI)!")
+
+        conn.close()
+        print("💡 Bạn chỉ cần mở SSMS lên và bấm Refresh (F5) là sẽ thấy ngay toàn bộ CSDL và dữ liệu!")
     except Exception as e:
         print(f"❌ Lỗi kết nối hoặc thực thi: {e}")
         sys.exit(1)

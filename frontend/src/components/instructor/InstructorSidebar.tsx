@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   LayoutGrid,
   Table2,
@@ -10,10 +10,8 @@ import {
   Clock,
   Flag,
   BookOpen,
+  ChevronLeft,
   ChevronRight,
-  User,
-  LogOut,
-  Settings,
   GraduationCap,
 } from 'lucide-react';
 
@@ -41,19 +39,19 @@ export const INSTRUCTOR_NAV_GROUPS: InstructorNavGroup[] = [
       },
       {
         id: 'classes',
-        label: 'Lớp & Sinh viên',
+        label: 'Lớp & sinh viên',
         href: '/instructor/classes',
         icon: Table2,
       },
       {
         id: 'questions',
-        label: 'Đề & Câu hỏi',
+        label: 'Đề & câu hỏi',
         href: '/instructor/questions',
         icon: FileCode2,
       },
       {
         id: 'schedules',
-        label: 'Lịch & Phiên kiểm tra',
+        label: 'Lịch & phiên kiểm tra',
         href: '/instructor/schedules',
         icon: Clock,
       },
@@ -70,7 +68,7 @@ export const INSTRUCTOR_NAV_GROUPS: InstructorNavGroup[] = [
       },
       {
         id: 'reports',
-        label: 'Kết quả & Báo cáo vi phạm',
+        label: 'Kết quả & báo cáo vi phạm',
         href: '/instructor/reports',
         icon: BookOpen,
       },
@@ -78,66 +76,48 @@ export const INSTRUCTOR_NAV_GROUPS: InstructorNavGroup[] = [
   },
 ];
 
+interface InstructorSidebarProps {
+  activeModule?: string;
+  onSelectModule?: (moduleId: string) => void;
+}
+
 export default function InstructorSidebar({
   activeModule,
-}: {
-  activeModule?: string;
-}) {
+  onSelectModule,
+}: InstructorSidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const [currentUser, setCurrentUser] = useState<{
-    name: string;
-    email: string;
-    role: string;
-  }>({
-    name: 'Thầy Nguyễn Văn Nam',
-    email: 'nam.nv@school.edu.vn',
-    role: 'Giảng viên',
-  });
+  // ── TRẠNG THÁI THU GỌN SIDEBAR (PERSIST VÀO LOCALSTORAGE) ──
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('oculide_user');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setCurrentUser({
-          name: parsed.name || parsed.username || 'Thầy Nguyễn Văn Nam',
-          email: parsed.email || 'nam.nv@school.edu.vn',
-          role: 'Giảng viên',
-        });
-      }
-    } catch {
-      // ignore
+    setMounted(true);
+    const saved = localStorage.getItem('oculide_instructor_sidebar_collapsed');
+    if (saved !== null) {
+      setIsCollapsed(saved === 'true');
     }
-
-    function handleClickOutside(event: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  function handleLogout() {
-    localStorage.removeItem('oculide_token');
-    localStorage.removeItem('oculide_user');
-    localStorage.removeItem('oculide_refresh_token');
-    document.cookie = 'oculide_token=; path=/; max-age=0';
-    document.cookie = 'oculide_role=; path=/; max-age=0';
-    window.location.replace('/login');
-  }
+  const toggleCollapse = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('oculide_instructor_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
-  const initials =
-    currentUser.name
-      .split(' ')
-      .filter(Boolean)
-      .slice(-2)
-      .map((w) => w[0]?.toUpperCase())
-      .join('') || 'GV';
+  // Hỗ trợ phím tắt Ctrl + B (hoặc Cmd + B) để thu gọn / mở rộng nhanh
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleCollapse();
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const currentActiveModule =
     activeModule ??
@@ -156,41 +136,72 @@ export default function InstructorSidebar({
       : 'overview');
 
   return (
-    <aside className="relative flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white font-sans text-slate-800 shadow-sm z-30 select-none dark:border-white/10 dark:bg-[#0d1017] dark:text-slate-200 transition-colors">
-      {/* Header Logo */}
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-100 dark:border-white/10 px-5">
+    <aside
+      className={`sticky top-0 flex h-screen shrink-0 flex-col justify-between border-r border-slate-200/80 bg-white select-none z-30 dark:border-white/10 dark:bg-[#0d1017] transition-all duration-300 ease-in-out ${
+        isCollapsed ? 'w-[72px]' : 'w-[256px]'
+      }`}
+    >
+      {/* Phần trên: Logo + Danh sách Module cuộn độc lập */}
+      <div
+        className={`flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pt-5 pb-4 transition-all ${
+          isCollapsed ? 'px-2' : 'px-4'
+        }`}
+      >
+        {/* Brand Header */}
         <Link
           href="/instructor/dashboard"
-          className="flex items-center gap-2.5 transition hover:opacity-90"
+          onClick={() => {
+            if (onSelectModule) {
+              onSelectModule('overview');
+            }
+          }}
+          title="Oculide LMS - Giảng viên"
+          className={`mb-6 flex items-center transition-all ${
+            isCollapsed ? 'justify-center px-0' : 'gap-3 px-2'
+          }`}
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
-            <GraduationCap className="h-5 w-5" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2563eb] shadow-sm shadow-blue-500/20">
+            <svg
+              className="h-6 w-6 text-white"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="7.5"
+                stroke="currentColor"
+                strokeWidth="2.2"
+              />
+              <circle cx="12" cy="12" r="3" fill="currentColor" />
+            </svg>
           </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
-                Oculide
+          {!isCollapsed && (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[22px] font-extrabold tracking-wide text-[#2563eb] dark:text-blue-400 truncate">
+                OCULIDE
               </span>
               <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/40">
                 GV
               </span>
             </div>
-            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-              Cổng Giảng Viên
-            </p>
-          </div>
+          )}
         </Link>
-      </div>
 
-      {/* Nav List */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+        {/* Các nhóm điều hướng */}
         <nav className="space-y-5">
           {INSTRUCTOR_NAV_GROUPS.map((group) => (
             <div key={group.groupLabel} className="space-y-1">
-              <h3 className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                {group.groupLabel}
-              </h3>
-              <div className="mt-1 space-y-0.5">
+              {!isCollapsed ? (
+                <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 truncate">
+                  {group.groupLabel}
+                </p>
+              ) : (
+                <div className="my-2 border-t border-slate-100 dark:border-white/5 mx-2" />
+              )}
+              <div className="space-y-1">
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const isActive = currentActiveModule === item.id;
@@ -199,22 +210,31 @@ export default function InstructorSidebar({
                     <Link
                       key={item.id}
                       href={item.href}
-                      className={`group flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                      onClick={() => {
+                        if (onSelectModule) {
+                          onSelectModule(item.id);
+                        }
+                      }}
+                      title={isCollapsed ? item.label : undefined}
+                      className={`flex w-full items-center rounded-xl transition-all cursor-pointer ${
+                        isCollapsed
+                          ? 'justify-center p-2.5'
+                          : 'gap-3 px-3.5 py-2.5 text-left text-[13.5px]'
+                      } ${
                         isActive
-                          ? 'bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400'
-                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 hover:text-slate-900 dark:hover:bg-white/5 dark:hover:text-white'
+                          ? 'bg-[#eff6ff] font-semibold text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400 shadow-sm'
+                          : 'font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 hover:text-slate-900 dark:hover:bg-white/5 dark:hover:text-white'
                       }`}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Icon
-                          className={`h-4 w-4 shrink-0 ${
-                            isActive ? 'text-[#2563eb] dark:text-blue-400' : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
-                          }`}
-                        />
+                      <Icon
+                        className={`h-4 w-4 shrink-0 transition-transform ${
+                          isActive
+                            ? 'text-[#2563eb] dark:text-blue-400 scale-105'
+                            : 'text-slate-400 dark:text-slate-500'
+                        }`}
+                      />
+                      {!isCollapsed && (
                         <span className="truncate">{item.label}</span>
-                      </div>
-                      {isActive && (
-                        <ChevronRight className="h-3.5 w-3.5 text-[#2563eb] dark:text-blue-400" />
                       )}
                     </Link>
                   );
@@ -225,73 +245,30 @@ export default function InstructorSidebar({
         </nav>
       </div>
 
-      {/* User Card */}
-      <div
-        ref={userMenuRef}
-        className="relative shrink-0 p-4 border-t border-slate-100 bg-white dark:border-white/10 dark:bg-[#0d1017] transition-colors"
-      >
-        {isMenuOpen && (
-          <div className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-50 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-xl shadow-slate-900/10 dark:border-white/10 dark:bg-[#0d1017] dark:text-white">
-            <div className="px-3 py-2 border-b border-slate-100 dark:border-white/10">
-              <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                {currentUser.name}
-              </p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {currentUser.email}
-              </p>
-              <span className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                Giảng viên
-              </span>
-            </div>
-
-            <div className="mt-1.5 space-y-0.5 text-xs font-medium text-slate-700 dark:text-slate-300">
-              <Link
-                href="/instructor/profile"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600 dark:hover:bg-white/5 dark:hover:text-blue-400"
-              >
-                <User className="h-4 w-4 text-slate-400" />
-                Hồ sơ cá nhân
-              </Link>
-              <Link
-                href="/instructor/profile?tab=security"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2 transition hover:bg-slate-50 hover:text-blue-600 dark:hover:bg-white/5 dark:hover:text-blue-400"
-              >
-                <Settings className="h-4 w-4 text-slate-400" />
-                Đổi mật khẩu
-              </Link>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/20 cursor-pointer"
-              >
-                <LogOut className="h-4 w-4" />
-                Đăng xuất
-              </button>
-            </div>
-          </div>
-        )}
-
+      {/* Phần dưới: Nút thu gọn / mở rộng Sidebar đồng bộ Admin */}
+      <div className="border-t border-slate-200/80 p-3 dark:border-white/10 transition-colors">
         <button
           type="button"
-          onClick={() => setIsMenuOpen((prev) => !prev)}
-          className="flex w-full items-center gap-3 rounded-2xl p-1.5 text-left transition hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer"
+          onClick={toggleCollapse}
+          title={isCollapsed ? 'Mở rộng menu (Ctrl+B)' : 'Thu gọn menu (Ctrl+B)'}
+          aria-label={isCollapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+          className={`flex w-full items-center rounded-xl py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white transition-all cursor-pointer ${
+            isCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+          }`}
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-xs font-bold text-white shadow-sm">
-            {initials}
+          <div className="flex items-center gap-2">
+            {isCollapsed ? (
+              <ChevronRight className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+            ) : (
+              <ChevronLeft className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+            )}
+            {!isCollapsed && <span>Thu gọn menu</span>}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-              {currentUser.name}
-            </p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-              {currentUser.email}
-            </p>
-          </div>
-          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-white/10 dark:text-slate-400">
-            <span className="text-[10px] font-bold">⋮</span>
-          </div>
+          {!isCollapsed && (
+            <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
+              Ctrl B
+            </kbd>
+          )}
         </button>
       </div>
     </aside>

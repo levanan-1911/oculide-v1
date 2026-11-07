@@ -1,616 +1,1660 @@
--- ============================================================================
--- DATABASE SCHEMA CHO OCULIDE - HỆ THỐNG GIÁM SÁT THỰC HÀNH & THI TRỰC TUYẾN
--- Phiên bản: v2.1 (21 Bảng Chuẩn hóa ERD v2)
--- Hệ quản trị CSDL: Microsoft SQL Server (T-SQL)
--- Database Name: ExamSystem
--- Mô tả:
---   - Chuẩn hóa dùng chung cho cả Buổi thực hành (Lab) & Kỳ thi (Exam).
---   - Hồ sơ người dùng 3 Roles (Admin, Giảng viên, Sinh viên) tích hợp trên bảng NguoiDung.
---   - Phân hệ AI giám sát Computer Vision thực tế (YOLOv8 + MediaPipe), Snapshots timeline.
---   - Loại bỏ hoàn toàn vi phạm Micro và Face ID để tối ưu UX/UI và thực tế phòng Lab.
---   - Đầy đủ 21 bảng, Ràng buộc Khóa chính, Khóa ngoại, Khóa duy nhất (UK), Indexes và Seed Data.
--- ============================================================================
+-- =============================================
+
+-- Database Schema for Oculide - Laboratory Monitoring & Online Exam System
+
+-- SQL Server Compatible (T-SQL)
+
+-- =============================================
+
+
 
 USE master;
+
 GO
+
+
 
 IF EXISTS (SELECT name FROM sys.databases WHERE name = 'ExamSystem')
+
 BEGIN
+
     ALTER DATABASE ExamSystem SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+
     DROP DATABASE ExamSystem;
+
 END
+
 GO
+
+
 
 CREATE DATABASE ExamSystem;
+
 GO
+
+
 
 USE ExamSystem;
+
 GO
 
+
+
+-- =============================================
+
+-- 1. USERS TABLE
+
+-- Lưu trữ thông tin người dùng (Giảng viên, Sinh viên, Quản trị viên)
+
+-- =============================================
+
+CREATE TABLE Users (
+
+    user_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    username NVARCHAR(50) UNIQUE NOT NULL,
+
+    password_hash NVARCHAR(255) NOT NULL,
+
+    email NVARCHAR(100) UNIQUE NOT NULL,
+
+    full_name NVARCHAR(100) NOT NULL,
+
+    role NVARCHAR(20) NOT NULL CHECK (role IN ('instructor', 'student', 'admin')),
+
+    student_id NVARCHAR(20) NULL, -- Mã sinh viên (chỉ dành cho student)
+
+    is_active BIT DEFAULT 1,
+
+    created_at DATETIME2 DEFAULT GETDATE(),
+
+    updated_at DATETIME2 DEFAULT GETDATE(),
+
+    last_login DATETIME2 NULL
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_users_username ON Users(username);
+
+CREATE INDEX idx_users_email ON Users(email);
+
+CREATE INDEX idx_users_role ON Users(role);
+
+GO
+
+
+
+-- =============================================
+
+-- 2. ROOMS TABLE (Đổi tên từ ExamRooms)
+
+-- Lưu trữ thông tin phòng (phòng thi exam hoặc phòng học/lab classroom)
+
+-- =============================================
+
+CREATE TABLE Rooms (
+
+    room_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    room_code NVARCHAR(20) UNIQUE NOT NULL,
+
+    room_name NVARCHAR(100) NOT NULL,
+
+    room_type NVARCHAR(20) NOT NULL DEFAULT 'exam' CHECK (room_type IN ('exam', 'classroom')),
+
+    instructor_id INT NOT NULL,
+
+    description NVARCHAR(500) NULL,
+
+    start_time DATETIME2 NOT NULL,
+
+    end_time DATETIME2 NOT NULL,
+
+    duration_minutes INT NOT NULL,
+
+    max_attempts INT DEFAULT 1,
+
+    is_active BIT DEFAULT 1,
+
+    passcode NVARCHAR(50) NULL, -- Mã PIN / Mật khẩu tham gia phòng
+
+    livekit_room_name NVARCHAR(100) NULL, -- Tên phòng LiveKit SFU phục vụ video streaming
+
+    created_at DATETIME2 DEFAULT GETDATE(),
+
+    updated_at DATETIME2 DEFAULT GETDATE(),
+
+    
+
+    CONSTRAINT fk_rooms_instructor FOREIGN KEY (instructor_id) 
+
+        REFERENCES Users(user_id) ON DELETE CASCADE,
+
+    CONSTRAINT chk_rooms_time CHECK (end_time > start_time)
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_rooms_instructor ON Rooms(instructor_id);
+
+CREATE INDEX idx_rooms_code ON Rooms(room_code);
+
+CREATE INDEX idx_rooms_active ON Rooms(is_active);
+
+CREATE INDEX idx_rooms_type ON Rooms(room_type);
+
+GO
+
+
+
+-- =============================================
+
+-- 3. QUESTIONS TABLE (Đổi tên từ ExamQuestions)
+
+-- Lưu trữ ngân hàng câu hỏi/đề bài lập trình trong phòng
+
+-- =============================================
+
+CREATE TABLE Questions (
+
+    question_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    room_id INT NOT NULL,
+
+    question_order INT NOT NULL,
+
+    question_title NVARCHAR(200) NOT NULL,
+
+    question_description NVARCHAR(MAX) NOT NULL,
+
+    question_type NVARCHAR(20) NOT NULL CHECK (question_type IN ('coding', 'essay')),
+
+    programming_language NVARCHAR(20) NULL, -- Python, Java, C++, etc.
+
+    max_points DECIMAL(5,2) DEFAULT 10.00,
+
+    time_limit_minutes INT NULL,
+
+    memory_limit_mb INT NULL,
+
+    is_active BIT DEFAULT 1,
+
+    created_at DATETIME2 DEFAULT GETDATE(),
+
+    updated_at DATETIME2 DEFAULT GETDATE(),
+
+    
+
+    CONSTRAINT fk_questions_room FOREIGN KEY (room_id) 
+
+        REFERENCES Rooms(room_id) ON DELETE CASCADE
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_questions_room ON Questions(room_id);
+
+CREATE INDEX idx_questions_order ON Questions(room_id, question_order);
+
+GO
+
+
+
+-- =============================================
+
+-- 4. TEST CASES TABLE
+
+-- Lưu trữ các bộ test case tự động chấm bài cho câu hỏi coding
+
+-- =============================================
+
+CREATE TABLE TestCases (
+
+    test_case_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    question_id INT NOT NULL,
+
+    input_data NVARCHAR(MAX) NOT NULL,
+
+    expected_output NVARCHAR(MAX) NOT NULL,
+
+    is_hidden BIT DEFAULT 0, -- 1: Test case ẩn (sinh viên không thấy), 0: Mẫu (public)
+
+    points DECIMAL(5,2) DEFAULT 0.00,
+
+    created_at DATETIME2 DEFAULT GETDATE(),
+
+    
+
+    CONSTRAINT fk_testcases_question FOREIGN KEY (question_id) 
+
+        REFERENCES Questions(question_id) ON DELETE CASCADE
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_testcases_question ON TestCases(question_id);
+
+GO
+
+
+
+-- =============================================
+
+-- 5. ENROLLMENTS TABLE (Đổi tên từ StudentEnrollments)
+
+-- Danh sách sinh viên được phân bổ/ghi danh vào phòng thi hoặc phòng thực hành
+
+-- =============================================
+
+CREATE TABLE Enrollments (
+
+    enrollment_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    room_id INT NOT NULL,
+
+    student_id INT NOT NULL,
+
+    enrolled_at DATETIME2 DEFAULT GETDATE(),
+
+    enrolled_by INT NOT NULL, -- Giảng viên thêm sinh viên
+
+    
+
+    CONSTRAINT fk_enrollments_room FOREIGN KEY (room_id) 
+
+        REFERENCES Rooms(room_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_enrollments_student FOREIGN KEY (student_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION,
+
+    CONSTRAINT fk_enrollments_by FOREIGN KEY (enrolled_by) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION,
+
+    CONSTRAINT uq_enrollment UNIQUE (room_id, student_id)
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_enrollments_room ON Enrollments(room_id);
+
+CREATE INDEX idx_enrollments_student ON Enrollments(student_id);
+
+GO
+
+
+
+-- =============================================
+
+-- 6. SUBMISSIONS TABLE (Đổi tên từ StudentSubmissions)
+
+-- Lưu trữ các lượt nộp bài code của sinh viên
+
+-- =============================================
+
+CREATE TABLE Submissions (
+
+    submission_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    room_id INT NOT NULL,
+
+    student_id INT NOT NULL,
+
+    question_id INT NOT NULL,
+
+    attempt_number INT DEFAULT 1,
+
+    code_content NVARCHAR(MAX) NOT NULL,
+
+    language NVARCHAR(20) NOT NULL,
+
+    submitted_at DATETIME2 DEFAULT GETDATE(),
+
+    status NVARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'grading', 'completed', 'failed', 'saved')),
+
+    
+
+    CONSTRAINT fk_submissions_room FOREIGN KEY (room_id) 
+
+        REFERENCES Rooms(room_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_submissions_student FOREIGN KEY (student_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION,
+
+    CONSTRAINT fk_submissions_question FOREIGN KEY (question_id) 
+
+        REFERENCES Questions(question_id) ON DELETE NO ACTION
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_submissions_room_student ON Submissions(room_id, student_id);
+
+CREATE INDEX idx_submissions_status ON Submissions(status);
+
+CREATE INDEX idx_submissions_question ON Submissions(question_id);
+
+GO
+
+
+
+-- =============================================
+
+-- 7. GRADING RESULTS TABLE
+
+-- Lưu trữ chi tiết kết quả chạy qua từng test case của một lần nộp bài
+
+-- =============================================
+
+CREATE TABLE GradingResults (
+
+    result_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    submission_id INT NOT NULL,
+
+    test_case_id INT NOT NULL,
+
+    is_passed BIT DEFAULT 0,
+
+    actual_output NVARCHAR(MAX) NULL,
+
+    execution_time_ms DECIMAL(10,2) NULL,
+
+    memory_used_mb DECIMAL(10,2) NULL,
+
+    error_message NVARCHAR(MAX) NULL,
+
+    graded_at DATETIME2 DEFAULT GETDATE(),
+
+    
+
+    CONSTRAINT fk_grading_submission FOREIGN KEY (submission_id) 
+
+        REFERENCES Submissions(submission_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_grading_testcase FOREIGN KEY (test_case_id) 
+
+        REFERENCES TestCases(test_case_id) ON DELETE NO ACTION
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_grading_submission ON GradingResults(submission_id);
+
+GO
+
+
+
+-- =============================================
+
+-- 8. SESSIONS TABLE (Đổi tên từ ExamSessions)
+
+-- Quản lý phiên tham gia (làm bài thi / học thực hành) của sinh viên trong phòng
+
+-- =============================================
+
+CREATE TABLE Sessions (
+
+    session_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    room_id INT NOT NULL,
+
+    student_id INT NOT NULL,
+
+    started_at DATETIME2 DEFAULT GETDATE(),
+
+    ended_at DATETIME2 NULL,
+
+    ip_address NVARCHAR(45) NULL,
+
+    user_agent NVARCHAR(500) NULL,
+
+    browser_fingerprint NVARCHAR(100) NULL,
+
+    status NVARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'completed', 'terminated', 'abandoned')),
+
+    
+
+    CONSTRAINT fk_sessions_room FOREIGN KEY (room_id) 
+
+        REFERENCES Rooms(room_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_sessions_student FOREIGN KEY (student_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_sessions_room_student ON Sessions(room_id, student_id);
+
+CREATE INDEX idx_sessions_status ON Sessions(status);
+
+GO
+
+
+
+-- =============================================
+
+-- 9. VIOLATIONS TABLE (Đổi tên từ ViolationLogs)
+
+-- Lưu trữ các sự kiện gian lận/bất thường do AI Proctoring hoặc Browser phát hiện
+
+-- =============================================
+
+CREATE TABLE Violations (
+
+    violation_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    session_id INT NOT NULL,
+
+    student_id INT NOT NULL,
+
+    violation_type NVARCHAR(50) NOT NULL CHECK (violation_type IN (
+
+        'tab_switch', 'copy_paste', 'no_face_detected', 
+
+        'multiple_faces', 'phone_detected', 'suspicious_object',
+
+        'fullscreen_exit', 'camera_blocked', 'time_exceeded',
+
+        'inactive_30s', 'multiple_people'
+
+    )),
+
+    severity NVARCHAR(20) DEFAULT 'warning' CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+
+    description NVARCHAR(500) NULL,
+
+    snapshot_url NVARCHAR(500) NULL, -- URL ảnh chụp webcam khi phát hiện vi phạm
+
+    detected_at DATETIME2 DEFAULT GETDATE(),
+
+    is_reviewed BIT DEFAULT 0,
+
+    review_status NVARCHAR(20) DEFAULT 'pending' NOT NULL CHECK (review_status IN ('pending', 'confirmed', 'rejected')),
+
+    reviewed_by INT NULL,
+
+    reviewed_at DATETIME2 NULL,
+
+    
+
+    CONSTRAINT fk_violations_session FOREIGN KEY (session_id) 
+
+        REFERENCES Sessions(session_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_violations_student FOREIGN KEY (student_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION,
+
+    CONSTRAINT fk_violations_reviewer FOREIGN KEY (reviewed_by) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_violations_session ON Violations(session_id);
+
+CREATE INDEX idx_violations_student ON Violations(student_id);
+
+CREATE INDEX idx_violations_type ON Violations(violation_type);
+
+CREATE INDEX idx_violations_severity ON Violations(severity);
+
+CREATE INDEX idx_violations_reviewed ON Violations(is_reviewed);
+
+GO
+
+
+
+-- =============================================
+
+-- 10. SNAPSHOTS TABLE (Đổi tên từ WebcamSnapshots)
+
+-- Lưu trữ ảnh chụp webcam định kỳ của sinh viên trong phiên thi
+
+-- =============================================
+
+CREATE TABLE Snapshots (
+
+    snapshot_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    session_id INT NOT NULL,
+
+    student_id INT NOT NULL,
+
+    image_url NVARCHAR(500) NOT NULL,
+
+    face_detected BIT DEFAULT 0,
+
+    face_count INT DEFAULT 0,
+
+    looking_at_screen BIT DEFAULT 1,
+
+    confidence_score DECIMAL(5,2) NULL,
+
+    captured_at DATETIME2 DEFAULT GETDATE(),
+
+    
+
+    CONSTRAINT fk_snapshots_session FOREIGN KEY (session_id) 
+
+        REFERENCES Sessions(session_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_snapshots_student FOREIGN KEY (student_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_snapshots_session ON Snapshots(session_id);
+
+CREATE INDEX idx_snapshots_captured ON Snapshots(captured_at);
+
+GO
+
+
+
+-- =============================================
+
+-- 11. MESSAGES TABLE (Đổi tên từ ChatMessages)
+
+-- Lưu trữ tin nhắn chat realtime trong phòng (cả phòng hoặc riêng tư với Giám thị)
+
+-- =============================================
+
+CREATE TABLE Messages (
+
+    message_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    room_id INT NOT NULL,
+
+    sender_id INT NOT NULL,
+
+    message_content NVARCHAR(1000) NOT NULL,
+
+    message_type NVARCHAR(20) DEFAULT 'text' CHECK (message_type IN ('text', 'system', 'announcement')),
+
+    is_private BIT DEFAULT 0,
+
+    recipient_id INT NULL, -- Nếu là tin nhắn riêng với cá nhân cụ thể
+
+    sent_at DATETIME2 DEFAULT GETDATE(),
+
+    
+
+    CONSTRAINT fk_messages_room FOREIGN KEY (room_id) 
+
+        REFERENCES Rooms(room_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_messages_sender FOREIGN KEY (sender_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION,
+
+    CONSTRAINT fk_messages_recipient FOREIGN KEY (recipient_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_messages_room ON Messages(room_id);
+
+CREATE INDEX idx_messages_sender ON Messages(sender_id);
+
+CREATE INDEX idx_messages_sent ON Messages(sent_at);
+
+GO
+
+
+
+-- =============================================
+
+-- 12. SYSTEM LOGS TABLE
+
+-- Nhật ký hệ thống chung phục vụ giám sát, audit và phát hiện lỗi
+
+-- =============================================
+
+CREATE TABLE SystemLogs (
+
+    log_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    log_level NVARCHAR(20) NOT NULL CHECK (log_level IN ('info', 'warning', 'error', 'debug')),
+
+    module NVARCHAR(50) NOT NULL, -- API, WebSocket, AI, Grader, etc.
+
+    message NVARCHAR(MAX) NOT NULL,
+
+    user_id INT NULL,
+
+    extra_data NVARCHAR(MAX) NULL, -- JSON data
+
+    created_at DATETIME2 DEFAULT GETDATE(),
+
+    
+
+    CONSTRAINT fk_logs_user FOREIGN KEY (user_id) 
+
+        REFERENCES Users(user_id) ON DELETE SET NULL
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_logs_level ON SystemLogs(log_level);
+
+CREATE INDEX idx_logs_module ON SystemLogs(module);
+
+CREATE INDEX idx_logs_created ON SystemLogs(created_at);
+
+GO
+
+
+
+-- =============================================
+
+-- 13. LIVEKIT TOKENS TABLE
+
+-- Lưu trữ token xác thực LiveKit SFU cho video streaming của sinh viên và giám thị
+
+-- =============================================
+
+CREATE TABLE LiveKitTokens (
+
+    token_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    room_id INT NOT NULL,
+
+    user_id INT NOT NULL,
+
+    token NVARCHAR(500) NOT NULL,
+
+    participant_identity NVARCHAR(100) NOT NULL,
+
+    expires_at DATETIME2 NOT NULL,
+
+    created_at DATETIME2 DEFAULT GETDATE(),
+
+    is_revoked BIT DEFAULT 0,
+
+    
+
+    CONSTRAINT fk_livekit_room FOREIGN KEY (room_id) 
+
+        REFERENCES Rooms(room_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_livekit_user FOREIGN KEY (user_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_livekit_room_user ON LiveKitTokens(room_id, user_id);
+
+CREATE INDEX idx_livekit_expires ON LiveKitTokens(expires_at);
+
+GO
+
+
+
+-- =============================================
+
+-- =============================================
+
+-- 14. CLASSES TABLE
+
+-- Quản lý danh sách lớp học theo học phần
+
+-- =============================================
+
+CREATE TABLE Classes (
+
+    class_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    class_code NVARCHAR(50) UNIQUE NOT NULL,
+
+    class_name NVARCHAR(150) NOT NULL,
+
+    instructor_id INT NOT NULL,
+
+    description NVARCHAR(500) NULL,
+
+    created_at DATETIME2 DEFAULT GETDATE(),
+
+    updated_at DATETIME2 DEFAULT GETDATE(),
+
+    
+
+    CONSTRAINT fk_classes_instructor FOREIGN KEY (instructor_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_classes_instructor ON Classes(instructor_id);
+
+GO
+
+
+
+-- =============================================
+
+-- 15. CODE DRAFTS TABLE
+
+-- Tự động lưu nháp mã nguồn của sinh viên định kỳ khi làm bài
+
+-- =============================================
+
+CREATE TABLE CodeDrafts (
+
+    draft_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    session_id INT NOT NULL,
+
+    question_id INT NOT NULL,
+
+    student_id INT NOT NULL,
+
+    draft_code NVARCHAR(MAX) NOT NULL,
+
+    language NVARCHAR(20) NOT NULL,
+
+    last_saved_at DATETIME2 DEFAULT GETDATE(),
+
+    
+
+    CONSTRAINT fk_codedrafts_session FOREIGN KEY (session_id) 
+
+        REFERENCES Sessions(session_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_codedrafts_question FOREIGN KEY (question_id) 
+
+        REFERENCES Questions(question_id) ON DELETE NO ACTION,
+
+    CONSTRAINT fk_codedrafts_student FOREIGN KEY (student_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION,
+
+    CONSTRAINT uq_session_question_draft UNIQUE (session_id, question_id)
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_codedrafts_session ON CodeDrafts(session_id);
+
+GO
+
+
+
+-- =============================================
+
+-- 16. DEVICE CHECKS TABLE
+
+-- Lưu kết quả kiểm tra thiết bị (Webcam, Mic, Mạng) trước khi vào phòng
+
+-- =============================================
+
+CREATE TABLE DeviceChecks (
+
+    check_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    session_id INT NOT NULL,
+
+    student_id INT NOT NULL,
+
+    camera_status BIT DEFAULT 0,
+
+    mic_status BIT DEFAULT 0,
+
+    network_latency_ms INT NULL,
+
+    os_info NVARCHAR(100) NULL,
+
+    browser_info NVARCHAR(150) NULL,
+
+    is_passed BIT DEFAULT 0,
+
+    checked_at DATETIME2 DEFAULT GETDATE(),
+
+    
+
+    CONSTRAINT fk_devicechecks_session FOREIGN KEY (session_id) 
+
+        REFERENCES Sessions(session_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_devicechecks_student FOREIGN KEY (student_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_devicechecks_session ON DeviceChecks(session_id);
+
+GO
+
+
+
+-- =============================================
+
+-- 17. SUPPORT REQUESTS TABLE
+
+-- Sinh viên gửi yêu cầu trợ giúp kỹ thuật khẩn cấp trong phiên làm bài
+
+-- =============================================
+
+CREATE TABLE SupportRequests (
+
+    request_id INT IDENTITY(1,1) PRIMARY KEY,
+
+    room_id INT NOT NULL,
+
+    student_id INT NOT NULL,
+
+    session_id INT NULL,
+
+    issue_type NVARCHAR(50) NOT NULL CHECK (issue_type IN ('technical', 'exam_question', 'permission', 'other')),
+
+    message NVARCHAR(1000) NOT NULL,
+
+    status NVARCHAR(20) DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved', 'rejected')),
+
+    resolved_by INT NULL,
+
+    created_at DATETIME2 DEFAULT GETDATE(),
+
+    resolved_at DATETIME2 NULL,
+
+    
+
+    CONSTRAINT fk_support_room FOREIGN KEY (room_id) 
+
+        REFERENCES Rooms(room_id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_support_student FOREIGN KEY (student_id) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION,
+
+    CONSTRAINT fk_support_resolved_by FOREIGN KEY (resolved_by) 
+
+        REFERENCES Users(user_id) ON DELETE NO ACTION
+
+);
+
+GO
+
+
+
+CREATE INDEX idx_support_room ON SupportRequests(room_id);
+
+CREATE INDEX idx_support_status ON SupportRequests(status);
+
+GO
+
+
+
+-- =============================================
+
+-- STORED PROCEDURES
+
+-- =============================================
+
+
+
+-- Lấy thống kê vi phạm của sinh viên trong phòng
+
+CREATE PROCEDURE sp_GetStudentViolationStats
+
+    @room_id INT,
+
+    @student_id INT
+
+AS
+
+BEGIN
+
+    SELECT 
+
+        v.violation_type,
+
+        v.severity,
+
+        COUNT(*) as violation_count,
+
+        MIN(v.detected_at) as first_occurrence,
+
+        MAX(v.detected_at) as last_occurrence
+
+    FROM Violations v
+
+    JOIN Sessions s ON v.session_id = s.session_id
+
+    WHERE s.room_id = @room_id 
+
+        AND v.student_id = @student_id
+
+    GROUP BY v.violation_type, v.severity
+
+    ORDER BY v.severity DESC, violation_count DESC;
+
+END;
+
+GO
+
+
+
+-- Lấy kết quả thi tổng hợp của sinh viên theo từng câu hỏi
+
+CREATE PROCEDURE sp_GetStudentExamResults
+
+    @room_id INT,
+
+    @student_id INT
+
+AS
+
+BEGIN
+
+    SELECT 
+
+        q.question_id,
+
+        q.question_title,
+
+        q.max_points,
+
+        s.submission_id,
+
+        s.submitted_at,
+
+        s.status,
+
+        SUM(CASE WHEN gr.is_passed = 1 THEN tc.points ELSE 0 END) as earned_points,
+
+        AVG(gr.execution_time_ms) as avg_execution_time
+
+    FROM Questions q
+
+    LEFT JOIN Submissions s ON q.question_id = s.question_id AND s.student_id = @student_id
+
+    LEFT JOIN GradingResults gr ON s.submission_id = gr.submission_id
+
+    LEFT JOIN TestCases tc ON gr.test_case_id = tc.test_case_id
+
+    WHERE q.room_id = @room_id
+
+    GROUP BY q.question_id, q.question_title, q.max_points, q.question_order, s.submission_id, s.submitted_at, s.status
+
+    ORDER BY q.question_order;
+
+END;
+
+GO
+
+
+
+-- Lấy danh sách sinh viên đang online trong phòng
+
+CREATE PROCEDURE sp_GetOnlineStudents
+
+    @room_id INT
+
+AS
+
+BEGIN
+
+    SELECT 
+
+        u.user_id,
+
+        u.username,
+
+        u.full_name,
+
+        u.student_id,
+
+        s.session_id,
+
+        s.started_at,
+
+        DATEDIFF(MINUTE, s.started_at, GETDATE()) as duration_minutes,
+
+        (SELECT COUNT(*) FROM Violations WHERE session_id = s.session_id) as violation_count
+
+    FROM Sessions s
+
+    JOIN Users u ON s.student_id = u.user_id
+
+    WHERE s.room_id = @room_id 
+
+        AND s.status = 'active'
+
+    ORDER BY s.started_at;
+
+END;
+
+GO
+
+
+
+-- =============================================
+
+-- VIEWS
+
+-- =============================================
+
+
+
+-- View: Tổng quan phòng học / phòng thi
+
+CREATE VIEW vw_RoomOverview AS
+
+SELECT 
+
+    r.room_id,
+
+    r.room_code,
+
+    r.room_name,
+
+    r.room_type,
+
+    u.full_name as instructor_name,
+
+    r.start_time,
+
+    r.end_time,
+
+    r.duration_minutes,
+
+    COUNT(DISTINCT e.student_id) as enrolled_students,
+
+    COUNT(DISTINCT CASE WHEN s.status = 'active' THEN s.student_id END) as active_students,
+
+    COUNT(DISTINCT CASE WHEN s.status = 'completed' THEN s.student_id END) as completed_students,
+
+    COUNT(DISTINCT q.question_id) as total_questions
+
+FROM Rooms r
+
+JOIN Users u ON r.instructor_id = u.user_id
+
+LEFT JOIN Enrollments e ON r.room_id = e.room_id
+
+LEFT JOIN Sessions s ON r.room_id = s.room_id
+
+LEFT JOIN Questions q ON r.room_id = q.room_id
+
+GROUP BY r.room_id, r.room_code, r.room_name, r.room_type, u.full_name, 
+
+         r.start_time, r.end_time, r.duration_minutes;
+
+GO
+
+
+
+-- View: Báo cáo vi phạm theo phòng
+
+CREATE VIEW vw_ViolationReport AS
+
+SELECT 
+
+    r.room_id,
+
+    r.room_code,
+
+    r.room_name,
+
+    u.user_id,
+
+    u.username,
+
+    u.full_name,
+
+    u.student_id,
+
+    v.violation_type,
+
+    v.severity,
+
+    COUNT(*) as violation_count,
+
+    MAX(v.detected_at) as last_violation
+
+FROM Violations v
+
+JOIN Sessions s ON v.session_id = s.session_id
+
+JOIN Rooms r ON s.room_id = r.room_id
+
+JOIN Users u ON v.student_id = u.user_id
+
+GROUP BY r.room_id, r.room_code, r.room_name, 
+
+         u.user_id, u.username, u.full_name, u.student_id,
+
+         v.violation_type, v.severity;
+
+GO
+
+
+
+-- =============================================
+
+-- TRIGGERS
+
+-- =============================================
+
+
+
+-- Trigger: Cập nhật updated_at khi User được sửa
+
+CREATE TRIGGER tr_Users_UpdateTimestamp
+
+ON Users
+
+AFTER UPDATE
+
+AS
+
+BEGIN
+
+    UPDATE Users
+
+    SET updated_at = GETDATE()
+
+    WHERE user_id IN (SELECT user_id FROM inserted);
+
+END;
+
+GO
+
+
+
+-- Trigger: Cập nhật updated_at khi Room được sửa
+
+CREATE TRIGGER tr_Rooms_UpdateTimestamp
+
+ON Rooms
+
+AFTER UPDATE
+
+AS
+
+BEGIN
+
+    UPDATE Rooms
+
+    SET updated_at = GETDATE()
+
+    WHERE room_id IN (SELECT room_id FROM inserted);
+
+END;
+
+GO
+
+
+
+-- Trigger: Cập nhật updated_at khi Question được sửa
+
+CREATE TRIGGER tr_Questions_UpdateTimestamp
+
+ON Questions
+
+AFTER UPDATE
+
+AS
+
+BEGIN
+
+    UPDATE Questions
+
+    SET updated_at = GETDATE()
+
+    WHERE question_id IN (SELECT question_id FROM inserted);
+
+END;
+
+GO
+
+
+
+-- =============================================
+
+-- SAMPLE DATA (ADMIN MẶC ĐỊNH)
+
+-- =============================================
+
+
+
+-- Mật khẩu mặc định: admin123
+
+INSERT INTO Users (username, password_hash, email, full_name, role, is_active)
+
+VALUES ('admin', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'admin@school.edu.vn', N'Quản Trị Viên Hệ Thống', 'admin', 1);
+
+GO
+
+
+
+PRINT 'Oculide Database Schema created successfully with standardized tables!';
+
+GO
+
+
+
 -- ============================================================================
--- PHÂN HỆ 1: TÀI KHOẢN, XÁC THỰC, VAI TRÒ & HỒ SƠ 3 ROLES
+-- PHÂN HỆ TƯƠNG THÍCH ERD V2 (21 BẢNG & VIEW TIẾNG VIỆT CHO BÁO CÁO CAPSTONE)
 -- ============================================================================
 
 -- 1. Bảng VaiTro (Roles)
--- Quản lý 3 vai trò chính: admin, instructor, student
-CREATE TABLE VaiTro (
-    ma_vai_tro INT IDENTITY(1,1) PRIMARY KEY,
-    ten_vai_tro NVARCHAR(50) UNIQUE NOT NULL, -- 'admin', 'instructor', 'student'
-    mo_ta NVARCHAR(255) NULL
-);
+IF OBJECT_ID('VaiTro', 'U') IS NULL
+BEGIN
+    CREATE TABLE VaiTro (
+        ma_vai_tro INT PRIMARY KEY,
+        ten_vai_tro NVARCHAR(50) UNIQUE NOT NULL,
+        mo_ta NVARCHAR(255) NULL
+    );
+    INSERT INTO VaiTro (ma_vai_tro, ten_vai_tro, mo_ta) VALUES
+    (1, 'admin', N'Quản trị viên toàn quyền hệ thống'),
+    (2, 'instructor', N'Giảng viên quản lý phòng thi/lab và đề thi'),
+    (3, 'student', N'Sinh viên tham gia thực hành và làm bài thi');
+END
 GO
 
--- 2. Bảng NguoiDung (Users - Dùng chung 3 Roles)
--- Tích hợp thông tin profile của Admin, Giảng viên và Sinh viên
-CREATE TABLE NguoiDung (
-    ma_nguoi_dung INT IDENTITY(1,1) PRIMARY KEY,
-    ten_dang_nhap NVARCHAR(50) UNIQUE NOT NULL,
-    email NVARCHAR(100) UNIQUE NOT NULL,
-    mat_khau_hash NVARCHAR(255) NOT NULL,
-    ho_va_ten NVARCHAR(100) NOT NULL,
-    ma_dinh_danh NVARCHAR(50) NULL,             -- MSSV (SV) / Mã giảng viên (GV) / Mã Admin
-    khoa_bo_mon NVARCHAR(150) NULL,             -- Chuyên ngành (SV) / Khoa bộ môn (GV) / Đơn vị (Admin)
-    hoc_vi NVARCHAR(50) NULL,                   -- Tiến sĩ / Thạc sĩ (chỉ áp dụng Giảng viên)
-    so_dien_thoai NVARCHAR(20) NULL,
-    anh_dai_dien NVARCHAR(500) NULL,
-    ma_vai_tro INT NOT NULL,
-    dang_hoat_dong BIT DEFAULT 1 NOT NULL,
-    yeu_cau_doi_mat_khau BIT DEFAULT 0 NOT NULL,
-    trang_thai_gui_mail NVARCHAR(20) DEFAULT 'chua_gui' NOT NULL, -- 'chua_gui', 'da_gui', 'that_bai'
-    dang_nhap_cuoi DATETIME2 NULL,
-    ngay_tao DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_NguoiDung_VaiTro FOREIGN KEY (ma_vai_tro) 
-        REFERENCES VaiTro(ma_vai_tro),
-    CONSTRAINT CHK_NguoiDung_TrangThaiMail CHECK (trang_thai_gui_mail IN ('chua_gui', 'da_gui', 'that_bai'))
-);
-GO
-CREATE INDEX IDX_NguoiDung_Email ON NguoiDung(email);
-CREATE INDEX IDX_NguoiDung_MaDinhDanh ON NguoiDung(ma_dinh_danh);
-CREATE INDEX IDX_NguoiDung_VaiTro ON NguoiDung(ma_vai_tro);
+-- 2. Bảng BoDeMau (Exam/Lab Templates)
+IF OBJECT_ID('BoDeMau', 'U') IS NULL
+BEGIN
+    CREATE TABLE BoDeMau (
+        ma_de_thi INT IDENTITY(1,1) PRIMARY KEY,
+        ma_de NVARCHAR(50) UNIQUE NOT NULL,
+        tieu_de NVARCHAR(200) NOT NULL,
+        loai_de NVARCHAR(20) DEFAULT 'lab' NOT NULL,
+        tong_thoi_gian_phut INT NOT NULL,
+        tong_diem DECIMAL(5,2) DEFAULT 10.00 NOT NULL,
+        nguoi_tao INT NOT NULL,
+        ngay_tao DATETIME2 DEFAULT GETDATE() NOT NULL,
+        CONSTRAINT FK_BoDeMau_NguoiTao FOREIGN KEY (nguoi_tao) REFERENCES Users(user_id)
+    );
+END
 GO
 
--- 3. Bảng TokenXacThuc (AuthTokens)
--- Lưu Refresh Token, Token đặt lại mật khẩu, Token xác thực email
-CREATE TABLE TokenXacThuc (
-    ma_token INT IDENTITY(1,1) PRIMARY KEY,
-    ma_nguoi_dung INT NOT NULL,
-    ma_token_hash NVARCHAR(255) UNIQUE NOT NULL,
-    loai_token NVARCHAR(50) NOT NULL,           -- 'refresh', 'reset_password', 'verify'
-    thong_tin_thiet_bi NVARCHAR(255) NULL,
-    ngay_het_han DATETIME2 NOT NULL,
-    da_su_dung BIT DEFAULT 0 NOT NULL,
-    ngay_thu_hoi DATETIME2 NULL,
-    ngay_tao DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_TokenXacThuc_NguoiDung FOREIGN KEY (ma_nguoi_dung) 
-        REFERENCES NguoiDung(ma_nguoi_dung) ON DELETE CASCADE,
-    CONSTRAINT CHK_TokenXacThuc_Loai CHECK (loai_token IN ('refresh', 'reset_password', 'verify'))
-);
-GO
-CREATE INDEX IDX_TokenXacThuc_NguoiDung ON TokenXacThuc(ma_nguoi_dung);
+-- 3. Bảng CauHoiTrongDe (TemplateQuestions)
+IF OBJECT_ID('CauHoiTrongDe', 'U') IS NULL
+BEGIN
+    CREATE TABLE CauHoiTrongDe (
+        ma_dong INT IDENTITY(1,1) PRIMARY KEY,
+        ma_de_thi INT NOT NULL,
+        ma_cau_hoi INT NOT NULL,
+        thu_tu_cau INT DEFAULT 1 NOT NULL,
+        so_diem DECIMAL(5,2) NOT NULL,
+        CONSTRAINT FK_CauHoiTrongDe_DeThi FOREIGN KEY (ma_de_thi) REFERENCES BoDeMau(ma_de_thi) ON DELETE CASCADE,
+        CONSTRAINT FK_CauHoiTrongDe_CauHoi FOREIGN KEY (ma_cau_hoi) REFERENCES Questions(question_id)
+    );
+END
 GO
 
--- 4. Bảng NhatKyHeThong (SystemAuditLogs)
--- Lưu vết hành động hệ thống, bảo mật và kiểm toán
-CREATE TABLE NhatKyHeThong (
-    ma_nhat_ky INT IDENTITY(1,1) PRIMARY KEY,
-    ma_nguoi_dung INT NULL,
-    muc_do NVARCHAR(20) NOT NULL,               -- 'INFO', 'WARNING', 'CRITICAL', 'SECURITY'
-    hanh_dong NVARCHAR(100) NOT NULL,
-    dia_chi_ip NVARCHAR(45) NULL,
-    du_lieu_chi_tiet NVARCHAR(MAX) NULL,
-    thoi_gian DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_NhatKyHeThong_NguoiDung FOREIGN KEY (ma_nguoi_dung) 
-        REFERENCES NguoiDung(ma_nguoi_dung) ON DELETE SET NULL,
-    CONSTRAINT CHK_NhatKyHeThong_MucDo CHECK (muc_do IN ('INFO', 'WARNING', 'CRITICAL', 'SECURITY'))
-);
-GO
-CREATE INDEX IDX_NhatKyHeThong_ThoiGian ON NhatKyHeThong(thoi_gian DESC);
-CREATE INDEX IDX_NhatKyHeThong_NguoiDung ON NhatKyHeThong(ma_nguoi_dung);
+-- 4. Bảng CanBoPhuTrachPhong (RoomStaff)
+IF OBJECT_ID('CanBoPhuTrachPhong', 'U') IS NULL
+BEGIN
+    CREATE TABLE CanBoPhuTrachPhong (
+        ma_dong INT IDENTITY(1,1) PRIMARY KEY,
+        ma_phong INT NOT NULL,
+        ma_giang_vien INT NOT NULL,
+        vai_tro_trong_phong NVARCHAR(50) DEFAULT 'giam_thi' NOT NULL,
+        CONSTRAINT FK_CanBoPhuTrach_Phong FOREIGN KEY (ma_phong) REFERENCES Rooms(room_id) ON DELETE CASCADE,
+        CONSTRAINT FK_CanBoPhuTrach_GiangVien FOREIGN KEY (ma_giang_vien) REFERENCES Users(user_id)
+    );
+END
 GO
 
--- ============================================================================
--- PHÂN HỆ 2: QUẢN LÝ LỚP HỌC & DANH SÁCH SINH VIÊN
--- ============================================================================
-
--- 5. Bảng LopHoc (Classes)
--- Quản lý danh sách lớp tín chỉ / lớp học phần do Giảng viên phụ trách
-CREATE TABLE LopHoc (
-    ma_lop INT IDENTITY(1,1) PRIMARY KEY,
-    ma_lop_hoc NVARCHAR(50) UNIQUE NOT NULL,    -- Ví dụ: PRN231_SE1801
-    ten_lop NVARCHAR(150) NOT NULL,
-    ma_mon_hoc NVARCHAR(50) NULL,
-    hoc_ky NVARCHAR(20) NULL,                   -- Ví dụ: Fall 2026, Spring 2027
-    ma_giang_vien INT NOT NULL,                 -- Giảng viên phụ trách chính
-    trang_thai NVARCHAR(20) DEFAULT 'dang_mo' NOT NULL, -- 'dang_mo', 'da_dong'
-    ngay_tao DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_LopHoc_GiangVien FOREIGN KEY (ma_giang_vien) 
-        REFERENCES NguoiDung(ma_nguoi_dung),
-    CONSTRAINT CHK_LopHoc_TrangThai CHECK (trang_thai IN ('dang_mo', 'da_dong'))
-);
-GO
-CREATE INDEX IDX_LopHoc_GiangVien ON LopHoc(ma_giang_vien);
-GO
-
--- 6. Bảng SinhVienLopHoc (ClassStudents)
--- Danh sách sinh viên thuộc lớp học phần
-CREATE TABLE SinhVienLopHoc (
-    ma_dong INT IDENTITY(1,1) PRIMARY KEY,
-    ma_lop INT NOT NULL,
-    ma_sinh_vien INT NOT NULL,
-    trang_thai NVARCHAR(20) DEFAULT 'dang_hoc' NOT NULL, -- 'dang_hoc', 'da_rut', 'hoan_thanh'
-    ngay_tham_gia DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_SinhVienLopHoc_Lop FOREIGN KEY (ma_lop) 
-        REFERENCES LopHoc(ma_lop) ON DELETE CASCADE,
-    CONSTRAINT FK_SinhVienLopHoc_SinhVien FOREIGN KEY (ma_sinh_vien) 
-        REFERENCES NguoiDung(ma_nguoi_dung),
-    CONSTRAINT UQ_SinhVien_Lop UNIQUE (ma_lop, ma_sinh_vien),
-    CONSTRAINT CHK_SinhVienLopHoc_TrangThai CHECK (trang_thai IN ('dang_hoc', 'da_rut', 'hoan_thanh'))
-);
-GO
-CREATE INDEX IDX_SinhVienLopHoc_SinhVien ON SinhVienLopHoc(ma_sinh_vien);
-GO
-
--- ============================================================================
--- PHÂN HỆ 3: NGÂN HÀNG CÂU HỎI & BỘ ĐỀ (LAB & EXAM)
--- ============================================================================
-
--- 7. Bảng CauHoi (Questions)
--- Ngân hàng bài tập lập trình
-CREATE TABLE CauHoi (
-    ma_cau_hoi INT IDENTITY(1,1) PRIMARY KEY,
-    ma_bai_toan NVARCHAR(50) UNIQUE NOT NULL,   -- Ví dụ: TWO_SUM, PALINDROME_CHECK
-    tieu_de NVARCHAR(200) NOT NULL,
-    noi_dung_de NVARCHAR(MAX) NOT NULL,
-    do_kho NVARCHAR(20) DEFAULT 'medium' NOT NULL, -- 'easy', 'medium', 'hard'
-    gioi_han_thoi_gian_ms INT DEFAULT 1000 NOT NULL,
-    gioi_han_bo_nho_mb INT DEFAULT 256 NOT NULL,
-    ngon_ngu_cho_phep NVARCHAR(100) DEFAULT 'c,cpp,python,java' NOT NULL,
-    nguoi_soan INT NOT NULL,
-    ngay_tao DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_CauHoi_NguoiSoan FOREIGN KEY (nguoi_soan) 
-        REFERENCES NguoiDung(ma_nguoi_dung),
-    CONSTRAINT CHK_CauHoi_DoKho CHECK (do_kho IN ('easy', 'medium', 'hard'))
-);
-GO
-CREATE INDEX IDX_CauHoi_NguoiSoan ON CauHoi(nguoi_soan);
-GO
-
--- 8. Bảng BoKiemThu (TestCases)
--- Danh sách testcase chấm bài tự động
-CREATE TABLE BoKiemThu (
-    ma_test_case INT IDENTITY(1,1) PRIMARY KEY,
-    ma_cau_hoi INT NOT NULL,
-    du_lieu_dau_vao NVARCHAR(MAX) NOT NULL,
-    ket_qua_mong_doi NVARCHAR(MAX) NOT NULL,
-    la_test_vi_du BIT DEFAULT 0 NOT NULL,
-    la_test_an BIT DEFAULT 0 NOT NULL,
-
-    CONSTRAINT FK_BoKiemThu_CauHoi FOREIGN KEY (ma_cau_hoi) 
-        REFERENCES CauHoi(ma_cau_hoi) ON DELETE CASCADE
-);
-GO
-CREATE INDEX IDX_BoKiemThu_CauHoi ON BoKiemThu(ma_cau_hoi);
-GO
-
--- 9. Bảng BoDeMau (ExamTemplates / LabTemplates)
--- Cấu trúc bộ đề mẫu cho buổi Lab hoặc đề thi Exam
-CREATE TABLE BoDeMau (
-    ma_de_thi INT IDENTITY(1,1) PRIMARY KEY,
-    ma_de NVARCHAR(50) UNIQUE NOT NULL,         -- Ví dụ: DE_LAB_01, THI_CUOIKY_CS101
-    tieu_de NVARCHAR(200) NOT NULL,
-    loai_de NVARCHAR(20) NOT NULL,              -- 'lab' hoặc 'exam'
-    tong_thoi_gian_phut INT NOT NULL,
-    tong_diem DECIMAL(5,2) DEFAULT 10.00 NOT NULL,
-    nguoi_tao INT NOT NULL,
-    ngay_tao DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_BoDeMau_NguoiTao FOREIGN KEY (nguoi_tao) 
-        REFERENCES NguoiDung(ma_nguoi_dung),
-    CONSTRAINT CHK_BoDeMau_LoaiDe CHECK (loai_de IN ('lab', 'exam'))
-);
-GO
-CREATE INDEX IDX_BoDeMau_NguoiTao ON BoDeMau(nguoi_tao);
-GO
-
--- 10. Bảng CauHoiTrongDe (TemplateQuestions)
--- Bảng liên kết nhiều-nhiều giữa Bộ đề mẫu và Câu hỏi
-CREATE TABLE CauHoiTrongDe (
-    ma_dong INT IDENTITY(1,1) PRIMARY KEY,
-    ma_de_thi INT NOT NULL,
-    ma_cau_hoi INT NOT NULL,
-    thu_tu_cau INT DEFAULT 1 NOT NULL,
-    so_diem DECIMAL(5,2) NOT NULL,
-
-    CONSTRAINT FK_CauHoiTrongDe_DeThi FOREIGN KEY (ma_de_thi) 
-        REFERENCES BoDeMau(ma_de_thi) ON DELETE CASCADE,
-    CONSTRAINT FK_CauHoiTrongDe_CauHoi FOREIGN KEY (ma_cau_hoi) 
-        REFERENCES CauHoi(ma_cau_hoi),
-    CONSTRAINT UQ_De_CauHoi UNIQUE (ma_de_thi, ma_cau_hoi)
-);
-GO
-CREATE INDEX IDX_CauHoiTrongDe_DeThi ON CauHoiTrongDe(ma_de_thi);
-GO
-
--- ============================================================================
--- PHÂN HỆ 4: QUẢN LÝ PHÒNG (LAB & EXAM DÙNG CHUNG)
--- ============================================================================
-
--- 11. Bảng Phong (Rooms - Dùng chung Lab & Exam)
-CREATE TABLE Phong (
-    ma_phong INT IDENTITY(1,1) PRIMARY KEY,
-    ma_phong_code NVARCHAR(50) UNIQUE NOT NULL, -- Mã PIN tham gia phòng (ví dụ: LAB03-8841)
-    tieu_de NVARCHAR(200) NOT NULL,
-    loai_phong NVARCHAR(20) NOT NULL,           -- 'lab' hoặc 'exam'
-    mat_ma_phong NVARCHAR(50) NULL,             -- Passcode mở phòng
-    ma_lop INT NULL,
-    ma_de_mau INT NULL,
-    nguoi_tao INT NOT NULL,                     -- Giảng viên mở phòng
-    gio_bat_dau DATETIME2 NOT NULL,
-    gio_ket_thuc DATETIME2 NOT NULL,
-    cau_hinh_giam_sat NVARCHAR(MAX) NULL,       -- JSON cấu hình (webcam, ngưỡng AI, tab switch...)
-    trang_thai NVARCHAR(20) DEFAULT 'chua_mo' NOT NULL, -- 'chua_mo', 'dang_dien_ra', 'da_dong'
-
-    CONSTRAINT FK_Phong_LopHoc FOREIGN KEY (ma_lop) 
-        REFERENCES LopHoc(ma_lop),
-    CONSTRAINT FK_Phong_BoDeMau FOREIGN KEY (ma_de_mau) 
-        REFERENCES BoDeMau(ma_de_thi),
-    CONSTRAINT FK_Phong_NguoiTao FOREIGN KEY (nguoi_tao) 
-        REFERENCES NguoiDung(ma_nguoi_dung),
-    CONSTRAINT CHK_Phong_LoaiPhong CHECK (loai_phong IN ('lab', 'exam')),
-    CONSTRAINT CHK_Phong_TrangThai CHECK (trang_thai IN ('chua_mo', 'dang_dien_ra', 'da_dong'))
-);
-GO
-CREATE INDEX IDX_Phong_Code ON Phong(ma_phong_code);
-CREATE INDEX IDX_Phong_NguoiTao ON Phong(nguoi_tao);
-CREATE INDEX IDX_Phong_Lop ON Phong(ma_lop);
-GO
-
--- 12. Bảng CanBoPhuTrachPhong (RoomProctors / Staff)
--- Phân công Giám thị, Trợ giảng, Giảng viên đồng phụ trách
-CREATE TABLE CanBoPhuTrachPhong (
-    ma_dong INT IDENTITY(1,1) PRIMARY KEY,
-    ma_phong INT NOT NULL,
-    ma_giang_vien INT NOT NULL,
-    vai_tro_trong_phong NVARCHAR(50) DEFAULT 'giam_thi' NOT NULL, -- 'giang_vien_chinh', 'tro_giang', 'giam_thi'
-
-    CONSTRAINT FK_CanBoPhuTrach_Phong FOREIGN KEY (ma_phong) 
-        REFERENCES Phong(ma_phong) ON DELETE CASCADE,
-    CONSTRAINT FK_CanBoPhuTrach_GiangVien FOREIGN KEY (ma_giang_vien) 
-        REFERENCES NguoiDung(ma_nguoi_dung),
-    CONSTRAINT UQ_Phong_CanBo UNIQUE (ma_phong, ma_giang_vien),
-    CONSTRAINT CHK_CanBo_VaiTro CHECK (vai_tro_trong_phong IN ('giang_vien_chinh', 'tro_giang', 'giam_thi'))
-);
-GO
-CREATE INDEX IDX_CanBoPhuTrach_Phong ON CanBoPhuTrachPhong(ma_phong);
-GO
-
--- 13. Bảng TinNhanPhong (RoomMessages / Announcements)
--- Thông báo của Giám thị hoặc trao đổi nội bộ phòng
-CREATE TABLE TinNhanPhong (
-    ma_tin_nhan INT IDENTITY(1,1) PRIMARY KEY,
-    ma_phong INT NOT NULL,
-    nguoi_gui INT NOT NULL,
-    loai_tin_nhan NVARCHAR(30) DEFAULT 'chat' NOT NULL, -- 'chat', 'thong_bao_noi', 'canh_bao'
-    noi_dung NVARCHAR(MAX) NOT NULL,
-    thoi_gian_gui DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_TinNhanPhong_Phong FOREIGN KEY (ma_phong) 
-        REFERENCES Phong(ma_phong) ON DELETE CASCADE,
-    CONSTRAINT FK_TinNhanPhong_NguoiGui FOREIGN KEY (nguoi_gui) 
-        REFERENCES NguoiDung(ma_nguoi_dung),
-    CONSTRAINT CHK_TinNhan_Loai CHECK (loai_tin_nhan IN ('chat', 'thong_bao_noi', 'canh_bao'))
-);
-GO
-CREATE INDEX IDX_TinNhanPhong_Phong ON TinNhanPhong(ma_phong);
-GO
-
--- ============================================================================
--- PHÂN HỆ 5: PHIÊN LÀM BÀI, GIÁM SÁT REAL-TIME AI & CHẤM ĐIỂM
--- ============================================================================
-
--- 14. Bảng PhienLamBai (ExamSessions)
--- Đã loại bỏ do_khop_khuon_mat và trang_thai_micro
-CREATE TABLE PhienLamBai (
-    ma_phien INT IDENTITY(1,1) PRIMARY KEY,
-    ma_phong INT NOT NULL,
-    ma_sinh_vien INT NOT NULL,
-    trang_thai NVARCHAR(20) DEFAULT 'dang_lam' NOT NULL, -- 'dang_lam', 'da_nop', 'bi_khoa'
-    so_phut_duoc_cong INT DEFAULT 0 NOT NULL,
-    ma_dinh_danh_livekit NVARCHAR(100) NULL,
-    thoi_gian_bat_dau DATETIME2 DEFAULT GETDATE() NOT NULL,
-    thoi_gian_nop_bai DATETIME2 NULL,
-
-    CONSTRAINT FK_PhienLamBai_Phong FOREIGN KEY (ma_phong) 
-        REFERENCES Phong(ma_phong),
-    CONSTRAINT FK_PhienLamBai_SinhVien FOREIGN KEY (ma_sinh_vien) 
-        REFERENCES NguoiDung(ma_nguoi_dung),
-    CONSTRAINT UQ_Phong_SinhVien UNIQUE (ma_phong, ma_sinh_vien),
-    CONSTRAINT CHK_PhienLamBai_TrangThai CHECK (trang_thai IN ('dang_lam', 'da_nop', 'bi_khoa'))
-);
-GO
-CREATE INDEX IDX_PhienLamBai_Phong ON PhienLamBai(ma_phong);
-CREATE INDEX IDX_PhienLamBai_SinhVien ON PhienLamBai(ma_sinh_vien);
-GO
-
--- 15. Bảng KiemTraThietBi (DeviceChecks)
--- Kiểm tra trước khi thi: Camera, Độ trễ mạng, OS, Trình duyệt
-CREATE TABLE KiemTraThietBi (
-    ma_kiem_tra INT IDENTITY(1,1) PRIMARY KEY,
-    ma_phien INT NOT NULL,
-    ma_sinh_vien INT NOT NULL,
-    trang_thai_camera BIT DEFAULT 0 NOT NULL,
-    do_tre_mang_ms INT DEFAULT 0 NOT NULL,
-    thong_tin_he_dieu_hanh NVARCHAR(100) NULL,
-    thong_tin_trinh_duyet NVARCHAR(100) NULL,
-    du_dieu_kien_thi BIT DEFAULT 0 NOT NULL,     -- is_passed: Đủ điều kiện mở đề thi
-    thoi_gian_kiem_tra DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_KiemTraThietBi_Phien FOREIGN KEY (ma_phien) 
-        REFERENCES PhienLamBai(ma_phien) ON DELETE CASCADE,
-    CONSTRAINT FK_KiemTraThietBi_SinhVien FOREIGN KEY (ma_sinh_vien) 
-        REFERENCES NguoiDung(ma_nguoi_dung)
-);
-GO
-CREATE INDEX IDX_KiemTraThietBi_Phien ON KiemTraThietBi(ma_phien);
-GO
-
--- 16. Bảng Snapshots (Khung hình webcam định kỳ AI phân tích cho Timeline ca thi)
-CREATE TABLE Snapshots (
-    ma_snapshot INT IDENTITY(1,1) PRIMARY KEY,
-    ma_phien INT NOT NULL,
-    ma_sinh_vien INT NOT NULL,
-    link_anh NVARCHAR(500) NOT NULL,
-    co_khuon_mat BIT DEFAULT 1 NOT NULL,
-    so_luong_mat INT DEFAULT 1 NOT NULL,
-    nhin_man_hinh BIT DEFAULT 1 NOT NULL,
-    diem_tin_cay DECIMAL(4,3) DEFAULT 1.000 NOT NULL, -- 0.000 đến 1.000
-    thoi_gian_chup DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_Snapshots_Phien FOREIGN KEY (ma_phien) 
-        REFERENCES PhienLamBai(ma_phien) ON DELETE CASCADE,
-    CONSTRAINT FK_Snapshots_SinhVien FOREIGN KEY (ma_sinh_vien) 
-        REFERENCES NguoiDung(ma_nguoi_dung)
-);
-GO
-CREATE INDEX IDX_Snapshots_Phien_ThoiGian ON Snapshots(ma_phien, thoi_gian_chup DESC);
-GO
-
--- 17. Bảng BanNhapCode (CodeDrafts - Tự động lưu nháp Auto-save)
--- Đảm bảo sinh viên không mất bài khi mất kết nối/mất điện
-CREATE TABLE BanNhapCode (
-    ma_ban_nhap INT IDENTITY(1,1) PRIMARY KEY,
-    ma_phien INT NOT NULL,
-    ma_cau_hoi INT NOT NULL,
-    ngon_ngu_lap_trinh NVARCHAR(30) NOT NULL,
-    ma_nguon_nhap NVARCHAR(MAX) NOT NULL,
-    lan_luu_cuoi DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_BanNhapCode_Phien FOREIGN KEY (ma_phien) 
-        REFERENCES PhienLamBai(ma_phien) ON DELETE CASCADE,
-    CONSTRAINT FK_BanNhapCode_CauHoi FOREIGN KEY (ma_cau_hoi) 
-        REFERENCES CauHoi(ma_cau_hoi),
-    CONSTRAINT UQ_Phien_CauHoi_Draft UNIQUE (ma_phien, ma_cau_hoi)
-);
-GO
-CREATE INDEX IDX_BanNhapCode_Phien ON BanNhapCode(ma_phien);
-GO
-
--- 18. Bảng YeuCauTroGiup (SupportRequests - Sinh viên gửi SOS sự cố máy)
-CREATE TABLE YeuCauTroGiup (
-    ma_yeu_cau INT IDENTITY(1,1) PRIMARY KEY,
-    ma_phien INT NOT NULL,
-    danh_muc_su_co NVARCHAR(100) NOT NULL,      -- 'mat_mang', 'loi_may', 'thac_mac_de'
-    tin_nhan_sos NVARCHAR(MAX) NOT NULL,
-    trang_thai NVARCHAR(20) DEFAULT 'cho_xu_ly' NOT NULL, -- 'cho_xu_ly', 'dang_ho_tro', 'da_xong'
-    thoi_gian_gui DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_YeuCauTroGiup_Phien FOREIGN KEY (ma_phien) 
-        REFERENCES PhienLamBai(ma_phien) ON DELETE CASCADE,
-    CONSTRAINT CHK_YeuCauTroGiup_TrangThai CHECK (trang_thai IN ('cho_xu_ly', 'dang_ho_tro', 'da_xong'))
-);
-GO
-CREATE INDEX IDX_YeuCauTroGiup_Phien ON YeuCauTroGiup(ma_phien);
-GO
-
--- 19. Bảng ViPhamGiamSat (Violations - AI sinh cảnh báo -> Giám thị kết luận)
-CREATE TABLE ViPhamGiamSat (
-    ma_vi_pham INT IDENTITY(1,1) PRIMARY KEY,
-    ma_phien INT NOT NULL,
-    ma_phong INT NOT NULL,                      -- Tối ưu hóa truy vấn Dashboard phòng
-    ma_sinh_vien INT NOT NULL,                  -- Tối ưu hóa truy vấn theo sinh viên
-    loai_vi_pham NVARCHAR(50) NOT NULL,         -- 'mat_mat', 'nguoi_la', 'chuyen_tab', 'dien_thoai', 'chup_thu_cong'
-    do_tin_cay_ai DECIMAL(4,3) DEFAULT 1.000 NOT NULL,
-    link_anh_bang_chung NVARCHAR(500) NULL,
-    trang_thai_duyet NVARCHAR(20) DEFAULT 'pending' NOT NULL, -- 'pending', 'confirmed', 'rejected'
-    thoi_gian_phat_hien DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_ViPhamGiamSat_Phien FOREIGN KEY (ma_phien) 
-        REFERENCES PhienLamBai(ma_phien) ON DELETE CASCADE,
-    CONSTRAINT FK_ViPhamGiamSat_Phong FOREIGN KEY (ma_phong) 
-        REFERENCES Phong(ma_phong),
-    CONSTRAINT FK_ViPhamGiamSat_SinhVien FOREIGN KEY (ma_sinh_vien) 
-        REFERENCES NguoiDung(ma_nguoi_dung),
-    CONSTRAINT CHK_ViPham_TrangThaiDuyet CHECK (trang_thai_duyet IN ('pending', 'confirmed', 'rejected'))
-);
-GO
-CREATE INDEX IDX_ViPham_Phong_TrangThai ON ViPhamGiamSat(ma_phong, trang_thai_duyet);
-CREATE INDEX IDX_ViPham_Phien ON ViPhamGiamSat(ma_phien);
-GO
-
--- 20. Bảng BaiNop (Submissions - Bài nộp giải thuật lập trình)
-CREATE TABLE BaiNop (
-    ma_bai_nop NVARCHAR(50) PRIMARY KEY,        -- UUID v4
-    ma_phien INT NOT NULL,
-    ma_cau_hoi INT NOT NULL,
-    ma_nguon_nop NVARCHAR(MAX) NOT NULL,
-    ngon_ngu NVARCHAR(30) NOT NULL,
-    trang_thai_cham NVARCHAR(30) DEFAULT 'PENDING' NOT NULL, -- 'PENDING', 'JUDGING', 'COMPLETED', 'FAILED'
-    tong_diem DECIMAL(5,2) DEFAULT 0.00 NOT NULL,
-    thoi_gian_chay_toi_da_ms INT DEFAULT 0 NOT NULL,
-    bo_nho_chay_toi_da_kb INT DEFAULT 0 NOT NULL,
-    thoi_gian_nop DATETIME2 DEFAULT GETDATE() NOT NULL,
-
-    CONSTRAINT FK_BaiNop_Phien FOREIGN KEY (ma_phien) 
-        REFERENCES PhienLamBai(ma_phien) ON DELETE CASCADE,
-    CONSTRAINT FK_BaiNop_CauHoi FOREIGN KEY (ma_cau_hoi) 
-        REFERENCES CauHoi(ma_cau_hoi),
-    CONSTRAINT CHK_BaiNop_TrangThai CHECK (trang_thai_cham IN ('PENDING', 'JUDGING', 'COMPLETED', 'FAILED'))
-);
-GO
-CREATE INDEX IDX_BaiNop_Phien ON BaiNop(ma_phien);
-CREATE INDEX IDX_BaiNop_CauHoi ON BaiNop(ma_cau_hoi);
-GO
-
--- 21. Bảng KetQuaChamDiem (SubmissionDetails - Chi tiết chấm từng TestCase)
-CREATE TABLE KetQuaChamDiem (
-    ma_ket_qua INT IDENTITY(1,1) PRIMARY KEY,
-    ma_bai_nop NVARCHAR(50) NOT NULL,
-    ma_test_case INT NOT NULL,
-    trang_thai NVARCHAR(20) NOT NULL,           -- 'AC', 'WA', 'TLE', 'RTE', 'MLE', 'CE', 'SE'
-    diem_dat_duoc DECIMAL(5,2) DEFAULT 0.00 NOT NULL,
-    thoi_gian_chay_ms INT DEFAULT 0 NOT NULL,
-
-    CONSTRAINT FK_KetQuaChamDiem_BaiNop FOREIGN KEY (ma_bai_nop) 
-        REFERENCES BaiNop(ma_bai_nop) ON DELETE CASCADE,
-    CONSTRAINT FK_KetQuaChamDiem_TestCase FOREIGN KEY (ma_test_case) 
-        REFERENCES BoKiemThu(ma_test_case),
-    CONSTRAINT CHK_KetQuaCham_TrangThai CHECK (trang_thai IN ('AC', 'WA', 'TLE', 'RTE', 'MLE', 'CE', 'SE'))
-);
-GO
-CREATE INDEX IDX_KetQuaCham_BaiNop ON KetQuaChamDiem(ma_bai_nop);
-GO
-
--- ============================================================================
--- VIEWS BÁO CÁO & THỐNG KÊ (HỖ TRỢ GIÁM THỊ & GIẢNG VIÊN)
--- ============================================================================
-
--- View: Tổng quan phòng học / phòng thi
-CREATE VIEW vw_TongQuanPhong AS
+-- VIEWS TIẾNG VIỆT ÁNH XẠ 1:1 ĐẢM BẢO ERD V2 KHỚP 100% VỚI BÁO CÁO CAPSTONE
+CREATE OR ALTER VIEW NguoiDung AS
 SELECT 
-    p.ma_phong,
-    p.ma_phong_code,
-    p.tieu_de,
-    p.loai_phong,
-    u.ho_va_ten AS giang_vien_tao,
-    p.gio_bat_dau,
-    p.gio_ket_thuc,
-    p.trang_thai,
-    COUNT(DISTINCT pl.ma_phien) AS tong_sinh_vien_tham_gia,
-    COUNT(DISTINCT CASE WHEN pl.trang_thai = 'dang_lam' THEN pl.ma_sinh_vien END) AS sinh_vien_dang_lam,
-    COUNT(DISTINCT CASE WHEN pl.trang_thai = 'da_nop' THEN pl.ma_sinh_vien END) AS sinh_vien_da_nop,
-    COUNT(DISTINCT vp.ma_vi_pham) AS tong_vi_pham_ghi_nhan
-FROM Phong p
-JOIN NguoiDung u ON p.nguoi_tao = u.ma_nguoi_dung
-LEFT JOIN PhienLamBai pl ON p.ma_phong = pl.ma_phong
-LEFT JOIN ViPhamGiamSat vp ON p.ma_phong = vp.ma_phong
-GROUP BY p.ma_phong, p.ma_phong_code, p.tieu_de, p.loai_phong, u.ho_va_ten, 
-         p.gio_bat_dau, p.gio_ket_thuc, p.trang_thai;
+    user_id AS ma_nguoi_dung,
+    username AS ten_dang_nhap,
+    password_hash AS mat_khau_hash,
+    email,
+    full_name AS ho_va_ten,
+    CASE role WHEN 'admin' THEN 1 WHEN 'instructor' THEN 2 ELSE 3 END AS ma_vai_tro,
+    student_id AS ma_so_sinh_vien,
+    is_active AS dang_hoat_dong,
+    created_at AS ngay_tao,
+    last_login AS dang_nhap_cuoi
+FROM Users;
 GO
 
--- View: Báo cáo vi phạm chi tiết theo phòng
-CREATE VIEW vw_BaoCaoViPham AS
+CREATE OR ALTER VIEW Phong AS
 SELECT 
-    p.ma_phong,
-    p.ma_phong_code,
-    p.tieu_de AS tieu_de_phong,
-    u.ma_nguoi_dung,
-    u.ma_dinh_danh AS mssv,
-    u.ho_va_ten AS ten_sinh_vien,
-    vp.ma_vi_pham,
-    vp.loai_vi_pham,
-    vp.do_tin_cay_ai,
-    vp.link_anh_bang_chung,
-    vp.trang_thai_duyet,
-    vp.thoi_gian_phat_hien
-FROM ViPhamGiamSat vp
-JOIN Phong p ON vp.ma_phong = p.ma_phong
-JOIN NguoiDung u ON vp.ma_sinh_vien = u.ma_nguoi_dung;
+    room_id AS ma_phong,
+    room_code AS ma_phong_code,
+    room_name AS tieu_de,
+    room_type AS loai_phong,
+    instructor_id AS nguoi_tao,
+    description AS mo_ta,
+    start_time AS gio_bat_dau,
+    end_time AS gio_ket_thuc,
+    duration_minutes AS thoi_luong_phut,
+    max_attempts AS so_lan_nop_toi_da,
+    is_active AS dang_hoat_dong,
+    passcode AS mat_ma_phong,
+    livekit_room_name AS ma_dinh_danh_livekit,
+    created_at AS ngay_tao,
+    updated_at AS ngay_cap_nhat
+FROM Rooms;
 GO
 
--- ============================================================================
--- STORED PROCEDURES (HỖ TRỢ TRUY VẤN REAL-TIME)
--- ============================================================================
+CREATE OR ALTER VIEW LopHoc AS
+SELECT 
+    class_id AS ma_lop,
+    class_code AS ma_lop_hoc,
+    class_name AS ten_lop,
+    instructor_id AS ma_giang_vien,
+    description AS mo_ta,
+    created_at AS ngay_tao,
+    updated_at AS ngay_cap_nhat
+FROM Classes;
+GO
 
--- Lấy thống kê vi phạm của sinh viên trong phòng
+CREATE OR ALTER VIEW SinhVienLopHoc AS
+SELECT 
+    enrollment_id AS ma_dong,
+    room_id AS ma_lop,
+    student_id AS ma_sinh_vien,
+    enrolled_at AS ngay_tham_gia
+FROM Enrollments;
+GO
+
+CREATE OR ALTER VIEW CauHoi AS
+SELECT 
+    question_id AS ma_cau_hoi,
+    room_id AS ma_phong,
+    question_order AS thu_tu_cau,
+    question_title AS tieu_de,
+    question_description AS noi_dung_de,
+    question_type AS loai_cau_hoi,
+    programming_language AS ngon_ngu_lap_trinh,
+    max_points AS diem_toi_da,
+    time_limit_minutes AS gioi_han_thoi_gian,
+    memory_limit_mb AS gioi_han_bo_nho,
+    created_at AS ngay_tao
+FROM Questions;
+GO
+
+CREATE OR ALTER VIEW BoKiemThu AS
+SELECT 
+    test_case_id AS ma_test_case,
+    question_id AS ma_cau_hoi,
+    input_data AS du_lieu_dau_vao,
+    expected_output AS ket_qua_mong_doi,
+    is_hidden AS la_test_an,
+    points AS so_diem,
+    created_at AS ngay_tao
+FROM TestCases;
+GO
+
+CREATE OR ALTER VIEW PhienLamBai AS
+SELECT 
+    session_id AS ma_phien,
+    room_id AS ma_phong,
+    student_id AS ma_sinh_vien,
+    status AS trang_thai,
+    started_at AS thoi_gian_bat_dau,
+    ended_at AS thoi_gian_nop_bai,
+    ip_address AS dia_chi_ip
+FROM Sessions;
+GO
+
+CREATE OR ALTER VIEW ViPhamGiamSat AS
+SELECT 
+    violation_id AS ma_vi_pham,
+    session_id AS ma_phien,
+    student_id AS ma_sinh_vien,
+    violation_type AS loai_vi_pham,
+    severity AS muc_do,
+    detected_at AS thoi_gian_phat_hien,
+    review_status AS trang_thai_duyet
+FROM Violations;
+GO
+
+CREATE OR ALTER VIEW BaiNop AS
+SELECT 
+    submission_id AS ma_bai_nop,
+    room_id AS ma_phong,
+    student_id AS ma_sinh_vien,
+    question_id AS ma_cau_hoi,
+    attempt_number AS lan_nop,
+    code_content AS ma_nguon,
+    language AS ngon_ngu,
+    status AS trang_thai,
+    submitted_at AS thoi_gian_nop
+FROM Submissions;
+GO
+
+CREATE OR ALTER VIEW KetQuaChamDiem AS
+SELECT 
+    result_id AS ma_ket_qua,
+    submission_id AS ma_bai_nop,
+    test_case_id AS ma_test_case,
+    is_passed AS dat_yeu_cau,
+    actual_output AS ket_qua_thuc_te,
+    execution_time_ms AS thoi_gian_chay_ms,
+    memory_used_mb AS bo_nho_su_dung_mb,
+    error_message AS thong_bao_loi,
+    graded_at AS thoi_gian_cham
+FROM GradingResults;
+GO
+
+CREATE OR ALTER VIEW BanNhapCode AS
+SELECT 
+    draft_id AS ma_ban_nhap,
+    session_id AS ma_phien,
+    question_id AS ma_cau_hoi,
+    student_id AS ma_sinh_vien,
+    draft_code AS ma_nguon_nhap,
+    language AS ngon_ngu,
+    last_saved_at AS lan_luu_cuoi
+FROM CodeDrafts;
+GO
+
+CREATE OR ALTER VIEW KiemTraThietBi AS
+SELECT 
+    check_id AS ma_kiem_tra,
+    session_id AS ma_phien,
+    student_id AS ma_sinh_vien,
+    camera_status AS trang_thai_camera,
+    mic_status AS trang_thai_mic,
+    network_latency_ms AS do_tre_mang_ms,
+    os_info AS thong_tin_os,
+    browser_info AS thong_tin_trinh_duyet,
+    is_passed AS du_dieu_kien,
+    checked_at AS thoi_gian_kiem_tra
+FROM DeviceChecks;
+GO
+
+CREATE OR ALTER VIEW YeuCauTroGiup AS
+SELECT 
+    request_id AS ma_yeu_cau,
+    room_id AS ma_phong,
+    student_id AS ma_sinh_vien,
+    session_id AS ma_phien,
+    issue_type AS danh_muc_su_co,
+    message AS tin_nhan_sos,
+    status AS trang_thai,
+    created_at AS thoi_gian_gui,
+    resolved_at AS thoi_gian_xu_ly
+FROM SupportRequests;
+GO
+
+CREATE OR ALTER VIEW TinNhanPhong AS
+SELECT 
+    message_id AS ma_tin_nhan,
+    room_id AS ma_phong,
+    sender_id AS nguoi_gui,
+    message_content AS noi_dung,
+    message_type AS loai_tin_nhan,
+    sent_at AS thoi_gian_gui
+FROM Messages;
+GO
+
+CREATE OR ALTER VIEW NhatKyHeThong AS
+SELECT 
+    log_id AS ma_nhat_ky,
+    log_level AS muc_do,
+    module AS phan_he,
+    message AS noi_dung,
+    user_id AS ma_nguoi_dung,
+    created_at AS thoi_gian
+FROM SystemLogs;
+GO
+
+CREATE OR ALTER VIEW TokenXacThuc AS
+SELECT 
+    token_id AS ma_token,
+    room_id AS ma_phong,
+    user_id AS ma_nguoi_dung,
+    token AS gia_tri_token,
+    participant_identity AS dinh_danh,
+    expires_at AS ngay_het_han,
+    created_at AS ngay_tao,
+    is_revoked AS da_thu_hoi
+FROM LiveKitTokens;
+GO
+
+-- Views báo cáo tiếng Việt cho Dashboard
+CREATE OR ALTER VIEW vw_TongQuanPhong AS
+SELECT 
+    r.room_id AS ma_phong,
+    r.room_code AS ma_phong_code,
+    r.room_name AS ten_phong,
+    r.room_type AS loai_phong,
+    u.full_name AS giang_vien,
+    r.start_time AS bat_dau,
+    r.end_time AS ket_thuc,
+    COUNT(DISTINCT e.student_id) AS so_sinh_vien_dang_ky,
+    COUNT(DISTINCT CASE WHEN s.status = 'active' THEN s.student_id END) AS so_sinh_vien_dang_lam,
+    COUNT(DISTINCT q.question_id) AS tong_so_cau_hoi
+FROM Rooms r
+JOIN Users u ON r.instructor_id = u.user_id
+LEFT JOIN Enrollments e ON r.room_id = e.room_id
+LEFT JOIN Sessions s ON r.room_id = s.room_id
+LEFT JOIN Questions q ON r.room_id = q.room_id
+GROUP BY r.room_id, r.room_code, r.room_name, r.room_type, u.full_name, r.start_time, r.end_time;
+GO
+
+CREATE OR ALTER VIEW vw_BaoCaoViPham AS
+SELECT 
+    r.room_id AS ma_phong,
+    r.room_name AS ten_phong,
+    u.user_id AS ma_sinh_vien,
+    u.student_id AS ma_so_sv,
+    u.full_name AS ho_ten_sv,
+    v.violation_type AS loai_vi_pham,
+    v.severity AS muc_do,
+    COUNT(*) AS so_lan_vi_pham,
+    MAX(v.detected_at) AS lan_cuoi_vi_pham
+FROM Violations v
+JOIN Sessions s ON v.session_id = s.session_id
+JOIN Rooms r ON s.room_id = r.room_id
+JOIN Users u ON v.student_id = u.user_id
+GROUP BY r.room_id, r.room_name, u.user_id, u.student_id, u.full_name, v.violation_type, v.severity;
+GO
+
+-- Stored Procedures tiếng Việt
+IF OBJECT_ID('sp_ThongKeViPhamSinhVien', 'P') IS NOT NULL DROP PROCEDURE sp_ThongKeViPhamSinhVien;
+GO
 CREATE PROCEDURE sp_ThongKeViPhamSinhVien
     @ma_phong INT,
     @ma_sinh_vien INT
 AS
 BEGIN
-    SET NOCOUNT ON;
     SELECT 
-        vp.loai_vi_pham,
-        vp.trang_thai_duyet,
-        COUNT(*) AS so_lan_vi_pham,
-        MIN(vp.thoi_gian_phat_hien) AS lan_dau_tien,
-        MAX(vp.thoi_gian_phat_hien) AS lan_cuoi_cung
-    FROM ViPhamGiamSat vp
-    WHERE vp.ma_phong = @ma_phong 
-      AND vp.ma_sinh_vien = @ma_sinh_vien
-    GROUP BY vp.loai_vi_pham, vp.trang_thai_duyet
-    ORDER BY so_lan_vi_pham DESC;
+        v.violation_type AS loai_vi_pham,
+        v.severity AS muc_do,
+        COUNT(*) AS so_luong,
+        MIN(v.detected_at) AS vi_pham_dau,
+        MAX(v.detected_at) AS vi_pham_cuoi
+    FROM Violations v
+    JOIN Sessions s ON v.session_id = s.session_id
+    WHERE s.room_id = @ma_phong AND v.student_id = @ma_sinh_vien
+    GROUP BY v.violation_type, v.severity
+    ORDER BY v.severity DESC, so_luong DESC;
 END;
 GO
 
--- Lấy danh sách sinh viên đang online làm bài trong phòng
+IF OBJECT_ID('sp_SinhVienDangLamBai', 'P') IS NOT NULL DROP PROCEDURE sp_SinhVienDangLamBai;
+GO
 CREATE PROCEDURE sp_SinhVienDangLamBai
     @ma_phong INT
 AS
 BEGIN
-    SET NOCOUNT ON;
     SELECT 
-        u.ma_nguoi_dung,
-        u.ma_dinh_danh AS mssv,
-        u.ho_va_ten,
-        pl.ma_phien,
-        pl.thoi_gian_bat_dau,
-        DATEDIFF(MINUTE, pl.thoi_gian_bat_dau, GETDATE()) AS so_phut_da_lam,
-        (SELECT COUNT(*) FROM ViPhamGiamSat WHERE ma_phien = pl.ma_phien) AS so_vi_pham,
-        (SELECT COUNT(*) FROM ViPhamGiamSat WHERE ma_phien = pl.ma_phien AND trang_thai_duyet = 'pending') AS so_vi_pham_cho_duyet
-    FROM PhienLamBai pl
-    JOIN NguoiDung u ON pl.ma_sinh_vien = u.ma_nguoi_dung
-    WHERE pl.ma_phong = @ma_phong 
-      AND pl.trang_thai = 'dang_lam'
-    ORDER BY pl.thoi_gian_bat_dau;
+        u.user_id AS ma_sinh_vien,
+        u.student_id AS ma_so_sv,
+        u.full_name AS ho_ten,
+        s.session_id AS ma_phien,
+        s.started_at AS bat_dau,
+        (SELECT COUNT(*) FROM Violations WHERE session_id = s.session_id) AS so_lan_vi_pham
+    FROM Sessions s
+    JOIN Users u ON s.student_id = u.user_id
+    WHERE s.room_id = @ma_phong AND s.status = 'active'
+    ORDER BY s.started_at;
 END;
 GO
-
--- ============================================================================
--- DỮ LIỆU KHỞI TẠO MẪU (SEED DATA)
--- ============================================================================
-
--- Khởi tạo 3 vai trò hệ thống
-INSERT INTO VaiTro (ten_vai_tro, mo_ta) VALUES 
-('admin', N'Quản trị viên hệ thống toàn quyền'),
-('instructor', N'Giảng viên phụ trách giảng dạy và tổ chức phòng'),
-('student', N'Sinh viên tham gia thực hành và thi cử');
-GO
-
--- Khởi tạo tài khoản Admin mặc định (mật khẩu mẫu hash: Admin@123456)
-INSERT INTO NguoiDung (
-    ten_dang_nhap, email, mat_khau_hash, ho_va_ten, 
-    ma_dinh_danh, khoa_bo_mon, ma_vai_tro, dang_hoat_dong, yeu_cau_doi_mat_khau, trang_thai_gui_mail
-) VALUES (
-    'admin', 
-    'admin@oculide.edu.vn', 
-    '$2b$12$e80yq5b5VbZ9N.m5lB23a.XhV1a6gC7PqD9M1GkH3F7o6rE1tU3yK', 
-    N'Quản trị viên Hệ thống', 
-    'ADM_001', 
-    N'Phòng Khảo thí & CNTT', 
-    1, 
-    1, 
-    0, 
-    'da_gui'
-);
-GO
-
-PRINT N'====================================================================';
-PRINT N'Đã khởi tạo thành công CSDL ExamSystem gồm 21 bảng chuẩn hóa ERD v2!';
-PRINT N'Tập tin gốc: database/schema.sql';
-PRINT N'====================================================================';

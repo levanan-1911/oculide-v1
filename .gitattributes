@@ -1,0 +1,3 @@
+# Đảm bảo các script shell Linux luôn giữ định dạng kết thúc dòng LF khi clone/checkout trên Windows
+*.sh text eol=lf
+database/init-db.sh text eol=lf

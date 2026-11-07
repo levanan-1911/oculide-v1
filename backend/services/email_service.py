@@ -193,7 +193,7 @@ class EmailService:
         Gửi liên kết kèm mã Token xác thực 15 phút để người dùng tự đặt lại mật khẩu mới.
         """
         frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
-        reset_link = f"{frontend_url}/reset-password?token={reset_token}"
+        reset_link = f"{frontend_url}/reset-password?token={reset_token}&email={to_email}"
 
         subject = "[Oculide] Yêu cầu khôi phục mật khẩu tài khoản"
 

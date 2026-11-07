@@ -4,13 +4,10 @@ import React, { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import InstitutionalFooter from '@/components/common/InstitutionalFooter';
 import AuthShowcasePanel from '@/components/auth/AuthShowcasePanel';
-import { requestPasswordResetApi, MockEmailItem } from '@/utils/authPasswordReset';
 import {
   ArrowLeft,
   CheckCircle2,
-  ExternalLink,
   Eye,
-  Inbox,
   Loader2,
   Mail,
   Moon,
@@ -29,8 +26,6 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [resetLink, setResetLink] = useState('');
-  const [mockEmailInfo, setMockEmailInfo] = useState<MockEmailItem | null>(null);
 
   // Khởi tạo Theme đồng bộ với toàn hệ thống
   useEffect(() => {
@@ -79,16 +74,20 @@ export default function ForgotPasswordPage() {
     setIsSubmitting(true);
 
     try {
-      const result = await requestPasswordResetApi(normalizedEmail);
-      setResetLink(result.resetLink);
-      setMockEmailInfo({
-        id: `mock_${Date.now()}`,
-        toEmail: normalizedEmail,
-        subject: '[Oculide] Yêu cầu khôi phục mật khẩu tài khoản',
-        sentAt: 'Vừa xong',
-        resetLink: result.resetLink,
-        token: result.token,
+      const response = await fetch('/api/v1/auth/forgot-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: normalizedEmail }),
       });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Không thể tiếp nhận yêu cầu khôi phục. Vui lòng thử lại sau.');
+      }
+
       setIsSubmitted(true);
     } catch (err: any) {
       setError(err.message || 'Không thể gửi yêu cầu khôi phục. Vui lòng thử lại sau.');
@@ -180,42 +179,14 @@ export default function ForgotPasswordPage() {
                     💡 <strong>Lưu ý:</strong> Liên kết có hiệu lực trong <strong>15 phút</strong>. Vui lòng kiểm tra cả mục Thư rác (Spam) nếu không thấy trong Hộp thư đến.
                   </div>
 
-                  {/* ── MÔ PHỎNG HỘP THƯ ĐẾN (MOCK EMAIL INBOX PREVIEW - CỰC KỲ TIỆN CHO DEMO ĐỒ ÁN) ── */}
-                  <div className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/[0.04] space-y-3">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-white/10">
-                      <span className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-                        <Inbox className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                        Hộp thư mô phỏng (Inbox)
-                      </span>
-                      <span className="rounded bg-emerald-100 dark:bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
-                        ĐÃ NHẬN THƯ
-                      </span>
-                    </div>
-
-                    <div className="text-xs space-y-1 text-slate-600 dark:text-slate-400">
-                      <p><span className="font-semibold text-slate-700 dark:text-slate-300">Từ:</span> Hệ thống Oculide &lt;noreply@oculide.edu.vn&gt;</p>
-                      <p><span className="font-semibold text-slate-700 dark:text-slate-300">Tiêu đề:</span> [Oculide] Yêu cầu khôi phục mật khẩu tài khoản</p>
-                    </div>
-
-                    <div className="pt-2">
-                      <Link
-                        href={resetLink}
-                        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 text-xs font-bold text-white shadow-md shadow-blue-500/25 transition-all active:scale-[0.99] cursor-pointer"
-                      >
-                        <span>Mở liên kết đổi mật khẩu mới</span>
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </Link>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 pt-2">
+                  <div className="space-y-3 pt-3">
                     <button
                       type="button"
                       onClick={() => {
                         setIsSubmitted(false);
                         setEmail('');
                       }}
-                      className="h-11 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10 transition-colors"
+                      className="h-11 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10 transition-colors cursor-pointer"
                     >
                       Gửi lại bằng email khác
                     </button>

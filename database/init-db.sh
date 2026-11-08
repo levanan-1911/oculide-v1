@@ -66,6 +66,18 @@ echo "[init-db] Bắt đầu xả schema.sql (21 bảng chuẩn hóa ERD v2) và
 if [ $? -eq 0 ]; then
     touch /var/opt/mssql/.schema_initialized
     echo "[init-db] XẢ CSDL THÀNH CÔNG! Đã khởi tạo đầy đủ 21 bảng vào ExamSystem."
+
+    # Tự động nạp dữ liệu mẫu (sample_data.sql) nếu có
+    if [ -f /sample_data.sql ]; then
+        echo "[init-db] Đang nạp dữ liệu mẫu từ /sample_data.sql..."
+        /opt/mssql-tools18/bin/sqlcmd \
+            -S localhost -U sa -P "${SA_PASSWORD}" \
+            -No \
+            -d ExamSystem \
+            -i /sample_data.sql >> /var/opt/mssql/schema_init.log 2>&1
+        echo "[init-db] ĐÃ NẠP DỮ LIỆU MẪU THÀNH CÔNG!"
+    fi
+
     echo "[init-db] Nhật ký chi tiết lưu tại /var/opt/mssql/schema_init.log"
     echo "[init-db] ========================================================"
     cat /var/opt/mssql/schema_init.log

@@ -16,6 +16,7 @@ services:
       # Auto-init: schema.sql runs once on first start via entrypoint wrapper
       - ./database/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
       - ./database/schema.sql:/schema.sql:ro
+      - ./database/sample_data.sql:/sample_data.sql:ro
     entrypoint:
       - "/bin/bash"
       - "-c"

@@ -37,6 +37,7 @@ def test_invalid_token_decoding():
     assert decode_access_token("invalid.token.here") is None
 
 def test_rbac_authorization_matrix():
+    from unittest.mock import patch
     from fastapi.testclient import TestClient
     from main import app
     client = TestClient(app)
@@ -63,12 +64,13 @@ def test_rbac_authorization_matrix():
     )
     assert res_instructor_admin.status_code == 403
 
-    # 4. Admin accessing Admin APIs -> 200 OK
-    res_admin = client.get(
-        "/api/v1/admin/users?limit=1",
-        headers={"Authorization": f"Bearer {admin_token}"}
-    )
-    assert res_admin.status_code == 200
+    # 4. Admin accessing Admin APIs -> 200 OK (Mock CSDL để test RBAC độc lập với kết nối SQL Server)
+    with patch("api.admin.get_all_users_paginated", return_value=([], 0)):
+        res_admin = client.get(
+            "/api/v1/admin/users?limit=1",
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        assert res_admin.status_code == 200
 
     # 5. Anti-IDOR: Student accessing another student's violations -> 403 Forbidden
     res_idor = client.get(

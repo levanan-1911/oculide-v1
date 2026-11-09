@@ -142,6 +142,34 @@ END
 GO
 
 -- ────────────────────────────────────────────────────────────────────────────
+-- 2.1. BẢNG HocKy (Danh mục học kỳ chuẩn)
+-- ────────────────────────────────────────────────────────────────────────────
+IF NOT EXISTS (SELECT 1 FROM HocKy WHERE ma_hoc_ky = 'HK1_2026_2027')
+BEGIN
+    INSERT INTO HocKy (ma_hoc_ky, ten_hoc_ky, nam_hoc, ky_thu, ngay_bat_dau, ngay_ket_thuc, la_hoc_ky_hien_tai, trang_thai)
+    VALUES ('HK1_2026_2027', N'HK1 2026–2027', '2026-2027', 1, '2026-09-01', '2027-01-15', 1, 'hoat_dong');
+END
+
+IF NOT EXISTS (SELECT 1 FROM HocKy WHERE ma_hoc_ky = 'HK2_2026_2027')
+BEGIN
+    INSERT INTO HocKy (ma_hoc_ky, ten_hoc_ky, nam_hoc, ky_thu, ngay_bat_dau, ngay_ket_thuc, la_hoc_ky_hien_tai, trang_thai)
+    VALUES ('HK2_2026_2027', N'HK2 2026–2027', '2026-2027', 2, '2027-02-01', '2027-06-15', 0, 'hoat_dong');
+END
+
+IF NOT EXISTS (SELECT 1 FROM HocKy WHERE ma_hoc_ky = 'HKT_2026_2027')
+BEGIN
+    INSERT INTO HocKy (ma_hoc_ky, ten_hoc_ky, nam_hoc, ky_thu, ngay_bat_dau, ngay_ket_thuc, la_hoc_ky_hien_tai, trang_thai)
+    VALUES ('HKT_2026_2027', N'HKT 2026–2027', '2026-2027', 3, '2027-06-20', '2027-08-15', 0, 'hoat_dong');
+END
+
+IF NOT EXISTS (SELECT 1 FROM HocKy WHERE ma_hoc_ky = 'HKT_2025_2026')
+BEGIN
+    INSERT INTO HocKy (ma_hoc_ky, ten_hoc_ky, nam_hoc, ky_thu, ngay_bat_dau, ngay_ket_thuc, la_hoc_ky_hien_tai, trang_thai)
+    VALUES ('HKT_2025_2026', N'HKT 2025–2026', '2025-2026', 3, '2026-06-20', '2026-08-15', 0, 'da_dong');
+END
+GO
+
+-- ────────────────────────────────────────────────────────────────────────────
 -- 3. BẢNG LopHoc (Lớp học tín chỉ mẫu)
 -- ────────────────────────────────────────────────────────────────────────────
 DECLARE @id_nam INT = (SELECT TOP 1 ma_nguoi_dung FROM NguoiDung WHERE ten_dang_nhap = 'nam.nv');
@@ -150,13 +178,19 @@ DECLARE @id_long INT = (SELECT TOP 1 ma_nguoi_dung FROM NguoiDung WHERE ten_dang
 IF NOT EXISTS (SELECT 1 FROM LopHoc WHERE ma_lop_hoc = 'CS404_2026')
 BEGIN
     INSERT INTO LopHoc (ma_lop_hoc, ten_lop, ma_mon_hoc, hoc_ky, ma_giang_vien, mo_ta, trang_thai)
-    VALUES ('CS404_2026', N'Lập trình nâng cao - Nhóm 01', 'CS404', N'Học kỳ 1 - 2026', @id_nam, N'Học phần lập trình cấu trúc dữ liệu nâng cao, thuật toán tối ưu C++ & Python', 'active');
+    VALUES ('CS404_2026', N'Lập trình nâng cao - Nhóm 01', 'CS404', N'HK1 2026–2027', @id_nam, N'Học phần lập trình cấu trúc dữ liệu nâng cao, thuật toán tối ưu C++ & Python', 'dang_mo');
 END
 
 IF NOT EXISTS (SELECT 1 FROM LopHoc WHERE ma_lop_hoc = 'SE301_2026')
 BEGIN
     INSERT INTO LopHoc (ma_lop_hoc, ten_lop, ma_mon_hoc, hoc_ky, ma_giang_vien, mo_ta, trang_thai)
-    VALUES ('SE301_2026', N'Kiến trúc Công nghệ Phần mềm', 'SE301', N'Học kỳ 1 - 2026', @id_long, N'Phát triển ứng dụng hướng dịch vụ, microservices và kiểm thử tự động', 'active');
+    VALUES ('SE301_2026', N'Kiến trúc Công nghệ Phần mềm', 'SE301', N'HK1 2026–2027', @id_long, N'Phát triển ứng dụng hướng dịch vụ, microservices và kiểm thử tự động', 'dang_mo');
+END
+
+IF NOT EXISTS (SELECT 1 FROM LopHoc WHERE ma_lop_hoc = 'CMU-CS 316 AIS')
+BEGIN
+    INSERT INTO LopHoc (ma_lop_hoc, ten_lop, ma_mon_hoc, ma_phan_lop, hoc_ky, ma_giang_vien, mo_ta, trang_thai)
+    VALUES ('CMU-CS 316 AIS', N'Fundamentals of Computing 2', 'CMU-CS 316', 'AIS', N'HK1 2026–2027', @id_long, N'Lớp học phần thực hành lập trình chuyên sâu CMU', 'dang_mo');
 END
 
 IF NOT EXISTS (SELECT 1 FROM LopHoc WHERE ma_lop_hoc = 'IT202_2026')

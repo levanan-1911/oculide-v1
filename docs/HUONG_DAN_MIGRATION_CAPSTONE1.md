@@ -1,63 +1,62 @@
-# HƯỚNG DẪN CẬP NHẬT CƠ SỞ DỮ LIỆU (MIGRATION) - CAPSTONE 1
+# HƯỚNG DẪN KHỞI TẠO & QUẢN LÝ CƠ SỞ DỮ LIỆU - CAPSTONE 1
 
-Tài liệu này hướng dẫn chi tiết việc điều chỉnh cơ sở dữ liệu dự án **Oculide v1** theo đúng chuẩn SRS và quyết định kỹ thuật mới nhất:
+Tài liệu này hướng dẫn chi tiết cách khởi tạo và đồng bộ cơ sở dữ liệu dự án **Oculide v1** theo đúng chuẩn SRS và kiến trúc chuẩn hóa 22 bảng tiếng Việt:
 1. **Loại bỏ tính năng thi trắc nghiệm (MCQ)**: Dành lại cho Capstone 2, Capstone 1 chỉ tập trung vào bài thi/phòng thực hành Lập trình (Coding).
 2. **Quy chuẩn Cảnh báo AI**: AI chỉ sinh cảnh báo (`review_status = 'pending'`), Giám thị/Giảng viên là người xác nhận vi phạm (`confirmed` hoặc `rejected`).
-3. **Bổ sung các bảng còn thiếu**: Hỗ trợ lưu nháp code tự động (`CodeDrafts`), kiểm tra thiết bị (`DeviceChecks`), lớp học (`Classes`), và yêu cầu trợ giúp kỹ thuật (`SupportRequests`).
+3. **Chuẩn hóa danh mục Học kỳ**: Bổ sung bảng `HocKy` quản lý tập trung thời gian bắt đầu, kết thúc, cờ học kỳ hiện tại, loại bỏ lỗi bộ lọc do hardcode.
+4. **Hệ thống bảng Tiếng Việt thuần**: Toàn bộ 22 bảng được đồng bộ nhất quán giữa Database và Backend (`LopHoc`, `BanNhapCode`, `KiemTraThietBi`, `YeuCauTroGiup`, `ViPhamGiamSat`...).
 
 ---
 
-## 1. Vị trí file trong dự án
+## 1. Vị trí các file CSDL trong dự án
 
-File script SQL đã được đặt ngay trong thư mục mã nguồn:
-- **Đường dẫn file SQL**: [`database/migrations/01_capstone1_schema_update.sql`](file:///d:/oculide-v1/database/migrations/01_capstone1_schema_update.sql)
-- **Hệ quản trị CSDL**: Microsoft SQL Server (T-SQL) - Database `ExamSystem`.
-
----
-
-## 2. Chi tiết các nội dung cập nhật
-
-| Hạng mục | Trước cập nhật | Sau cập nhật | Ý nghĩa |
-| :--- | :--- | :--- | :--- |
-| **Questions** | Hỗ trợ `coding`, `multiple_choice`, `essay` | Chỉ hỗ trợ `coding`, `essay` | Bỏ trắc nghiệm theo chỉ đạo, tập trung hoàn thiện chấm bài lập trình tự động |
-| **Violations** | Chỉ có cờ `is_reviewed` (0/1) | Thêm cột `review_status` (`pending`, `confirmed`, `rejected`) | Đảm bảo tính đạo đức AI: AI chỉ cảnh báo tạm thời, người giám thị quyết định |
-| **CodeDrafts** | Chưa có | Bảng lưu nháp code tự động | Giúp sinh viên không mất bài khi mất kết nối/mất điện giữa giờ |
-| **DeviceChecks** | Chưa có | Bảng ghi nhận test webcam, mic, mạng | Đảm bảo sinh viên đủ điều kiện trước khi vào phòng thi/lab |
-| **SupportRequests**| Chưa có | Bảng sinh viên xin hỗ trợ kỹ thuật | Giám thị xử lý sự cố trực tiếp trong phiên thi/lab |
-| **Classes** | Chưa có | Quản lý danh sách lớp học | Phân nhóm sinh viên theo học phần |
+- **File Schema DDL tổng thể**: [`database/schema.sql`](file:///d:/driver_E/ki1nam4/capstone/oculide-v1/database/schema.sql) *(Khởi tạo toàn bộ 22 bảng và tài khoản mặc định)*
+- **File Dữ liệu mẫu hoàn chỉnh**: [`database/sample_data.sql`](file:///d:/driver_E/ki1nam4/capstone/oculide-v1/database/sample_data.sql) *(Người dùng mẫu, 4 học kỳ, lớp học mẫu, đề thi & test cases)*
+- **Script tự động nạp thông minh**: [`database/init_db.py`](file:///d:/driver_E/ki1nam4/capstone/oculide-v1/database/init_db.py) *(Hỗ trợ tự động nhận diện cả SSMS máy thật và Docker)*
+- **Hệ quản trị CSDL**: Microsoft SQL Server (T-SQL) - Database: `ExamSystem`.
 
 ---
 
-## 3. Cách thực thi Script vào Database
+## 2. Cách thực thi CSDL vào Database
 
-### Cách 1: Chạy trực tiếp qua Docker Container (Khuyên dùng)
-Nếu bạn đang chạy hệ thống qua Docker (`exam-sqlserver`):
-
-Mở terminal (PowerShell) tại thư mục `d:\oculide-v1` và chạy lệnh:
+### Cách 1: Sử dụng Script Python tự động (Khuyên dùng - Nhanh & Tiện nhất)
+Mở terminal tại thư mục gốc của dự án và chạy:
 ```powershell
-docker exec -i exam-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrong@Passw0rd" -No -d ExamSystem -i /var/opt/mssql/01_capstone1_schema_update.sql
+backend\venv\Scripts\python database/init_db.py
 ```
-*(Hoặc copy file vào container rồi chạy)*:
-```powershell
-docker cp database/migrations/01_capstone1_schema_update.sql exam-sqlserver:/01_capstone1_schema_update.sql
-docker exec -it exam-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrong@Passw0rd" -No -d ExamSystem -i /01_capstone1_schema_update.sql
-```
+Script sẽ tự động dò tìm kết nối SQL Server (SSMS máy Windows hoặc Docker container) và nạp đầy đủ toàn bộ 22 bảng cùng dữ liệu mẫu.
 
-### Cách 2: Sử dụng Azure Data Studio, DBeaver hoặc SQL Server Management Studio (SSMS)
-1. Mở công cụ quản lý DB (DBeaver / SSMS / Azure Data Studio).
-2. Kết nối tới SQL Server: `localhost:1433`, User: `sa`, Mật khẩu cấu hình trong `.env` (`MSSQL_SA_PASSWORD`).
-3. Chọn database: `ExamSystem`.
-4. Mở file [`database/migrations/01_capstone1_schema_update.sql`](file:///d:/oculide-v1/database/migrations/01_capstone1_schema_update.sql) và nhấn **Execute (F5)**.
+### Cách 2: Chạy trực tiếp trên SQL Server Management Studio (SSMS)
+1. Mở SSMS và kết nối vào SQL Server.
+2. Mở file [`database/schema.sql`](file:///d:/driver_E/ki1nam4/capstone/oculide-v1/database/schema.sql) $\rightarrow$ Bấm **Execute (F5)** để tạo CSDL `ExamSystem` cùng 22 bảng.
+3. Mở file [`database/sample_data.sql`](file:///d:/driver_E/ki1nam4/capstone/oculide-v1/database/sample_data.sql) $\rightarrow$ Bấm **Execute (F5)** để nạp dữ liệu mẫu.
+4. Click chuột phải vào thư mục `Tables` $\rightarrow$ chọn **Refresh (F5)** để hiển thị toàn bộ bảng.
 
 ---
 
-## 4. Công việc tiếp theo cho các thành viên trong nhóm
+## 3. Danh mục 22 Bảng chuẩn hóa của hệ thống
 
-1. **Backend Team**:
-   - Trong `backend/`: Đảm bảo API tạo câu hỏi chỉ nhận loại `coding` (hoặc `essay`), không cho phép chọn `multiple_choice`.
-   - Cập nhật model và schema phản ánh cột `review_status` trong API Giám thị duyệt vi phạm.
-2. **Frontend Team**:
-   - Ẩn/xóa form tạo câu hỏi trắc nghiệm khỏi giao diện Quản lý đề thi của Giảng viên.
-   - Thêm nút duyệt: `Chấp nhận vi phạm (Confirmed)` / `Hủy cảnh báo (Rejected)` trên giao diện giám thị.
-3. **Tester**:
-   - Kiểm tra luồng làm bài coding, kiểm tra tính năng auto-save bài nháp.
+| STT | Tên bảng | Ý nghĩa |
+| :---: | :--- | :--- |
+| 1 | `VaiTro` | Phân quyền vai trò hệ thống (`admin`, `instructor`, `student`) |
+| 2 | `NguoiDung` | Hồ sơ người dùng toàn hệ thống |
+| 3 | `TokenXacThuc` | Token xác thực JWT & LiveKit Video |
+| 4 | `NhatKyHeThong` | Audit log ghi nhận lịch sử hoạt động bảo mật |
+| 5 | `HocKy` | Danh mục quản lý học kỳ và năm học |
+| 6 | `LopHoc` | Quản lý lớp học phần tín chỉ |
+| 7 | `SinhVienLopHoc` | Danh sách sinh viên ghi danh vào từng lớp học phần |
+| 8 | `CauHoi` | Ngân hàng câu hỏi bài tập / bài thi lập trình |
+| 9 | `BoKiemThu` | Bộ Test Cases chấm điểm tự động (Input/Output ẩn/hiện) |
+| 10 | `BoDeMau` | Bộ đề thi mẫu do giảng viên biên soạn |
+| 11 | `CauHoiTrongDe` | Danh sách câu hỏi nằm trong từng đề thi |
+| 12 | `Phong` | Phòng thực hành Lab / Phòng thi trực tuyến |
+| 13 | `CanBoPhuTrachPhong` | Giám thị / Cán bộ coi thi được phân công vào phòng |
+| 14 | `TinNhanPhong` | Kênh chat trực tiếp trong phòng thi |
+| 15 | `PhienLamBai` | Phiên làm bài của từng sinh viên trong phòng |
+| 16 | `KiemTraThietBi` | Kết quả kiểm tra thiết bị (Webcam, Mic, Mạng) trước khi vào phòng |
+| 17 | `Snapshots` | Ảnh chụp màn hình / ảnh giám sát định kỳ của thí sinh |
+| 18 | `BanNhapCode` | Tự động lưu nháp mã nguồn (Auto-save) phòng mất điện/mất mạng |
+| 19 | `YeuCauTroGiup` | Yêu cầu trợ giúp kỹ thuật khẩn cấp gửi tới giám thị |
+| 20 | `ViPhamGiamSat` | Bản ghi vi phạm do AI phát hiện và giám thị kết luận |
+| 21 | `BaiNop` | Bài nộp mã nguồn chính thức của sinh viên |
+| 22 | `KetQuaChamDiem` | Kết quả chấm điểm tự động từ Sandbox Runner |

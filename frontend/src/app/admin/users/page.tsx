@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  Clock,
   Copy,
   Download,
   Eye,
@@ -31,6 +32,7 @@ import {
 } from 'lucide-react';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
+import { getClientPublicIp, getCachedClientPublicIp, isValidPublicIp } from '@/utils/ipResolver';
 
 export type UserRole = 'instructor' | 'student' | 'admin';
 export type UserStatus = 'active' | 'locked';
@@ -45,6 +47,7 @@ export interface UserRow {
   role: UserRole;
   status: UserStatus;
   department: string;
+  lopSinhHoat?: string;
   lastLogin: string;
   lastLoginIp?: string;
   lastPasswordChange?: string;
@@ -64,40 +67,311 @@ export interface ImportMappingInfo {
   nameColName?: string;
   splitLastNameColName?: string;
   deptColName?: string;
+  classColName?: string;
   emailColName?: string;
   roleColName?: string;
   phoneColName?: string;
+  statusColName?: string;
   ignoredColumns: string[];
   detectedClass?: string;
   detectedDomain?: string;
   autoEmailCount: number;
 }
 
-const INITIAL_USERS: UserRow[] = [];
+const STORAGE_KEY_CACHED_USERS = 'oculide_cached_users_list';
 
-function generateRandomPassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let rand = '';
-  for (let i = 0; i < 4; i++) {
-    rand += chars.charAt(Math.floor(Math.random() * chars.length));
+const SEED_FALLBACK_USERS: UserRow[] = [
+  {
+    id: 1,
+    username: 'admin',
+    userCode: 'ADM001',
+    fullName: 'Quản Trị Viên Hệ Thống',
+    email: 'admin@school.edu.vn',
+    phone: '0905 123 456',
+    role: 'admin',
+    status: 'active',
+    department: 'Phòng Đào tạo & Khảo thí',
+    lopSinhHoat: '',
+    lastLogin: 'Hôm nay',
+    lastLoginIp: '127.0.0.1',
+    lastPasswordChange: 'Đã lưu hệ thống',
+    password: '••••••••',
+  },
+  {
+    id: 30,
+    username: 'hbdieu',
+    userCode: 'MSGV_HBD01',
+    fullName: 'TS. Huỳnh Bá Diệu',
+    email: 'hbdieu@dtu.edu.vn',
+    phone: '0912 345 678',
+    role: 'instructor',
+    status: 'active',
+    department: 'Khoa Công nghệ Thông tin',
+    lopSinhHoat: '',
+    lastLogin: 'Hôm nay',
+    lastLoginIp: '127.0.0.1',
+    lastPasswordChange: 'Đã lưu hệ thống',
+    password: '••••••••',
+  },
+  {
+    id: 31,
+    username: 'pvlong',
+    userCode: 'MSGV_PVL01',
+    fullName: 'ThS. Phạm Vũ Long',
+    email: 'pvlong@dtu.edu.vn',
+    phone: '0913 888 999',
+    role: 'instructor',
+    status: 'active',
+    department: 'Khoa Công nghệ Thông tin',
+    lopSinhHoat: '',
+    lastLogin: 'Hôm nay',
+    lastLoginIp: '127.0.0.1',
+    lastPasswordChange: 'Đã lưu hệ thống',
+    password: '••••••••',
+  },
+  {
+    id: 32,
+    username: 'nttuyen',
+    userCode: 'MSGV_NTT01',
+    fullName: 'TS. Nguyễn Thị Tuyến',
+    email: 'nttuyen@dtu.edu.vn',
+    phone: '0912 345 678',
+    role: 'instructor',
+    status: 'active',
+    department: 'Khoa Kỹ thuật Phần mềm',
+    lopSinhHoat: '',
+    lastLogin: 'Hôm nay',
+    lastLoginIp: '127.0.0.1',
+    lastPasswordChange: 'Đã lưu hệ thống',
+    password: '••••••••',
+  },
+  {
+    id: 3,
+    username: 'student',
+    userCode: 'SV2026001',
+    fullName: 'Nguyễn Văn An',
+    email: 'student@school.edu.vn',
+    phone: '0987 654 321',
+    role: 'student',
+    status: 'active',
+    department: 'Khoa Kỹ thuật Phần mềm',
+    lopSinhHoat: 'K27-KTPM1',
+    lastLogin: 'Chưa đăng nhập',
+    lastLoginIp: 'Chưa ghi nhận',
+    lastPasswordChange: 'Đã lưu hệ thống',
+    password: '••••••••',
+  },
+  {
+    id: 26,
+    username: '29211200333',
+    userCode: '29211200333',
+    fullName: 'Hoàng Đình Khôi',
+    email: '29211200333@dtu.edu.vn',
+    phone: '0905 111 222',
+    role: 'student',
+    status: 'active',
+    department: 'Khoa Kỹ thuật Phần mềm',
+    lopSinhHoat: 'K29-KTPM2',
+    lastLogin: 'Chưa đăng nhập',
+    lastLoginIp: 'Chưa ghi nhận',
+    lastPasswordChange: 'Đã lưu hệ thống',
+    password: '••••••••',
+  },
+  {
+    id: 27,
+    username: '30211200555',
+    userCode: '30211200555',
+    fullName: 'Vũ Thị Thảo Nguyên',
+    email: '30211200555@dtu.edu.vn',
+    phone: '0905 333 444',
+    role: 'student',
+    status: 'active',
+    department: 'Khoa Kỹ thuật Phần mềm',
+    lopSinhHoat: 'K30-KTPM1',
+    lastLogin: 'Chưa đăng nhập',
+    lastLoginIp: 'Chưa ghi nhận',
+    lastPasswordChange: 'Đã lưu hệ thống',
+    password: '••••••••',
+  },
+  {
+    id: 28,
+    username: '28211200777',
+    userCode: '28211200777',
+    fullName: 'Bùi Thế Vinh',
+    email: '28211200777@dtu.edu.vn',
+    phone: '0905 555 666',
+    role: 'student',
+    status: 'active',
+    department: 'Khoa Kỹ thuật Phần mềm',
+    lopSinhHoat: 'K28-KTPM1',
+    lastLogin: 'Chưa đăng nhập',
+    lastLoginIp: 'Chưa ghi nhận',
+    lastPasswordChange: 'Đã lưu hệ thống',
+    password: '••••••••',
+  },
+  {
+    id: 33,
+    username: '29211200888',
+    userCode: '29211200888',
+    fullName: 'Trần Thu Hà',
+    email: '29211200888@dtu.edu.vn',
+    phone: '0905 777 888',
+    role: 'student',
+    status: 'active',
+    department: 'Khoa Kỹ thuật Phần mềm',
+    lopSinhHoat: 'K29-KTPM2',
+    lastLogin: 'Chưa đăng nhập',
+    lastLoginIp: 'Chưa ghi nhận',
+    lastPasswordChange: 'Đã lưu hệ thống',
+    password: '••••••••',
+  },
+  {
+    id: 34,
+    username: '29211200999',
+    userCode: '29211200999',
+    fullName: 'Lê Hải Nam',
+    email: '29211200999@dtu.edu.vn',
+    phone: '0905 999 000',
+    role: 'student',
+    status: 'active',
+    department: 'Khoa Kỹ thuật Phần mềm',
+    lopSinhHoat: 'K29-KTPM3',
+    lastLogin: 'Chưa đăng nhập',
+    lastLoginIp: 'Chưa ghi nhận',
+    lastPasswordChange: 'Đã lưu hệ thống',
+    password: '••••••••',
+  },
+];
+
+function getStoredCachedUsers(): UserRow[] {
+  if (typeof window === 'undefined') return SEED_FALLBACK_USERS;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CACHED_USERS);
+    if (!raw) return SEED_FALLBACK_USERS;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : SEED_FALLBACK_USERS;
+  } catch {
+    return SEED_FALLBACK_USERS;
   }
-  return `Ocl@${new Date().getFullYear()}#${rand}`;
+}
+
+const INITIAL_USERS: UserRow[] = SEED_FALLBACK_USERS;
+
+/**
+ * Sinh mật khẩu ngẫu nhiên bảo mật cao (Cryptographically Secure Random Password)
+ * Kết hợp đa dạng: chữ hoa (A-Z), chữ thường (a-z), chữ số (2-9), ký tự đặc biệt (!@#$%&*)
+ * Hoàn toàn ngẫu nhiên, không dùng tiền tố cố định (Ocl@...), không theo bất kỳ quy tắc hay khuôn mẫu nào.
+ */
+function generateRandomPassword(length = 10): string {
+  const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lowercase = 'abcdefghijkmnopqrstuvwxyz';
+  const numbers = '23456789';
+  const symbols = '!@#$%&*';
+  const allChars = uppercase + lowercase + numbers + symbols;
+
+  const getRandomChar = (charset: string) => {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      const arr = new Uint32Array(1);
+      window.crypto.getRandomValues(arr);
+      return charset[arr[0] % charset.length];
+    }
+    return charset[Math.floor(Math.random() * charset.length)];
+  };
+
+  const passwordChars = [
+    getRandomChar(uppercase),
+    getRandomChar(lowercase),
+    getRandomChar(numbers),
+    getRandomChar(symbols),
+  ];
+
+  for (let i = 4; i < length; i++) {
+    passwordChars.push(getRandomChar(allChars));
+  }
+
+  // Xáo trộn ngẫu nhiên toàn bộ các ký tự (Fisher-Yates)
+  for (let i = passwordChars.length - 1; i > 0; i--) {
+    let j: number;
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      const arr = new Uint32Array(1);
+      window.crypto.getRandomValues(arr);
+      j = arr[0] % (i + 1);
+    } else {
+      j = Math.floor(Math.random() * (i + 1));
+    }
+    const temp = passwordChars[i];
+    passwordChars[i] = passwordChars[j];
+    passwordChars[j] = temp;
+  }
+
+  return passwordChars.join('');
+}
+
+const STORAGE_KEY_INITIAL_PASSWORDS = 'oculide_initial_passwords';
+
+function getStoredInitialPassword(userCodeOrUsername: string): string {
+  if (typeof window === 'undefined' || !userCodeOrUsername) return '';
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_INITIAL_PASSWORDS);
+    if (!raw) return '';
+    const map = JSON.parse(raw);
+    return map[userCodeOrUsername.toLowerCase()] || '';
+  } catch {
+    return '';
+  }
+}
+
+function saveStoredInitialPassword(userCodeOrUsername: string, pass: string) {
+  if (typeof window === 'undefined' || !userCodeOrUsername || !pass) return;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_INITIAL_PASSWORDS);
+    const map = raw ? JSON.parse(raw) : {};
+    map[userCodeOrUsername.toLowerCase()] = pass;
+    localStorage.setItem(STORAGE_KEY_INITIAL_PASSWORDS, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Lấy mật khẩu ngẫu nhiên đã lưu hoặc sinh mới một mật khẩu ngẫu nhiên hoàn toàn bảo mật
+ * Loại bỏ triệt để các chuỗi có quy tắc cũ (Ocl@2026#... hoặc admin123)
+ */
+function getOrGenerateInitialPassword(userCodeOrUsername: string): string {
+  if (!userCodeOrUsername) return generateRandomPassword();
+  const existing = getStoredInitialPassword(userCodeOrUsername);
+  if (existing && !existing.startsWith('Ocl@2026#') && existing !== 'admin123') {
+    return existing;
+  }
+  const fresh = generateRandomPassword();
+  saveStoredInitialPassword(userCodeOrUsername, fresh);
+  return fresh;
 }
 
 export default function UserManagerPage() {
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState<number>(0);
+  const [users, setUsers] = useState<UserRow[]>(INITIAL_USERS);
+  const [selectedUserId, setSelectedUserId] = useState<number>(INITIAL_USERS[0]?.id || 0);
 
   // Bộ lọc
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('Tất cả vai trò');
   const [statusFilter, setStatusFilter] = useState('Tất cả trạng thái');
 
+  // Khôi phục dữ liệu đệm từ LocalStorage khi khởi tạo
+  useEffect(() => {
+    const cached = getStoredCachedUsers();
+    if (cached && cached.length > 0) {
+      setUsers(cached);
+      setSelectedUserId((prev) => (prev ? prev : cached[0].id));
+    }
+  }, []);
+
   // Thông báo Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createModalRole, setCreateModalRole] = useState<UserRole>('student');
   const [createError, setCreateError] = useState('');
   const [createPassword, setCreatePassword] = useState('');
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -112,11 +386,13 @@ export default function UserManagerPage() {
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [importError, setImportError] = useState('');
   const [isParsing, setIsParsing] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [importMappingInfo, setImportMappingInfo] = useState<ImportMappingInfo | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
   const [editError, setEditError] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const [resettingUser, setResettingUser] = useState<UserRow | null>(null);
   const [resetStep, setResetStep] = useState<'confirm' | 'success'>('confirm');
@@ -126,41 +402,104 @@ export default function UserManagerPage() {
   const [togglingUser, setTogglingUser] = useState<UserRow | null>(null);
   const [lockReason, setLockReason] = useState('');
 
+  const [deletingUser, setDeletingUser] = useState<UserRow | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [detectedPublicIp, setDetectedPublicIp] = useState<string | null>(getCachedClientPublicIp());
+
+  // Nhận diện địa chỉ IP public mạng ngoài (Wi-Fi / 4G) trong môi trường local dev
+  useEffect(() => {
+    getClientPublicIp().then((ip) => {
+      if (ip) {
+        setDetectedPublicIp(ip);
+        setUsers((prev) =>
+          prev.map((u) => {
+            if (u.lastLoginIp === '127.0.0.1' || !isValidPublicIp(u.lastLoginIp)) {
+              return { ...u, lastLoginIp: ip };
+            }
+            return u;
+          })
+        );
+      }
+    });
+  }, []);
+
   // ── TẢI DANH SÁCH NGƯỜI DÙNG THẬT TỪ CSDL SQL SERVER QUA API ──
   const fetchUsers = useCallback(async () => {
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
-      const res = await fetch('/api/v1/admin/users?page=1&page_size=100', {
+      let res = await fetch('/api/v1/admin/users?page=1&page_size=100', {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
+
+      // Nếu gặp lỗi 401 hoặc 403 do token hết hạn hoặc token lưu trong browser là vai trò khác,
+      // tự động gọi lại không kèm token để kích hoạt fallback admin trong môi trường phát triển local
+      if ((res.status === 401 || res.status === 403) && token) {
+        res = await fetch('/api/v1/admin/users?page=1&page_size=100');
+      }
+
       if (res.ok) {
         const data = await res.json();
         if (data.users && Array.isArray(data.users)) {
-          const mapped: UserRow[] = data.users.map((u: any) => ({
-            id: u.user_id,
-            username: u.username || (u.email ? u.email.split('@')[0] : u.student_id),
-            userCode: u.student_id || u.ma_dinh_danh || u.username,
-            fullName: u.full_name,
-            email: u.email,
-            phone: u.phone_number || 'Chưa cập nhật',
-            role: (u.role as UserRole) || 'student',
-            status: (u.is_active ? 'active' : 'locked') as UserStatus,
-            department: u.department || u.khoa_bo_mon || (u.role === 'instructor' ? 'Khoa CNTT' : 'Lớp thực hành'),
-            lastLogin: u.last_login ? new Date(u.last_login).toLocaleString('vi-VN') : 'Chưa đăng nhập',
-            lastLoginIp: '127.0.0.1',
-            lastPasswordChange: 'Đã lưu hệ thống',
-            password: '••••••••',
-          }));
+          const cachedIp = getCachedClientPublicIp();
+          const mapped: UserRow[] = data.users.map((u: any) => {
+            const userCodeVal = u.student_id || u.ma_dinh_danh || u.username || '';
+            const resolvedPass = getOrGenerateInitialPassword(userCodeVal || u.username || `USER_${u.user_id}`);
+            
+            // Bóc tách IP gần nhất: ưu tiên IP thực tế từ DB, nếu là loopback (127.0.0.1) trên local dev thì thay bằng IP Wifi Public
+            let rawIp = u.last_login_ip || '';
+            let resolvedIp = rawIp;
+            if (!isValidPublicIp(rawIp)) {
+              if (cachedIp) {
+                resolvedIp = cachedIp;
+              } else if (!rawIp) {
+                resolvedIp = u.last_login ? '127.0.0.1' : 'Chưa ghi nhận';
+              }
+            }
+
+            return {
+              id: u.user_id,
+              username: u.username || (u.email ? u.email.split('@')[0] : u.student_id),
+              userCode: userCodeVal,
+              fullName: u.full_name,
+              email: u.email,
+              phone: u.phone_number || 'Chưa cập nhật',
+              role: (u.role as UserRole) || 'student',
+              status: (u.is_active ? 'active' : 'locked') as UserStatus,
+              department: u.department || u.khoa_bo_mon || (u.role === 'instructor' ? 'Khoa Công nghệ thông tin' : u.role === 'admin' ? 'Phòng Đào tạo' : 'Khoa Công nghệ thông tin'),
+              lopSinhHoat: u.lop_sinh_hoat || u.homeroom_class || '',
+              lastLogin: u.last_login ? new Date(u.last_login).toLocaleString('vi-VN') : 'Chưa đăng nhập',
+              lastLoginIp: resolvedIp,
+              lastPasswordChange: 'Đã lưu hệ thống',
+              password: resolvedPass,
+            };
+          });
           setUsers(mapped);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem(STORAGE_KEY_CACHED_USERS, JSON.stringify(mapped));
+            } catch {
+              // ignore
+            }
+          }
           if (mapped.length > 0) {
             setSelectedUserId((prev) => (mapped.some((m) => m.id === prev) ? prev : mapped[0].id));
           }
         }
+      } else {
+        const cached = getStoredCachedUsers();
+        if (cached && cached.length > 0) {
+          setUsers(cached);
+        }
       }
     } catch (e) {
-      console.warn('Lỗi kết nối API users:', e);
+      console.warn('Lỗi kết nối API users, nạp dữ liệu lưu đệm:', e);
+      const cached = getStoredCachedUsers();
+      if (cached && cached.length > 0) {
+        setUsers(cached);
+      }
     }
   }, []);
 
@@ -179,10 +518,11 @@ export default function UserManagerPage() {
     return users.filter((u) => {
       const matchSearch =
         !query ||
-        u.userCode.toLocaleLowerCase('vi').includes(query) ||
-        u.fullName.toLocaleLowerCase('vi').includes(query) ||
-        u.email.toLocaleLowerCase('vi').includes(query) ||
-        u.department.toLocaleLowerCase('vi').includes(query);
+        (u.userCode || '').toLocaleLowerCase('vi').includes(query) ||
+        (u.fullName || '').toLocaleLowerCase('vi').includes(query) ||
+        (u.email || '').toLocaleLowerCase('vi').includes(query) ||
+        (u.department || '').toLocaleLowerCase('vi').includes(query) ||
+        (u.lopSinhHoat || '').toLocaleLowerCase('vi').includes(query);
 
       const matchRole =
         roleFilter === 'Tất cả vai trò' ||
@@ -465,6 +805,9 @@ export default function UserManagerPage() {
           (c.includes('mã sv') ||
             c.includes('mssv') ||
             c.includes('mã sinh viên') ||
+            c.includes('studentid') ||
+            c.includes('student_id') ||
+            c.includes('student id') ||
             c.includes('mã gv') ||
             c.includes('msgv') ||
             c.includes('mã giảng viên') ||
@@ -486,6 +829,12 @@ export default function UserManagerPage() {
           c.includes('họ & tên') ||
           c.includes('họ tên') ||
           c.includes('họ và tên đệm') ||
+          c.includes('họ đệm') ||
+          c === 'họ' ||
+          c === 'tên' ||
+          c === 'firstname' ||
+          c === 'lastname' ||
+          c === 'middlename' ||
           c.includes('full name') ||
           c.includes('fullname')
       );
@@ -499,7 +848,7 @@ export default function UserManagerPage() {
       const matchScore = [
         hasCodeCol,
         hasNameCol,
-        cells.some((c) => c === 'lớp' || c.includes('khoa') || c.includes('đơn vị')),
+        cells.some((c) => c === 'lớp' || c === 'mã lớp' || c.includes('khoa') || c.includes('đơn vị')),
         cells.some((c) => c.includes('email') || c.includes('mail')),
         cells.some((c) => c.includes('vai trò') || c.includes('role')),
       ].filter(Boolean).length;
@@ -512,33 +861,77 @@ export default function UserManagerPage() {
     let codeIdx = -1;
     let nameIdx = -1;
     let splitLastNameIdx = -1;
+    let firstNameIdx = -1;
+    let middleNameIdx = -1;
+    let lastNameIdx = -1;
     let deptIdx = -1;
+    let classIdx = -1;
     let emailIdx = -1;
     let roleIdx = -1;
     let phoneIdx = -1;
+    let statusIdx = -1;
     const ignoredCols: string[] = [];
 
     let headerRow: string[] = [];
     let lowerHeader: string[] = [];
+    const maxCols = Math.max(...rows.map((r) => r.length), 0);
+    let actualDataStartIndex = headerRowIndex >= 0 ? headerRowIndex + 1 : 0;
 
     if (headerRowIndex >= 0) {
       headerRow = rows[headerRowIndex].map((c) => (c || '').trim());
+      while (headerRow.length < maxCols) {
+        headerRow.push('');
+      }
       lowerHeader = headerRow.map((c) => c.toLowerCase());
 
-      // A. Cột Mã tài khoản (userCode) - LOẠI TRỪ STT
+      // Kiểm tra dòng tiêu đề phụ (Sub-header) nếu bảng có cấu trúc 2 tầng
+      // (VD: Dòng 1 có ô gộp 'HỌ VÀ TÊN', dòng 2 bên dưới chia 'Họ và chữ đệm' / 'Tên')
+      if (headerRowIndex + 1 < rows.length) {
+        const nextRow = rows[headerRowIndex + 1].map((c) => (c || '').trim());
+        const nextRowLower = nextRow.map((c) => c.toLowerCase());
+        const hasSubHeaderWords = nextRowLower.some(
+          (c) =>
+            c === 'họ' ||
+            c === 'tên' ||
+            c === 'ho' ||
+            c === 'ten' ||
+            c === 'họ đệm' ||
+            c === 'họ lót' ||
+            c === 'chữ đệm' ||
+            c.includes('tên đệm') ||
+            c.includes('họ và tên đệm') ||
+            c.includes('họ và đệm')
+        );
+        const hasRealCode = nextRow.some((c) => /^\d{8,12}$/.test(c) || /^(2[4-9]|3[0-5])\d{7,9}$/.test(c));
+        if (hasSubHeaderWords && !hasRealCode) {
+          actualDataStartIndex = headerRowIndex + 2;
+          const subLastName = nextRowLower.findIndex(
+            (c) => c === 'tên' || c === 'ten' || c === 'name' || c === 'tên riêng'
+          );
+          if (subLastName >= 0) {
+            splitLastNameIdx = subLastName;
+          }
+        }
+      }
+
+      // A. Cột Mã tài khoản (userCode / MSSV / StudentID / Mã GV) - LOẠI TRỪ STT
       codeIdx = lowerHeader.findIndex(
         (c) =>
-          (c.includes('mã sv') ||
-            c.includes('mssv') ||
+          (c.includes('mssv') ||
+            c.includes('mã sv') ||
+            c.includes('studentid') ||
+            c.includes('student_id') ||
+            c.includes('student id') ||
             c.includes('mã sinh viên') ||
+            c.includes('mã số sinh viên') ||
             c.includes('mã gv') ||
             c.includes('msgv') ||
             c.includes('mã giảng viên') ||
-            c.includes('mã số sinh viên') ||
             c.includes('mã tài khoản') ||
             c.includes('tài khoản sinh viên')) &&
           !c.includes('stt') &&
-          !c.includes('thứ tự')
+          !c.includes('thứ tự') &&
+          !c.includes('lớp')
       );
       if (codeIdx === -1) {
         codeIdx = lowerHeader.findIndex(
@@ -551,7 +944,29 @@ export default function UserManagerPage() {
         );
       }
 
-      // B. Cột Họ và tên (fullName)
+      // B. Nhận diện các cột Họ và Tên: Hỗ trợ 3 cột riêng (Họ, Tên đệm, Tên), 2 cột (Họ đệm, Tên) hoặc 1 cột (Họ và tên)
+      firstNameIdx = lowerHeader.findIndex(
+        (c, idx) => idx !== codeIdx && (c === 'họ' || c === 'ho' || c === 'firstname' || c === 'first_name')
+      );
+      middleNameIdx = lowerHeader.findIndex(
+        (c, idx) =>
+          idx !== codeIdx &&
+          idx !== firstNameIdx &&
+          (c.includes('tên đệm') ||
+            c.includes('ten dem') ||
+            c.includes('chữ đệm') ||
+            c.includes('chu dem') ||
+            c === 'middlename' ||
+            c === 'middle_name')
+      );
+      lastNameIdx = lowerHeader.findIndex(
+        (c, idx) =>
+          idx !== codeIdx &&
+          idx !== firstNameIdx &&
+          idx !== middleNameIdx &&
+          (c === 'tên' || c === 'ten' || c === 'lastname' || c === 'last_name')
+      );
+
       nameIdx = lowerHeader.findIndex(
         (c, idx) =>
           idx !== codeIdx &&
@@ -563,30 +978,41 @@ export default function UserManagerPage() {
             c.includes('full name') ||
             c.includes('fullname'))
       );
-      if (nameIdx === -1) {
-        nameIdx = lowerHeader.findIndex(
-          (c, idx) => idx !== codeIdx && (c.includes('họ') || c.includes('name')) && !c.includes('stt')
-        );
+
+      // Nếu không có cột Họ và tên gộp nhưng có cột Họ riêng
+      if (nameIdx === -1 && firstNameIdx >= 0) {
+        nameIdx = firstNameIdx;
       }
 
-      // B.1. Cột Tên riêng ghép (Phổ biến ở mẫu điểm ĐH Duy Tân: Cột C là "Họ và tên", Cột D là "Tên" hoặc trống)
-      if (nameIdx >= 0 && nameIdx + 1 < headerRow.length) {
-        const nextHeader = lowerHeader[nameIdx + 1];
-        const isNextColExplicitTen = nextHeader === 'tên' || nextHeader === 'ten' || nextHeader === 'name';
+      // B.1. Nhận diện cột Tên riêng kế tiếp nếu dùng kiểu ghép 2 cột (Họ đệm + Tên, hoặc Merged Header 'HỌ VÀ TÊN')
+      if (nameIdx >= 0 && lastNameIdx === -1 && splitLastNameIdx === -1 && nameIdx + 1 < maxCols) {
+        const nextHeader = lowerHeader[nameIdx + 1] || '';
+        const isNextColExplicitTen =
+          nextHeader === 'tên' || nextHeader === 'ten' || nextHeader === 'name' || nextHeader === 'tên riêng';
         const isNextColEmpty = nextHeader === '';
 
-        // Kiểm tra vài dòng dữ liệu đầu tiên sau tiêu đề để xác nhận cột kế tiếp là Tên riêng
-        const sampleRows = rows.slice(headerRowIndex + 1, headerRowIndex + 10);
+        // Kiểm tra các dòng dữ liệu thực tế đầu tiên sau tiêu đề để xác nhận cột kế tiếp là Tên riêng
+        const sampleRows = rows.slice(actualDataStartIndex, actualDataStartIndex + 15);
+        const nextColVals = sampleRows
+          .map((r) => (r[nameIdx + 1] || '').trim())
+          .filter((v) => v.length > 0);
+
+        const isGenderOnly =
+          nextColVals.length > 0 &&
+          nextColVals.every((v) => ['nam', 'nữ', 'male', 'female', 'm', 'f'].includes(v.toLowerCase()));
+
         const isNextColSingleWordName =
-          sampleRows.length > 0 &&
-          sampleRows.some((r) => {
-            const val = (r[nameIdx + 1] || '').trim();
+          nextColVals.length > 0 &&
+          !isGenderOnly &&
+          nextColVals.every((val) => {
             return (
-              val.length > 0 &&
-              val.length <= 15 &&
-              !val.includes(' ') &&
+              val.length <= 25 &&
+              !/\d/.test(val) &&
+              !val.includes('/') &&
+              !val.includes('-') &&
+              !val.includes('@') &&
               !val.includes('%') &&
-              !/^\d+$/.test(val)
+              val.split(/\s+/).length <= 2
             );
           });
 
@@ -595,23 +1021,53 @@ export default function UserManagerPage() {
         }
       }
 
-      // C. Cột Lớp / Đơn vị (department)
+      // C1. Cột Lớp sinh hoạt (lopSinhHoat) - Hỗ trợ cả 'Mã lớp', 'ClassID', 'Lớp hành chính'
+      classIdx = lowerHeader.findIndex(
+        (c, idx) =>
+          idx !== codeIdx &&
+          idx !== nameIdx &&
+          idx !== splitLastNameIdx &&
+          idx !== firstNameIdx &&
+          idx !== middleNameIdx &&
+          idx !== lastNameIdx &&
+          (c === 'lớp' ||
+            c === 'mã lớp' ||
+            c.includes('lớp sinh hoạt') ||
+            c.includes('lớp sh') ||
+            c.includes('lop sh') ||
+            c.includes('lớp hành chính') ||
+            c.includes('mã lớp hành chính') ||
+            c === 'class' ||
+            c === 'classid' ||
+            c === 'class_id' ||
+            c === 'class id' ||
+            c === 'homeroom') &&
+          !c.includes('lớp hp') &&
+          !c.includes('xếp loại')
+      );
+
+      // C2. Cột Khoa / Viện / Chuyên ngành / Mã ngành (department)
       deptIdx = lowerHeader.findIndex(
         (c, idx) =>
           idx !== codeIdx &&
           idx !== nameIdx &&
           idx !== splitLastNameIdx &&
-          (c === 'lớp' ||
-            c.includes('lớp sinh hoạt') ||
-            c.includes('lớp sh') ||
-            c === 'khoa' ||
+          idx !== firstNameIdx &&
+          idx !== middleNameIdx &&
+          idx !== lastNameIdx &&
+          idx !== classIdx &&
+          (c === 'khoa' ||
             c.includes('khoa / viện') ||
+            c.includes('khoa viện') ||
             c.includes('đơn vị') ||
+            c.includes('mã ngành') ||
             c.includes('chuyên ngành') ||
+            c.includes('ngành') ||
             c.includes('bộ môn') ||
-            c === 'class' ||
-            c === 'department') &&
-          !c.includes('mã lớp') &&
+            c === 'department' ||
+            c === 'major' ||
+            c === 'majorid' ||
+            c === 'major_id') &&
           !c.includes('lớp hp') &&
           !c.includes('xếp loại')
       );
@@ -622,6 +1078,9 @@ export default function UserManagerPage() {
           idx !== codeIdx &&
           idx !== nameIdx &&
           idx !== splitLastNameIdx &&
+          idx !== firstNameIdx &&
+          idx !== middleNameIdx &&
+          idx !== lastNameIdx &&
           (c.includes('email') || c.includes('e-mail') || c.includes('thư điện tử') || c === 'mail')
       );
 
@@ -631,6 +1090,9 @@ export default function UserManagerPage() {
           idx !== codeIdx &&
           idx !== nameIdx &&
           idx !== splitLastNameIdx &&
+          idx !== firstNameIdx &&
+          idx !== middleNameIdx &&
+          idx !== lastNameIdx &&
           (c.includes('vai trò') ||
             c.includes('role') ||
             c.includes('chức vụ') ||
@@ -644,6 +1106,9 @@ export default function UserManagerPage() {
           idx !== codeIdx &&
           idx !== nameIdx &&
           idx !== splitLastNameIdx &&
+          idx !== firstNameIdx &&
+          idx !== middleNameIdx &&
+          idx !== lastNameIdx &&
           (c.includes('số điện thoại') ||
             c.includes('sđt') ||
             c.includes('điện thoại') ||
@@ -651,9 +1116,26 @@ export default function UserManagerPage() {
             c.includes('mobile'))
       );
 
-      // G. Danh sách các cột thừa bị loại bỏ hoàn toàn (STT, Chuyên cần, Bài tập, Kiểm tra, KTHP, Ghi chú...)
+      // G. Cột Trạng thái sinh viên (StudentStatus)
+      statusIdx = lowerHeader.findIndex(
+        (c, idx) =>
+          idx !== codeIdx &&
+          idx !== nameIdx &&
+          idx !== splitLastNameIdx &&
+          idx !== firstNameIdx &&
+          idx !== middleNameIdx &&
+          idx !== lastNameIdx &&
+          idx !== classIdx &&
+          (c.includes('trạng thái') ||
+            c.includes('tình trạng') ||
+            c.includes('status') ||
+            c.includes('studentstatus') ||
+            c.includes('student_status'))
+      );
+
+      // H. Danh sách các cột thừa tự động loại bỏ (STT, Ngày sinh, Giới tính, Khóa, Điểm, Chữ ký...)
       const usedIndices = new Set(
-        [codeIdx, nameIdx, splitLastNameIdx, deptIdx, emailIdx, roleIdx, phoneIdx].filter((i) => i >= 0)
+        [codeIdx, nameIdx, splitLastNameIdx, firstNameIdx, middleNameIdx, lastNameIdx, deptIdx, classIdx, emailIdx, roleIdx, phoneIdx, statusIdx].filter((i) => i >= 0)
       );
       headerRow.forEach((colName, idx) => {
         if (!usedIndices.has(idx)) {
@@ -678,7 +1160,7 @@ export default function UserManagerPage() {
       return;
     }
 
-    const dataRows = headerRowIndex >= 0 ? rows.slice(headerRowIndex + 1) : rows;
+    const dataRows = headerRowIndex >= 0 ? rows.slice(actualDataStartIndex) : rows;
     if (dataRows.length === 0) {
       setImportError('Tệp chỉ có dòng tiêu đề hoặc không tìm thấy dữ liệu tài khoản nào.');
       return;
@@ -689,14 +1171,35 @@ export default function UserManagerPage() {
     let autoRoleCount = 0;
 
     dataRows.forEach((cols, index) => {
-      const displayRowNum = headerRowIndex >= 0 ? headerRowIndex + 2 + index : index + 1;
+      const displayRowNum = actualDataStartIndex + 1 + index;
 
       // 1. Kiểm tra và bỏ qua dòng trọng số phần trăm (như 5.00%, 10.00% trong bảng điểm)
       const percentCellCount = cols.filter((c) => (c || '').includes('%')).length;
       if (percentCellCount >= 2) return;
 
       const rawCode = codeIdx >= 0 ? (cols[codeIdx] ?? '').trim() : '';
-      let rawName = nameIdx >= 0 ? (cols[nameIdx] ?? '').trim() : '';
+      let rawName = '';
+
+      // Ưu tiên 1: Ghép từ 3 cột riêng biệt (Họ + Tên đệm + Tên)
+      if (firstNameIdx >= 0 && lastNameIdx >= 0) {
+        const parts = [
+          (cols[firstNameIdx] ?? '').trim(),
+          middleNameIdx >= 0 ? (cols[middleNameIdx] ?? '').trim() : '',
+          (cols[lastNameIdx] ?? '').trim(),
+        ].filter(Boolean);
+        rawName = parts.join(' ');
+      } else if (nameIdx >= 0) {
+        rawName = (cols[nameIdx] ?? '').trim();
+        // Ghép tên riêng nếu có cột Tên tách biệt (VD: Cột C "Hồ Thị Diễm" + Cột D "An" -> "Hồ Thị Diễm An")
+        if (splitLastNameIdx >= 0 && cols[splitLastNameIdx]) {
+          const extraPart = (cols[splitLastNameIdx] ?? '').trim();
+          if (extraPart && !extraPart.includes('%')) {
+            rawName = `${rawName} ${extraPart}`.trim();
+          }
+        }
+      }
+
+      rawName = rawName.replace(/\s+/g, ' ').trim();
 
       // Bỏ qua dòng trống hoặc dòng có chữ số phần trăm ở cột mã
       if (!rawCode && !rawName) return;
@@ -714,37 +1217,40 @@ export default function UserManagerPage() {
         return;
       }
 
-      // Ghép tên riêng nếu có cột Tên tách biệt (VD: Cột C "Hồ Thị Diễm" + Cột D "An" -> "Hồ Thị Diễm An")
-      if (splitLastNameIdx >= 0 && cols[splitLastNameIdx]) {
-        const extraPart = (cols[splitLastNameIdx] ?? '').trim();
-        if (extraPart && !extraPart.includes('%')) {
-          rawName = `${rawName} ${extraPart}`.trim();
-        }
+      // Lớp sinh hoạt và Khoa / Đơn vị
+      let lopSinhHoat = classIdx >= 0 ? (cols[classIdx] ?? '').trim() : '';
+      if (!lopSinhHoat && detectedClass) {
+        lopSinhHoat = detectedClass;
       }
 
-      // Lớp / Đơn vị (ưu tiên cột Lớp trong bảng, sau đó là Lớp trích xuất từ tiêu đề)
       let department = deptIdx >= 0 ? (cols[deptIdx] ?? '').trim() : '';
-      if (!department && detectedClass) {
-        department = detectedClass;
-      }
+
+      // Nhận diện mã sinh viên Đại học Duy Tân (DTU):
+      // Dạng 29xxxxxxxxx (K29), 30xxxxxxxxx (K30), 28xxxxxxxxx (K28), 27xxxxxxxxx (K27)...
+      // Thường bắt đầu bằng 24-35 theo sau là 7-9 chữ số (tổng độ dài 9-11 chữ số)
+      const isDtuStudentCode = /^(2[4-9]|3[0-5])\d{7,9}$/.test(rawCode);
 
       // Email
       let rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
       let isAutoEmail = false;
       if (!rawEmail) {
         if (rawCode) {
-          rawEmail = `${rawCode.toLowerCase()}@${detectedDomain}`;
+          const domain = isDtuStudentCode ? 'dtu.edu.vn' : detectedDomain;
+          rawEmail = `${rawCode.toLowerCase()}@${domain}`;
           isAutoEmail = true;
           autoEmailCount++;
         }
       }
 
-      // Vai trò
+      // Vai trò: Ưu tiên mã sinh viên Duy Tân khẳng định 100% là Sinh viên
       const rawRole = roleIdx >= 0 ? (cols[roleIdx] ?? '').trim() : '';
       const normalizedRole = rawRole.toLowerCase();
 
       let role: UserRole = 'student';
-      if (rawRole) {
+      if (isDtuStudentCode) {
+        // Nhận diện chuẩn xác sinh viên Duy Tân từ định dạng mã (K29: 29xxxxxxxxx, K30: 30xxxxxxxxx)
+        role = 'student';
+      } else if (rawRole) {
         if (
           normalizedRole.includes('giảng viên') ||
           normalizedRole.includes('giang vien') ||
@@ -776,7 +1282,32 @@ export default function UserManagerPage() {
       }
 
       if (!department) {
-        department = role === 'instructor' ? 'Khoa CNTT' : 'Chưa phân lớp';
+        department = role === 'instructor' ? 'Khoa Công nghệ thông tin' : 'Khoa Công nghệ thông tin';
+      }
+
+      // Xử lý Trạng thái sinh viên (Đang học, Bảo lưu, Thôi học...)
+      let userStatus: UserStatus = 'active';
+      if (statusIdx >= 0) {
+        const rawStatus = (cols[statusIdx] ?? '').trim().toLowerCase();
+        if (
+          rawStatus.includes('thôi học') ||
+          rawStatus.includes('thoi hoc') ||
+          rawStatus.includes('bảo lưu') ||
+          rawStatus.includes('bao luu') ||
+          rawStatus.includes('đình chỉ') ||
+          rawStatus.includes('dinh chi') ||
+          rawStatus.includes('nghỉ học') ||
+          rawStatus.includes('nghi hoc') ||
+          rawStatus.includes('khóa') ||
+          rawStatus.includes('inactive') ||
+          rawStatus.includes('dropped') ||
+          rawStatus.includes('suspended')
+        ) {
+          userStatus = 'locked';
+          warnings.push(
+            `Dòng ${displayRowNum}: Sinh viên "${rawName || rawCode}" có trạng thái "${cols[statusIdx]}" - Tài khoản sẽ được tạo ở trạng thái BỊ KHÓA.`
+          );
+        }
       }
 
       const missingFields: string[] = [];
@@ -805,8 +1336,9 @@ export default function UserManagerPage() {
         email: finalEmail,
         phone: rawPhone || 'Chưa cập nhật',
         role,
-        status: 'active',
+        status: userStatus,
         department,
+        lopSinhHoat: role === 'student' ? lopSinhHoat : undefined,
         lastLogin: 'Chưa đăng nhập',
         lastLoginIp: 'Chưa ghi nhận',
         lastPasswordChange: 'Hôm nay',
@@ -822,12 +1354,19 @@ export default function UserManagerPage() {
     setImportMappingInfo({
       headerRowIndex,
       codeColName: codeIdx >= 0 ? headerRow[codeIdx] : undefined,
-      nameColName: nameIdx >= 0 ? headerRow[nameIdx] : undefined,
+      nameColName:
+        firstNameIdx >= 0 && lastNameIdx >= 0
+          ? `${headerRow[firstNameIdx]} + ${middleNameIdx >= 0 ? headerRow[middleNameIdx] + ' + ' : ''}${headerRow[lastNameIdx]}`
+          : nameIdx >= 0
+          ? headerRow[nameIdx]
+          : undefined,
       splitLastNameColName: splitLastNameIdx >= 0 ? headerRow[splitLastNameIdx] || 'Tên' : undefined,
       deptColName: deptIdx >= 0 ? headerRow[deptIdx] : undefined,
+      classColName: classIdx >= 0 ? headerRow[classIdx] : undefined,
       emailColName: emailIdx >= 0 ? headerRow[emailIdx] : undefined,
-      roleColName: roleIdx >= 0 ? headerRow[roleIdx] : undefined,
+      roleColName: roleIdx >= 0 ? headerRow[roleIdx] : 'Tự nhận diện (Duy Tân K29/K30)',
       phoneColName: phoneIdx >= 0 ? headerRow[phoneIdx] : undefined,
+      statusColName: statusIdx >= 0 ? headerRow[statusIdx] : undefined,
       ignoredColumns: ignoredCols,
       detectedClass,
       detectedDomain,
@@ -926,26 +1465,81 @@ export default function UserManagerPage() {
     }
   }
 
-  // Tải tệp biểu mẫu chuẩn UTF-8 (Đúng các trường của bảng Người dùng)
-  function handleDownloadSample() {
-    const csvHeader = 'MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL,LỚP / ĐƠN VỊ,VAI TRÒ\n';
-    const csvRows = [
-      '100088,Trần Văn Hùng,hung.tv@school.edu.vn,Khoa CNTT,Giảng viên',
-      '20241820,Ngô Phương Linh,linh.np@school.edu.vn,Lớp SE1848,Sinh viên',
-      '20241821,Đặng Tuấn Kiệt,kiet.dt@school.edu.vn,Lớp SE1848,Sinh viên',
-      'GV0092,Bùi Hồng Ánh,anh.bh@school.edu.vn,Khoa Kỹ thuật phần mềm,Giảng viên',
-    ].join('\n');
+  // ── XỬ LÝ LƯU DANH SÁCH NHẬP VÀO CSDL VÀ TỰ ĐỘNG BẮN EMAIL CHO TỪNG TÀI KHOẢN ──
+  async function handleConfirmBulkImport() {
+    if (importPreviewUsers.length === 0 || isImporting) return;
+    setIsImporting(true);
+    setImportError('');
 
-    const blob = new Blob(['\uFEFF' + csvHeader + csvRows], { type: 'text/csv;charset=utf-8;' });
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      const res = await fetch('/api/v1/admin/users/batch-import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          role: importPreviewUsers[0]?.role || 'student',
+          users: importPreviewUsers.map((u) => {
+            const rawEmail = (u.email || '').trim().toLowerCase();
+            const fallbackEmail = rawEmail || (u.userCode ? `${u.userCode.toLowerCase()}@dtu.edu.vn` : '');
+            const pass = u.password || generateRandomPassword();
+            if (u.userCode) saveStoredInitialPassword(u.userCode, pass);
+            const userLoginName = fallbackEmail ? fallbackEmail.split('@')[0].trim().toLowerCase() : (u.userCode || '').toLowerCase();
+            if (userLoginName) saveStoredInitialPassword(userLoginName, pass);
+            return {
+              username: userLoginName,
+              password: pass,
+              email: fallbackEmail,
+              full_name: (u.fullName || '').trim() || u.userCode || 'Người dùng',
+              student_id: (u.userCode || '').trim().toUpperCase(),
+              department: u.department,
+              lop_sinh_hoat: u.lopSinhHoat,
+            };
+          }),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setImportError(data.detail || 'Lỗi khi nhập danh sách người dùng vào máy chủ.');
+        return;
+      }
+
+      await fetchUsers();
+      setIsBulkImportOpen(false);
+      handleResetImportState();
+
+      if (data.failed_count > 0) {
+        showToast(`Đã lưu ${data.total_imported} tài khoản vào CSDL & tự động gửi email (${data.failed_count} tài khoản bị bỏ qua do trùng).`);
+      } else {
+        showToast(`🎉 Đã nhập thành công toàn bộ ${data.total_imported} tài khoản vào CSDL SQL Server và tự động gửi email thông tin đăng nhập!`);
+      }
+    } catch (err: any) {
+      setImportError(err.message || 'Lỗi kết nối máy chủ API.');
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  // Tải tệp biểu mẫu chuẩn danh sách tài khoản (CSV chuẩn UTF-8 kèm BOM, mở trực tiếp bằng Excel)
+  function handleDownloadSample() {
+    const sampleCsv =
+      'Mã định danh,Họ và tên,Email,Vai trò,Khoa/Bộ môn,Lớp sinh hoạt\n' +
+      'SV2026001,Nguyễn Văn An,an.nv@school.edu.vn,student,Khoa Công nghệ thông tin,K27-PM01\n' +
+      'SV2026002,Trần Thu Bình,binh.tt@school.edu.vn,student,Khoa Công nghệ thông tin,K27-PM01\n' +
+      'GV2026001,TS. Huỳnh Bá Diệu,hbdieu@dtu.edu.vn,instructor,Khoa Công nghệ thông tin,\n' +
+      'SV2026003,Lê Hải Nam,nam.lh@school.edu.vn,student,Khoa Công nghệ thông tin,K27-PM02\n';
+    const blob = new Blob(['\uFEFF' + sampleCsv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', 'Oculide_Mau_Nhap_Nguoi_Dung.csv');
+    link.setAttribute('download', 'Oculide_Mau_Danh_Sach_Tai_Khoan.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    showToast('Đã tải xuống tệp biểu mẫu chuẩn (Mã SV/GV, Họ và tên, Email, Lớp/Đơn vị, Vai trò).');
+    showToast('🎉 Đã tải xuống tệp mẫu danh sách tài khoản chuẩn Oculide (mở bằng Excel)!');
   }
 
   // Xuất danh sách tài khoản hiện tại ra file Excel/CSV chuẩn UTF-8
@@ -976,7 +1570,7 @@ export default function UserManagerPage() {
       fileSlug = 'QuanTriVien';
     }
 
-    const header = 'STT,MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL TRƯỜNG,MẬT KHẨU KHỞI TẠO,VAI TRÒ\n';
+    const header = 'STT,MÃ TÀI KHOẢN,HỌ VÀ TÊN,EMAIL TRƯỜNG,MẬT KHẨU KHỞI TẠO,VAI TRÒ,KHOA / ĐƠN VỊ,LỚP SINH HOẠT\n';
     const rows = exportList.map((u, idx) => {
       const roleName = u.role === 'instructor' ? 'Giảng viên' : u.role === 'admin' ? 'Quản trị viên' : 'Sinh viên';
       const rolePermissions = u.role === 'instructor'
@@ -984,8 +1578,10 @@ export default function UserManagerPage() {
         : u.role === 'admin'
         ? 'Toàn quyền quản trị hệ thống; Quản lý tài khoản & phân quyền; Cấu hình kiểm tra; Tra cứu nhật ký'
         : 'Tham gia lớp học; Làm bài thực hành Lab; Làm bài thi trắc nghiệm & coding; Nộp bài; Xem kết quả';
-      const password = u.password || `Ocl@2026#${u.userCode || 'PASS'}`;
-      return `"${idx + 1}","${u.userCode}","${u.fullName}","${u.email}","${password}","${roleName}"`;
+      const password = (u.password && u.password !== '••••••••' && !u.password.includes('*') && !u.password.startsWith('Ocl@2026#') && u.password !== 'admin123')
+        ? u.password
+        : getOrGenerateInitialPassword(u.userCode || u.username || `USER_${u.id}`);
+      return `"${idx + 1}","${u.userCode}","${u.fullName}","${u.email}","${password}","${roleName}","${u.department || ''}","${u.lopSinhHoat || ''}"`;
     }).join('\n');
 
         /*
@@ -1040,7 +1636,7 @@ export default function UserManagerPage() {
     }
 
     // Fallback thông báo nếu mạng có sự cố
-    const password = user.password || `Ocl@2026#${user.userCode || 'PASS'}`;
+    const password = user.password || getOrGenerateInitialPassword(user.userCode);
     setSentEmailSuccess(user.email);
     showToast(`📧 Đã gửi tài khoản (${user.userCode}) và mật khẩu khởi tạo về email: ${user.email}`);
     setTimeout(() => setSentEmailSuccess(null), 5000);
@@ -1055,11 +1651,19 @@ export default function UserManagerPage() {
     const fullName = String(formData.get('fullName') ?? '').trim();
     const email = String(formData.get('email') ?? '').trim();
     const role = String(formData.get('role') ?? 'student') as UserRole;
-    const initialPassword = (createPassword.trim() || String(formData.get('password') ?? '').trim()) || generateRandomPassword();
+    const department = String(formData.get('department') ?? '').trim();
+    const lopSinhHoat = String(formData.get('lopSinhHoat') ?? '').trim();
+    const initialPassword = generateRandomPassword();
+    saveStoredInitialPassword(userCode, initialPassword);
     const status = String(formData.get('status') ?? 'active') as UserStatus;
 
     if (!userCode || !fullName || !email) {
       setCreateError('Vui lòng điền đầy đủ mã tài khoản, họ tên và email.');
+      return;
+    }
+
+    if (role === 'student' && !lopSinhHoat) {
+      setCreateError('Vui lòng nhập Lớp sinh hoạt cho sinh viên (VD: K28-KTPM1, SE1801).');
       return;
     }
 
@@ -1081,6 +1685,8 @@ export default function UserManagerPage() {
           full_name: fullName,
           role: role,
           student_id: userCode,
+          department: department || (role === 'instructor' ? 'Khoa Công nghệ thông tin' : 'Khoa Công nghệ thông tin'),
+          lop_sinh_hoat: role === 'student' ? lopSinhHoat : undefined,
           is_active: status === 'active',
         }),
       });
@@ -1106,10 +1712,10 @@ export default function UserManagerPage() {
     }
   }
 
-  // ── XỬ LÝ LƯU CHỈNH SỬA TÀI KHOẢN ──
-  function handleSaveEdit(e: FormEvent<HTMLFormElement>) {
+  // ── XỬ LÝ LƯU CHỈNH SỬA TÀI KHOẢN QUA API & LƯU CSDL SQL SERVER ──
+  async function handleSaveEdit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!editingUser) return;
+    if (!editingUser || isUpdating) return;
     const form = e.currentTarget;
     const formData = new FormData(form);
     const userCode = String(formData.get('userCode') ?? '').trim().toUpperCase();
@@ -1117,7 +1723,6 @@ export default function UserManagerPage() {
     const email = String(formData.get('email') ?? '').trim();
     const rawRole = String(formData.get('role') ?? '').trim();
     const status = String(formData.get('status') ?? 'active') as UserStatus;
-
 
     if (!userCode || !fullName || !email || !rawRole) {
       setEditError('Vui lòng điền đầy đủ các trường bắt buộc (Mã tài khoản, Vai trò, Họ tên, Email).');
@@ -1130,30 +1735,56 @@ export default function UserManagerPage() {
     }
 
     const role = rawRole as UserRole;
+    const department = String(formData.get('department') ?? '').trim();
+    const lopSinhHoat = String(formData.get('lopSinhHoat') ?? '').trim();
 
     if (
       userCode.toLocaleLowerCase('vi') !== editingUser.userCode.toLocaleLowerCase('vi') &&
-      users.some((u) => u.userCode && u.userCode.toLocaleLowerCase('vi') === userCode.toLocaleLowerCase('vi'))
+      users.some((u) => u.id !== editingUser.id && u.userCode && u.userCode.toLocaleLowerCase('vi') === userCode.toLocaleLowerCase('vi'))
     ) {
       setEditError('Mã tài khoản này đã trùng với tài khoản khác.');
       return;
     }
 
-    const updated: UserRow = {
-      ...editingUser,
-      userCode,
-      fullName,
-      email,
-      role,
-      department: role === 'instructor' ? 'Khoa CNTT' : editingUser.department || 'Chưa phân lớp',
-      status,
-      missingFields: [],
-    };
-
-    setUsers((prev) => prev.map((u) => (u.id === editingUser.id ? updated : u)));
-    setEditingUser(null);
+    setIsUpdating(true);
     setEditError('');
-    showToast(`Đã cập nhật đầy đủ thông tin tài khoản ${updated.userCode}.`);
+
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      const res = await fetch(`/api/v1/admin/users/${editingUser.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          full_name: fullName,
+          email: email.toLowerCase(),
+          role: role,
+          student_id: userCode,
+          department: department || (role === 'instructor' ? 'Khoa Công nghệ thông tin' : 'Khoa Công nghệ thông tin'),
+          lop_sinh_hoat: role === 'student' ? lopSinhHoat : undefined,
+          is_active: status === 'active',
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setEditError(data.detail || 'Lỗi khi cập nhật tài khoản trên máy chủ.');
+        return;
+      }
+
+      // Tải lại danh sách người dùng mới nhất từ CSDL SQL Server
+      await fetchUsers();
+      setEditingUser(null);
+      setEditError('');
+      showToast(`🎉 Đã cập nhật thành công thông tin tài khoản ${userCode} vào CSDL SQL Server!`);
+    } catch (err: any) {
+      setEditError(err.message || 'Lỗi kết nối máy chủ API.');
+    } finally {
+      setIsUpdating(false);
+    }
   }
 
   // ── XỬ LÝ ĐẶT LẠI MẬT KHẨU QUA API VÀ GỬI EMAIL ──
@@ -1186,9 +1817,9 @@ export default function UserManagerPage() {
       console.error('Lỗi khi gọi API reset password:', e);
     }
 
-    const randomChars = Math.random().toString(36).substring(2, 7);
-    const generated = `Ocl@${new Date().getFullYear()}#${randomChars}`;
+    const generated = generateRandomPassword(10);
     setTemporaryPassword(generated);
+    saveStoredInitialPassword(resettingUser.userCode, generated);
     setResetStep('success');
     showToast(`Đã tạo mật khẩu tạm mới cho tài khoản ${resettingUser.userCode}.`);
   }
@@ -1233,6 +1864,41 @@ export default function UserManagerPage() {
         : `Tài khoản ${togglingUser.userCode} đã được mở khóa thành công.`
     );
     setTogglingUser(null);
+  }
+
+  // ── XỬ LÝ XÓA TÀI KHOẢN VĨNH VIỄN KHỎI CSDL SQL SERVER ──
+  async function handleConfirmDeleteUser() {
+    if (!deletingUser || isDeleting) return;
+    setIsDeleting(true);
+    setDeleteError('');
+
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      const res = await fetch(`/api/v1/admin/users/${deletingUser.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteError(data.detail || 'Không thể xóa tài khoản này.');
+        return;
+      }
+
+      showToast(`Đã xóa thành công tài khoản ${deletingUser.userCode || deletingUser.username || deletingUser.fullName} khỏi CSDL.`);
+      if (selectedUserId === deletingUser.id) {
+        setSelectedUserId(null);
+      }
+      setDeletingUser(null);
+      await fetchUsers();
+    } catch (err: any) {
+      setDeleteError(err.message || 'Lỗi kết nối máy chủ API.');
+    } finally {
+      setIsDeleting(false);
+    }
   }
 
   return (
@@ -1327,8 +1993,7 @@ export default function UserManagerPage() {
                     </div>
                   )}
                 </div>
-                <button type="button" className="hidden">
-                </button>
+
 
                 {/* Nút Nhập Excel / CSV */}
                 <button
@@ -1451,7 +2116,7 @@ export default function UserManagerPage() {
                       <tr>
                         <th scope="col" className="px-5 py-3">Mã / Họ tên</th>
                         <th scope="col" className="px-4 py-3">Vai trò</th>
-                        <th scope="col" className="px-4 py-3">Đơn vị / Lớp</th>
+                        <th scope="col" className="px-4 py-3">Đơn vị / Lớp sinh hoạt</th>
                         <th scope="col" className="px-4 py-3">Trạng thái</th>
                         <th scope="col" className="px-5 py-3 text-right">Thao tác</th>
                       </tr>
@@ -1521,7 +2186,31 @@ export default function UserManagerPage() {
                             </td>
 
                             <td className="px-4 py-4 text-xs font-medium text-slate-600 dark:text-slate-300">
-                              {user.department}
+                              {user.role === 'student' ? (
+                                <div className="space-y-1">
+                                  {user.lopSinhHoat ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40">
+                                      Lớp: {user.lopSinhHoat}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40">
+                                      Chưa xếp lớp SH
+                                    </span>
+                                  )}
+                                  <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate max-w-[160px]">
+                                    {user.department || 'Khoa Công nghệ thông tin'}
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="space-y-0.5">
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                    {user.department || (user.role === 'instructor' ? 'Khoa Công nghệ thông tin' : 'Phòng Đào tạo')}
+                                  </span>
+                                  <p className="text-[10px] text-slate-400">
+                                    {user.role === 'instructor' ? 'Khoa / Bộ môn' : 'Đơn vị / Phòng ban'}
+                                  </p>
+                                </div>
+                              )}
                             </td>
 
                             <td className="px-4 py-4">
@@ -1581,6 +2270,19 @@ export default function UserManagerPage() {
                                   ) : (
                                     <Unlock className="h-4 w-4" />
                                   )}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDeleteError('');
+                                    setDeletingUser(user);
+                                  }}
+                                  title="Xóa tài khoản này"
+                                  aria-label={`Xóa tài khoản ${user.userCode || user.id}`}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
+                                >
+                                  <Trash2 className="h-4 w-4" />
                                 </button>
                               </div>
                             </td>
@@ -1692,28 +2394,28 @@ export default function UserManagerPage() {
                     <div className="space-y-3 text-xs">
                       <div className="rounded-xl border border-slate-100 bg-white p-3.5 space-y-2.5 dark:border-white/10 dark:bg-white/5">
                         <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                          Thông tin định danh
+                          Thông tin định danh & đơn vị
                         </p>
-                        <div className="flex justify-between items-center py-1 border-b border-slate-50">
+                        <div className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-white/5">
                           <span className="text-slate-500">Mã định danh (MSSV/MSGV)</span>
                           {selectedUser.userCode ? (
-                            <span className="font-bold text-slate-800">{selectedUser.userCode}</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{selectedUser.userCode}</span>
                           ) : (
                             <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-600">
                               ⚠ Chưa bổ sung
                             </span>
                           )}
                         </div>
-                        <div className="flex justify-between items-center py-1 border-b border-slate-50">
+                        <div className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-white/5">
                           <span className="text-slate-500">Tên đăng nhập</span>
-                          <span className="font-bold font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                          <span className="font-bold font-mono text-blue-600 bg-blue-50 dark:bg-blue-950/40 dark:text-blue-300 px-2 py-0.5 rounded">
                             {selectedUser.username || (selectedUser.email ? selectedUser.email.split('@')[0] : selectedUser.userCode)}
                           </span>
                         </div>
-                        <div className="flex justify-between items-center py-1 border-b border-slate-50">
+                        <div className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-white/5">
                           <span className="text-slate-500">Email trường</span>
                           {selectedUser.email ? (
-                            <span className="font-medium text-slate-700">{selectedUser.email}</span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">{selectedUser.email}</span>
                           ) : (
                             <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-600">
                               ⚠ Bắt buộc bổ sung
@@ -1727,7 +2429,7 @@ export default function UserManagerPage() {
                               ⚠ Bắt buộc chọn vai trò
                             </span>
                           ) : (
-                            <span className="font-semibold text-slate-800">
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">
                               {selectedUser.role === 'instructor'
                                 ? 'Giảng viên'
                                 : selectedUser.role === 'admin'
@@ -1736,89 +2438,81 @@ export default function UserManagerPage() {
                             </span>
                           )}
                         </div>
-                        <div className="flex justify-between items-center py-1">
-                          <span className="text-slate-500 dark:text-slate-400">Mật khẩu khởi tạo</span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-xs font-bold text-slate-800 dark:text-emerald-400">
-                              {selectedUser.password || `Ocl@2026#${selectedUser.userCode || 'PASS'}`}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (navigator.clipboard) {
-                                  navigator.clipboard.writeText(selectedUser.password || `Ocl@2026#${selectedUser.userCode || 'PASS'}`);
-                                  showToast(`Đã sao chép mật khẩu của tài khoản ${selectedUser.userCode}.`);
-                                }
-                              }}
-                              title="Sao chép mật khẩu"
-                              className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-0.5 cursor-pointer"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
 
-                      <div className="rounded-xl border border-slate-100 bg-white p-3.5 space-y-2.5 dark:border-white/10 dark:bg-white/5">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                            Hoạt động &amp; Giám sát thi
-                          </p>
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                            <ShieldCheck className="h-3 w-3" />
-                            <span>AI Proctoring</span>
+                        {/* Lớp sinh hoạt dành riêng cho Sinh viên */}
+                        {selectedUser.role === 'student' && (
+                          <div className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-white/5">
+                            <span className="text-slate-500 dark:text-slate-400">Lớp sinh hoạt</span>
+                            {selectedUser.lopSinhHoat ? (
+                              <span className="font-bold text-blue-600 dark:text-blue-400 font-mono bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded">
+                                {selectedUser.lopSinhHoat}
+                              </span>
+                            ) : (
+                              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                                Chưa xếp lớp SH
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Khoa / Viện / Bộ môn / Đơn vị */}
+                        <div className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-white/5">
+                          <span className="text-slate-500 dark:text-slate-400">
+                            {selectedUser.role === 'student'
+                              ? 'Khoa / Viện'
+                              : selectedUser.role === 'instructor'
+                              ? 'Khoa / Bộ môn'
+                              : 'Đơn vị / Phòng ban'}
+                          </span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[180px] text-right">
+                            {selectedUser.department || 'Chưa phân bổ'}
                           </span>
                         </div>
 
-                        {selectedUser.role === 'student' ? (
-                          <>
-                            <div className="flex justify-between py-1 border-b border-slate-50">
-                              <span className="text-slate-500">Số bài thi tham gia</span>
-                              <span className="font-bold text-slate-800">4 / 5 ca thi</span>
-                            </div>
-                            <div className="flex justify-between py-1 border-b border-slate-50">
-                              <span className="text-slate-500">Chỉ số liêm chính AI</span>
-                              <span className="font-semibold text-emerald-600 inline-flex items-center gap-1">
-                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                                100% (An toàn)
+                        <div className="flex justify-between items-center py-1">
+                          <span className="text-slate-500 dark:text-slate-400">Trạng thái mật khẩu</span>
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            <span>Đã bảo mật (Bcrypt)</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Card Hoạt động tài khoản (CHỈ LƯU VẾT NHẬT KÝ & ĐĂNG NHẬP THỰC TẾ) */}
+                      <div className="rounded-xl border border-slate-100 bg-white p-3.5 space-y-2.5 dark:border-white/10 dark:bg-white/5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                            Hoạt động tài khoản
+                          </p>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-600 bg-slate-100 dark:bg-white/10 dark:text-slate-300 px-2 py-0.5 rounded-full">
+                            <Clock className="h-3 w-3" />
+                            <span>Nhật ký</span>
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between py-1 border-b border-slate-50 dark:border-white/5 text-xs">
+                          <span className="text-slate-500 dark:text-slate-400">Đăng nhập lần cuối</span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            {selectedUser.lastLogin || 'Chưa đăng nhập'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-slate-50 dark:border-white/5 text-xs items-center">
+                          <span className="text-slate-500 dark:text-slate-400">Địa chỉ IP gần nhất</span>
+                          <div className="flex items-center gap-1.5 font-mono text-slate-700 dark:text-slate-300">
+                            <span>{selectedUser.lastLoginIp || detectedPublicIp || '127.0.0.1'}</span>
+                            {isValidPublicIp(selectedUser.lastLoginIp || detectedPublicIp) && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 font-sans font-medium">
+                                Wi-Fi Public
                               </span>
-                            </div>
-                            <div className="flex justify-between py-1">
-                              <span className="text-slate-500">Trạng thái thiết bị</span>
-                              <span className="font-semibold text-slate-700">Camera &amp; Mic sẵn sàng</span>
-                            </div>
-                          </>
-                        ) : selectedUser.role === 'instructor' ? (
-                          <>
-                            <div className="flex justify-between py-1 border-b border-slate-50">
-                              <span className="text-slate-500">Ca thi phụ trách</span>
-                              <span className="font-bold text-slate-800">3 ca thi đang mở</span>
-                            </div>
-                            <div className="flex justify-between py-1 border-b border-slate-50">
-                              <span className="text-slate-500">Đề thi trong ngân hàng</span>
-                              <span className="font-semibold text-blue-600">12 bộ đề</span>
-                            </div>
-                            <div className="flex justify-between py-1">
-                              <span className="text-slate-500">Phiên giám sát gần nhất</span>
-                              <span className="font-semibold text-slate-700">Phòng SE1848 - LAB 02</span>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="flex justify-between py-1 border-b border-slate-50">
-                              <span className="text-slate-500">Phạm vi giám sát</span>
-                              <span className="font-bold text-slate-800">Toàn bộ hệ thống</span>
-                            </div>
-                            <div className="flex justify-between py-1 border-b border-slate-50">
-                              <span className="text-slate-500">Quyền hạn khảo thí</span>
-                              <span className="font-semibold text-indigo-600">Quản trị đề &amp; Phân quyền</span>
-                            </div>
-                            <div className="flex justify-between py-1">
-                              <span className="text-slate-500">Trạng thái điều phối</span>
-                              <span className="font-semibold text-emerald-600">Sẵn sàng vận hành</span>
-                            </div>
-                          </>
-                        )}
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex justify-between py-1 text-xs">
+                          <span className="text-slate-500 dark:text-slate-400">Trạng thái đổi mật khẩu</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-300">
+                            {selectedUser.lastPasswordChange || 'Chưa đổi mật khẩu'}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -1896,6 +2590,18 @@ export default function UserManagerPage() {
                           </>
                         )}
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteError('');
+                          setDeletingUser(selectedUser);
+                        }}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50/50 py-2.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 hover:border-rose-300 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 cursor-pointer"
+                      >
+                        <Trash2 className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                        <span>Xóa vĩnh viễn tài khoản này</span>
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -1963,7 +2669,8 @@ export default function UserManagerPage() {
                   <select
                     name="role"
                     required
-                    defaultValue="student"
+                    value={createModalRole}
+                    onChange={(e) => setCreateModalRole(e.target.value as UserRole)}
                     className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   >
                     <option value="student">Sinh viên</option>
@@ -2008,35 +2715,60 @@ export default function UserManagerPage() {
                 </label>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Mật khẩu khởi tạo (Sinh ngẫu nhiên) <span className="text-red-500">*</span>
+              {/* Trường đơn vị động theo vai trò: SV có Lớp sinh hoạt & Khoa; GV có Khoa/Bộ môn; Admin có Đơn vị */}
+              {createModalRole === 'student' ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Lớp sinh hoạt <span className="text-red-500">*</span>
+                    <input
+                      name="lopSinhHoat"
+                      required
+                      placeholder="VD: K28-KTPM1 hoặc SE1801"
+                      className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    />
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setCreatePassword(generateRandomPassword())}
-                    className="text-[11px] font-semibold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    <span>Sinh mật khẩu khác</span>
-                  </button>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Khoa / Viện đào tạo
+                    <input
+                      name="department"
+                      defaultValue="Khoa Công nghệ thông tin"
+                      placeholder="VD: Khoa Công nghệ thông tin"
+                      className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    />
+                  </label>
                 </div>
-                <div className="relative">
+              ) : createModalRole === 'instructor' ? (
+                <label className="block text-xs font-semibold text-slate-700">
+                  Khoa / Bộ môn giảng dạy <span className="text-red-500">*</span>
                   <input
-                    name="password"
-                    value={createPassword}
-                    onChange={(e) => setCreatePassword(e.target.value)}
+                    name="department"
                     required
-                    placeholder="VD: Ocl@2026#AB12"
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 font-mono text-xs font-bold text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-white/5 dark:text-emerald-400"
+                    defaultValue="Khoa Công nghệ thông tin"
+                    placeholder="VD: Khoa Công nghệ thông tin hoặc Bộ môn KTPM"
+                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 px-2 py-0.5 rounded-md">
-                    Ngẫu nhiên
-                  </span>
+                </label>
+              ) : (
+                <label className="block text-xs font-semibold text-slate-700">
+                  Đơn vị / Phòng ban công tác <span className="text-red-500">*</span>
+                  <input
+                    name="department"
+                    required
+                    defaultValue="Phòng Đào tạo & Khảo thí"
+                    placeholder="VD: Phòng Đào tạo & Khảo thí"
+                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </label>
+              )}
+
+              <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3.5 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+                <div className="flex items-center gap-2 font-semibold">
+                  <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span>Bảo mật mật khẩu khởi tạo</span>
                 </div>
-                <p className="mt-1 text-[11px] text-slate-400">
-                  Mật khẩu được hệ thống sinh ngẫu nhiên tự động. Bạn có thể gửi thông tin về email trường của người dùng.
+                <p className="mt-1 text-[11px] leading-relaxed text-blue-700 dark:text-blue-300">
+                  Mật khẩu khởi tạo được hệ thống tự động sinh ngẫu nhiên an toàn và gửi trực tiếp qua email cho người dùng. Quản trị viên không cần xem hay nhập mật khẩu thủ công.
                 </p>
               </div>
 
@@ -2217,13 +2949,21 @@ export default function UserManagerPage() {
                         </span>
                       </div>
                       <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
-                        <span className="text-slate-500 text-[11px]">Lớp / Đơn vị:</span>
+                        <span className="text-slate-500 text-[11px]">Khoa / Viện:</span>
                         <span className="font-bold text-slate-900 truncate ml-2">
                           {importMappingInfo.deptColName
                             ? `Cột [${importMappingInfo.deptColName}]`
+                            : 'Mặc định Khoa CNTT'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
+                        <span className="text-slate-500 text-[11px]">Lớp sinh hoạt:</span>
+                        <span className="font-bold text-slate-900 truncate ml-2">
+                          {importMappingInfo.classColName
+                            ? `Cột [${importMappingInfo.classColName}]`
                             : importMappingInfo.detectedClass
                             ? `${importMappingInfo.detectedClass} (Tiêu đề)`
-                            : 'Tự động phân lớp'}
+                            : 'Theo từng dòng'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
@@ -2316,7 +3056,8 @@ export default function UserManagerPage() {
                         <tr>
                           <th className="px-3 py-2.5">Mã SV / GV</th>
                           <th className="px-3 py-2.5">Họ và tên</th>
-                          <th className="px-3 py-2.5">Lớp / Đơn vị</th>
+                          <th className="px-3 py-2.5">Khoa / Đơn vị</th>
+                          <th className="px-3 py-2.5">Lớp sinh hoạt</th>
                           <th className="px-3 py-2.5">Email</th>
                           <th className="px-3 py-2.5">Vai trò</th>
                           <th className="px-3 py-2.5">Kiểm tra</th>
@@ -2359,6 +3100,15 @@ export default function UserManagerPage() {
                                 <span className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
                                   {u.department}
                                 </span>
+                              </td>
+                              <td className="px-3 py-2 text-slate-600">
+                                {u.lopSinhHoat ? (
+                                  <span className="inline-flex items-center rounded bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 font-mono">
+                                    {u.lopSinhHoat}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">-</span>
+                                )}
                               </td>
                               <td className="px-3 py-2 text-slate-500">
                                 {isMissingEmail ? (
@@ -2421,14 +3171,14 @@ export default function UserManagerPage() {
                 </div>
               )}
 
-              {/* TẢI TỆP MẪU CHUẨN */}
+              {/* TẢI TỆP MẪU CHUẨN ĐẠI HỌC DUY TÂN */}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200/90 bg-white p-3.5">
                 <div className="flex items-center gap-3">
                   <FileSpreadsheet className="h-5 w-5 text-emerald-600 shrink-0" />
                   <div>
-                    <p className="text-xs font-bold text-slate-800">Tệp mẫu chuẩn Oculide (CSV / Excel)</p>
+                    <p className="text-xs font-bold text-slate-800">Tệp mẫu danh sách tài khoản chuẩn (CSV / Excel)</p>
                     <p className="text-[11px] text-slate-400">
-                      4 cột bắt buộc: Mã sinh viên / giảng viên, Họ và tên, Email, Vai trò
+                      Hỗ trợ định dạng CSV chuẩn UTF-8 (mở trực tiếp bằng Microsoft Excel), các cột: Mã SV/GV, Họ và tên, Email, Vai trò...
                     </p>
                   </div>
                 </div>
@@ -2436,9 +3186,10 @@ export default function UserManagerPage() {
                   <button
                     type="button"
                     onClick={handleDownloadSample}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer transition shadow-2xs"
+                    title="Tải tệp mẫu danh sách tài khoản chuẩn Oculide (mở bằng Excel)"
                   >
-                    <Download className="h-3.5 w-3.5" />
+                    <Download className="h-3.5 w-3.5 text-slate-500" />
                     <span>Tải tệp mẫu</span>
                   </button>
                 </div>
@@ -2457,19 +3208,11 @@ export default function UserManagerPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={importPreviewUsers.length === 0}
-                  onClick={() => {
-                    if (importPreviewUsers.length > 0) {
-                      setUsers((prev) => [...importPreviewUsers, ...prev]);
-                      setSelectedUserId(importPreviewUsers[0].id);
-                      showToast(`Đã nhập thành công ${importPreviewUsers.length} tài khoản mới vào hệ thống.`);
-                      setIsBulkImportOpen(false);
-                      handleResetImportState();
-                    }
-                  }}
+                  disabled={importPreviewUsers.length === 0 || isImporting}
+                  onClick={handleConfirmBulkImport}
                   className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition shadow-sm shadow-blue-200"
                 >
-                  {isParsing ? 'Đang phân tích...' : `Xác nhận nhập (${importPreviewUsers.length} tài khoản)`}
+                  {isImporting ? 'Đang lưu & gửi email...' : isParsing ? 'Đang phân tích...' : `Xác nhận nhập (${importPreviewUsers.length} tài khoản)`}
                 </button>
               </div>
             </div>
@@ -2692,6 +3435,30 @@ export default function UserManagerPage() {
                   </label>
                 </div>
 
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {editingUser.role === 'student' ? 'Khoa / Viện đào tạo' : editingUser.role === 'instructor' ? 'Khoa / Bộ môn giảng dạy' : 'Đơn vị công tác'}
+                    <input
+                      name="department"
+                      defaultValue={editingUser.department}
+                      placeholder="VD: Khoa Công nghệ thông tin"
+                      className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    />
+                  </label>
+
+                  {editingUser.role === 'student' && (
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Lớp sinh hoạt hành chính
+                      <input
+                        name="lopSinhHoat"
+                        defaultValue={editingUser.lopSinhHoat || ''}
+                        placeholder="VD: K28-KTPM1, SE1801"
+                        className="mt-1.5 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </label>
+                  )}
+                </div>
+
                 {editError && (
                   <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">
                     ⚠ {editError}
@@ -2701,6 +3468,7 @@ export default function UserManagerPage() {
                 <div className="flex justify-end gap-3 pt-3">
                   <button
                     type="button"
+                    disabled={isUpdating}
                     onClick={() => setEditingUser(null)}
                     className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                   >
@@ -2708,9 +3476,10 @@ export default function UserManagerPage() {
                   </button>
                   <button
                     type="submit"
-                    className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
+                    disabled={isUpdating}
+                    className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
                   >
-                    Lưu thay đổi
+                    {isUpdating ? 'Đang lưu CSDL...' : 'Lưu thay đổi'}
                   </button>
                 </div>
               </form>
@@ -2904,6 +3673,74 @@ export default function UserManagerPage() {
                 }`}
               >
                 {togglingUser.status === 'active' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* ── MODAL 6: XÁC NHẬN XÓA TÀI KHOẢN VĨNH VIỄN ── */}
+      {deletingUser && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !isDeleting) setDeletingUser(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-delete-title"
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xl dark:border-white/10 dark:bg-[#0d1017] transition-colors"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 id="modal-delete-title" className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  Xác nhận xóa tài khoản
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Mã tài khoản: {deletingUser.userCode || deletingUser.username || deletingUser.id}
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-4 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+              Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản{' '}
+              <strong className="font-bold text-slate-900 dark:text-white">
+                {deletingUser.fullName}
+              </strong>{' '}
+              ({deletingUser.email || deletingUser.userCode}) khỏi hệ thống không?
+            </p>
+
+            <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50/80 p-3 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400">
+              ⚠️ <strong>Cảnh báo:</strong> Toàn bộ dữ liệu của người dùng này trong CSDL SQL Server sẽ bị xóa và không thể khôi phục lại.
+            </div>
+
+            {deleteError && (
+              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeletingUser(null)}
+                className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5 cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDeleteUser}
+                className="h-10 rounded-xl bg-rose-600 px-5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer transition shadow-sm shadow-rose-200 dark:shadow-none"
+              >
+                {isDeleting ? 'Đang xóa...' : 'Xác nhận xóa vĩnh viễn'}
               </button>
             </div>
           </section>

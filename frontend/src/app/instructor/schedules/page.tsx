@@ -565,38 +565,82 @@ export default function InstructorSchedulesPage() {
   };
 
   const handleOpenRoomEarly = (sessionId: string) => {
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === sessionId
-          ? { ...s, status: 'Đang diễn ra', demoProgress: 10, demoRemainingMinutes: 60 }
-          : s
-      )
-    );
+    const targetSession = sessions.find((session) => session.id === sessionId);
+
+    if (!targetSession) {
+      showToast('Không tìm thấy phiên cần mở. Vui lòng tải lại trang.');
+      return;
+    }
+
+    if (targetSession.status !== 'Sắp diễn ra') {
+      showToast('Chỉ có thể mở sớm phiên đang ở trạng thái Sắp diễn ra.');
+      return;
+    }
+
+    // Đọc lại dữ liệu mới nhất trước khi mở để tránh bỏ sót phiên ở tab khác.
+    let storedSessions: InstructorSession[] = [];
 
     try {
       const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-
       if (raw) {
-        const stored: InstructorSession[] = JSON.parse(raw);
-        const updated = stored.map((s) =>
-          s.id === sessionId
-            ? {
-                ...s,
-                status: 'Đang diễn ra' as const,
-              }
-            : s
-        );
-
-        localStorage.setItem(
-          INSTRUCTOR_SCHEDULES_STORAGE_KEY,
-          JSON.stringify(updated)
-        );
+        const parsed: unknown = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+          showToast('Không thể xác minh trạng thái các phiên. Vui lòng tải lại trang.');
+          return;
+        }
+        storedSessions = parsed as InstructorSession[];
       }
     } catch {
-      // Fallback state vẫn được giữ.
+      showToast('Không thể đọc trạng thái phiên hiện tại. Vui lòng thử lại.');
+      return;
     }
 
-    showToast('Phòng thi đã được mở sớm thành công. Sinh viên đã có thể tham gia!');
+    // Kiểm tra cả phiên lưu trong localStorage lẫn trạng thái đang hiển thị.
+    const activeSession =
+      storedSessions.find((session) => session.status === 'Đang diễn ra') ??
+      sessions.find((session) => session.status === 'Đang diễn ra');
+
+    if (activeSession) {
+      const message =
+        activeSession.id === sessionId
+          ? `Phòng ${activeSession.roomCode} đã được mở và đang giám sát.`
+          : `Không thể mở phòng ${targetSession.roomCode}. Phòng ${activeSession.roomCode} đang được giám sát. Vui lòng kết thúc phiên hiện tại trước.`;
+      showToast(message);
+      return;
+    }
+
+    // Ghi trạng thái vào storage trước để lần bấm tiếp theo luôn thấy phiên đang chạy.
+    try {
+      const sourceSessions = storedSessions.length > 0 ? storedSessions : sessions;
+      const targetExists = sourceSessions.some((session) => session.id === sessionId);
+      const updated = sourceSessions.map((session) =>
+        session.id === sessionId
+          ? { ...session, status: 'Đang diễn ra' as const }
+          : session
+      );
+
+      if (!targetExists) {
+        updated.push({ ...targetSession, status: 'Đang diễn ra' });
+      }
+
+      localStorage.setItem(
+        INSTRUCTOR_SCHEDULES_STORAGE_KEY,
+        JSON.stringify(updated)
+      );
+    } catch {
+      showToast('Không thể lưu trạng thái mở phòng. Vui lòng thử lại.');
+      return;
+    }
+
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId
+          ? { ...session, status: 'Đang diễn ra', demoProgress: 10, demoRemainingMinutes: 60 }
+          : session
+      )
+    );
+
+    showToast(`Đã mở phòng ${targetSession.roomCode}. Sinh viên có thể tham gia!`);
   };
 
   const handleConfirmExtend = (minutes: number, reason: string, notify: boolean) => {

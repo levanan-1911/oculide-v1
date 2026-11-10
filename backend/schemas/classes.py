@@ -47,6 +47,8 @@ class StudentSearchItem(BaseModel):
 
 class ClassEnrollRequest(BaseModel):
     student_user_id: Union[int, str]
+    student_name: Optional[str] = None
+    email: Optional[str] = None
     status: str = Field("dang_hoc", pattern="^(dang_hoc|hoc_ghep|hoc_lai|hoc_vuot)$")
 
 class ClassEnrollResponse(BaseModel):

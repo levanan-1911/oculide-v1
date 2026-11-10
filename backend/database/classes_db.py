@@ -112,10 +112,10 @@ def get_class_by_id(class_id: Any) -> Optional[Dict]:
                    c.mo_ta AS description, 
                    c.ngay_tao AS created_at, 
                    c.ngay_cap_nhat AS updated_at, 
-                   u.ho_va_ten AS instructor_name,
+                   COALESCE(u.ho_va_ten, N'Chưa phân công') AS instructor_name,
                    (SELECT COUNT(1) FROM SinhVienLopHoc svl WHERE svl.ma_lop = c.ma_lop) AS student_count
             FROM LopHoc c
-            JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
+            LEFT JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
             WHERE c.ma_lop = ?
         """, (real_id,))
         row = cursor.fetchone()
@@ -144,10 +144,10 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
                        c.mo_ta AS description, 
                        c.ngay_tao AS created_at, 
                        c.ngay_cap_nhat AS updated_at, 
-                       u.ho_va_ten AS instructor_name,
+                       COALESCE(u.ho_va_ten, N'Chưa phân công') AS instructor_name,
                        (SELECT COUNT(1) FROM SinhVienLopHoc svl WHERE svl.ma_lop = c.ma_lop) AS student_count
                 FROM LopHoc c
-                JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
+                LEFT JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
                 WHERE c.ma_giang_vien = ?
                 ORDER BY c.ngay_tao DESC
             """, (instructor_id,))
@@ -163,10 +163,10 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
                        c.mo_ta AS description, 
                        c.ngay_tao AS created_at, 
                        c.ngay_cap_nhat AS updated_at, 
-                       u.ho_va_ten AS instructor_name,
+                       COALESCE(u.ho_va_ten, N'Chưa phân công') AS instructor_name,
                        (SELECT COUNT(1) FROM SinhVienLopHoc svl WHERE svl.ma_lop = c.ma_lop) AS student_count
                 FROM LopHoc c
-                JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
+                LEFT JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
                 ORDER BY c.ngay_tao DESC
             """)
         rows = cursor.fetchall()
@@ -353,6 +353,8 @@ def search_students(
 def enroll_student_to_class(
     class_id: Any,
     student_user_id: Any,
+    student_name: Optional[str] = None,
+    email: Optional[str] = None,
     added_by: Optional[int] = None,
     status: str = 'dang_hoc'
 ) -> Dict:
@@ -366,7 +368,21 @@ def enroll_student_to_class(
 
         real_student_id = _resolve_user_id(cursor, student_user_id)
         if not real_student_id:
-            raise ValueError(f"Không tìm thấy sinh viên với mã định danh hoặc ID '{student_user_id}'.")
+            if student_name and student_name.strip():
+                mssv = str(student_user_id).strip()
+                student_email = email.strip() if email else f"{mssv.lower()}@dtu.edu.vn"
+                from core.security import get_password_hash
+                default_pwd_hash = get_password_hash(f"{mssv}@123")
+                cursor.execute("""
+                    INSERT INTO NguoiDung (ten_dang_nhap, mat_khau_ma_hoa, email, ho_va_ten, ma_vai_tro, ma_dinh_danh, dang_hoat_dong)
+                    OUTPUT inserted.ma_nguoi_dung
+                    VALUES (?, ?, ?, ?, 3, ?, 1)
+                """, (mssv, default_pwd_hash, student_email, student_name.strip(), mssv))
+                new_u = cursor.fetchone()
+                if new_u:
+                    real_student_id = new_u[0]
+            if not real_student_id:
+                raise ValueError(f"Không tìm thấy sinh viên với mã định danh hoặc ID '{student_user_id}'.")
 
         # Kiểm tra đã có chưa
         cursor.execute("""
@@ -488,6 +504,96 @@ def get_class_enrolled_students(class_id: Any) -> List[Dict]:
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
         return [dict(zip(columns, r)) for r in rows]
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
+    """Lấy danh sách các phòng Lab và Bài kiểm tra/Thi của một lớp học phần"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        real_class_id = _resolve_class_id(cursor, class_id)
+        if not real_class_id:
+            return {"labs": [], "exams": []}
+
+        cursor.execute("""
+            SELECT 
+                p.ma_phong AS room_id,
+                p.ma_phong_code AS room_code,
+                p.tieu_de AS title,
+                p.loai_phong AS room_type,
+                p.gio_bat_dau AS start_time,
+                p.gio_ket_thuc AS end_time,
+                p.thoi_luong_phut AS duration_minutes,
+                p.mat_ma_phong AS passcode,
+                p.cau_hinh_giam_sat AS proctor_config,
+                p.trang_thai AS status,
+                (SELECT COUNT(DISTINCT bn.ma_sinh_vien) FROM BaiNop bn WHERE bn.ma_phong = p.ma_phong) AS submission_count,
+                (SELECT COUNT(1) FROM CauHoi q WHERE q.ma_phong = p.ma_phong) AS question_count
+            FROM Phong p
+            WHERE p.ma_lop = ?
+            ORDER BY p.gio_bat_dau ASC, p.ngay_tao ASC
+        """, (real_class_id,))
+        rows = cursor.fetchall()
+        columns = [column[0] for column in cursor.description]
+
+        labs = []
+        exams = []
+
+        for r_raw in rows:
+            r = dict(zip(columns, r_raw))
+            r_type = (r.get("room_type") or "lab").lower()
+            status_db = r.get("status") or "chua_mo"
+
+            # Xác định trạng thái thân thiện cho UI
+            if r_type == "exam":
+                ui_status = "Đang diễn ra" if status_db == "dang_dien_ra" else ("Đã kết thúc" if status_db == "da_dong" else "Sắp diễn ra")
+                start_dt = r.get("start_time")
+                end_dt = r.get("end_time")
+                sched_str = ""
+                if start_dt and end_dt:
+                    sched_str = f"{start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M, %d/%m/%Y')}"
+                elif start_dt:
+                    sched_str = start_dt.strftime('%H:%M, %d/%m/%Y')
+
+                exams.append({
+                    "id": r.get("room_code") or str(r.get("room_id")),
+                    "title": r.get("title") or "Bài kiểm tra",
+                    "type": "Kiểm tra quá trình",
+                    "language": "C++",
+                    "durationMinutes": r.get("duration_minutes") or 60,
+                    "scheduledAt": sched_str,
+                    "questionCount": r.get("question_count") or 0,
+                    "isProctored": True,
+                    "roomCode": r.get("room_code") or "",
+                    "roomPassword": r.get("passcode") or "",
+                    "status": ui_status,
+                    "submissionCount": r.get("submission_count") or 0,
+                })
+            else:
+                ui_status = "Đang mở" if status_db == "dang_dien_ra" else ("Đã kết thúc" if status_db == "da_dong" else "Chưa mở")
+                start_dt = r.get("start_time")
+                end_dt = r.get("end_time")
+
+                labs.append({
+                    "id": r.get("room_code") or str(r.get("room_id")),
+                    "labNumber": len(labs) + 1,
+                    "title": r.get("title") or f"Lab {len(labs) + 1}",
+                    "language": "C++",
+                    "questionCount": r.get("question_count") or 0,
+                    "scheduleNote": f"Phòng {r.get('room_code')}",
+                    "startTime": start_dt.strftime("%H:%M, %d/%m/%Y") if start_dt else "",
+                    "endTime": end_dt.strftime("%H:%M, %d/%m/%Y") if end_dt else "",
+                    "durationMinutes": r.get("duration_minutes") or 120,
+                    "isProctored": bool(r.get("proctor_config")),
+                    "roomCode": r.get("room_code") or "",
+                    "roomPassword": r.get("passcode") or "",
+                    "status": ui_status,
+                    "submissionCount": r.get("submission_count") or 0,
+                })
+
+        return {"labs": labs, "exams": exams}
     finally:
         cursor.close()
         conn.close()

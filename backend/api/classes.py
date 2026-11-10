@@ -22,7 +22,8 @@ from database.classes_db import (
     enroll_student_to_class,
     enroll_students_batch,
     remove_student_from_class,
-    get_class_enrolled_students
+    get_class_enrolled_students,
+    get_class_rooms
 )
 
 router = APIRouter()
@@ -55,16 +56,17 @@ async def add_class(
 
 @router.get("", response_model=List[ClassResponse])
 async def list_classes(
+    instructor_id: Optional[int] = Query(None, description="Lọc theo mã giảng viên"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    """Lấy danh sách các lớp học (Giảng viên thấy lớp của mình, Admin thấy toàn bộ)"""
+    """Lấy danh sách các lớp học (Giảng viên thấy lớp của mình, Admin thấy toàn bộ hoặc lọc theo instructor_id)"""
     if current_user["role"] == "admin":
-        return get_classes_by_instructor(None)
+        return get_classes_by_instructor(instructor_id)
     elif current_user["role"] == "instructor":
+        # Giảng viên xem lớp của chính mình
         return get_classes_by_instructor(current_user["user_id"])
     else:
-        # Sinh viên: tạm thời xem danh sách lớp của hệ thống
-        return get_classes_by_instructor(None)
+        return get_classes_by_instructor(instructor_id)
 
 @router.get("/students/search", response_model=List[StudentSearchItem])
 async def search_students_endpoint(
@@ -156,6 +158,17 @@ async def list_class_students(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy lớp học")
     return get_class_enrolled_students(class_id)
 
+@router.get("/{class_id}/rooms")
+async def list_class_rooms(
+    class_id: str,
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Lấy danh sách các bài Lab và Bài kiểm tra/Thi của lớp học phần"""
+    cls = get_class_by_id(class_id)
+    if not cls:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy lớp học")
+    return get_class_rooms(class_id)
+
 @router.post("/{class_id}/students", response_model=ClassEnrollResponse)
 async def enroll_student(
     class_id: str,
@@ -172,6 +185,8 @@ async def enroll_student(
     result = enroll_student_to_class(
         class_id=class_id,
         student_user_id=data.student_user_id,
+        student_name=data.student_name,
+        email=data.email,
         added_by=current_user["user_id"],
         status=data.status
     )

@@ -41,6 +41,7 @@ npm-debug.log
 yarn-error.log
 frontend/.next/
 .next/
+*.tsbuildinfo
 
 # ==============================
 # OS / IDE / Logs

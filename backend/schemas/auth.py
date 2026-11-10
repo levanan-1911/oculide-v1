@@ -9,6 +9,8 @@ class UserRegisterRequest(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100)
     role: str = Field(..., pattern="^(instructor|student)$")
     student_id: Optional[str] = Field(None, max_length=50)
+    department: Optional[str] = None
+    lop_sinh_hoat: Optional[str] = None
 
 class LoginRequest(BaseModel):
     username: str
@@ -23,6 +25,8 @@ class UserResponse(BaseModel):
     student_id: Optional[str] = None
     user_code: Optional[str] = None
     department: Optional[str] = None
+    lop_sinh_hoat: Optional[str] = None
+    homeroom_class: Optional[str] = None
     academic_rank: Optional[str] = None
     phone_number: Optional[str] = None
     avatar_url: Optional[str] = None
@@ -31,6 +35,7 @@ class UserResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
+    last_login_ip: Optional[str] = None
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -52,6 +57,7 @@ class UserProfileUpdateRequest(BaseModel):
     email: Optional[EmailStr] = None
     student_id: Optional[str] = None
     department: Optional[str] = None
+    lop_sinh_hoat: Optional[str] = None
     academic_rank: Optional[str] = None
     phone_number: Optional[str] = None
     avatar_url: Optional[str] = None

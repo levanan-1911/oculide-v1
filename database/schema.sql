@@ -1,6 +1,6 @@
 -- ============================================================================
 -- DATABASE SCHEMA CHO OCULIDE - HỆ THỐNG GIÁM SÁT THỰC HÀNH & THI TRỰC TUYẾN
--- Phiên bản: v2.2 (Chuẩn hóa 21 Bảng Tiếng Việt theo ERD v2 & ma_dinh_danh)
+-- Phiên bản: v2.3 (Chuẩn hóa 22 Bảng Tiếng Việt theo ERD v2 - Bổ sung bảng HocKy)
 -- Hệ quản trị CSDL: Microsoft SQL Server (T-SQL)
 -- Database Name: ExamSystem
 -- ============================================================================
@@ -41,7 +41,8 @@ CREATE TABLE NguoiDung (
     mat_khau_hash NVARCHAR(255) NOT NULL,
     ho_va_ten NVARCHAR(100) NOT NULL,
     ma_dinh_danh NVARCHAR(50) NULL,             -- MSSV (SV) / Mã giảng viên (GV) / Mã Admin
-    khoa_bo_mon NVARCHAR(150) NULL,             -- Chuyên ngành (SV) / Bộ môn (GV) / Đơn vị (Admin)
+    khoa_bo_mon NVARCHAR(150) NULL,             -- Khoa / Bộ môn (GV, SV, Admin)
+    lop_sinh_hoat NVARCHAR(50) NULL,            -- Lớp sinh hoạt hành chính (Sinh viên, VD: SE1801, K28-KTPM1)
     hoc_vi NVARCHAR(50) NULL,                   -- Tiến sĩ / Thạc sĩ (Giảng viên)
     so_dien_thoai NVARCHAR(20) NULL,
     anh_dai_dien NVARCHAR(500) NULL,
@@ -61,6 +62,7 @@ GO
 CREATE INDEX IDX_NguoiDung_TenDangNhap ON NguoiDung(ten_dang_nhap);
 CREATE INDEX IDX_NguoiDung_Email ON NguoiDung(email);
 CREATE INDEX IDX_NguoiDung_MaDinhDanh ON NguoiDung(ma_dinh_danh);
+CREATE INDEX IDX_NguoiDung_LopSinhHoat ON NguoiDung(lop_sinh_hoat);
 CREATE INDEX IDX_NguoiDung_VaiTro ON NguoiDung(ma_vai_tro);
 GO
 
@@ -107,16 +109,31 @@ CREATE INDEX IDX_NhatKyHeThong_NguoiDung ON NhatKyHeThong(ma_nguoi_dung);
 GO
 
 -- ============================================================================
--- PHÂN HỆ 2: QUẢN LÝ LỚP HỌC & DANH SÁCH SINH VIÊN
+-- PHÂN HỆ 2: QUẢN LÝ HỌC KỲ, LỚP HỌC & DANH SÁCH SINH VIÊN
 -- ============================================================================
+
+-- 4.1. Bảng HocKy (Academic Semesters)
+CREATE TABLE HocKy (
+    ma_hoc_ky NVARCHAR(30) PRIMARY KEY,         -- Ví dụ: 'HK1_2026_2027', 'HK2_2026_2027'
+    ten_hoc_ky NVARCHAR(100) NOT NULL,          -- Ví dụ: 'HK1 2026–2027'
+    nam_hoc NVARCHAR(20) NOT NULL,              -- Ví dụ: '2026-2027'
+    ky_thu INT NOT NULL,                       -- 1 (Thu), 2 (Xuân), 3 (Hè)
+    ngay_bat_dau DATE NULL,                    -- Ngày bắt đầu học kỳ
+    ngay_ket_thuc DATE NULL,                   -- Ngày kết thúc học kỳ
+    la_hoc_ky_hien_tai BIT DEFAULT 0 NOT NULL, -- 1 nếu đang là học kỳ diễn ra
+    trang_thai NVARCHAR(20) DEFAULT 'hoat_dong' NOT NULL, -- 'hoat_dong', 'da_dong'
+    ngay_tao DATETIME2 DEFAULT GETDATE() NOT NULL
+);
+GO
 
 -- 5. Bảng LopHoc (Classes)
 CREATE TABLE LopHoc (
     ma_lop INT IDENTITY(1,1) PRIMARY KEY,
-    ma_lop_hoc NVARCHAR(50) UNIQUE NOT NULL,    -- Ví dụ: PRN231_SE1801
-    ten_lop NVARCHAR(150) NOT NULL,
-    ma_mon_hoc NVARCHAR(50) NULL,
-    hoc_ky NVARCHAR(20) NULL,                   -- Ví dụ: Fall 2026, Spring 2027
+    ma_lop_hoc NVARCHAR(50) UNIQUE NOT NULL,    -- Mã lớp học phần đầy đủ (VD: CMU-CS 316 AIS, CS 252 DDIS)
+    ten_lop NVARCHAR(150) NOT NULL,             -- Tên môn học / Tên lớp
+    ma_mon_hoc NVARCHAR(50) NULL,               -- Mã môn học riêng (VD: CMU-CS 316, CS 252)
+    ma_phan_lop NVARCHAR(50) NULL,              -- Mã phân lớp / nhóm lớp (VD: AIS, DDIS)
+    hoc_ky NVARCHAR(50) NULL,                   -- Ví dụ: HK1 2026–2027, Fall 2026
     ma_giang_vien INT NOT NULL,                 -- Giảng viên phụ trách chính
     mo_ta NVARCHAR(500) NULL,
     trang_thai NVARCHAR(20) DEFAULT 'dang_mo' NOT NULL, -- 'dang_mo', 'da_dong'
@@ -683,6 +700,14 @@ INSERT INTO NguoiDung (
 );
 GO
 
+-- Khởi tạo danh mục 4 Học kỳ chuẩn
+INSERT INTO HocKy (ma_hoc_ky, ten_hoc_ky, nam_hoc, ky_thu, ngay_bat_dau, ngay_ket_thuc, la_hoc_ky_hien_tai, trang_thai) VALUES
+('HK1_2026_2027', N'HK1 2026–2027', '2026-2027', 1, '2026-09-01', '2027-01-15', 1, 'hoat_dong'),
+('HK2_2026_2027', N'HK2 2026–2027', '2026-2027', 2, '2027-02-01', '2027-06-15', 0, 'hoat_dong'),
+('HKT_2026_2027', N'HKT 2026–2027', '2026-2027', 3, '2027-06-20', '2027-08-15', 0, 'hoat_dong'),
+('HKT_2025_2026', N'HKT 2025–2026', '2025-2026', 3, '2026-06-20', '2026-08-15', 0, 'da_dong');
+GO
+
 PRINT N'====================================================================';
-PRINT N'Đã khởi tạo thành công CSDL ExamSystem gồm 21 bảng tiếng Việt thuần chuẩn!';
+PRINT N'Đã khởi tạo thành công CSDL ExamSystem gồm 22 bảng tiếng Việt thuần chuẩn!';
 PRINT N'====================================================================';

@@ -1,18 +1,18 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import secrets
 import string
 
 from schemas.admin import (
     AdminUserCreateRequest, AdminUserStatusUpdate, AdminUserRoleUpdate,
-    PaginatedUsersResponse, BatchImportRequest, BatchImportResult
+    AdminUserUpdateRequest, PaginatedUsersResponse, BatchImportRequest, BatchImportResult
 )
 from schemas.auth import UserResponse
 from core.permissions import admin_required
 from database.user_db import (
     get_user_by_id, get_user_by_username, get_user_by_email,
     create_user, get_all_users_paginated, update_user_status,
-    update_user_role, delete_user, change_user_password
+    update_user_role, update_user_profile, delete_user, change_user_password
 )
 from database.room_db import get_system_overview_stats
 from database.system_log_db import get_system_logs
@@ -71,7 +71,9 @@ async def create_user_by_admin(
         full_name=user_data.full_name,
         role=user_data.role,
         student_id=user_data.student_id,
-        is_active=user_data.is_active
+        is_active=user_data.is_active,
+        department=user_data.department,
+        lop_sinh_hoat=user_data.lop_sinh_hoat
     )
 
     # 3. Gửi email thông tin tài khoản và mật khẩu khởi tạo về cho sinh viên/giảng viên qua Brevo
@@ -94,6 +96,53 @@ async def get_user_details(user_id: int):
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
     return user
+
+@router.put("/users/{user_id}", response_model=UserResponse)
+async def update_user_by_admin(user_id: int, user_data: AdminUserUpdateRequest):
+    """Admin cập nhật thông tin người dùng trong CSDL SQL Server"""
+    existing_user = get_user_by_id(user_id)
+    if not existing_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
+
+    # 1. Kiểm tra trùng email nếu email thay đổi
+    if user_data.email:
+        clean_email = user_data.email.strip().lower()
+        if clean_email != (existing_user.get("email") or "").strip().lower():
+            other = get_user_by_email(clean_email)
+            if other and other.get("user_id") != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Email '{clean_email}' đã được sử dụng bởi tài khoản khác trong hệ thống."
+                )
+
+    # 2. Xác định vai trò mục tiêu
+    target_role = user_data.role if user_data.role else existing_user.get("role")
+
+    # 3. Chuẩn hóa lớp sinh hoạt: sinh viên giữ lớp, giảng viên/admin xóa lớp
+    clean_lop_sinh_hoat = user_data.lop_sinh_hoat.strip() if user_data.lop_sinh_hoat else ""
+    if target_role != "student":
+        clean_lop_sinh_hoat = ""
+
+    # 4. Cập nhật thông tin profile
+    update_user_profile(
+        user_id=user_id,
+        full_name=user_data.full_name.strip() if user_data.full_name else None,
+        email=user_data.email.strip().lower() if user_data.email else None,
+        student_id=user_data.student_id.strip().upper() if user_data.student_id is not None else None,
+        department=user_data.department.strip() if user_data.department is not None else None,
+        lop_sinh_hoat=clean_lop_sinh_hoat if (user_data.lop_sinh_hoat is not None or target_role != "student") else None
+    )
+
+    # 5. Cập nhật vai trò nếu có thay đổi
+    if user_data.role and user_data.role != existing_user.get("role"):
+        update_user_role(user_id, user_data.role)
+
+    # 6. Cập nhật trạng thái kích hoạt nếu có thay đổi
+    if user_data.is_active is not None and user_data.is_active != existing_user.get("is_active"):
+        update_user_status(user_id, user_data.is_active)
+
+    updated = get_user_by_id(user_id)
+    return updated
 
 @router.put("/users/{user_id}/status", response_model=UserResponse)
 async def toggle_user_status(user_id: int, status_data: AdminUserStatusUpdate):
@@ -139,12 +188,20 @@ async def reset_user_password(user_id: int, background_tasks: BackgroundTasks):
     }
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_200_OK)
-async def remove_user(user_id: int):
-    """Xóa tài khoản người dùng khỏi hệ thống"""
+async def remove_user(
+    user_id: int,
+    current_user: Dict[str, Any] = Depends(admin_required)
+):
+    """Xóa tài khoản người dùng khỏi hệ thống (Admin only)"""
+    if current_user.get("user_id") == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Không thể tự xóa tài khoản của chính mình."
+        )
     if not get_user_by_id(user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
     delete_user(user_id)
-    return {"message": f"Đã xóa người dùng ID {user_id}"}
+    return {"message": f"Đã xóa thành công người dùng ID {user_id}"}
 
 @router.post("/users/batch-import", response_model=BatchImportResult)
 async def batch_import_users(data: BatchImportRequest, background_tasks: BackgroundTasks):
@@ -155,22 +212,44 @@ async def batch_import_users(data: BatchImportRequest, background_tasks: Backgro
     
     for u in data.users:
         try:
-            # Tên đăng nhập luôn là phần trước dấu @ của email
+            # Chuẩn hóa email và username
             u_email = (u.email or "").strip().lower()
+            if not u_email or "@" not in u_email:
+                if u.student_id:
+                    u_email = f"{u.student_id.strip().lower()}@dtu.edu.vn"
+                elif u.username:
+                    u_email = f"{u.username.strip().lower()}@dtu.edu.vn"
+                else:
+                    errors.append(f"Bỏ qua sinh viên '{u.full_name}': Không có thông tin email hợp lệ.")
+                    failed += 1
+                    continue
+
             username = u_email.split("@")[0].strip().lower() if u_email else (u.username or u.student_id or "").strip().lower()
             
             if get_user_by_username(username):
-                errors.append(f"Username '{username}' (từ {u_email}) đã tồn tại.")
+                errors.append(f"Tên tài khoản '{username}' (từ {u_email}) đã tồn tại.")
                 failed += 1
                 continue
-            pwd = u.password or "DefaultPass123!"
+            if get_user_by_email(u_email):
+                errors.append(f"Email '{u_email}' đã tồn tại trong hệ thống.")
+                failed += 1
+                continue
+
+            if not u.password:
+                chars = string.ascii_letters + string.digits + "!@#$%"
+                pwd = "".join(secrets.choice(chars) for _ in range(10))
+            else:
+                pwd = u.password
+
             new_u = create_user(
                 username=username,
                 password=pwd,
                 email=u_email,
                 full_name=u.full_name,
                 role=data.role,
-                student_id=u.student_id
+                student_id=u.student_id,
+                department=u.department,
+                lop_sinh_hoat=u.lop_sinh_hoat
             )
             imported += 1
 

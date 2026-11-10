@@ -1,8 +1,14 @@
 import os
 from typing import List
+from pathlib import Path
 import pyodbc
 from dotenv import load_dotenv
 
+# Tìm và nạp file .env từ thư mục backend hoặc root
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BACKEND_DIR.parent
+ENV_PATH = BACKEND_DIR / ".env" if (BACKEND_DIR / ".env").exists() else (PROJECT_ROOT / ".env")
+load_dotenv(ENV_PATH)
 load_dotenv()
 
 try:
@@ -66,7 +72,7 @@ try:
         FRONTEND_URL: str = "http://localhost:3000"
 
         class Config:
-            env_file = ".env"
+            env_file = str(ENV_PATH) if ENV_PATH.exists() else ".env"
             case_sensitive = True
             extra = "allow"
 except ImportError:

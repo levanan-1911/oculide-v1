@@ -14,6 +14,7 @@ import {
   Moon,
   Terminal
 } from 'lucide-react';
+import { getClientIpHeader, getClientPublicIp } from '@/utils/ipResolver';
 
 export default function LoginPage() {
   // ── THEME STATE ──
@@ -54,13 +55,16 @@ export default function LoginPage() {
     }
   }, []);
 
-  // Khởi tạo Theme
+  // Khởi tạo Theme & tiền xử lý IP Public ngầm
   useEffect(() => {
     setMounted(true);
     const saved = localStorage.getItem('oculide_theme') as 'dark' | 'light' | null;
     const initial = saved || 'dark';
     setTheme(initial);
     applyTheme(initial);
+
+    // Tiền phân giải IP Public ngầm để sẵn sàng khi bấm Đăng nhập
+    getClientPublicIp().catch(() => {});
   }, []);
 
   const applyTheme = (t: 'dark' | 'light') => {
@@ -99,10 +103,12 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
+      const ipHeaders = await getClientIpHeader();
       const response = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...ipHeaders,
         },
         body: JSON.stringify({
           username: email.trim(),

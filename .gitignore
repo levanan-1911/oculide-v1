@@ -54,6 +54,12 @@ frontend/.next/
 backend_logs.txt
 temp_docx/
 
+# Spreadsheets & Office Temporary files
+*.xlsx
+*.xls
+*.csv
+~$*
+
 # AI Assistant & Analysis Dumps
 .gemini/
 docs/srs_content.txt

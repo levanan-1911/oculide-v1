@@ -140,10 +140,10 @@ backend/
 
 ```text
 database/
-├── 📄 schema.sql                    # Script DDL khởi tạo toàn bộ 17 bảng chuẩn CSDL trên Microsoft SQL Server
+├── 📄 schema.sql                    # Script DDL khởi tạo toàn bộ 22 bảng chuẩn CSDL tiếng Việt trên Microsoft SQL Server
+├── 📄 sample_data.sql               # Dữ liệu mẫu hoàn chỉnh (Người dùng, Học kỳ, Lớp học, Đề thi, Test cases)
+├── 📄 init_db.py                    # Script Python tự động nạp CSDL thông minh cho cả SSMS và Docker
 ├── 📄 init-db.sh                    # Shell script tự động kích hoạt schema.sql trên Docker container khi khởi động lần đầu
-├── 📂 migrations/
-│   └── 📄 01_capstone1_schema_update.sql  # Script T-SQL di chuyển schema cho Capstone 1 (Bỏ trắc nghiệm, thêm review_status, thêm 4 bảng mới)
 └── 📂 seeds/                        # Dữ liệu hạt giống khởi tạo (Default Admin, Test cases mẫu)
 ```
 

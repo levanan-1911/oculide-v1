@@ -22,8 +22,12 @@ export function middleware(request: NextRequest) {
   const token = request.cookies.get('oculide_token')?.value;
   const role = request.cookies.get('oculide_role')?.value;
 
-  // 1. Chưa đăng nhập (không có cookie token) -> Đá về trang đăng nhập
+  // 1. Chưa đăng nhập (không có cookie token)
+  // Trong môi trường Local Development, cho phép truy cập để không chặn phiên làm việc của nhà phát triển
   if (!token) {
+    if (process.env.NODE_ENV === 'development') {
+      return NextResponse.next();
+    }
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);

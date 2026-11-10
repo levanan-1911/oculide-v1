@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Header, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, status, Header, BackgroundTasks, Request
 from typing import Dict, Any, Optional
 from datetime import timedelta
 import secrets
@@ -24,9 +24,51 @@ from core.config import settings
 
 router = APIRouter()
 
+def extract_client_ip(request: Request) -> str:
+    """
+    Bóc tách địa chỉ IP thực tế của client:
+    1. Header X-Client-Public-IP do frontend resolver hoặc reverse proxy truyền
+    2. Cloudflare header CF-Connecting-IP
+    3. X-Real-IP
+    4. X-Forwarded-For (lấy IP đầu tiên)
+    5. Fallback request.client.host
+    """
+    # 1. Header do client hoặc reverse proxy truyền
+    client_public_ip = request.headers.get("x-client-public-ip")
+    if client_public_ip and client_public_ip.strip():
+        ip = client_public_ip.split(",")[0].strip()
+        if ip and ip.lower() not in ("127.0.0.1", "::1", "localhost", "0.0.0.0", "null", "undefined"):
+            return ip
+
+    # 2. Cloudflare
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip and cf_ip.strip():
+        return cf_ip.strip()
+
+    # 3. Nginx / Reverse Proxy Real IP
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+
+    # 4. Standard X-Forwarded-For
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for and forwarded_for.strip():
+        ips = [i.strip() for i in forwarded_for.split(",") if i.strip()]
+        if ips:
+            return ips[0]
+
+    # 5. Socket Host
+    if request.client and request.client.host:
+        return request.client.host
+
+    return "127.0.0.1"
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserRegisterRequest):
-    """Đăng ký tài khoản người dùng mới (Instructor / Student)"""
+async def register(
+    user_data: UserRegisterRequest,
+    background_tasks: BackgroundTasks
+):
+    """Đăng ký tài khoản người dùng mới (Instructor / Student) và tự động gửi email thông báo"""
     clean_email = user_data.email.strip().lower()
     username = (user_data.username or clean_email.split("@")[0]).strip().lower()
 
@@ -49,10 +91,28 @@ async def register(user_data: UserRegisterRequest):
         role=user_data.role,
         student_id=user_data.student_id
     )
+
+    # Tự động gửi email xác nhận tạo tài khoản thành công kèm thông tin đăng nhập
+    background_tasks.add_task(
+        EmailService.send_account_credentials_email,
+        to_email=new_user["email"],
+        username=new_user["username"],
+        raw_password=user_data.password,
+        full_name=new_user["full_name"],
+        role=new_user["role"],
+        ma_dinh_danh=new_user.get("student_id") or new_user.get("ma_dinh_danh")
+    )
+
     return new_user
 
+@router.get("/my-ip")
+async def get_my_ip(request: Request):
+    """Lấy địa chỉ IP hiện tại của client kết nối tới hệ thống (đã bóc tách qua proxy/header)"""
+    client_ip = extract_client_ip(request)
+    return {"ip": client_ip}
+
 @router.post("/login", response_model=TokenResponse)
-async def login(credentials: LoginRequest):
+async def login(credentials: LoginRequest, request: Request):
     """Đăng nhập hệ thống bằng username/email và password nhận cặp Access + Refresh JWT token"""
     identifier = credentials.username.strip()
     user = get_user_by_username(identifier) or get_user_by_email(identifier)
@@ -74,7 +134,9 @@ async def login(credentials: LoginRequest):
             detail="Tài khoản của bạn hiện đang bị khóa. Vui lòng liên hệ quản trị viên."
         )
         
-    update_last_login(user["user_id"])
+    client_ip = extract_client_ip(request)
+    update_last_login(user["user_id"], client_ip=client_ip)
+    user["last_login_ip"] = client_ip
     
     token_data = {
         "sub": str(user["user_id"]),

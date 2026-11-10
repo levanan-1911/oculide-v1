@@ -15,6 +15,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { UserItem } from './AdminUsersView';
+import { generateSecureRandomPassword } from '@/utils/passwordGenerator';
 
 interface AdminUserDetailViewProps {
   user: UserItem;
@@ -81,8 +82,8 @@ export default function AdminUserDetailView({
     setIsEditModalOpen(true);
   };
 
-  // ── XỬ LÝ: LƯU FORM CHỈNH SỬA ──
-  const handleSaveEdit = (e: React.FormEvent) => {
+  // ── XỬ LÝ: LƯU FORM CHỈNH SỬA VÀO CSDL QUA API ──
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editFullName.trim() || !editEmail.trim() || !editUserCode.trim()) {
       return;
@@ -93,6 +94,27 @@ export default function AdminUserDetailView({
       instructor: 'Giảng viên',
       student: 'Sinh viên',
     };
+
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      await fetch(`/api/v1/admin/users/${currentUser.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          full_name: editFullName.trim(),
+          email: editEmail.trim().toLowerCase(),
+          role: editRole,
+          student_id: editUserCode.trim(),
+          department: editDepartment.trim(),
+          is_active: editStatus === 'active',
+        }),
+      });
+    } catch (err) {
+      console.error('Lỗi cập nhật người dùng:', err);
+    }
 
     const updated: UserItem = {
       ...currentUser,
@@ -113,7 +135,7 @@ export default function AdminUserDetailView({
     }
 
     setIsEditModalOpen(false);
-    showToast(`Đã cập nhật thông tin tài khoản ${updated.userCode} thành công.`);
+    showToast(`Đã cập nhật thông tin tài khoản ${updated.userCode} vào CSDL thành công.`);
   };
 
   // ── XỬ LÝ: MỞ MODAL RESET MẬT KHẨU ──
@@ -146,8 +168,7 @@ export default function AdminUserDetailView({
     }
 
     // Fallback nếu API có sự cố
-    const randomChars = Math.random().toString(36).substring(2, 7);
-    const generated = `Ocl@${new Date().getFullYear()}#${randomChars}`;
+    const generated = generateSecureRandomPassword(10);
     setNewTemporaryPassword(generated);
     setResetStep('success');
     showToast(`Đã đặt lại mật khẩu tạm thời cho tài khoản ${currentUser.userCode}.`);

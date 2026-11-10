@@ -34,6 +34,7 @@ import { useMonitoring } from '@/components/instructor/monitoring/MonitoringCont
 import ExtendSessionModal from '@/components/instructor/monitoring/ExtendSessionModal';
 import SendNotificationModal from '@/components/instructor/monitoring/SendNotificationModal';
 import StudentDetailModal, { StudentDetailInfo } from '@/components/instructor/monitoring/StudentDetailModal';
+import InstructorRoomChat from '@/components/instructor/monitoring/InstructorRoomChat';
 
 const INITIAL_CAMERAS: StudentDetailInfo[] = [
   {
@@ -270,7 +271,8 @@ function InstructorMonitoringContent() {
   // Filters & Search
   const [statusFilter, setStatusFilter] = useState<'all' | 'warning' | 'normal' | 'submitted'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeSideTab, setActiveSideTab] = useState<'violations' | 'announcements'>('violations');
+  const [activeSideTab, setActiveSideTab] = useState<'violations' | 'announcements' | 'chat'>('violations');
+  const chatRoomCode = activeRoomSession?.id || roomIdParam || session.roomCode;
 
   const handleOpenIndividualNotice = (studentId: string, studentName: string) => {
     setTargetedStudent({ id: studentId, name: studentName });
@@ -711,6 +713,18 @@ function InstructorMonitoringContent() {
                 {announcements.length}
               </span>
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveSideTab('chat')}
+              className={`flex-1 rounded-xl py-1 text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
+                activeSideTab === 'chat'
+                  ? 'bg-blue-50 text-blue-700 shadow-2xs'
+                  : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <MessageSquare className="h-3 w-3" />
+              <span>Chat phòng</span>
+            </button>
           </div>
 
           {/* Tab 1: Cảnh báo vi phạm (THIẾT KẾ SIÊU GỌN NHẤT CÓ THỂ THEO HÌNH ẢNH USER) */}
@@ -865,6 +879,11 @@ function InstructorMonitoringContent() {
                 ))
               )}
             </div>
+          )}
+
+          {/* Tab 3: Chat trực tiếp với sinh viên trong phòng */}
+          {activeSideTab === 'chat' && (
+            <InstructorRoomChat roomCode={chatRoomCode} />
           )}
         </div>
       </div>

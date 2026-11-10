@@ -31,13 +31,37 @@ export default function AdminUserCreateView({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successToast, setSuccessToast] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setErrorMessage(null);
 
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      const res = await fetch('/api/v1/admin/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          username: email.trim().split('@')[0].toLowerCase(),
+          email: email.trim().toLowerCase(),
+          full_name: fullName.trim(),
+          role: role,
+          student_id: userCode.trim(),
+          is_active: status === 'active',
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.detail || 'Không thể tạo tài khoản trên máy chủ.');
+      }
+
       setSuccessToast(true);
 
       onUserCreated?.({
@@ -53,7 +77,11 @@ export default function AdminUserCreateView({
       setTimeout(() => {
         onBackToList();
       }, 1200);
-    }, 600);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Lỗi kết nối tới máy chủ API');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -84,6 +112,13 @@ export default function AdminUserCreateView({
         <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs sm:text-sm font-semibold text-emerald-700">
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
           <span>Tài khoản {userCode} đã được khởi tạo thành công! Mật khẩu tạm đã được gửi. Đang quay lại danh sách...</span>
+        </div>
+      )}
+
+      {/* Thông báo lỗi khi gọi API */}
+      {errorMessage && (
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs sm:text-sm font-semibold text-rose-700">
+          <span>⚠️ {errorMessage}</span>
         </div>
       )}
 

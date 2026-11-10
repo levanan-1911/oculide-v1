@@ -1,23 +1,58 @@
 'use client';
 
+import React, { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { FormEvent, useState } from 'react';
-import AuthBrandPanel from '@/components/auth/AuthBrandPanel';
+import InstitutionalFooter from '@/components/common/InstitutionalFooter';
+import AuthShowcasePanel from '@/components/auth/AuthShowcasePanel';
 import {
   ArrowLeft,
   CheckCircle2,
-  ExternalLink,
+  Eye,
   Loader2,
   Mail,
+  Moon,
   Send,
+  Sparkles,
+  Sun,
 } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
+  // ── THEME STATE ──
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [mounted, setMounted] = useState(false);
+
+  // ── FORM STATE ──
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [resetLink, setResetLink] = useState('');
+
+  // Khởi tạo Theme đồng bộ với toàn hệ thống
+  useEffect(() => {
+    setMounted(true);
+    const saved = localStorage.getItem('oculide_theme') as 'dark' | 'light' | null;
+    const initial = saved || 'dark';
+    setTheme(initial);
+    applyTheme(initial);
+  }, []);
+
+  const applyTheme = (t: 'dark' | 'light') => {
+    const html = document.documentElement;
+    if (t === 'dark') {
+      html.classList.add('dark');
+      html.setAttribute('data-theme', 'dark');
+    } else {
+      html.classList.remove('dark');
+      html.setAttribute('data-theme', 'light');
+    }
+  };
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    localStorage.setItem('oculide_theme', next);
+    applyTheme(next);
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -27,12 +62,12 @@ export default function ForgotPasswordPage() {
     const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
 
     if (!normalizedEmail) {
-      setError('Vui lòng nhập email trường của bạn.');
+      setError('Vui lòng nhập email trường hoặc tài khoản của bạn.');
       return;
     }
 
     if (!isValidEmail) {
-      setError('Email chưa đúng định dạng. Vui lòng kiểm tra lại.');
+      setError('Email không đúng định dạng. Vui lòng kiểm tra lại.');
       return;
     }
 
@@ -41,176 +76,212 @@ export default function ForgotPasswordPage() {
     try {
       const response = await fetch('/api/v1/auth/forgot-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ email: normalizedEmail }),
       });
+
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        // Fallback môi trường phát triển khi Backend API chưa có
-        if (response.status === 404 || response.status === 405) {
-          const devToken = `dev_token_${Date.now()}`;
-          setResetLink(`/reset-password?token=${devToken}`);
-          setIsSubmitted(true);
-          return;
-        }
-        throw new Error(data.detail || 'Không thể tiếp nhận yêu cầu khôi phục.');
+        throw new Error(data.detail || 'Không thể tiếp nhận yêu cầu khôi phục. Vui lòng thử lại sau.');
       }
 
-      const linkFromApi = data.reset_link || (data.token ? `/reset-password?token=${data.token}` : '');
-      setResetLink(linkFromApi);
       setIsSubmitted(true);
-    } catch (requestError: any) {
-      // Hỗ trợ kiểm thử trực tiếp giao diện khi backend chưa chạy
-      const devToken = `dev_token_${Date.now()}`;
-      setResetLink(`/reset-password?token=${devToken}`);
-      setIsSubmitted(true);
+    } catch (err: any) {
+      setError(err.message || 'Không thể gửi yêu cầu khôi phục. Vui lòng thử lại sau.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <main className="flex min-h-screen w-full flex-col bg-[#f4f7f9] font-sans text-slate-800 lg:flex-row">
-      <AuthBrandPanel variant="detailed" />
-
-      <section className="relative flex min-h-[620px] w-full items-center justify-center p-4 sm:p-8 lg:min-h-screen lg:w-[60%] lg:p-12">
-        <div className="w-full max-w-[440px] rounded-3xl border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/60 transition-all sm:min-h-[662px] sm:p-10">
-          {isSubmitted ? (
-            <div className="flex min-h-[500px] flex-col justify-center">
-              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-                <Send className="h-7 w-7" aria-hidden="true" />
-              </div>
-              <h2 className="text-[26px] font-extrabold tracking-[-0.02em] text-[#10203a]">
-                Kiểm tra hộp thư của bạn
-              </h2>
-              <p className="mt-3 max-w-md text-sm leading-6 text-[#6c7f9d]">
-                Chúng tôi đã gửi một liên kết khôi phục mật khẩu đến{' '}
-                <strong className="font-semibold text-[#10203a]">{email.trim()}</strong>.
-                Vui lòng mở email và nhấn vào liên kết để thiết lập lại mật khẩu.
-              </p>
-
-              <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-3.5 text-xs text-blue-700">
-                💡 <span className="font-semibold">Lưu ý:</span> Liên kết chỉ có hiệu lực trong vòng <strong>15 phút</strong>. Nếu không thấy email trong Hộp thư đến, vui lòng kiểm tra thư mục Spam hoặc Thư rác.
-              </div>
-
-              {resetLink && (
-                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold text-emerald-800">
-                      ⚡ Liên kết trực tiếp (Môi trường phát triển)
-                    </p>
-                    <span className="rounded-md bg-emerald-200/60 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                      DEV PREVIEW
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-600">
-                    Bạn có thể nhấp thẳng vào nút bên dưới để trải nghiệm ngay quy trình đổi mật khẩu qua link:
-                  </p>
-                  <Link
-                    href={resetLink}
-                    className="mt-3 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700"
-                  >
-                    <span>Mở liên kết khôi phục mật khẩu</span>
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setIsSubmitted(false)}
-                className="mt-6 h-[46px] w-full rounded-xl border border-[#dde5f0] bg-white text-sm font-bold text-[#2468f2] transition hover:border-[#2468f2] hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-100"
-              >
-                Gửi lại bằng email khác
-              </button>
-
-              <Link
-                href="/login"
-                className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-[#2468f2] hover:underline"
-              >
-                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                Quay lại đăng nhập
-              </Link>
-            </div>
-          ) : (
-            <>
-              <header>
-                <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                  Khôi phục mật khẩu
-                </h2>
-                <p className="mt-1.5 text-xs font-normal text-slate-500 sm:text-sm">
-                  Nhập email tài khoản của bạn để nhận liên kết đổi mật khẩu mới.
-                </p>
-              </header>
-
-              <form onSubmit={handleSubmit} noValidate className="mt-[52px]">
-                <label
-                  htmlFor="school-email"
-                  className="block text-[11px] font-bold uppercase tracking-[0.04em] text-[#6c7f9d]"
-                >
-                  Email trường hoặc tài khoản
-                </label>
-                <div className="relative mt-2">
-                  <Mail
-                    className="pointer-events-none absolute left-3.5 top-1/2 h-[17px] w-[17px] -translate-y-1/2 text-[#8ca0bd]"
-                    aria-hidden="true"
-                  />
-                  <input
-                    id="school-email"
-                    type="email"
-                    value={email}
-                    onChange={(event) => {
-                      setEmail(event.target.value);
-                      if (error) setError('');
-                    }}
-                    autoComplete="email"
-                    aria-invalid={Boolean(error)}
-                    aria-describedby={error ? 'email-error' : undefined}
-                    disabled={isSubmitting}
-                    placeholder="student@dtu.edu.vn"
-                    className={`h-[46px] w-full rounded-lg border bg-white pl-11 pr-4 text-[13px] text-[#10203a] outline-none transition placeholder:text-[#9aabc2] focus:ring-4 disabled:cursor-not-allowed disabled:bg-slate-50 ${
-                      error
-                        ? 'border-red-400 focus:border-red-500 focus:ring-red-100'
-                        : 'border-[#dde5f0] focus:border-[#2468f2] focus:ring-blue-100'
-                    }`}
-                  />
-                </div>
-                {error && (
-                  <p id="email-error" role="alert" className="mt-2 text-xs font-medium text-red-600">
-                    {error}
-                  </p>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="mt-6 flex h-[46px] w-full items-center justify-center gap-2 rounded-lg bg-[#2468f2] text-sm font-bold text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-wait disabled:opacity-70"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      Đang gửi yêu cầu...
-                    </>
-                  ) : (
-                    'Gửi liên kết khôi phục'
-                  )}
-                </button>
-              </form>
-
-              <div className="mt-8 text-left">
-                <Link
-                  href="/login"
-                  className="inline-flex items-center gap-2 text-sm font-bold text-[#2468f2] hover:underline"
-                >
-                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                  Quay lại đăng nhập
-                </Link>
-              </div>
-            </>
-          )}
+    <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
+      {/* ── NÚT CHUYỂN ĐEN/TRẮNG ICON GÓC TRÊN BÊN PHẢI (CHUẨN LOGIN) ── */}
+      {mounted && (
+        <div className="fixed top-4 right-4 z-50">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Chuyển sang giao diện Sáng (Light)' : 'Chuyển sang giao diện Tối (Dark)'}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white/90 text-slate-700 shadow-md backdrop-blur-md transition-all hover:scale-105 hover:bg-white active:scale-95 dark:border-white/15 dark:bg-[#121620]/90 dark:text-amber-400 dark:hover:bg-[#1a202c] cursor-pointer"
+            aria-label="Chuyển đổi giao diện Sáng / Tối"
+          >
+            {theme === 'dark' ? (
+              <Sun className="h-4 w-4 text-amber-400 transition-transform rotate-0 hover:rotate-45" />
+            ) : (
+              <Moon className="h-4 w-4 text-slate-700 transition-transform rotate-0 hover:-rotate-12" />
+            )}
+          </button>
         </div>
-      </section>
-    </main>
+      )}
+
+      {/* ── HEADER CHUẨN ĐỒNG BỘ VỚI LOGIN ── */}
+      <header className="border-b border-slate-200/80 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#090a0f]/80 transition-colors">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <Link href="/" className="flex items-center gap-3 group">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 transition-transform group-hover:scale-105">
+              <Eye className="h-5 w-5" strokeWidth={2.3} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-black tracking-tight text-slate-900 dark:text-white">OCULIDE</span>
+                <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                  NCKH 2026
+                </span>
+              </div>
+              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">AI Proctoring &amp; Lab LMS</p>
+            </div>
+          </Link>
+
+          <Link
+            href="/login"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-400 hover:bg-slate-50 dark:border-white/15 dark:bg-[#141824] dark:text-slate-200 dark:hover:bg-[#1a2030] pr-3 mr-12"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>Quay lại đăng nhập</span>
+          </Link>
+        </div>
+      </header>
+
+      {/* ── BỐ CỤC 12 CỘT CHUẨN XÁC THEO HỆ THỐNG ── */}
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+        <div className="grid gap-10 lg:grid-cols-12 lg:items-start">
+          
+          {/* CỘT TRÁI (7 CỘT): SHOWCASE NỀN TẢNG DÙNG CHUNG VỚI LOGIN */}
+          <div className="lg:col-span-7">
+            <AuthShowcasePanel />
+          </div>
+
+          {/* CỘT PHẢI (5 CỘT): CARD KHÔI PHỤC MẬT KHẨU MATCH 100% DESIGN LOGIN */}
+          <div className="lg:col-span-5">
+            <div className="rounded-3xl border border-slate-200/80 bg-white p-7 sm:p-9 shadow-xl shadow-slate-200/50 transition-all dark:border-white/10 dark:bg-[#0d1017] dark:shadow-black/60">
+              
+              {isSubmitted ? (
+                /* ── GIAO DIỆN KHI ĐÃ GỬI THÀNH CÔNG ── */
+                <div className="space-y-5 text-left animate-in fade-in duration-300">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400">
+                    <Send className="h-6 w-6" aria-hidden="true" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                      Kiểm tra hộp thư của bạn
+                    </h2>
+                    <p className="mt-2 text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                      Chúng tôi đã gửi một liên kết khôi phục mật khẩu đến email{' '}
+                      <strong className="font-bold text-blue-600 dark:text-blue-400">{email.trim()}</strong>.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3.5 text-xs text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300 leading-relaxed">
+                    💡 <strong>Lưu ý:</strong> Liên kết có hiệu lực trong <strong>15 phút</strong>. Vui lòng kiểm tra cả mục Thư rác (Spam) nếu không thấy trong Hộp thư đến.
+                  </div>
+
+                  <div className="space-y-3 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSubmitted(false);
+                        setEmail('');
+                      }}
+                      className="h-11 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                    >
+                      Gửi lại bằng email khác
+                    </button>
+
+                    <div className="text-center pt-1">
+                      <Link
+                        href="/login"
+                        className="inline-flex items-center gap-2 text-xs font-bold text-blue-600 hover:underline dark:text-blue-400"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                        <span>Quay lại trang Đăng nhập</span>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* ── GIAO DIỆN NHẬP FORM KHÔI PHỤC ── */
+                <>
+                  <div className="mb-6 text-left">
+                    <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                      Khôi phục mật khẩu
+                    </h2>
+                    <p className="mt-1.5 text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400">
+                      Nhập email tài khoản của bạn để nhận liên kết đổi mật khẩu mới.
+                    </p>
+                  </div>
+
+                  {error && (
+                    <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 sm:text-sm">
+                      <span className="leading-snug">{error}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSubmit} noValidate className="space-y-4 text-left">
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="school-email"
+                        className="block text-xs font-semibold text-slate-700 dark:text-slate-300 sm:text-sm"
+                      >
+                        Email trường hoặc tài khoản
+                      </label>
+                      <div className="relative">
+                        <Mail
+                          className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+                          aria-hidden="true"
+                        />
+                        <input
+                          id="school-email"
+                          type="email"
+                          value={email}
+                          onChange={(e) => {
+                            setEmail(e.target.value);
+                            if (error) setError('');
+                          }}
+                          placeholder="student@school.edu.vn"
+                          disabled={isSubmitting}
+                          className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-xs font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-slate-500 dark:focus:ring-blue-500/20 sm:text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-md shadow-blue-500/25 transition-all hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer sm:text-base"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-white" />
+                          <span>Đang gửi liên kết...</span>
+                        </>
+                      ) : (
+                        <span>Gửi liên kết khôi phục</span>
+                      )}
+                    </button>
+                  </form>
+
+                  <div className="mt-6 pt-4 border-t border-slate-100 dark:border-white/5 text-center">
+                    <Link
+                      href="/login"
+                      className="inline-flex items-center gap-2 text-xs font-bold text-blue-600 hover:underline dark:text-blue-400 sm:text-sm"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      <span>Quay lại trang Đăng nhập</span>
+                    </Link>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* ── FOOTER CHUẨN XÁC TOÀN HỆ THỐNG ── */}
+      <InstitutionalFooter />
+    </div>
   );
 }

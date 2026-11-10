@@ -1,51 +1,118 @@
-from fastapi import APIRouter, HTTPException, Depends, status
-from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, Depends, status, Header, BackgroundTasks, Request
+from typing import Dict, Any, Optional
 from datetime import timedelta
-
 import secrets
+
 from schemas.auth import (
     UserRegisterRequest, LoginRequest, UserResponse, TokenResponse,
     JoinRoomRequest, UserProfileUpdateRequest, ChangePasswordRequest,
-    RefreshTokenRequest
+    RefreshTokenRequest, ForgotPasswordRequest, ForgotPasswordResponse,
+    ResetPasswordRequest
 )
-from core.security import create_access_token, create_refresh_token, decode_access_token, verify_password
+from core.security import (
+    create_access_token, create_refresh_token, decode_access_token, 
+    verify_password
+)
+from services.email_service import EmailService
 from core.permissions import get_current_user
 from database.user_db import (
     get_user_by_username, get_user_by_email, get_user_by_id,
-    create_user, update_last_login, update_user_profile, change_user_password
+    create_user, update_last_login, update_user_profile, change_user_password,
+    create_password_reset_token, verify_password_reset_token, mark_password_reset_token_used
 )
-from database.room_db import get_room_by_code
-from database.enrollment_db import is_student_enrolled, enroll_student
 from core.config import settings
 
 router = APIRouter()
 
+def extract_client_ip(request: Request) -> str:
+    """
+    Bóc tách địa chỉ IP thực tế của client:
+    1. Header X-Client-Public-IP do frontend resolver hoặc reverse proxy truyền
+    2. Cloudflare header CF-Connecting-IP
+    3. X-Real-IP
+    4. X-Forwarded-For (lấy IP đầu tiên)
+    5. Fallback request.client.host
+    """
+    # 1. Header do client hoặc reverse proxy truyền
+    client_public_ip = request.headers.get("x-client-public-ip")
+    if client_public_ip and client_public_ip.strip():
+        ip = client_public_ip.split(",")[0].strip()
+        if ip and ip.lower() not in ("127.0.0.1", "::1", "localhost", "0.0.0.0", "null", "undefined"):
+            return ip
+
+    # 2. Cloudflare
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip and cf_ip.strip():
+        return cf_ip.strip()
+
+    # 3. Nginx / Reverse Proxy Real IP
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+
+    # 4. Standard X-Forwarded-For
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for and forwarded_for.strip():
+        ips = [i.strip() for i in forwarded_for.split(",") if i.strip()]
+        if ips:
+            return ips[0]
+
+    # 5. Socket Host
+    if request.client and request.client.host:
+        return request.client.host
+
+    return "127.0.0.1"
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserRegisterRequest):
-    """Đăng ký tài khoản người dùng mới (Instructor / Student)"""
-    if get_user_by_username(user_data.username):
+async def register(
+    user_data: UserRegisterRequest,
+    background_tasks: BackgroundTasks
+):
+    """Đăng ký tài khoản người dùng mới (Instructor / Student) và tự động gửi email thông báo"""
+    clean_email = user_data.email.strip().lower()
+    username = (user_data.username or clean_email.split("@")[0]).strip().lower()
+
+    if get_user_by_username(username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tên người dùng (username) đã được sử dụng"
+            detail=f"Tên người dùng (username) '{username}' đã được sử dụng"
         )
-    if get_user_by_email(user_data.email):
+    if get_user_by_email(clean_email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email đã được đăng ký trên hệ thống"
         )
     
     new_user = create_user(
-        username=user_data.username,
+        username=username,
         password=user_data.password,
-        email=user_data.email,
+        email=clean_email,
         full_name=user_data.full_name,
         role=user_data.role,
         student_id=user_data.student_id
     )
+
+    # Tự động gửi email xác nhận tạo tài khoản thành công kèm thông tin đăng nhập
+    background_tasks.add_task(
+        EmailService.send_account_credentials_email,
+        to_email=new_user["email"],
+        username=new_user["username"],
+        raw_password=user_data.password,
+        full_name=new_user["full_name"],
+        role=new_user["role"],
+        ma_dinh_danh=new_user.get("student_id") or new_user.get("ma_dinh_danh")
+    )
+
     return new_user
 
+@router.get("/my-ip")
+async def get_my_ip(request: Request):
+    """Lấy địa chỉ IP hiện tại của client kết nối tới hệ thống (đã bóc tách qua proxy/header)"""
+    client_ip = extract_client_ip(request)
+    return {"ip": client_ip}
+
 @router.post("/login", response_model=TokenResponse)
-async def login(credentials: LoginRequest):
+async def login(credentials: LoginRequest, request: Request):
     """Đăng nhập hệ thống bằng username/email và password nhận cặp Access + Refresh JWT token"""
     identifier = credentials.username.strip()
     user = get_user_by_username(identifier) or get_user_by_email(identifier)
@@ -67,7 +134,9 @@ async def login(credentials: LoginRequest):
             detail="Tài khoản của bạn hiện đang bị khóa. Vui lòng liên hệ quản trị viên."
         )
         
-    update_last_login(user["user_id"])
+    client_ip = extract_client_ip(request)
+    update_last_login(user["user_id"], client_ip=client_ip)
+    user["last_login_ip"] = client_ip
     
     token_data = {
         "sub": str(user["user_id"]),
@@ -75,7 +144,8 @@ async def login(credentials: LoginRequest):
         "username": user["username"],
         "role": user["role"],
         "email": user["email"],
-        "full_name": user["full_name"]
+        "full_name": user["full_name"],
+        "must_change_password": user.get("must_change_password", False)
     }
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
@@ -111,7 +181,8 @@ async def refresh_access_token(refresh_req: RefreshTokenRequest):
         "username": user["username"],
         "role": user["role"],
         "email": user["email"],
-        "full_name": user["full_name"]
+        "full_name": user["full_name"],
+        "must_change_password": user.get("must_change_password", False)
     }
     new_access_token = create_access_token(token_data)
     new_refresh_token = create_refresh_token(token_data)
@@ -131,92 +202,53 @@ async def get_my_profile(current_user: Dict[str, Any] = Depends(get_current_user
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
     return user
 
-@router.post("/join", response_model=TokenResponse)
-async def join_room_fast(join_data: JoinRoomRequest):
-    """Sinh viên tham gia phòng nhanh bằng room_code và passcode (Tạo tài khoản khách duy nhất an toàn)"""
-    room = get_room_by_code(join_data.room_code)
-    if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Phòng với mã '{join_data.room_code}' không tồn tại"
-        )
-    if not room["is_active"]:
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+async def forgot_password(
+    request_data: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks
+):
+    """Yêu cầu khôi phục mật khẩu qua Email"""
+    email = request_data.email.strip().lower()
+    user = get_user_by_email(email)
+    if not user:
+        # Không tiết lộ email có tồn tại hay không vì lý do bảo mật
+        return {
+            "message": "Nếu email này tồn tại trong hệ thống, liên kết khôi phục đã được tạo.",
+            "reset_link": None,
+            "token": None
+        }
+    
+    reset_token = secrets.token_urlsafe(32)
+    create_password_reset_token(user["user_id"], reset_token, expires_minutes=15)
+    
+    # Gửi email khôi phục ngầm qua BackgroundTasks để tối ưu tốc độ phản hồi
+    background_tasks.add_task(
+        EmailService.send_password_reset_email,
+        to_email=user["email"],
+        reset_token=reset_token,
+        full_name=user.get("full_name") or user["username"]
+    )
+    
+    return {
+        "message": f"Liên kết khôi phục mật khẩu đã được gửi tới email {email}.",
+        "reset_link": None,
+        "token": None
+    }
+
+@router.post("/reset-password")
+async def reset_password(request_data: ResetPasswordRequest):
+    """Đặt lại mật khẩu bằng Token từ email khôi phục"""
+    user_id = verify_password_reset_token(request_data.token)
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phòng học/thi này đã bị đóng"
+            detail="Liên kết xác thực không hợp lệ hoặc đã hết hạn (tối đa 15 phút)."
         )
-    if room.get("passcode") and room["passcode"] != join_data.passcode:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Mật khẩu vào phòng (passcode) không chính xác"
-        )
-        
-    # Tạo người dùng vãng lai với định danh duy nhất (chống trùng lặp tài khoản)
-    safe_sid = join_data.student_id.strip() if join_data.student_id else join_data.room_code
-    unique_suffix = secrets.token_hex(4)
-    username = f"guest_{safe_sid}_{unique_suffix}"
     
-    temp_password = f"TempPass_{secrets.token_urlsafe(8)}!"
-    user = create_user(
-        username=username,
-        password=temp_password,
-        email=f"{username}@oculide.temp",
-        full_name=join_data.full_name or f"Sinh viên {safe_sid}",
-        role="student",
-        student_id=join_data.student_id
-    )
-        
-    # Ghi danh vào phòng
-    if not is_student_enrolled(room["room_id"], user["user_id"]):
-        enroll_student(room["room_id"], user["user_id"], enrolled_by=room["instructor_id"])
-        
-    token_data = {
-        "sub": str(user["user_id"]),
-        "user_id": user["user_id"],
-        "username": user["username"],
-        "role": "student",
-        "email": user["email"],
-        "full_name": user["full_name"],
-        "room_id": room["room_id"]
-    }
-    access_token = create_access_token(token_data)
-    refresh_token = create_refresh_token(token_data)
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-        "user": user
-    }
-
-# ─── OAUTH2 PLACEHOLDERS & CALLBACKS ─────────────────────────────────────────
-@router.get("/login/google")
-async def login_google():
-    """Khởi tạo URL đăng nhập qua Google OAuth2"""
-    if not settings.GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Google OAuth2 chưa được cấu hình Client ID")
-    redirect_uri = "https://api.oculide.id.vn/api/v1/auth/callback/google"
-    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={settings.GOOGLE_CLIENT_ID}&redirect_uri={redirect_uri}&scope=openid%20profile%20email"
-    return {"auth_url": auth_url}
-
-@router.get("/callback/google")
-async def callback_google(code: str):
-    """Tiếp nhận mã xác thực từ Google OAuth2 và trả JWT token"""
-    # Gợi ý: Trao đổi code lấy Google Token và tải profile
-    return {"message": "Google OAuth2 callback received", "auth_code": code[:10] + "..."}
-
-@router.get("/login/github")
-async def login_github():
-    """Khởi tạo URL đăng nhập qua GitHub OAuth"""
-    if not settings.GITHUB_CLIENT_ID:
-        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="GitHub OAuth chưa được cấu hình Client ID")
-    auth_url = f"https://github.com/login/oauth/authorize?client_id={settings.GITHUB_CLIENT_ID}&scope=user:email"
-    return {"auth_url": auth_url}
-
-@router.get("/callback/github")
-async def callback_github(code: str):
-    """Tiếp nhận mã xác thực từ GitHub OAuth"""
-    return {"message": "GitHub OAuth callback received", "auth_code": code[:10] + "..."}
-
+    change_user_password(user_id, request_data.new_password)
+    mark_password_reset_token_used(request_data.token)
+    
+    return {"message": "Mật khẩu của bạn đã được cập nhật thành công. Vui lòng đăng nhập lại."}
 
 @router.put("/profile", response_model=UserResponse)
 async def update_profile(
@@ -228,7 +260,11 @@ async def update_profile(
         user_id=current_user["user_id"],
         full_name=profile_data.full_name,
         email=profile_data.email,
-        student_id=profile_data.student_id
+        student_id=profile_data.student_id,
+        department=profile_data.department,
+        academic_rank=profile_data.academic_rank,
+        phone_number=profile_data.phone_number,
+        avatar_url=profile_data.avatar_url
     )
     return updated
 
@@ -246,3 +282,4 @@ async def change_password(
         )
     change_user_password(current_user["user_id"], password_data.new_password)
     return {"message": "Đổi mật khẩu thành công"}
+

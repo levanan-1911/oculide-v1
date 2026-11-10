@@ -1,21 +1,25 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 
 class RoomCreateRequest(BaseModel):
-    room_code: str = Field(..., min_length=3, max_length=20)
-    room_name: str = Field(..., min_length=1, max_length=100)
-    room_type: str = Field("exam", pattern="^(exam|classroom)$")
+    room_code: str = Field(..., min_length=3, max_length=50)
+    room_name: str = Field(..., min_length=1, max_length=200)
+    room_type: str = Field("lab", pattern="^(exam|lab|classroom)$")
+    class_id: Optional[Union[int, str]] = None
     description: Optional[str] = None
     start_time: datetime
     end_time: datetime
     duration_minutes: int = Field(..., gt=0)
-    max_attempts: int = Field(default=1, gt=0)
+    max_attempts: int = Field(default=10, gt=0)
     passcode: Optional[str] = Field(None, max_length=50)
+    proctoring_config: Optional[Union[Dict[str, Any], str]] = None
+    status: Optional[str] = "chua_mo"
 
 class RoomUpdateRequest(BaseModel):
     room_name: Optional[str] = None
     room_type: Optional[str] = None
+    class_id: Optional[Union[int, str]] = None
     description: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
@@ -23,6 +27,8 @@ class RoomUpdateRequest(BaseModel):
     max_attempts: Optional[int] = None
     is_active: Optional[bool] = None
     passcode: Optional[str] = None
+    proctoring_config: Optional[Union[Dict[str, Any], str]] = None
+    status: Optional[str] = None
 
 class RoomResponse(BaseModel):
     room_id: int
@@ -38,6 +44,9 @@ class RoomResponse(BaseModel):
     is_active: bool
     passcode: Optional[str] = None
     livekit_room_name: Optional[str] = None
+    class_id: Optional[int] = None
+    proctoring_config: Optional[str] = None
+    status: Optional[str] = "chua_mo"
     created_at: datetime
     updated_at: datetime
 

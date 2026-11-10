@@ -1,6 +1,6 @@
 from core.config import get_db_connection
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 def get_room_by_id(room_id: int) -> Optional[Dict]:
     conn = get_db_connection()
@@ -19,7 +19,10 @@ def get_room_by_id(room_id: int) -> Optional[Dict]:
                    so_lan_nop_toi_da AS max_attempts,
                    dang_hoat_dong AS is_active, 
                    mat_ma_phong AS passcode, 
-                   ma_dinh_danh_livekit AS livekit_room_name, 
+                   ma_dinh_danh_livekit AS livekit_room_name,
+                   ma_lop AS class_id,
+                   cau_hinh_giam_sat AS proctoring_config,
+                   trang_thai AS status,
                    ngay_tao AS created_at, 
                    ngay_cap_nhat AS updated_at
             FROM Phong 
@@ -53,7 +56,10 @@ def get_room_by_code(room_code: str) -> Optional[Dict]:
                    so_lan_nop_toi_da AS max_attempts,
                    dang_hoat_dong AS is_active, 
                    mat_ma_phong AS passcode, 
-                   ma_dinh_danh_livekit AS livekit_room_name, 
+                   ma_dinh_danh_livekit AS livekit_room_name,
+                   ma_lop AS class_id,
+                   cau_hinh_giam_sat AS proctoring_config,
+                   trang_thai AS status,
                    ngay_tao AS created_at, 
                    ngay_cap_nhat AS updated_at
             FROM Phong 
@@ -94,7 +100,10 @@ def get_rooms_by_instructor(instructor_id: int, skip: int = 0, limit: int = 100,
                    so_lan_nop_toi_da AS max_attempts,
                    dang_hoat_dong AS is_active, 
                    mat_ma_phong AS passcode, 
-                   ma_dinh_danh_livekit AS livekit_room_name, 
+                   ma_dinh_danh_livekit AS livekit_room_name,
+                   ma_lop AS class_id,
+                   cau_hinh_giam_sat AS proctoring_config,
+                   trang_thai AS status,
                    ngay_tao AS created_at, 
                    ngay_cap_nhat AS updated_at
             FROM Phong 
@@ -133,7 +142,10 @@ def get_all_rooms(skip: int = 0, limit: int = 100, room_type: Optional[str] = No
                    so_lan_nop_toi_da AS max_attempts,
                    dang_hoat_dong AS is_active, 
                    mat_ma_phong AS passcode, 
-                   ma_dinh_danh_livekit AS livekit_room_name, 
+                   ma_dinh_danh_livekit AS livekit_room_name,
+                   ma_lop AS class_id,
+                   cau_hinh_giam_sat AS proctoring_config,
+                   trang_thai AS status,
                    ngay_tao AS created_at, 
                    ngay_cap_nhat AS updated_at
             FROM Phong 
@@ -164,26 +176,33 @@ def create_room(
     duration_minutes: int,
     max_attempts: int,
     passcode: Optional[str] = None,
-    livekit_room_name: Optional[str] = None
+    livekit_room_name: Optional[str] = None,
+    class_id: Optional[Any] = None,
+    proctoring_config: Optional[str] = None,
+    status: str = 'chua_mo'
 ) -> Dict:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        from database.classes_db import _resolve_class_id
+        real_class_id = _resolve_class_id(cursor, class_id) if class_id else None
+
         cursor.execute("""
             INSERT INTO Phong (
                 ma_phong_code, tieu_de, loai_phong, nguoi_tao, mo_ta,
                 gio_bat_dau, gio_ket_thuc, thoi_luong_phut, so_lan_nop_toi_da,
-                mat_ma_phong, ma_dinh_danh_livekit
+                mat_ma_phong, ma_dinh_danh_livekit, ma_lop, cau_hinh_giam_sat, trang_thai
             )
             OUTPUT inserted.ma_phong, inserted.ma_phong_code, inserted.tieu_de, inserted.loai_phong,
                    inserted.nguoi_tao, inserted.mo_ta, inserted.gio_bat_dau, inserted.gio_ket_thuc,
                    inserted.thoi_luong_phut, inserted.so_lan_nop_toi_da, inserted.dang_hoat_dong, inserted.mat_ma_phong,
-                   inserted.ma_dinh_danh_livekit, inserted.ngay_tao, inserted.ngay_cap_nhat
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   inserted.ma_dinh_danh_livekit, inserted.ma_lop, inserted.cau_hinh_giam_sat, inserted.trang_thai,
+                   inserted.ngay_tao, inserted.ngay_cap_nhat
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             room_code, room_name, room_type, instructor_id, description,
             start_time, end_time, duration_minutes, max_attempts,
-            passcode, livekit_room_name
+            passcode, livekit_room_name, real_class_id, proctoring_config, status
         ))
         row = cursor.fetchone()
         conn.commit()
@@ -202,12 +221,16 @@ def create_room(
                 "is_active": bool(row[10]),
                 "passcode": row[11],
                 "livekit_room_name": row[12],
-                "created_at": row[13],
-                "updated_at": row[14]
+                "class_id": row[13],
+                "proctoring_config": row[14],
+                "status": row[15],
+                "created_at": row[16],
+                "updated_at": row[17]
             }
         raise Exception("Không thể tạo phòng mới")
     finally:
         cursor.close()
+        conn.close()
         conn.close()
 
 def update_room(room_id: int, **kwargs) -> Optional[Dict]:

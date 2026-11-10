@@ -33,6 +33,14 @@ async def create_new_room(
     livekit_room_name = f"room_{room_data.room_code}"
     # Khởi tạo LiveKit Room nếu chế độ thi yêu cầu video
     livekit_service.create_room(livekit_room_name)
+
+    import json
+    cfg_str = None
+    if room_data.proctoring_config:
+        if isinstance(room_data.proctoring_config, str):
+            cfg_str = room_data.proctoring_config
+        else:
+            cfg_str = json.dumps(room_data.proctoring_config)
     
     return create_room(
         room_code=room_data.room_code,
@@ -45,7 +53,10 @@ async def create_new_room(
         duration_minutes=room_data.duration_minutes,
         max_attempts=room_data.max_attempts,
         passcode=room_data.passcode,
-        livekit_room_name=livekit_room_name
+        livekit_room_name=livekit_room_name,
+        class_id=room_data.class_id,
+        proctoring_config=cfg_str,
+        status=room_data.status or "chua_mo"
     )
 
 @router.post("/join", response_model=RoomResponse)

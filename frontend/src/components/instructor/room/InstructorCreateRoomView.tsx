@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   Sliders,
   Calendar,
+  Loader2,
 } from 'lucide-react';
 import {
   ClassRow,
@@ -41,6 +42,7 @@ import {
   INSTRUCTOR_ROOMS_STORAGE_KEY,
   INSTRUCTOR_SCHEDULES_STORAGE_KEY,
 } from '@/components/instructor/classes/types';
+import { fetchWithAuth } from '@/services/apiClient';
 
 const DEFAULT_CLASSES: Array<{ id: string; name: string; studentCount: number }> = [
   { id: 'CS101', name: 'Nhập môn Lập trình C/C++', studentCount: 48 },
@@ -155,6 +157,7 @@ export default function InstructorCreateRoomView() {
 
   const [classesList, setClassesList] = useState(DEFAULT_CLASSES);
   const [selectedClassId, setSelectedClassId] = useState(queryClass);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [roomType, setRoomType] = useState<'lab' | 'exam'>(queryType);
   const [roomTitle, setRoomTitle] = useState(() => {
     return queryType === 'exam'
@@ -172,6 +175,52 @@ export default function InstructorCreateRoomView() {
   const [saveToSchedule, setSaveToSchedule] = useState(true);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('TPL-LAB-01');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Nạp danh sách lớp học phần thật từ Backend
+  useEffect(() => {
+    let isCancelled = false;
+    async function loadInstructorClasses() {
+      try {
+        let queryParam = '';
+        if (typeof window !== 'undefined') {
+          const rawUser = localStorage.getItem('oculide_user');
+          if (rawUser) {
+            try {
+              const u = JSON.parse(rawUser);
+              if (u?.user_id) queryParam = `?instructor_id=${u.user_id}`;
+            } catch {}
+          }
+        }
+        const data = await fetchWithAuth<any[]>(`/api/v1/classes${queryParam}`);
+        if (isCancelled || !Array.isArray(data)) return;
+        if (data.length > 0) {
+          const mapped = data.map((c: any) => ({
+            id: c.class_code || String(c.class_id),
+            name: c.class_name,
+            studentCount: c.student_count || 0,
+          }));
+          setClassesList(mapped);
+
+          const found = mapped.find(
+            (x: any) => x.id.toLowerCase() === queryClass.toLowerCase()
+          );
+          if (found) {
+            setSelectedClassId(found.id);
+            setRoomCode(generateClassRoomCode(found.id));
+          } else {
+            setSelectedClassId(mapped[0].id);
+            setRoomCode(generateClassRoomCode(mapped[0].id));
+          }
+        }
+      } catch (err) {
+        console.error('Lỗi nạp danh sách lớp:', err);
+      }
+    }
+    loadInstructorClasses();
+    return () => {
+      isCancelled = true;
+    };
+  }, [queryClass]);
 
   const [existingSessions, setExistingSessions] = useState<Array<{
     source: string;
@@ -463,7 +512,7 @@ export default function InstructorCreateRoomView() {
     SAMPLE_QUESTION_TEMPLATES.find((t) => t.id === selectedTemplateId) || SAMPLE_QUESTION_TEMPLATES[0];
 
   // Khởi tạo phòng chờ
-  const handleCreateRoomSubmit = (e: React.FormEvent) => {
+  const handleCreateRoomSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Chặn submit trước khi mã phòng, PIN và ngày giờ địa phương được khởi tạo.
@@ -486,129 +535,164 @@ export default function InstructorCreateRoomView() {
       return;
     }
 
-    let studentsToSeed: Array<{ id: string; name: string; email: string }> = [];
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem(INSTRUCTOR_STORAGE_KEY);
-        if (raw) {
-          const parsed: ClassRow[] = JSON.parse(raw);
-          const found = parsed.find((c) => c.id === selectedClassId);
-          if (found && found.students && found.students.length > 0) {
-            studentsToSeed = found.students;
-          }
-        }
-      } catch {
-        // fallback
-      }
-    }
+    setIsSubmitting(true);
 
-    if (studentsToSeed.length === 0) {
-      studentsToSeed = [
-        { id: 'SE184801', name: 'Nguyễn Văn An', email: 'an.nv@school.edu.vn' },
-        { id: 'SE184802', name: 'Trần Thị Bình', email: 'binh.tt@school.edu.vn' },
-        { id: 'SE184803', name: 'Lê Hoàng Cường', email: 'cuong.lh@school.edu.vn' },
-        { id: 'SE184804', name: 'Phạm Minh Châu', email: 'chau.pm@school.edu.vn' },
-        { id: 'SE184805', name: 'Đặng Tuấn Dương', email: 'duong.dt@school.edu.vn' },
-        { id: 'SE184806', name: 'Vũ Hải Yến', email: 'yen.vh@school.edu.vn' },
-      ];
-    }
-
-    const attendees = studentsToSeed.map((s, idx) => {
-      const isJoined = idx < Math.ceil(studentsToSeed.length * 0.85);
-      return {
-        studentId: s.id,
-        studentName: s.name,
-        studentEmail: s.email,
-        status: (isJoined ? 'waiting' : 'absent') as 'waiting' | 'absent',
-        joinedAt: isJoined ? `07:${30 + (idx % 15)}:${10 + (idx % 50)}` : undefined,
-        device: isJoined ? 'Laptop cá nhân (Windows 11 / Chrome 124)' : undefined,
-        cameraReady: isJoined,
+    try {
+      // 1. Gửi request tạo phòng lưu trực tiếp vào CSDL SQL Server (bảng Phong)
+      const payload = {
+        room_code: roomCode.trim(),
+        room_name: roomTitle.trim() || `${curClass.id} - ${roomType === 'lab' ? 'Thực hành' : 'Kiểm tra'}`,
+        room_type: roomType,
+        class_id: curClass.id,
+        description: `${roomType === 'lab' ? 'Buổi thực hành Lab' : 'Bài kiểm tra'} cho lớp ${curClass.name}`,
+        start_time: `${scheduledDate}T${startTime}:00`,
+        end_time: `${scheduledDate}T${endTime}:00`,
+        duration_minutes: durationMinutes,
+        max_attempts: roomType === 'lab' ? 10 : 1,
+        passcode: roomPassword,
+        proctoring_config: {
+          lockdownFullscreen,
+          aiFaceDetection,
+          aiObjectDetection: aiPhoneDetection,
+          allowTabSwitch: !blockTabSwitch,
+          webAccessPolicy,
+          maxTabSwitches,
+          requireCamera,
+        },
+        status: 'chua_mo',
       };
-    });
 
-    const newRoom: RoomSession = {
-      id: roomCode,
-      classId: curClass.id,
-      className: curClass.name,
-      password: roomPassword,
-      type: roomType,
-      title: roomTitle.trim() || `${curClass.id} - ${roomType === 'lab' ? 'Thực hành' : 'Kiểm tra'}`,
-      templateId: selectedTemplate.id,
-      templateTitle: selectedTemplate.title,
-      templateLanguage: selectedTemplate.language,
-      durationMinutes: durationMinutes,
-      scheduledDate: scheduledDate,
-      startTime: startTime,
-      endTime: endTime,
-      savedToSchedule: saveToSchedule,
-      status: 'waiting', // Bắt đầu ở trạng thái phòng chờ (Lobby)
-      createdAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-      proctoringConfig: {
-        lockdownFullscreen,
-        aiFaceDetection,
-        aiObjectDetection: aiPhoneDetection,
-        allowTabSwitch: !blockTabSwitch,
-      },
-      attendees,
-    };
+      await fetchWithAuth('/api/v1/rooms', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
 
-    if (typeof window !== 'undefined') {
-      try {
-        let existingRooms: RoomSession[] = [];
-        const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-        if (raw) existingRooms = JSON.parse(raw);
-        localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify([newRoom, ...existingRooms]));
-
-        // Lưu vào Lịch Giảng Dạy (/instructor/schedules)
-        if (saveToSchedule) {
-          const isToday = scheduledDate === getTodayDateString();
-          const displayDate = isToday
-            ? 'Hôm nay'
-            : new Date(scheduledDate).toLocaleDateString('vi-VN', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-              });
-
-          const newScheduleItem: ScheduleSessionItem = {
-            id: `SES-${roomCode}`,
-            classCode: curClass.id,
-            className: curClass.name,
-            title: newRoom.title,
-            type: roomType === 'lab' ? 'LAB' : 'EXAM',
-            language: selectedTemplate.language || 'C++',
-            startTime: startTime,
-            endTime: endTime,
-            date: displayDate,
-            roomCode: roomCode,
-            passcode: roomPassword,
-            status: 'Sắp diễn ra',
-            enrolledStudents: curClass.studentCount,
-            attendedStudents: 0,
-            isAiProctored: Boolean(requireCamera || aiFaceDetection || aiPhoneDetection || lockdownFullscreen),
-          };
-
-          let existingSchedules: ScheduleSessionItem[] = [];
-          const rawSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-          if (rawSched) existingSchedules = JSON.parse(rawSched);
-          localStorage.setItem(
-            INSTRUCTOR_SCHEDULES_STORAGE_KEY,
-            JSON.stringify([newScheduleItem, ...existingSchedules.filter((s) => s.roomCode !== roomCode)])
-          );
+      let studentsToSeed: Array<{ id: string; name: string; email: string }> = [];
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem(INSTRUCTOR_STORAGE_KEY);
+          if (raw) {
+            const parsed: ClassRow[] = JSON.parse(raw);
+            const found = parsed.find((c) => c.id === selectedClassId);
+            if (found && found.students && found.students.length > 0) {
+              studentsToSeed = found.students;
+            }
+          }
+        } catch {
+          // fallback
         }
-
-        window.dispatchEvent(new Event('storage'));
-      } catch (err) {
-        console.error(err);
       }
+
+      if (studentsToSeed.length === 0) {
+        studentsToSeed = [
+          { id: '29211200333', name: 'Hoàng Đình Khôi', email: '29211200333@dtu.edu.vn' },
+          { id: 'SV2026001', name: 'Nguyễn Văn An', email: 'sv2026001@dtu.edu.vn' },
+          { id: '29211200888', name: 'Trần Thu Hà', email: '29211200888@dtu.edu.vn' },
+        ];
+      }
+
+      const attendees = studentsToSeed.map((s, idx) => {
+        const isJoined = idx < Math.ceil(studentsToSeed.length * 0.85);
+        return {
+          studentId: s.id,
+          studentName: s.name,
+          studentEmail: s.email,
+          status: (isJoined ? 'waiting' : 'absent') as 'waiting' | 'absent',
+          joinedAt: isJoined ? `07:${30 + (idx % 15)}:${10 + (idx % 50)}` : undefined,
+          device: isJoined ? 'Laptop cá nhân (Windows 11 / Chrome 124)' : undefined,
+          cameraReady: isJoined,
+        };
+      });
+
+      const newRoom: RoomSession = {
+        id: roomCode,
+        classId: curClass.id,
+        className: curClass.name,
+        password: roomPassword,
+        type: roomType,
+        title: roomTitle.trim() || `${curClass.id} - ${roomType === 'lab' ? 'Thực hành' : 'Kiểm tra'}`,
+        templateId: selectedTemplate.id,
+        templateTitle: selectedTemplate.title,
+        templateLanguage: selectedTemplate.language,
+        durationMinutes: durationMinutes,
+        scheduledDate: scheduledDate,
+        startTime: startTime,
+        endTime: endTime,
+        savedToSchedule: saveToSchedule,
+        status: 'waiting', // Bắt đầu ở trạng thái phòng chờ (Lobby)
+        createdAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        proctoringConfig: {
+          lockdownFullscreen,
+          aiFaceDetection,
+          aiObjectDetection: aiPhoneDetection,
+          allowTabSwitch: !blockTabSwitch,
+        },
+        attendees,
+      };
+
+      if (typeof window !== 'undefined') {
+        try {
+          let existingRooms: RoomSession[] = [];
+          const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+          if (raw) existingRooms = JSON.parse(raw);
+          localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify([newRoom, ...existingRooms]));
+
+          // Lưu vào Lịch Giảng Dạy (/instructor/schedules)
+          if (saveToSchedule) {
+            const isToday = scheduledDate === getTodayDateString();
+            const displayDate = isToday
+              ? 'Hôm nay'
+              : new Date(scheduledDate).toLocaleDateString('vi-VN', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                });
+
+            const newScheduleItem: ScheduleSessionItem = {
+              id: `SES-${roomCode}`,
+              classCode: curClass.id,
+              className: curClass.name,
+              title: newRoom.title,
+              type: roomType === 'lab' ? 'LAB' : 'EXAM',
+              language: selectedTemplate.language || 'C++',
+              startTime: startTime,
+              endTime: endTime,
+              date: displayDate,
+              roomCode: roomCode,
+              passcode: roomPassword,
+              status: 'Sắp diễn ra',
+              enrolledStudents: curClass.studentCount,
+              attendedStudents: 0,
+              isAiProctored: Boolean(requireCamera || aiFaceDetection || aiPhoneDetection || lockdownFullscreen),
+            };
+
+            let existingSchedules: ScheduleSessionItem[] = [];
+            const rawSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
+            if (rawSched) existingSchedules = JSON.parse(rawSched);
+            localStorage.setItem(
+              INSTRUCTOR_SCHEDULES_STORAGE_KEY,
+              JSON.stringify([newScheduleItem, ...existingSchedules.filter((s) => s.roomCode !== roomCode)])
+            );
+          }
+
+          window.dispatchEvent(new Event('storage'));
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      showToast(`Đã tạo phòng ${roomCode} và lưu vào CSDL hệ thống thành công!`);
+
+      // Điều hướng vào phòng chờ để điểm danh sinh viên trước khi bắt đầu
+      setTimeout(() => {
+        router.push(`/instructor/room/${encodeURIComponent(roomCode)}`);
+      }, 400);
+    } catch (err: any) {
+      console.error('Lỗi tạo phòng:', err);
+      showToast(err.message || 'Lỗi khi tạo phòng học trên hệ thống');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    showToast(`Đã tạo phòng chờ ${roomCode} và lưu vào Lịch Giảng Dạy thành công!`);
-
-    // Điều hướng vào phòng chờ để điểm danh sinh viên trước khi bắt đầu
-    setTimeout(() => {
-      router.push(`/instructor/room/${roomCode}`);
-    }, 400);
   };
 
   return (
@@ -1367,15 +1451,24 @@ export default function InstructorCreateRoomView() {
               {/* Nút hành động */}
               <button
                 type="submit"
-                disabled={!isClientReady || !roomCode || !roomPassword || Boolean(pastTimeValidation.isPast || conflictSession)}
+                disabled={!isClientReady || !roomCode || !roomPassword || isSubmitting || Boolean(pastTimeValidation.isPast || conflictSession)}
                 className={`w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl px-4 text-xs font-semibold text-white shadow-sm transition-all active:scale-[0.99] ${
-                  !isClientReady || !roomCode || !roomPassword || pastTimeValidation.isPast || conflictSession
+                  !isClientReady || !roomCode || !roomPassword || isSubmitting || pastTimeValidation.isPast || conflictSession
                     ? 'bg-slate-400 cursor-not-allowed opacity-60'
                     : 'bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-500/20 cursor-pointer'
                 }`}
               >
-                <Radio className="h-4 w-4 animate-pulse" />
-                <span>{isClientReady ? 'Tạo Phòng Chờ & Lưu Vào Lịch' : 'Đang chuẩn bị thông tin phòng...'}</span>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                    <span>Đang lưu phòng vào hệ thống...</span>
+                  </>
+                ) : (
+                  <>
+                    <Radio className="h-4 w-4 animate-pulse shrink-0" />
+                    <span>{isClientReady ? 'Tạo Phòng Chờ & Lưu Vào Lịch' : 'Đang chuẩn bị thông tin phòng...'}</span>
+                  </>
+                )}
               </button>
               <p className="text-[10.5px] text-center text-slate-400 dark:text-slate-500 font-medium">
                 {conflictSession || pastTimeValidation.isPast

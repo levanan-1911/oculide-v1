@@ -83,3 +83,69 @@ def test_uploads_static_directory_mounted():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     uploads_snapshots_dir = os.path.join(current_dir, "..", "uploads", "snapshots")
     assert os.path.exists(uploads_snapshots_dir)
+
+def test_admin_update_user_endpoint(monkeypatch):
+    # Kiểm tra endpoint PUT /api/v1/admin/users/{user_id} cập nhật thành công vào CSDL
+    admin_token = create_access_token({"user_id": 1, "role": "admin"})
+    
+    mock_user = {
+        "user_id": 99,
+        "username": "sinhvien99",
+        "email": "sv99@dtu.edu.vn",
+        "full_name": "Sinh Vien Cu",
+        "role": "student",
+        "student_id": "SV99",
+        "user_code": "SV99",
+        "is_active": True,
+        "must_change_password": False,
+        "department": "Khoa CNTT",
+        "lop_sinh_hoat": "K28-KTPM1",
+        "homeroom_class": "K28-KTPM1",
+        "academic_rank": None,
+        "phone_number": None,
+        "avatar_url": None,
+        "created_at": "2026-01-01T00:00:00",
+        "updated_at": "2026-01-01T00:00:00",
+        "last_login": None,
+        "last_login_ip": None
+    }
+    
+    updated_storage = dict(mock_user)
+    
+    def mock_get_user(uid):
+        if uid == 99:
+            return updated_storage
+        return None
+
+    def mock_update_profile(user_id, **kwargs):
+        for k, v in kwargs.items():
+            if v is not None:
+                updated_storage[k] = v
+
+    monkeypatch.setattr("api.admin.get_user_by_id", mock_get_user)
+    monkeypatch.setattr("api.admin.update_user_profile", mock_update_profile)
+    monkeypatch.setattr("api.admin.get_user_by_email", lambda e: None)
+    
+    payload = {
+        "full_name": "Sinh Vien Moi",
+        "email": "sv.moi@dtu.edu.vn",
+        "role": "student",
+        "student_id": "SV202699",
+        "department": "Khoa CNTT Moi",
+        "lop_sinh_hoat": "SE1801",
+        "is_active": True
+    }
+    
+    res = client.put(
+        "/api/v1/admin/users/99",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=payload
+    )
+    
+    assert res.status_code == 200, f"Update failed: {res.text}"
+    data = res.json()
+    assert data["user_id"] == 99
+    assert updated_storage["full_name"] == "Sinh Vien Moi"
+    assert updated_storage["student_id"] == "SV202699"
+    assert updated_storage["lop_sinh_hoat"] == "SE1801"
+

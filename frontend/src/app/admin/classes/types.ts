@@ -1,5 +1,5 @@
 export type ClassStatus = 'Chưa mở' | 'Hoạt động' | 'Đã kết thúc';
-export type StudentStatus = 'Đang học' | 'Tạm dừng';
+export type StudentStatus = 'Đang học' | 'Tạm dừng' | 'Học ghép' | 'Học lại' | 'Học vượt';
 
 export type LabStatus = 'Đang mở' | 'Đã đóng' | 'Đã kết thúc';
 
@@ -7,8 +7,13 @@ export interface StudentRow {
   id: string;
   name: string;
   email: string;
+  phone?: string;
+  homeroomClass?: string; // Lớp sinh hoạt / Niên chế (ví dụ: K29-CSU, K29-KTPM1)
+  department?: string; // Khoa / Chuyên ngành
+  note?: string; // Ghi chú đăng ký bổ sung / học ghép
   status: StudentStatus;
   missingFields?: string[];
+  hasAccount?: boolean; // Trạng thái đã có tài khoản trong hệ thống hay chưa
 }
 
 export interface ClassLab {
@@ -661,6 +666,8 @@ export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [
 export interface ClassRow {
   id: string;
   name: string;
+  courseCode?: string;   // Mã môn học riêng (VD: CMU-CS 316, CS 252)
+  sectionCode?: string;  // Mã phân lớp (VD: AIS, DDIS)
   semester: string;
   startDate?: string;
   endDate?: string;
@@ -688,235 +695,8 @@ export interface FileRowError {
   errorMessage: string;
 }
 
-export const INITIAL_CLASSES: ClassRow[] = [
-  {
-    id: 'CS101',
-    name: 'Nhập môn Lập trình C/C++',
-    semester: 'HK1 2026–2027',
-    startDate: '05/09/2026',
-    endDate: '15/01/2027',
-    roomCode: 'CS101-ROOM',
-    roomPassword: '883921',
-    status: 'Hoạt động',
-    studentCount: 48,
-    lecturer: 'Thầy Nguyễn Văn Nam',
-    students: [
-      { id: 'SE184801', name: 'Nguyễn Văn An', email: 'an.nv@school.edu.vn', status: 'Đang học' },
-      { id: 'SE184802', name: 'Trần Thị Bình', email: 'binh.tt@school.edu.vn', status: 'Đang học' },
-      { id: 'SE184803', name: 'Lê Hoàng Cường', email: 'cuong.lh@school.edu.vn', status: 'Đang học' },
-      { id: 'SE184804', name: 'Phạm Minh Châu', email: 'chau.pm@school.edu.vn', status: 'Đang học' },
-      { id: 'SE184805', name: 'Đặng Tuấn Dương', email: 'duong.dt@school.edu.vn', status: 'Đang học' },
-      { id: 'SE184806', name: 'Vũ Hải Yến', email: 'yen.vh@school.edu.vn', status: 'Đang học' },
-    ],
-    labs: [
-      {
-        id: 'LAB-CS101-01',
-        templateId: 'TPL-LAB-01',
-        labNumber: 1,
-        title: 'Lab 01: Cấu trúc điều khiển & Mảng một chiều',
-        language: 'C++',
-        questionCount: 3,
-        scheduleNote: 'Tuần 1',
-        startTime: '08:00, 10/09/2026',
-        endTime: '10:00, 10/09/2026',
-        durationMinutes: 120,
-        isProctored: false,
-        roomCode: 'CS101-L1',
-        roomPassword: '112233',
-        status: 'Đã kết thúc',
-        submissionCount: 48,
-      },
-      {
-        id: 'LAB-CS101-02',
-        templateId: 'TPL-LAB-02',
-        labNumber: 2,
-        title: 'Lab 02: Cấu trúc rẽ nhánh If/Else & Switch-Case',
-        language: 'C++',
-        questionCount: 4,
-        scheduleNote: 'Tuần 3',
-        startTime: '08:00, 24/09/2026',
-        endTime: '10:00, 24/09/2026',
-        durationMinutes: 120,
-        isProctored: false,
-        roomCode: 'CS101-L2',
-        roomPassword: '223344',
-        status: 'Đã kết thúc',
-        submissionCount: 47,
-      },
-      {
-        id: 'LAB-CS101-03',
-        templateId: 'TPL-LAB-03',
-        labNumber: 3,
-        title: 'Lab 03: Vòng lặp For/While & Mảng 1 chiều',
-        language: 'C++',
-        questionCount: 3,
-        scheduleNote: 'Hôm nay (Tuần 6)',
-        startTime: '07:30, 28/10/2026',
-        endTime: '09:50, 28/10/2026',
-        durationMinutes: 120,
-        isProctored: true,
-        roomCode: 'CS101-LAB3',
-        roomPassword: '883921',
-        status: 'Đang mở',
-        submissionCount: 46,
-      },
-    ],
-    exams: [
-      {
-        id: 'EXAM-CS101-01',
-        templateId: 'TPL-EXAM-01',
-        title: 'Kiểm tra quá trình • Vòng lặp & Mảng số nguyên',
-        type: 'Kiểm tra quá trình',
-        language: 'C++',
-        durationMinutes: 60,
-        scheduledAt: '08:00 - 09:00, 15/10/2026',
-        questionCount: 3,
-        isProctored: true,
-        roomCode: 'CS101-EX1',
-        roomPassword: '991122',
-        status: 'Đã kết thúc',
-        submissionCount: 48,
-      },
-    ],
-  },
-  {
-    id: 'PRJ301',
-    name: 'Lập trình ứng dụng Java Web',
-    semester: 'HK1 2026–2027',
-    startDate: '10/09/2026',
-    endDate: '20/01/2027',
-    roomCode: 'PRJ301-ROOM',
-    roomPassword: '901244',
-    status: 'Hoạt động',
-    studentCount: 45,
-    lecturer: 'Thầy Nguyễn Văn Nam',
-    students: [
-      { id: 'PRJ01', name: 'Hoàng Quốc Bảo', email: 'bao.hq@school.edu.vn', status: 'Đang học' },
-      { id: 'PRJ02', name: 'Đỗ Thị Mai', email: 'mai.dt@school.edu.vn', status: 'Đang học' },
-      { id: 'PRJ03', name: 'Bùi Tuấn Anh', email: 'anh.bt@school.edu.vn', status: 'Đang học' },
-    ],
-    labs: [
-      {
-        id: 'LAB-PRJ-01',
-        templateId: 'TPL-LAB-05',
-        labNumber: 1,
-        title: 'Lab 05: Thiết lập Tomcat Servlet & MVC Pattern',
-        language: 'Java',
-        questionCount: 2,
-        startTime: '13:30, 18/09/2026',
-        endTime: '15:30, 18/09/2026',
-        durationMinutes: 120,
-        isProctored: false,
-        roomCode: 'PRJ-L1',
-        roomPassword: '334455',
-        status: 'Đã kết thúc',
-        submissionCount: 45,
-      },
-    ],
-    exams: [
-      {
-        id: 'EXAM-PRJ-01',
-        templateId: 'TPL-EXAM-03',
-        title: 'Kiểm tra quá trình: Servlet & MVC Pattern',
-        type: 'Kiểm tra quá trình',
-        language: 'Java',
-        durationMinutes: 90,
-        scheduledAt: '13:30 - 15:00, 28/10/2026',
-        questionCount: 3,
-        isProctored: true,
-        roomCode: 'PRJ-KT01',
-        roomPassword: '901244',
-        status: 'Sắp diễn ra',
-        submissionCount: 0,
-      },
-    ],
-  },
-  {
-    id: 'CSD201',
-    name: 'Cấu trúc dữ liệu & Giải thuật',
-    semester: 'HK1 2026–2027',
-    startDate: '15/09/2026',
-    endDate: '25/01/2027',
-    roomCode: 'CSD201-ROOM',
-    roomPassword: '128472',
-    status: 'Hoạt động',
-    studentCount: 42,
-    lecturer: 'Thầy Nguyễn Văn Nam',
-    students: [
-      { id: 'CSD01', name: 'Nguyễn Đình Trọng', email: 'trong.nd@school.edu.vn', status: 'Đang học' },
-      { id: 'CSD02', name: 'Vũ Thị Hạnh', email: 'hanh.vt@school.edu.vn', status: 'Đang học' },
-    ],
-    labs: [
-      {
-        id: 'LAB-CSD-01',
-        templateId: 'TPL-LAB-04',
-        labNumber: 4,
-        title: 'Lab 04: Cây nhị phân tìm kiếm (BST)',
-        language: 'Python',
-        questionCount: 4,
-        startTime: '15:15, 28/10/2026',
-        endTime: '17:35, 28/10/2026',
-        durationMinutes: 120,
-        isProctored: false,
-        roomCode: 'CSD-BST4',
-        roomPassword: '128472',
-        status: 'Đang mở',
-        submissionCount: 42,
-      },
-    ],
-    exams: [
-      {
-        id: 'EXAM-CSD-01',
-        templateId: 'TPL-EXAM-02',
-        title: 'Kiểm tra giữa kỳ • Cấu trúc dữ liệu & Giải thuật',
-        type: 'Kiểm tra giữa kỳ',
-        language: 'C++',
-        durationMinutes: 90,
-        scheduledAt: '08:00 - 09:30, 05/11/2026',
-        questionCount: 3,
-        isProctored: true,
-        roomCode: 'CSD-EX02',
-        roomPassword: '667788',
-        status: 'Sắp diễn ra',
-        submissionCount: 0,
-      },
-    ],
-  },
-  {
-    id: 'CS102',
-    name: 'Kỹ thuật Lập trình nâng cao',
-    semester: 'HK1 2026–2027',
-    startDate: '08/09/2026',
-    endDate: '18/01/2027',
-    roomCode: 'CS102-ROOM',
-    roomPassword: '451092',
-    status: 'Hoạt động',
-    studentCount: 50,
-    lecturer: 'Thầy Nguyễn Văn Nam',
-    students: [
-      { id: 'CS102_01', name: 'Lê Minh Quân', email: 'quan.lm@school.edu.vn', status: 'Đang học' },
-    ],
-    labs: [
-      {
-        id: 'LAB-CS102-01',
-        templateId: 'TPL-LAB-02',
-        labNumber: 2,
-        title: 'Lab 02: Con trỏ & Quản lý bộ nhớ động',
-        language: 'C++',
-        questionCount: 4,
-        startTime: '08:00, 27/10/2026',
-        endTime: '10:20, 27/10/2026',
-        durationMinutes: 120,
-        isProctored: true,
-        roomCode: 'CS102-PTR',
-        roomPassword: '451092',
-        status: 'Đã kết thúc',
-        submissionCount: 49,
-      },
-    ],
-    exams: [],
-  },
-];
+export const INITIAL_CLASSES: ClassRow[] = [];
+export const MOCK_CLASS_IDS = new Set(['CS101', 'CS202', 'CS303', 'CS404', 'CS505', 'CS606']);
 
 const STORAGE_KEY = 'oculide_classes_v2';
 const INSTRUCTOR_CLASSES_STORAGE_KEY = 'oculide_instructor_classes_mock';
@@ -925,63 +705,52 @@ const INSTRUCTOR_ROOMS_STORAGE_KEY = 'oculide_instructor_rooms_mock';
 export function getStoredClasses(): ClassRow[] {
   if (typeof window === 'undefined') return INITIAL_CLASSES;
   try {
-    let baseClasses: ClassRow[] = [...INITIAL_CLASSES];
+    let baseClasses: ClassRow[] = [];
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        baseClasses = parsed.map((c) => {
-          const initMatch = INITIAL_CLASSES.find((item) => item.id === c.id);
-          const labs = (c.labs || initMatch?.labs || []).map((l: any, idx: number) => ({
-            ...l,
-            templateId: l.templateId || initMatch?.labs?.[idx]?.templateId || `TPL-LAB-0${idx + 1}`,
-            roomCode: l.roomCode || initMatch?.labs?.[idx]?.roomCode || `${c.id}-LAB${idx + 1}`,
-            roomPassword: l.roomPassword || initMatch?.labs?.[idx]?.roomPassword || '123456',
-          }));
-          const exams = (c.exams || initMatch?.exams || []).map((e: any, idx: number) => ({
-            ...e,
-            templateId: e.templateId || initMatch?.exams?.[idx]?.templateId || `TPL-EXAM-0${idx + 1}`,
-            roomCode: e.roomCode || initMatch?.exams?.[idx]?.roomCode || `${c.id}-EX${idx + 1}`,
-            roomPassword: e.roomPassword || initMatch?.exams?.[idx]?.roomPassword || '123456',
-          }));
-          return {
+        baseClasses = parsed
+          .filter((c: any) => c && c.id && !MOCK_CLASS_IDS.has(c.id))
+          .map((c) => ({
             ...c,
-            lecturer: c.lecturer || initMatch?.lecturer || 'Thầy Nguyễn Văn Nam',
-            roomCode: c.roomCode || initMatch?.roomCode || `${c.id}-ROOM`,
-            roomPassword: c.roomPassword || initMatch?.roomPassword || '123456',
-            labs,
-            exams,
-          };
-        });
+            lecturer: c.lecturer || 'Chưa phân công',
+            roomCode: c.roomCode || `${c.id}-ROOM`,
+            roomPassword: c.roomPassword || '123456',
+            labs: c.labs || [],
+            exams: c.exams || [],
+          }));
       }
     }
 
-    // Đồng bộ thêm các lớp hoặc sinh viên từ phía Giảng viên (oculide_instructor_classes_mock)
+    // Đồng bộ thêm các lớp hoặc sinh viên do Giảng viên tạo
     const rawInstructorClasses = localStorage.getItem(INSTRUCTOR_CLASSES_STORAGE_KEY);
     if (rawInstructorClasses) {
       const parsedInstructor: any[] = JSON.parse(rawInstructorClasses);
       if (Array.isArray(parsedInstructor)) {
-        parsedInstructor.forEach((ic) => {
-          const existingIdx = baseClasses.findIndex((bc) => bc.id === ic.id);
-          if (existingIdx >= 0) {
-            baseClasses[existingIdx] = {
-              ...baseClasses[existingIdx],
-              studentCount: ic.studentCount || baseClasses[existingIdx].studentCount,
-              students:
-                Array.isArray(ic.students) && ic.students.length > 0
-                  ? ic.students
-                  : baseClasses[existingIdx].students,
-            };
-          } else {
-            baseClasses.push({
-              ...ic,
-              lecturer: ic.lecturer || 'Thầy Nguyễn Văn Nam',
-              students: ic.students || [],
-              labs: ic.labs || [],
-              exams: ic.exams || [],
-            });
-          }
-        });
+        parsedInstructor
+          .filter((ic: any) => ic && ic.id && !MOCK_CLASS_IDS.has(ic.id))
+          .forEach((ic) => {
+            const existingIdx = baseClasses.findIndex((bc) => bc.id === ic.id);
+            if (existingIdx >= 0) {
+              baseClasses[existingIdx] = {
+                ...baseClasses[existingIdx],
+                studentCount: ic.studentCount || baseClasses[existingIdx].studentCount,
+                students:
+                  Array.isArray(ic.students) && ic.students.length > 0
+                    ? ic.students
+                    : baseClasses[existingIdx].students,
+              };
+            } else {
+              baseClasses.push({
+                ...ic,
+                lecturer: ic.lecturer || 'Chưa phân công',
+                students: ic.students || [],
+                labs: ic.labs || [],
+                exams: ic.exams || [],
+              });
+            }
+          });
       }
     }
 
@@ -1067,7 +836,8 @@ export function getStoredClasses(): ClassRow[] {
 export function saveStoredClasses(classes: ClassRow[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(classes));
+    const cleanClasses = classes.filter((c) => c && c.id && !MOCK_CLASS_IDS.has(c.id));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanClasses));
     window.dispatchEvent(new Event('storage'));
   } catch {
     // ignore

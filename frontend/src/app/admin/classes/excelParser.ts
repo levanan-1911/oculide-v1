@@ -10,6 +10,20 @@ export interface ParsedStudentRow {
   email: string; // Email
   status: 'Đang học';
   missingFields: string[];
+  hasAccount?: boolean;
+  homeroomClass?: string;
+}
+
+export interface ClassMetadataFromExcel {
+  classCode?: string; // Mã lớp học phần (VD: CMU-CS 316 AIS, CS 252 DDIS)
+  courseCode?: string; // Mã môn học (VD: CMU-CS 316, CS 252)
+  classSection?: string; // Mã lớp / phân lớp (VD: AIS, DDIS)
+  className?: string; // Tên môn học (VD: Fundamentals of Computing 2)
+  credits?: number; // Số tín chỉ (VD: 3)
+  studentCount?: number; // Sĩ số lớp
+  lecturerName?: string;
+  semester?: string;
+  department?: string;
 }
 
 export interface StudentParseResult {
@@ -18,6 +32,7 @@ export interface StudentParseResult {
   parsedStudents: ParsedStudentRow[];
   warnings: string[];
   errorMessage?: string;
+  metadata?: ClassMetadataFromExcel;
 }
 
 // Giải mã trực tiếp tệp .xlsx (ZIP + XML chuẩn Office Open XML) ngay trên trình duyệt
@@ -136,8 +151,8 @@ export async function extractRowsFromXlsxBuffer(buffer: ArrayBuffer): Promise<st
 
       const cellType = cEl.getAttribute('t');
       let cellText = '';
-      if (cellType === 'inlineStr') {
-        const tNodes = Array.from(cEl.getElementsByTagName('t'));
+      const tNodes = Array.from(cEl.getElementsByTagName('t'));
+      if (tNodes.length > 0) {
         cellText = tNodes.map((t) => t.textContent || '').join('');
       } else {
         const vNode = cEl.getElementsByTagName('v')[0];
@@ -172,9 +187,18 @@ export function parseTextToRows(text: string): string[][] {
     const trList = Array.from(doc.querySelectorAll('tr'));
     if (trList.length > 0) {
       return trList
-        .map((tr) =>
-          Array.from(tr.querySelectorAll('th, td')).map((cell) => (cell.textContent || '').trim())
-        )
+        .map((tr) => {
+          const cells: string[] = [];
+          Array.from(tr.querySelectorAll('th, td')).forEach((cell) => {
+            const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
+            const text = (cell.textContent || '').trim();
+            cells.push(text);
+            for (let c = 1; c < colspan; c++) {
+              cells.push('');
+            }
+          });
+          return cells;
+        })
         .filter((r) => r.some((c) => c !== ''));
     }
   }
@@ -273,59 +297,319 @@ export async function parseStudentFile(file: File): Promise<StudentParseResult> 
   }
 
   const warnings: string[] = [];
-  const firstRow = rawRows[0].map((c) => c.trim().toLowerCase());
 
-  const isHeaderRow = firstRow.some(
-    (cell) =>
-      cell.includes('mã') ||
-      cell.includes('mssv') ||
-      cell.includes('code') ||
-      cell.includes('sinh viên') ||
-      cell.includes('họ') ||
-      cell.includes('tên') ||
-      cell.includes('name') ||
-      cell.includes('email') ||
-      cell.includes('mail')
-  );
+  // 1. Quét tìm dòng tiêu đề thật sự (Bỏ qua các dòng quốc hiệu, tiêu ngữ, tên trường phía trên)
+  let headerRowIndex = -1;
+  for (let i = 0; i < Math.min(rawRows.length, 15); i++) {
+    const cells = rawRows[i].map((c) => (c || '').trim().toLowerCase());
+    const hasCodeCol = cells.some(
+      (c) =>
+        (c.includes('mã') ||
+          c.includes('mssv') ||
+          c.includes('code') ||
+          c.includes('studentid') ||
+          c.includes('student_id') ||
+          c.includes('sinh viên')) &&
+        !c.includes('stt') &&
+        !c.includes('thứ tự') &&
+        !c.includes('môn') &&
+        !c.includes('lớp')
+    );
+    const hasNameCol = cells.some(
+      (c) =>
+        c.includes('họ') ||
+        c.includes('tên') ||
+        c.includes('name') ||
+        c.includes('firstname') ||
+        c.includes('lastname')
+    );
 
-  let codeIdx = 0;
-  let nameIdx = 1;
-  let emailIdx = 2;
+    if (hasCodeCol && hasNameCol) {
+      headerRowIndex = i;
+      break;
+    }
+  }
+
+  // 1.1. Trích xuất thông tin lớp học từ các hàng đầu trang (Header Metadata nếu có theo mẫu trường)
+  const metadata: ClassMetadataFromExcel = {};
+  const topRowsLimit = headerRowIndex >= 0 ? headerRowIndex : Math.min(rawRows.length, 10);
+  for (let r = 0; r < topRowsLimit; r++) {
+    const rowClean = rawRows[r].join(' ').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // Tách mã lớp và mã môn (VD: LỚP: CMU-CS 316 AIS - MÔN: ... hoặc LỚP: CS 252 DDIS - MÔN: ...)
+    const codeMatch = rowClean.match(/(?:lớp|class)\s*:\s*(.*?)(?=\s*-\s*(?:môn|mon|học phần|sĩ số|số tc|gv|giảng viên)|$)/i);
+    if (codeMatch && !metadata.classCode) {
+      const fullClassCode = codeMatch[1].trim();
+      metadata.classCode = fullClassCode;
+      const parts = fullClassCode.split(/\s+/);
+      if (parts.length >= 2) {
+        metadata.classSection = parts[parts.length - 1]; // "AIS" hoặc "DDIS" (Mã lớp / phân lớp)
+        metadata.courseCode = parts.slice(0, -1).join(' '); // "CMU-CS 316" hoặc "CS 252" (Mã môn)
+      } else {
+        metadata.classSection = fullClassCode;
+      }
+    }
+
+    // Tách tên môn (VD: MÔN: Fundamentals of Computing 2)
+    const monMatch = rowClean.match(/(?:môn|mon|course|subject)\s*:\s*(.*?)(?=\s*-\s*(?:lớp|học phần|sĩ số|số tc|gv|giảng viên)|$)/i);
+    if (monMatch && !metadata.className) {
+      metadata.className = monMatch[1].trim();
+    }
+
+    // Tách số tín chỉ (VD: SỐ TC: 3)
+    const tcMatch = rowClean.match(/(?:số tc|so tc|tc|credits?)\s*:\s*(\d+)/i);
+    if (tcMatch && !metadata.credits) {
+      metadata.credits = parseInt(tcMatch[1], 10);
+    }
+
+    // Tách sĩ số nếu ghi rõ trong tiêu đề (VD: SĨ SỐ: 45)
+    const siSoMatch = rowClean.match(/(?:sĩ số|si so|sỉ số|si so lop|sĩ số lớp|tổng số sv|tổng số sinh viên)\s*[:*]?\s*(\d+)/i);
+    if (siSoMatch && !metadata.studentCount) {
+      metadata.studentCount = parseInt(siSoMatch[1], 10);
+    }
+
+    // Tách tên giảng viên (VD: GIẢNG VIÊN: HUỲNH BÁ DIỆU)
+    const gvMatch = rowClean.match(/(?:giảng viên|giang vien|lecturer|instructor|gv)\s*:\s*([^–—\-]+?)(?=\s*-\s*|$)/i);
+    if (gvMatch && !metadata.lecturerName) {
+      metadata.lecturerName = gvMatch[1].trim();
+    }
+
+    // Tách khoa (VD: Khoa Công nghệ Phần mềm Việt - Mỹ (CMU))
+    if ((rowClean.toLowerCase().includes('khoa ') || rowClean.toLowerCase().includes('viện ')) && !metadata.department) {
+      metadata.department = rawRows[r].find((c) => c.toLowerCase().includes('khoa') || c.toLowerCase().includes('viện')) || '';
+    }
+  }
+
+  // 1.2. Nhận diện Học kỳ & Năm học thông minh dựa vào từ khóa hoặc ngày tháng lập bảng
+  const fullTextAllRows = rawRows.map((r) => r.join(' ')).join('\n');
+  const hkExplicitMatch = fullTextAllRows.match(/(?:học kỳ|hoc ky|hk)\s*[:*]?\s*([123]|hè|he|t)\b/i);
+  const yearMatch = fullTextAllRows.match(/(?:năm học|nam hoc)\s*[:*]?\s*([0-9]{4}\s*[-–]\s*[0-9]{4})/i);
+  const dateMatch = fullTextAllRows.match(/tháng\s*(\d{1,2})\s*năm\s*(\d{4})/i);
+
+  let detectedTerm = 'HK1';
+  let academicYearStr = yearMatch ? yearMatch[1].replace(/\s+/g, '') : '';
+
+  if (hkExplicitMatch) {
+    const rawTerm = hkExplicitMatch[1].toLowerCase();
+    if (rawTerm === '1') detectedTerm = 'HK1';
+    else if (rawTerm === '2') detectedTerm = 'HK2';
+    else detectedTerm = 'HKT';
+  } else if (dateMatch) {
+    const month = parseInt(dateMatch[1], 10);
+    const year = parseInt(dateMatch[2], 10);
+    // Tháng 8 đến Tháng 1 năm sau -> Học kỳ 1 (Thu)
+    if (month >= 8 || month === 1) {
+      detectedTerm = 'HK1';
+      if (!academicYearStr) {
+        academicYearStr = month === 1 ? `${year - 1}–${year}` : `${year}–${year + 1}`;
+      }
+    } else if (month >= 2 && month <= 5) {
+      // Tháng 2 đến Tháng 5 -> Học kỳ 2 (Xuân)
+      detectedTerm = 'HK2';
+      if (!academicYearStr) {
+        academicYearStr = `${year - 1}–${year}`;
+      }
+    } else {
+      // Tháng 6, 7 -> Học kỳ Hè (HKT)
+      detectedTerm = 'HKT';
+      if (!academicYearStr) {
+        academicYearStr = `${year - 1}–${year}`;
+      }
+    }
+  }
+
+  if (academicYearStr) {
+    metadata.semester = `${detectedTerm} ${academicYearStr}`;
+  }
+
+  const isHeaderRow = headerRowIndex >= 0;
+  const maxCols = Math.max(...rawRows.map((r) => r.length), 0);
+  let headerRow = isHeaderRow ? rawRows[headerRowIndex].map((c) => c.trim().toLowerCase()) : [];
+  while (headerRow.length < maxCols) {
+    headerRow.push('');
+  }
+
+  let codeIdx = -1;
+  let nameIdx = -1;
+  let firstNameIdx = -1;
+  let middleNameIdx = -1;
+  let lastNameIdx = -1;
+  let splitLastNameIdx = -1;
+  let emailIdx = -1;
+  let classColIdx = -1;
+  let actualDataStartIndex = isHeaderRow ? headerRowIndex + 1 : 0;
+
+  const sttIdx = isHeaderRow
+    ? headerRow.findIndex(
+        (c) => c === 'stt' || c === 'tt' || c === 'no' || c === 'no.' || c.includes('thứ tự')
+      )
+    : -1;
 
   if (isHeaderRow) {
-    const foundCodeIdx = firstRow.findIndex(
+    // Tự động bỏ qua các dòng tiêu đề phụ (Sub-header điểm số, phần trăm, chia cột Họ/Tên)
+    while (actualDataStartIndex < rawRows.length) {
+      const nextRow = rawRows[actualDataStartIndex];
+      const nextRowLower = nextRow.map((c) => (c || '').trim().toLowerCase());
+      const hasRealCode = nextRow.some((c) =>
+        /^(?:[123]\d{8,10}|SV\d{4,10}|\d{8,12})$/i.test(c.trim())
+      );
+      const isPercentRow = nextRow.some((c) => (c || '').includes('%'));
+      const hasGradeSubheaders = nextRowLower.some((c) =>
+        ['chuyên cần', 'bài tập', 'thực hành', 'kiểm tra', 'đồ án', 'cuối kỳ', 'giữa kỳ', 'quá trình', 'kthp'].some(
+          (k) => c.includes(k)
+        )
+      );
+      const hasNameSubheaders = nextRowLower.some((c) =>
+        ['họ', 'tên', 'ho', 'ten', 'họ đệm', 'họ lót', 'chữ đệm', 'tên đệm'].includes(c)
+      );
+
+      if (!hasRealCode && (isPercentRow || hasGradeSubheaders || hasNameSubheaders)) {
+        if (hasNameSubheaders) {
+          const subLastName = nextRowLower.findIndex(
+            (c) => c === 'tên' || c === 'ten' || c === 'name' || c === 'tên riêng'
+          );
+          if (subLastName >= 0) {
+            splitLastNameIdx = subLastName;
+          }
+        }
+        actualDataStartIndex++;
+      } else {
+        break;
+      }
+    }
+
+    codeIdx = headerRow.findIndex(
       (c) =>
-        c.includes('mã') ||
-        c.includes('mssv') ||
-        c.includes('code') ||
-        c === 'id' ||
-        c.includes('tài khoản')
+        (c.includes('mssv') ||
+          c.includes('mã sv') ||
+          c.includes('studentid') ||
+          c.includes('student_id') ||
+          c.includes('mã sinh viên') ||
+          c.includes('mã số sinh viên') ||
+          c.includes('mã tài khoản') ||
+          c.includes('code') ||
+          c === 'id') &&
+        !c.includes('stt') &&
+        !c.includes('thứ tự') &&
+        !c.includes('lớp')
     );
-    const foundNameIdx = firstRow.findIndex(
+
+    firstNameIdx = headerRow.findIndex(
+      (c, idx) => idx !== codeIdx && (c === 'họ' || c === 'ho' || c === 'firstname' || c === 'first_name')
+    );
+    middleNameIdx = headerRow.findIndex(
       (c, idx) =>
-        idx !== foundCodeIdx &&
-        (c.includes('họ') || c.includes('tên') || c.includes('name'))
+        idx !== codeIdx &&
+        idx !== firstNameIdx &&
+        (c.includes('tên đệm') ||
+          c.includes('ten dem') ||
+          c.includes('chữ đệm') ||
+          c === 'middlename' ||
+          c === 'middle_name')
     );
-    const foundEmailIdx = firstRow.findIndex(
-      (c) => c.includes('email') || c.includes('mail') || c.includes('thư')
+    lastNameIdx = headerRow.findIndex(
+      (c, idx) =>
+        idx !== codeIdx &&
+        idx !== firstNameIdx &&
+        idx !== middleNameIdx &&
+        (c === 'tên' || c === 'ten' || c === 'lastname' || c === 'last_name')
+    );
+
+    nameIdx = headerRow.findIndex(
+      (c, idx) =>
+        idx !== codeIdx &&
+        (c.includes('họ và tên') ||
+          c.includes('họ & tên') ||
+          c.includes('họ tên') ||
+          c.includes('họ và tên đệm') ||
+          c.includes('fullname') ||
+          c.includes('full name'))
+    );
+
+    if (nameIdx === -1 && firstNameIdx >= 0) {
+      nameIdx = firstNameIdx;
+    }
+
+    // Nhận diện cột Tên riêng kế tiếp nếu dùng kiểu ghép 2 cột (Họ đệm + Tên, hoặc Merged Header 'HỌ VÀ TÊN')
+    if (nameIdx >= 0 && lastNameIdx === -1 && splitLastNameIdx === -1 && nameIdx + 1 < maxCols) {
+      const nextHeader = headerRow[nameIdx + 1] || '';
+      const isNextColExplicitTen =
+        nextHeader === 'tên' || nextHeader === 'ten' || nextHeader === 'name' || nextHeader === 'tên riêng';
+      const isNextColEmpty = nextHeader === '';
+
+      // Kiểm tra các dòng dữ liệu sinh viên thực tế đầu tiên sau tiêu đề để xác nhận cột kế tiếp là Tên riêng
+      // Lọc bỏ qua các dòng tiêu đề phụ điểm số (Chuyên cần, 5.00%, ...)
+      const sampleRows = rawRows
+        .slice(actualDataStartIndex)
+        .filter((r) => {
+          const cCheck = codeIdx >= 0 ? (r[codeIdx] || '').trim() : '';
+          return cCheck && !cCheck.includes('%') && !cCheck.toLowerCase().includes('mã');
+        })
+        .slice(0, 15);
+
+      const nextColVals = sampleRows
+        .map((r) => (r[nameIdx + 1] || '').trim())
+        .filter((v) => v.length > 0);
+
+      const isGenderOnly =
+        nextColVals.length > 0 &&
+        nextColVals.every((v) => ['nam', 'nữ', 'male', 'female', 'm', 'f'].includes(v.toLowerCase()));
+
+      const isNextColSingleWordName =
+        nextColVals.length > 0 &&
+        !isGenderOnly &&
+        nextColVals.every((val) => {
+          return (
+            val.length <= 25 &&
+            !/\d/.test(val) &&
+            !val.includes('/') &&
+            !val.includes('-') &&
+            !val.includes('@') &&
+            !val.includes('%') &&
+            val.split(/\s+/).length <= 2
+          );
+        });
+
+      if (isNextColExplicitTen || (isNextColEmpty && isNextColSingleWordName)) {
+        splitLastNameIdx = nameIdx + 1;
+      }
+    }
+
+    emailIdx = headerRow.findIndex(
+      (c, idx) =>
+        idx !== codeIdx &&
+        idx !== nameIdx &&
+        idx !== firstNameIdx &&
+        idx !== middleNameIdx &&
+        idx !== lastNameIdx &&
+        (c.includes('email') || c.includes('mail') || c.includes('thư'))
+    );
+
+    classColIdx = headerRow.findIndex(
+      (c, idx) =>
+        idx !== codeIdx &&
+        idx !== nameIdx &&
+        idx !== firstNameIdx &&
+        idx !== middleNameIdx &&
+        idx !== lastNameIdx &&
+        idx !== splitLastNameIdx &&
+        idx !== emailIdx &&
+        (c === 'lớp' || c === 'lop' || c === 'class' || c.includes('lớp sinh hoạt') || c.includes('mã lớp'))
     );
 
     const missingHeaderCols: string[] = [];
-    if (foundCodeIdx === -1) missingHeaderCols.push('Mã sinh viên');
-    if (foundNameIdx === -1) missingHeaderCols.push('Họ và tên');
-    if (foundEmailIdx === -1) missingHeaderCols.push('Email');
+    if (codeIdx === -1) missingHeaderCols.push('Mã sinh viên');
+    if (nameIdx === -1 && firstNameIdx === -1) missingHeaderCols.push('Họ và tên');
 
     if (missingHeaderCols.length > 0) {
       warnings.push(
         `Tệp thiếu cột tiêu đề bắt buộc: [${missingHeaderCols.join(', ')}]. Các trường thiếu sẽ được cảnh báo để bổ sung sau.`
       );
     }
-
-    codeIdx = foundCodeIdx;
-    nameIdx = foundNameIdx;
-    emailIdx = foundEmailIdx;
   } else {
-    const maxCols = Math.max(...rawRows.map((r) => r.length));
+    codeIdx = 0;
+    nameIdx = 1;
+    emailIdx = maxCols > 2 ? 2 : -1;
     if (maxCols < 3) {
       const missingCount = 3 - maxCols;
       warnings.push(
@@ -334,7 +618,7 @@ export async function parseStudentFile(file: File): Promise<StudentParseResult> 
     }
   }
 
-  const dataRows = isHeaderRow ? rawRows.slice(1) : rawRows;
+  const dataRows = isHeaderRow ? rawRows.slice(actualDataStartIndex) : rawRows;
   if (dataRows.length === 0) {
     return {
       file,
@@ -345,23 +629,124 @@ export async function parseStudentFile(file: File): Promise<StudentParseResult> 
     };
   }
 
+  const NON_STUDENT_WORDS = [
+    'bài tập', 'chuyên cần', 'thực hành', 'kiểm tra', 'đồ án', 'cuối kỳ', 'giữa kỳ',
+    'quá trình', 'kthp', 'ghi chú', 'giáo vụ', 'giảng viên', 'lãnh đạo', 'khoa',
+    'viện', 'trưởng khoa', 'đà nẵng', 'hà nội', 'tổng cộng', 'tổng số', 'chữ ký',
+    'mã sv', 'mssv', 'họ và tên', 'họ tên', 'môn học', 'học phần', 'tỷ lệ', 'trọng số'
+  ];
+
+  const FOOTER_KEYWORDS = [
+    'đà nẵng', 'hà nội', 'tp. hồ chí minh', 'giảng viên bộ môn', 'chữ ký',
+    'giáo vụ', 'lãnh đạo khoa', 'trưởng khoa', 'ban giám hiệu', 'tổng số', 'tổng cộng'
+  ];
+
   const parsedStudents: ParsedStudentRow[] = [];
 
-  dataRows.forEach((cols, index) => {
-    const displayRowNum = isHeaderRow ? index + 2 : index + 1;
+  for (let index = 0; index < dataRows.length; index++) {
+    const cols = dataRows[index];
+    const displayRowNum = isHeaderRow ? actualDataStartIndex + 1 + index : index + 1;
+    const lowerRowFull = cols.join(' ').toLowerCase();
+
+    // 1. DỪNG LẠI NGAY LẬP TỨC khi chạm tới phần chân trang (chữ ký GV, giáo vụ, lãnh đạo, ngày tháng...)
+    const isFooter =
+      FOOTER_KEYWORDS.some((k) => lowerRowFull.includes(k)) ||
+      (lowerRowFull.includes('ngày') && lowerRowFull.includes('tháng') && lowerRowFull.includes('năm'));
+
+    if (isFooter) {
+      break;
+    }
+
+    // 2. Bỏ qua các dòng tỷ lệ phần trăm điểm (như 5.00%, 10.00%, ...)
+    if (cols.some((c) => (c || '').includes('%'))) {
+      continue;
+    }
+
+    // 3. Kiểm tra số thứ tự (STT) nếu có: STT của sinh viên thật phải là số nguyên dương (1, 2, 3...)
+    if (sttIdx >= 0) {
+      const sttVal = (cols[sttIdx] ?? '').trim();
+      if (sttVal && !/^\d+$/.test(sttVal)) {
+        continue;
+      }
+    }
+
+    // 4. Lấy và kiểm tra Mã sinh viên
     const rawCode = codeIdx >= 0 ? (cols[codeIdx] ?? '').trim() : '';
-    const rawName = nameIdx >= 0 ? (cols[nameIdx] ?? '').trim() : '';
-    const rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
+    const rawCodeLower = rawCode.toLowerCase();
+
+    // Bỏ qua nếu mã chứa từ khóa tiêu đề hoặc có khoảng trắng (tiêu đề thành phần điểm)
+    if (
+      !rawCode ||
+      rawCode.includes(' ') ||
+      NON_STUDENT_WORDS.some((w) => rawCodeLower.includes(w)) ||
+      /^\d+(\.\d+)?%$/.test(rawCode)
+    ) {
+      continue;
+    }
+
+    // Kiểm tra định dạng mã sinh viên hợp lệ (Mã DTU 9-11 số, hoặc SVxxxxx, hoặc mã ký tự 4-20)
+    const isValidStudentCode =
+      /^(?:[123]\d{8,10}|\d{7,12}|SV\d{4,10}|[A-Za-z0-9_\-]{4,20})$/i.test(rawCode);
+    if (!isValidStudentCode) {
+      continue;
+    }
+
+    // 5. Trích xuất và ghép Họ tên chuẩn
+    let rawName = '';
+
+    if (firstNameIdx >= 0 && lastNameIdx >= 0) {
+      const parts = [
+        (cols[firstNameIdx] ?? '').trim(),
+        middleNameIdx >= 0 ? (cols[middleNameIdx] ?? '').trim() : '',
+        (cols[lastNameIdx] ?? '').trim(),
+      ].filter(Boolean);
+      rawName = parts.join(' ');
+    } else if (nameIdx >= 0) {
+      rawName = (cols[nameIdx] ?? '').trim();
+
+      // Kiểm tra ghép cột Tên riêng kế tiếp (ví dụ: 'Nguyễn Văn' ở nameIdx + 'An' ở nameIdx + 1)
+      const nextColIdx = splitLastNameIdx >= 0 ? splitLastNameIdx : nameIdx + 1;
+      if (nextColIdx < cols.length) {
+        const nextVal = (cols[nextColIdx] ?? '').trim();
+        const nextHeader = (headerRow[nextColIdx] ?? '').toLowerCase();
+        const isExcludedHeader = ['lớp', 'class', 'stt', 'mã', 'email', 'điểm', 'ghi chú'].some((k) =>
+          nextHeader.includes(k)
+        );
+
+        if (
+          nextVal &&
+          !isExcludedHeader &&
+          !/\d/.test(nextVal) &&
+          !['@', '%', '/', ':', '(', ')', '_'].some((ch) => nextVal.includes(ch)) &&
+          nextVal.split(/\s+/).length <= 2 &&
+          nextVal.length <= 25 &&
+          !rawName.endsWith(nextVal)
+        ) {
+          rawName = `${rawName} ${nextVal}`.trim();
+        }
+      }
+    }
+
+    rawName = rawName.replace(/\s+/g, ' ').trim();
+
+    // 6. Nhận diện email hoặc tự sinh email @dtu.edu.vn chuẩn
+    const isDtuStudent = /^(?:[123]\d)\d{7,9}$/.test(rawCode) || /^\d{9,11}$/.test(rawCode) || /^SV\d+$/i.test(rawCode);
+    let rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
+    if (!rawEmail && rawCode && isDtuStudent) {
+      rawEmail = `${rawCode.toLowerCase()}@dtu.edu.vn`;
+    }
 
     // Bỏ qua dòng hoàn toàn rỗng
-    if (!rawCode && !rawName && !rawEmail) return;
+    if (!rawCode && !rawName && !rawEmail) continue;
 
     const missingFields: string[] = [];
     if (!rawCode) missingFields.push('Thiếu Mã SV');
     if (!rawName) missingFields.push('Thiếu Họ và tên');
-    if (!rawEmail) {
+
+    const finalEmail = rawEmail || (rawCode ? `${rawCode.toLowerCase()}@dtu.edu.vn` : '');
+    if (!finalEmail) {
       missingFields.push('Thiếu Email');
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+    } else if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
       missingFields.push('Email sai định dạng');
     }
 
@@ -369,15 +754,28 @@ export async function parseStudentFile(file: File): Promise<StudentParseResult> 
       warnings.push(`Dòng ${displayRowNum}: ${missingFields.join(', ')}`);
     }
 
+    const rawClassVal = classColIdx >= 0 ? (cols[classColIdx] ?? '').trim() : '';
+    if (rawClassVal && !metadata.classCode) {
+      metadata.classCode = rawClassVal;
+      const parts = rawClassVal.split(/\s+/);
+      if (parts.length >= 2) {
+        metadata.classSection = parts[parts.length - 1];
+        metadata.courseCode = parts.slice(0, -1).join(' ');
+      } else {
+        metadata.classSection = rawClassVal;
+      }
+    }
+
     parsedStudents.push({
       rowNumber: displayRowNum,
       id: rawCode ? rawCode.toUpperCase() : '',
       name: rawName,
-      email: rawEmail,
+      email: finalEmail,
+      homeroomClass: rawClassVal || undefined,
       status: 'Đang học',
       missingFields,
     });
-  });
+  }
 
   if (parsedStudents.length === 0) {
     return {
@@ -389,11 +787,16 @@ export async function parseStudentFile(file: File): Promise<StudentParseResult> 
     };
   }
 
+  if (metadata && !metadata.studentCount) {
+    metadata.studentCount = parsedStudents.length;
+  }
+
   return {
     file,
     totalRows: dataRows.length,
     parsedStudents,
     warnings,
+    metadata,
   };
 }
 

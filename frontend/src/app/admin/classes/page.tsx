@@ -48,10 +48,12 @@ import {
   ClassStatus,
   ExamStatus,
   INITIAL_CLASSES,
+  MOCK_CLASS_IDS,
   LabStatus,
   QuestionTemplate,
   SAMPLE_QUESTION_TEMPLATES,
   StudentRow,
+  StudentStatus,
   addMinutesToIso,
   calculateDurationInMinutes,
   formatDatetimeVietnamese,
@@ -95,10 +97,12 @@ function ClassManagerContent() {
 
   const [classes, setClasses] = useState<ClassRow[]>(INITIAL_CLASSES);
   const [selectedClassId, setSelectedClassId] = useState(INITIAL_CLASSES[0]?.id || '');
+  const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
   const [search, setSearch] = useState('');
   const [semester, setSemester] = useState('Tất cả học kỳ');
   const [status, setStatus] = useState('Tất cả trạng thái');
   const [studentSearch, setStudentSearch] = useState('');
+  const [dbSemesters, setDbSemesters] = useState<Array<{ ma_hoc_ky: string; ten_hoc_ky: string }>>([]);
 
   // Modals state
   const [editingClass, setEditingClass] = useState<ClassRow | null>(null);
@@ -107,10 +111,17 @@ function ClassManagerContent() {
   const [viewingClass, setViewingClass] = useState<ClassRow | null>(null);
   const [detailTab, setDetailTab] = useState<'students' | 'labs' | 'exams'>('students');
 
-  // Student modal
+  // Student modal (Tìm kiếm & Ghi danh sinh viên từ hệ thống)
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
+  const [studentSearchKeyword, setStudentSearchKeyword] = useState('');
+  const [searchedStudents, setSearchedStudents] = useState<any[]>([]);
+  const [isSearchingStudent, setIsSearchingStudent] = useState(false);
+  const [selectedStudentToEnroll, setSelectedStudentToEnroll] = useState<any | null>(null);
+  const [enrollStatus, setEnrollStatus] = useState<StudentStatus>('Đang học');
+  const [enrollNote, setEnrollNote] = useState('');
   const [addStudentError, setAddStudentError] = useState('');
   const [deletingStudent, setDeletingStudent] = useState<StudentRow | null>(null);
+  const [targetClassForStudent, setTargetClassForStudent] = useState<ClassRow | null>(null);
 
   // Bulk import students modal (Đồng bộ module Người dùng)
   const [isImportStudentsOpen, setIsImportStudentsOpen] = useState(false);
@@ -122,96 +133,75 @@ function ClassManagerContent() {
   const [isImportStudentDragging, setIsImportStudentDragging] = useState(false);
   const importStudentFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Lab modal (Tạo bài Lab mới trên lớp)
-  const [isAddLabOpen, setIsAddLabOpen] = useState(false);
-  const [newLabNumber, setNewLabNumber] = useState(1);
-  const [newLabTitle, setNewLabTitle] = useState('');
-  const [newLabLanguage, setNewLabLanguage] = useState('Python');
-  const [newLabQuestions, setNewLabQuestions] = useState(3);
-  const [newLabSchedule, setNewLabSchedule] = useState('Thứ 3 (Tuần tới)');
-  const [newLabStartTime, setNewLabStartTime] = useState('2026-10-28T07:30');
-  const [newLabEndTime, setNewLabEndTime] = useState('2026-10-28T09:50');
-  const [newLabDuration, setNewLabDuration] = useState(140);
-  const [newLabProctored, setNewLabProctored] = useState(true);
-  const [selectedLabTemplateId, setSelectedLabTemplateId] = useState('');
-  const [addLabError, setAddLabError] = useState('');
-
-  // Exam modal (Tạo bài thi / kiểm tra mới cho lớp)
-  const [isAddExamOpen, setIsAddExamOpen] = useState(false);
-  const [newExamTitle, setNewExamTitle] = useState('');
-  const [newExamType, setNewExamType] = useState<
-    'Kiểm tra giữa kỳ' | 'Kiểm tra quá trình' | 'Thi kết thúc môn' | 'Kiểm tra thực hành'
-  >('Kiểm tra giữa kỳ');
-  const [newExamLanguage, setNewExamLanguage] = useState('JavaScript / Python');
-  const [newExamDuration, setNewExamDuration] = useState(90);
-  const [newExamSchedule, setNewExamSchedule] = useState('08:00 - 09:30, 20/11/2026');
-  const [newExamQuestions, setNewExamQuestions] = useState(3);
-  const [newExamProctored, setNewExamProctored] = useState(true);
-  const [selectedExamTemplateId, setSelectedExamTemplateId] = useState('');
-  const [addExamError, setAddExamError] = useState('');
-  const [questionTemplates, setQuestionTemplates] = useState<QuestionTemplate[]>(SAMPLE_QUESTION_TEMPLATES);
-
-  // Giảng viên chỉnh sửa bài Lab trong lớp
-  const [editingLab, setEditingLab] = useState<ClassLab | null>(null);
-  const [editLabTitle, setEditLabTitle] = useState('');
-  const [editLabTemplateId, setEditLabTemplateId] = useState('');
-  const [editLabLanguage, setEditLabLanguage] = useState('');
-  const [editLabQuestions, setEditLabQuestions] = useState(1);
-  const [editLabSchedule, setEditLabSchedule] = useState('');
-  const [editLabStartTime, setEditLabStartTime] = useState('');
-  const [editLabEndTime, setEditLabEndTime] = useState('');
-  const [editLabDuration, setEditLabDuration] = useState(120);
-  const [editLabProctored, setEditLabProctored] = useState(true);
-  const [editLabStatus, setEditLabStatus] = useState<LabStatus>('Đang mở');
-  const [editLabError, setEditLabError] = useState('');
-
-  // Giảng viên chỉnh sửa bài thi trong lớp
-  const [editingExam, setEditingExam] = useState<ClassExam | null>(null);
-  const [editExamTitle, setEditExamTitle] = useState('');
-  const [editExamTemplateId, setEditExamTemplateId] = useState('');
-  const [editExamType, setEditExamType] = useState<
-    'Kiểm tra giữa kỳ' | 'Kiểm tra quá trình' | 'Thi kết thúc môn' | 'Kiểm tra thực hành'
-  >('Kiểm tra giữa kỳ');
-  const [editExamLanguage, setEditExamLanguage] = useState('');
-  const [editExamDuration, setEditExamDuration] = useState(90);
-  const [editExamSchedule, setEditExamSchedule] = useState('');
-  const [editExamQuestions, setEditExamQuestions] = useState(3);
-  const [editExamProctored, setEditExamProctored] = useState(true);
-  const [editExamStatus, setEditExamStatus] = useState<ExamStatus>('Sắp diễn ra');
-  const [editExamError, setEditExamError] = useState('');
-
-  function handleSelectLabTemplate(templateId: string) {
-    setSelectedLabTemplateId(templateId);
-    if (!templateId) return;
-    const tpl = questionTemplates.find((t) => t.id === templateId);
-    if (tpl) {
-      setNewLabTitle(tpl.title.replace(/^Lab \d+ • /, ''));
-      setNewLabLanguage(tpl.language);
-      setNewLabQuestions(tpl.questionCount);
-      setAddLabError('');
+  // Tìm kiếm sinh viên với debounce 280ms
+  useEffect(() => {
+    if (!isAddStudentOpen) {
+      setStudentSearchKeyword('');
+      setSearchedStudents([]);
+      setSelectedStudentToEnroll(null);
+      setAddStudentError('');
+      return;
     }
-  }
 
-  function handleSelectExamTemplate(templateId: string) {
-    setSelectedExamTemplateId(templateId);
-    if (!templateId) return;
-    const tpl = questionTemplates.find((t) => t.id === templateId);
-    if (tpl) {
-      setNewExamTitle(tpl.title);
-      setNewExamLanguage(tpl.language);
-      setNewExamQuestions(tpl.questionCount);
-      if (tpl.durationMinutes) {
-        setNewExamDuration(tpl.durationMinutes);
+    const keyword = studentSearchKeyword.trim();
+    if (!keyword) {
+      setSearchedStudents([]);
+      setIsSearchingStudent(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingStudent(true);
+      setAddStudentError('');
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+        const targetClass = targetClassForStudent || viewingClass || selectedClass;
+        const classCodeParam = targetClass ? `&class_code=${encodeURIComponent(targetClass.id)}` : '';
+        const res = await fetch(`/api/v1/classes/students/search?q=${encodeURIComponent(keyword)}${classCodeParam}&limit=10`, {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSearchedStudents(data);
+        } else {
+          // Fallback tìm kiếm trong danh sách sinh viên mẫu
+          const allStoredStudents: any[] = [];
+          classes.forEach((c) => c.students.forEach((s) => allStoredStudents.push(s)));
+          const kLower = keyword.toLowerCase();
+          const filtered = allStoredStudents
+            .filter(
+              (s) =>
+                s.id.toLowerCase().includes(kLower) ||
+                s.name.toLowerCase().includes(kLower) ||
+                (s.email && s.email.toLowerCase().includes(kLower))
+            )
+            .map((s) => ({
+              user_id: s.id,
+              student_id: s.id,
+              full_name: s.name,
+              email: s.email || `${s.id.toLowerCase()}@dtu.edu.vn`,
+              lop_sinh_hoat: s.homeroomClass || 'K29-CSU',
+              department: s.department || 'Khoa CMU',
+              is_enrolled: targetClass?.students.some((st) => st.id === s.id) ?? false,
+            }));
+          setSearchedStudents(filtered.slice(0, 8));
+        }
+      } catch (err) {
+        console.error('Lỗi tìm kiếm sinh viên:', err);
+      } finally {
+        setIsSearchingStudent(false);
       }
-      setAddExamError('');
-    }
-  }
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [studentSearchKeyword, isAddStudentOpen, targetClassForStudent, viewingClass, selectedClass, classes]);
 
   // Sync with localStorage on client mount & handle newly created class param
   useEffect(() => {
     const stored = getStoredClasses();
     setClasses(stored);
-    setQuestionTemplates(getStoredQuestionTemplates());
     const createdId = searchParams.get('created');
     setSelectedClassId((currentSelected) => {
       if (createdId && stored.some((c) => c.id === createdId)) {
@@ -222,11 +212,142 @@ function ClassManagerContent() {
       }
       return currentSelected;
     });
+
+    // Đồng bộ danh sách lớp học thực tế từ CSDL Backend (SQL Server)
+    async function syncClassesFromApi() {
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+        let res = await fetch('/api/v1/classes', {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if ((res.status === 401 || res.status === 403) && token) {
+          res = await fetch('/api/v1/classes');
+        }
+        if (res.ok) {
+          const apiClasses = await res.json();
+          if (Array.isArray(apiClasses)) {
+            // Nguồn dữ liệu lớp học lấy trực tiếp 100% từ bảng LopHoc trong CSDL SQL Server
+            const realClasses: ClassRow[] = apiClasses.map((apiCls: any) => ({
+              id: apiCls.class_code,
+              name: apiCls.class_name,
+              courseCode: apiCls.course_code,
+              sectionCode: apiCls.section_code,
+              semester: apiCls.semester || 'HK1 2026–2027',
+              startDate: '05/09/2026',
+              endDate: '15/01/2027',
+              roomCode: `${apiCls.class_code}-ROOM`,
+              roomPassword: '123456',
+              status: 'Hoạt động',
+              lecturer: apiCls.instructor_name || 'TS. Huỳnh Bá Diệu',
+              studentCount: typeof apiCls.student_count === 'number' ? apiCls.student_count : 0,
+              students: [],
+              labs: [],
+              exams: [],
+            }));
+
+            setClasses(realClasses);
+            saveStoredClasses(realClasses);
+
+            const createdId = searchParams.get('created');
+            setSelectedClassId((current) => {
+              if (createdId && realClasses.some((c) => c.id === createdId)) {
+                return createdId;
+              }
+              if (!current || !realClasses.some((c) => c.id === current)) {
+                return realClasses[0]?.id || '';
+              }
+              return current;
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Không thể đồng bộ lớp từ CSDL:', err);
+      }
+    }
+    syncClassesFromApi();
   }, [searchParams]);
+
+  // Tải danh mục học kỳ từ CSDL bảng HocKy để đồng bộ bộ lọc
+  useEffect(() => {
+    async function loadSemesters() {
+      try {
+        const res = await fetch('/api/v1/classes/semesters/list');
+        if (res.ok) {
+          const list = await res.json();
+          if (Array.isArray(list) && list.length > 0) {
+            setDbSemesters(list);
+          }
+        }
+      } catch (err) {
+        console.warn('Lỗi tải danh mục học kỳ từ CSDL:', err);
+      }
+    }
+    loadSemesters();
+  }, []);
+
+  // Đồng bộ danh sách sinh viên ghi danh trong lớp từ CSDL Backend khi chọn lớp
+  useEffect(() => {
+    if (!selectedClassId) return;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+    fetch(`/api/v1/classes/${encodeURIComponent(selectedClassId)}/students`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((enrolledList) => {
+        if (Array.isArray(enrolledList)) {
+          const mappedStudents: StudentRow[] = enrolledList.map((st: any) => ({
+            id: st.student_id || st.username || String(st.user_id),
+            name: st.full_name,
+            email: st.email,
+            phone: st.phone_number || undefined,
+            homeroomClass: st.lop_sinh_hoat || undefined,
+            department: st.department || undefined,
+            status:
+              st.status === 'hoc_ghep'
+                ? 'Học ghép'
+                : st.status === 'hoc_lai'
+                ? 'Học lại'
+                : st.status === 'hoc_vuot'
+                ? 'Học vượt'
+                : 'Đang học',
+          }));
+
+          setClasses((prev) => {
+            const updated = prev.map((c) =>
+              c.id === selectedClassId
+                ? {
+                    ...c,
+                    students: mappedStudents,
+                    studentCount: mappedStudents.length,
+                  }
+                : c
+            );
+            saveStoredClasses(updated);
+            return updated;
+          });
+
+          setViewingClass((prev) => {
+            if (prev && prev.id === selectedClassId) {
+              return {
+                ...prev,
+                students: mappedStudents,
+                studentCount: mappedStudents.length,
+              };
+            }
+            return prev;
+          });
+        }
+      })
+      .catch((err) => console.error('Lỗi đồng bộ SV lớp:', err));
+  }, [selectedClassId]);
 
   function confirmDeleteStudent() {
     if (!deletingStudent) return;
-    const targetClassId = viewingClass?.id || selectedClassId;
+    const targetClassId = (targetClassForStudent || viewingClass || selectedClass)?.id;
     if (!targetClassId) return;
 
     const updated = classes.map((item) => {
@@ -252,6 +373,15 @@ function ClassManagerContent() {
       });
     }
 
+    // Đồng bộ xóa sinh viên khỏi CSDL Backend
+    const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+    fetch(`/api/v1/classes/${targetClassId}/students/${deletingStudent.id}`, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    }).catch((err) => console.error('Lỗi khi xóa SV khỏi CSDL:', err));
+
     setDeletingStudent(null);
   }
 
@@ -262,27 +392,45 @@ function ClassManagerContent() {
     openEditModal(current);
   }
 
-  function handleAddStudent(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!viewingClass) return;
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const studentId = String(formData.get('studentId') ?? '').trim().toUpperCase();
-    const studentName = String(formData.get('studentName') ?? '').trim();
-    const email = String(formData.get('email') ?? '').trim().toLowerCase();
+  function openAddStudentModal(classItem?: ClassRow) {
+    const target = classItem || viewingClass || selectedClass;
+    if (!target) return;
+    setTargetClassForStudent(target);
+    setAddStudentError('');
+    setIsAddStudentOpen(true);
+  }
 
-    if (!studentId || !studentName || !email) {
-      setAddStudentError('Vui lòng nhập đầy đủ Mã sinh viên, Họ và tên và Email.');
+  function openImportStudentsModal(classItem?: ClassRow) {
+    const target = classItem || viewingClass || selectedClass;
+    if (!target) return;
+    setTargetClassForStudent(target);
+    handleResetImportStudentState();
+    setIsImportStudentsOpen(true);
+  }
+
+  function handleConfirmEnrollStudent() {
+    if (!selectedStudentToEnroll) {
+      setAddStudentError('Vui lòng chọn một sinh viên từ kết quả tìm kiếm.');
       return;
     }
 
-    if (!email.includes('@') || !email.includes('.')) {
-      setAddStudentError('Email không hợp lệ (ví dụ: student@school.edu.vn).');
-      return;
-    }
+    const target = targetClassForStudent || viewingClass || selectedClass;
+    if (!target) return;
 
-    if (viewingClass.students.some((s) => s.id.toLowerCase() === studentId.toLowerCase())) {
-      setAddStudentError('Mã sinh viên này đã có trong lớp.');
+    const studentId =
+      selectedStudentToEnroll.student_id ||
+      selectedStudentToEnroll.username ||
+      String(selectedStudentToEnroll.user_id);
+    const studentName = selectedStudentToEnroll.full_name;
+    const email =
+      selectedStudentToEnroll.email || `${studentId.toLowerCase()}@dtu.edu.vn`;
+
+    if (
+      target.students.some(
+        (s) => s.id.toLowerCase() === studentId.toLowerCase()
+      )
+    ) {
+      setAddStudentError('Sinh viên này đã có trong danh sách lớp.');
       return;
     }
 
@@ -290,23 +438,81 @@ function ClassManagerContent() {
       id: studentId,
       name: studentName,
       email,
-      status: 'Đang học',
+      phone: selectedStudentToEnroll.phone_number || undefined,
+      homeroomClass: selectedStudentToEnroll.lop_sinh_hoat || undefined,
+      department: selectedStudentToEnroll.department || undefined,
+      status: enrollStatus,
+      note: enrollNote.trim() || undefined,
     };
 
+    const updatedStudents = [newStudent, ...target.students];
     const updatedClass: ClassRow = {
-      ...viewingClass,
-      studentCount: viewingClass.students.length + 1,
-      students: [...viewingClass.students, newStudent],
+      ...target,
+      studentCount: updatedStudents.length,
+      students: updatedStudents,
     };
 
-    const updatedList = classes.map((item) => (item.id === viewingClass.id ? updatedClass : item));
+    const updatedList = classes.map((item) =>
+      item.id === target.id ? updatedClass : item
+    );
     setClasses(updatedList);
     saveStoredClasses(updatedList);
 
-    setViewingClass(updatedClass);
+    if (viewingClass && viewingClass.id === target.id) {
+      setViewingClass(updatedClass);
+    }
+    setTargetClassForStudent(updatedClass);
     setIsAddStudentOpen(false);
+    setSelectedStudentToEnroll(null);
+    setStudentSearchKeyword('');
+    setEnrollNote('');
     setAddStudentError('');
-    form.reset();
+
+    // Đồng bộ vào backend
+    const token =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('oculide_token')
+        : null;
+    fetch(`/api/v1/classes/${target.id}/students`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        student_user_id: selectedStudentToEnroll.user_id,
+        status:
+          enrollStatus === 'Học ghép'
+            ? 'hoc_ghep'
+            : enrollStatus === 'Học lại'
+            ? 'hoc_lai'
+            : enrollStatus === 'Học vượt'
+            ? 'hoc_vuot'
+            : 'dang_hoc',
+      }),
+    }).catch(() => {
+      // Fallback nếu lớp chưa được lưu trong SQL Server
+      fetch('/api/v1/admin/users/batch-import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          role: 'student',
+          users: [
+            {
+              username: email.split('@')[0],
+              email: email,
+              full_name: studentName,
+              student_id: studentId,
+              lop_sinh_hoat: selectedStudentToEnroll.lop_sinh_hoat,
+              department: selectedStudentToEnroll.department,
+            },
+          ],
+        }),
+      }).catch((err) => console.error(err));
+    });
   }
 
   // ── XỬ LÝ NHẬP EXCEL / CSV SINH VIÊN VÀO LỚP ──
@@ -348,10 +554,11 @@ function ClassManagerContent() {
     }
   }
 
-  function handleConfirmBulkImportStudents() {
-    if (!viewingClass || previewStudents.length === 0) return;
+  async function handleConfirmBulkImportStudents() {
+    const target = targetClassForStudent || viewingClass || selectedClass;
+    if (!target || previewStudents.length === 0) return;
 
-    const existingIds = new Set(viewingClass.students.map((s) => s.id.toLowerCase()));
+    const existingIds = new Set(target.students.map((s) => s.id.toLowerCase()));
     const newStudents: StudentRow[] = [];
 
     previewStudents.forEach((p) => {
@@ -361,24 +568,83 @@ function ClassManagerContent() {
         newStudents.push({
           id: p.id,
           name: p.name,
-          email: p.email,
+          email: p.email || `${p.id.toLowerCase()}@dtu.edu.vn`,
           status: 'Đang học',
           missingFields: p.missingFields,
         });
       }
     });
 
-    const updatedStudents = [...viewingClass.students, ...newStudents];
+    const updatedStudents = [...target.students, ...newStudents];
     const updatedClass: ClassRow = {
-      ...viewingClass,
+      ...target,
       studentCount: updatedStudents.length,
       students: updatedStudents,
     };
 
-    setViewingClass(updatedClass);
+    if (viewingClass && viewingClass.id === target.id) {
+      setViewingClass(updatedClass);
+    }
+    setTargetClassForStudent(updatedClass);
     const nextClasses = classes.map((c) => (c.id === updatedClass.id ? updatedClass : c));
     setClasses(nextClasses);
     saveStoredClasses(nextClasses);
+
+    // Tự động đồng bộ danh sách tài khoản sinh viên vào CSDL SQL Server và gửi email thông tin đăng nhập
+    if (newStudents.length > 0) {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      const validUsers = newStudents
+        .map((s) => {
+          const emailVal = (s.email || '').trim().toLowerCase();
+          const fallbackEmail = emailVal || (s.id ? `${s.id.toLowerCase()}@dtu.edu.vn` : '');
+          return {
+            username: fallbackEmail ? fallbackEmail.split('@')[0].trim().toLowerCase() : (s.id || '').toLowerCase(),
+            email: fallbackEmail,
+            full_name: (s.name || '').trim() || (s.id || 'Sinh viên'),
+            student_id: (s.id || '').trim().toUpperCase(),
+          };
+        })
+        .filter((u) => u.email && u.full_name);
+
+      if (validUsers.length > 0) {
+        try {
+          // 1. Tự động khởi tạo tài khoản cho các sinh viên chưa có trên hệ thống
+          await fetch('/api/v1/admin/users/batch-import', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              role: 'student',
+              users: validUsers,
+            }),
+          });
+
+          // 2. Ghi danh từng sinh viên vào lớp trong CSDL SQL Server (SinhVienLopHoc)
+          for (const s of newStudents) {
+            if (!s.id) continue;
+            try {
+              await fetch(`/api/v1/classes/${encodeURIComponent(target.id)}/students`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({
+                  student_user_id: s.id,
+                  status: 'dang_hoc',
+                }),
+              });
+            } catch (enrollErr) {
+              console.warn(`Lỗi ghi danh sinh viên ${s.id} vào CSDL:`, enrollErr);
+            }
+          }
+        } catch (err) {
+          console.error('Lỗi khi đồng bộ danh sách tài khoản sinh viên:', err);
+        }
+      }
+    }
 
     setIsImportStudentsOpen(false);
     handleResetImportStudentState();
@@ -420,278 +686,6 @@ function ClassManagerContent() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }
-
-  function handleAddLab(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!viewingClass) return;
-    const title = newLabTitle.trim();
-    if (!title) {
-      setAddLabError('Vui lòng nhập tiêu đề bài Lab.');
-      return;
-    }
-
-    const newLab: ClassLab = {
-      id: `LAB-${viewingClass.id}-${Date.now()}`,
-      templateId: selectedLabTemplateId || undefined,
-      labNumber: Number(newLabNumber) || 1,
-      title: title.startsWith('Buổi') ? title : `Buổi 0${newLabNumber} • Bài Lab 0${newLabNumber}: ${title}`,
-      language: newLabLanguage,
-      questionCount: Number(newLabQuestions) || 1,
-      scheduleNote: newLabSchedule.trim(),
-      startTime: formatDatetimeVietnamese(newLabStartTime) || '07:30, 28/10/2026',
-      endTime: formatDatetimeVietnamese(newLabEndTime) || '09:50, 28/10/2026',
-      durationMinutes: calculateDurationInMinutes(newLabStartTime, newLabEndTime) || Number(newLabDuration) || 120,
-      isProctored: newLabProctored,
-      roomCode: generateRandomRoomCode('LAB'),
-      roomPassword: generateRandomPassword(),
-      status: 'Đang mở',
-      submissionCount: 0,
-    };
-
-    const currentLabs = viewingClass.labs || [];
-    const updatedClass: ClassRow = {
-      ...viewingClass,
-      labs: [newLab, ...currentLabs],
-    };
-
-    const updatedList = classes.map((item) => (item.id === viewingClass.id ? updatedClass : item));
-    setClasses(updatedList);
-    saveStoredClasses(updatedList);
-    setViewingClass(updatedClass);
-
-    setIsAddLabOpen(false);
-    setNewLabTitle('');
-    setSelectedLabTemplateId('');
-    setNewLabNumber(currentLabs.length + 2);
-    setNewLabProctored(true);
-    setAddLabError('');
-  }
-
-  function handleCreateExam(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!viewingClass) return;
-
-    const title = newExamTitle.trim();
-    if (!title) {
-      setAddExamError('Vui lòng nhập tên bài thi / kiểm tra.');
-      return;
-    }
-
-    const newExam: ClassExam = {
-      id: `EXAM-${viewingClass.id}-${Date.now().toString().slice(-4)}`,
-      templateId: selectedExamTemplateId || undefined,
-      title,
-      type: newExamType,
-      language: newExamLanguage,
-      durationMinutes: Number(newExamDuration) || 60,
-      scheduledAt: newExamSchedule.trim() || 'Thời gian thông báo sau',
-      questionCount: Number(newExamQuestions) || 1,
-      isProctored: newExamProctored,
-      roomCode: generateRandomRoomCode('EXAM'),
-      roomPassword: generateRandomPassword(),
-      status: 'Sắp diễn ra',
-      submissionCount: 0,
-    };
-
-    const currentExams = viewingClass.exams || [];
-    const updatedClass: ClassRow = {
-      ...viewingClass,
-      exams: [newExam, ...currentExams],
-    };
-
-    const updatedList = classes.map((item) => (item.id === viewingClass.id ? updatedClass : item));
-    setClasses(updatedList);
-    saveStoredClasses(updatedList);
-    setViewingClass(updatedClass);
-
-    setIsAddExamOpen(false);
-    setNewExamTitle('');
-    setSelectedExamTemplateId('');
-    setAddExamError('');
-  }
-
-  // Chỉnh sửa & Xóa bài Lab
-  function openEditLabModal(lab: ClassLab) {
-    setEditingLab(lab);
-    setEditLabTitle(
-      lab.title
-        .replace(/^Buổi \d+ • (Bài Lab \d+: )?/, '')
-        .replace(/^Lab \d+ • /, '')
-    );
-    setEditLabTemplateId(lab.templateId || '');
-    setEditLabLanguage(lab.language);
-    setEditLabQuestions(lab.questionCount);
-    setEditLabSchedule(lab.scheduleNote || '');
-    const startIso = toIsoDatetime(lab.startTime) || '2026-10-28T07:30';
-    const endIso = toIsoDatetime(lab.endTime) || '2026-10-28T09:50';
-    setEditLabStartTime(startIso);
-    setEditLabEndTime(endIso);
-    setEditLabDuration(lab.durationMinutes || calculateDurationInMinutes(startIso, endIso) || 120);
-    setEditLabProctored(lab.isProctored ?? true);
-    setEditLabStatus(lab.status);
-    setEditLabError('');
-  }
-
-  function handleSwitchLabTemplateInEdit(templateId: string) {
-    setEditLabTemplateId(templateId);
-    if (!templateId) return;
-    const tpl = questionTemplates.find((t) => t.id === templateId);
-    if (tpl) {
-      setEditLabTitle(
-        tpl.title
-          .replace(/^Buổi \d+ • (Bài Lab \d+: )?/, '')
-          .replace(/^Lab \d+ • /, '')
-      );
-      setEditLabLanguage(tpl.language);
-      setEditLabQuestions(tpl.questionCount);
-      setEditLabError('');
-    }
-  }
-
-  function handleSaveEditLab(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!viewingClass || !editingLab) return;
-    const title = editLabTitle.trim();
-    if (!title) {
-      setEditLabError('Vui lòng nhập tiêu đề bài Lab.');
-      return;
-    }
-
-    const updatedLab: ClassLab = {
-      ...editingLab,
-      title: title.startsWith('Buổi') ? title : `Buổi 0${editingLab.labNumber} • Bài Lab 0${editingLab.labNumber}: ${title}`,
-      templateId: editLabTemplateId || undefined,
-      language: editLabLanguage,
-      questionCount: Number(editLabQuestions) || 1,
-      scheduleNote: editLabSchedule.trim(),
-      startTime: formatDatetimeVietnamese(editLabStartTime) || editingLab.startTime || '07:30, 28/10/2026',
-      endTime: formatDatetimeVietnamese(editLabEndTime) || editingLab.endTime || '09:50, 28/10/2026',
-      durationMinutes: calculateDurationInMinutes(editLabStartTime, editLabEndTime) || Number(editLabDuration) || 120,
-      isProctored: editLabProctored,
-      status: editLabStatus,
-    };
-
-    const currentLabs = viewingClass.labs || [];
-    const updatedLabs = currentLabs.map((l) => (l.id === editingLab.id ? updatedLab : l));
-
-    const updatedClass: ClassRow = {
-      ...viewingClass,
-      labs: updatedLabs,
-    };
-
-    const updatedList = classes.map((item) => (item.id === viewingClass.id ? updatedClass : item));
-    setClasses(updatedList);
-    saveStoredClasses(updatedList);
-    setViewingClass(updatedClass);
-    setEditingLab(null);
-  }
-
-  function handleDeleteLab(labId: string) {
-    if (!viewingClass) return;
-    const targetLab = (viewingClass.labs || []).find((l) => l.id === labId);
-    const confirmMsg = targetLab
-      ? `Bạn có chắc chắn muốn xóa "${targetLab.title}" khỏi lớp ${viewingClass.id}?`
-      : 'Bạn có chắc chắn muốn xóa buổi thực hành này?';
-    if (!confirm(confirmMsg)) return;
-
-    const updatedLabs = (viewingClass.labs || []).filter((l) => l.id !== labId);
-    const updatedClass: ClassRow = {
-      ...viewingClass,
-      labs: updatedLabs,
-    };
-
-    const updatedList = classes.map((item) => (item.id === viewingClass.id ? updatedClass : item));
-    setClasses(updatedList);
-    saveStoredClasses(updatedList);
-    setViewingClass(updatedClass);
-  }
-
-  // Chỉnh sửa & Xóa bài thi
-  function openEditExamModal(exam: ClassExam) {
-    setEditingExam(exam);
-    setEditExamTitle(exam.title);
-    setEditExamTemplateId(exam.templateId || '');
-    setEditExamType(exam.type);
-    setEditExamLanguage(exam.language);
-    setEditExamDuration(exam.durationMinutes);
-    setEditExamSchedule(exam.scheduledAt);
-    setEditExamQuestions(exam.questionCount);
-    setEditExamProctored(exam.isProctored ?? true);
-    setEditExamStatus(exam.status);
-    setEditExamError('');
-  }
-
-  function handleSwitchExamTemplateInEdit(templateId: string) {
-    setEditExamTemplateId(templateId);
-    if (!templateId) return;
-    const tpl = questionTemplates.find((t) => t.id === templateId);
-    if (tpl) {
-      setEditExamTitle(tpl.title);
-      setEditExamLanguage(tpl.language);
-      setEditExamQuestions(tpl.questionCount);
-      if (tpl.durationMinutes) {
-        setEditExamDuration(tpl.durationMinutes);
-      }
-      setEditExamError('');
-    }
-  }
-
-  function handleSaveEditExam(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!viewingClass || !editingExam) return;
-    const title = editExamTitle.trim();
-    if (!title) {
-      setEditExamError('Vui lòng nhập tiêu đề bài thi.');
-      return;
-    }
-
-    const updatedExam: ClassExam = {
-      ...editingExam,
-      title,
-      templateId: editExamTemplateId || undefined,
-      type: editExamType,
-      language: editExamLanguage,
-      durationMinutes: Number(editExamDuration) || 60,
-      scheduledAt: editExamSchedule.trim(),
-      questionCount: Number(editExamQuestions) || 1,
-      isProctored: editExamProctored,
-      status: editExamStatus,
-    };
-
-    const currentExams = viewingClass.exams || [];
-    const updatedExams = currentExams.map((ex) => (ex.id === editingExam.id ? updatedExam : ex));
-
-    const updatedClass: ClassRow = {
-      ...viewingClass,
-      exams: updatedExams,
-    };
-
-    const updatedList = classes.map((item) => (item.id === viewingClass.id ? updatedClass : item));
-    setClasses(updatedList);
-    saveStoredClasses(updatedList);
-    setViewingClass(updatedClass);
-    setEditingExam(null);
-  }
-
-  function handleDeleteExam(examId: string) {
-    if (!viewingClass) return;
-    const targetExam = (viewingClass.exams || []).find((e) => e.id === examId);
-    const confirmMsg = targetExam
-      ? `Bạn có chắc chắn muốn xóa bài thi "${targetExam.title}" khỏi lớp ${viewingClass.id}?`
-      : 'Bạn có chắc chắn muốn xóa bài thi này?';
-    if (!confirm(confirmMsg)) return;
-
-    const updatedExams = (viewingClass.exams || []).filter((e) => e.id !== examId);
-    const updatedClass: ClassRow = {
-      ...viewingClass,
-      exams: updatedExams,
-    };
-
-    const updatedList = classes.map((item) => (item.id === viewingClass.id ? updatedClass : item));
-    setClasses(updatedList);
-    saveStoredClasses(updatedList);
-    setViewingClass(updatedClass);
   }
 
   function openEditModal(classItem: ClassRow) {
@@ -803,32 +797,71 @@ function ClassManagerContent() {
     setDeletingClass(null);
   }
 
-  function confirmDeleteClass() {
+  async function confirmDeleteClass() {
     if (!deletingClass) return;
-    const remaining = classes.filter((item) => item.id !== deletingClass.id);
+    const targetId = deletingClass.id;
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      await fetch(`/api/v1/classes/${encodeURIComponent(targetId)}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+    } catch (err) {
+      console.error('Lỗi khi xóa lớp từ CSDL:', err);
+    }
+
+    const remaining = classes.filter((item) => item.id !== targetId);
     setClasses(remaining);
     saveStoredClasses(remaining);
 
-    if (selectedClassId === deletingClass.id) {
+    if (selectedClassId === targetId) {
       setSelectedClassId(remaining.length > 0 ? remaining[0].id : '');
     }
     setDeletingClass(null);
   }
 
+  const normalizeTerm = (s: string) =>
+    (s || '').replace(/[\u2013\u2014]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase();
+
+  const availableSemesters = useMemo(() => {
+    const list: string[] = [];
+    if (dbSemesters.length > 0) {
+      dbSemesters.forEach((s) => {
+        if (!list.some((item) => normalizeTerm(item) === normalizeTerm(s.ten_hoc_ky))) {
+          list.push(s.ten_hoc_ky);
+        }
+      });
+    }
+    classes.forEach((c) => {
+      if (c.semester && !list.some((item) => normalizeTerm(item) === normalizeTerm(c.semester))) {
+        list.push(c.semester.trim());
+      }
+    });
+    return list.length > 0 ? list : SEMESTERS;
+  }, [dbSemesters, classes]);
+
   const filteredClasses = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('vi');
+    const selectedNormSemester = normalizeTerm(semester);
     return classes.filter((classItem) => {
       const matchesSearch =
         !query ||
         classItem.id.toLocaleLowerCase('vi').includes(query) ||
         classItem.name.toLocaleLowerCase('vi').includes(query);
-      const matchesSemester = semester === 'Tất cả học kỳ' || classItem.semester === semester;
+      const classNormSemester = normalizeTerm(classItem.semester);
+      const matchesSemester =
+        semester === 'Tất cả học kỳ' ||
+        classNormSemester === selectedNormSemester ||
+        classNormSemester.replace(/\s+/g, '') === selectedNormSemester.replace(/\s+/g, '') ||
+        classNormSemester.includes(selectedNormSemester) ||
+        selectedNormSemester.includes(classNormSemester);
       const matchesStatus = status === 'Tất cả trạng thái' || classItem.status === status;
       return matchesSearch && matchesSemester && matchesStatus;
     });
   }, [classes, search, semester, status]);
 
-  const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
   const filteredStudents = useMemo(() => {
     const query = studentSearch.trim().toLocaleLowerCase('vi');
     if (!selectedClass) return [];
@@ -877,24 +910,6 @@ function ClassManagerContent() {
                 >
                   <Download className="h-4 w-4 text-slate-500" />
                   <span>Xuất danh sách lớp học</span>
-                </button>
-
-                {/* Nút Nhập Excel / CSV */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (viewingClass) {
-                      handleResetImportStudentState();
-                      setIsImportStudentsOpen(true);
-                    } else {
-                      router.push('/admin/classes/create');
-                    }
-                  }}
-                  title="Nhập danh sách sinh viên / lớp học từ file Excel/CSV"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 cursor-pointer"
-                >
-                  <FileSpreadsheet className="h-4 w-4 text-slate-500" />
-                  <span>Nhập Excel/CSV</span>
                 </button>
 
                 {/* Nút Tạo lớp mới */}
@@ -996,7 +1011,7 @@ function ClassManagerContent() {
                           className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3.5 pr-10 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
                         >
                           <option value="Tất cả học kỳ">Tất cả học kỳ</option>
-                          {SEMESTERS.map((s) => (
+                          {availableSemesters.map((s) => (
                             <option key={s} value={s}>
                               {s}
                             </option>
@@ -1036,11 +1051,8 @@ function ClassManagerContent() {
                         <th scope="col" className="px-2 py-2.5 text-center whitespace-nowrap">
                           Sĩ số
                         </th>
-                        <th scope="col" className="px-2 py-2.5 text-center whitespace-nowrap">
-                          Buổi thực hành
-                        </th>
-                        <th scope="col" className="px-2 py-2.5 text-center whitespace-nowrap">
-                          Bài thi
+                        <th scope="col" className="px-3 py-2.5 whitespace-nowrap">
+                          Giảng viên phụ trách
                         </th>
                         <th scope="col" className="px-3 py-2.5 text-center whitespace-nowrap">
                           Trạng thái
@@ -1051,21 +1063,30 @@ function ClassManagerContent() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/10 text-xs">
-                      {filteredClasses.map((classItem) => {
-                        const isSelected = selectedClassId === classItem.id;
-                        return (
-                          <tr
-                            key={classItem.id}
-                            onClick={() => {
-                              setSelectedClassId(classItem.id);
-                              setStudentSearch('');
-                            }}
-                            className={`transition-colors cursor-pointer ${
-                              isSelected
-                                ? 'bg-blue-50/70 dark:bg-blue-500/15 font-medium'
-                                : 'hover:bg-slate-50/70 dark:hover:bg-white/5'
-                            }`}
-                          >
+                      {filteredClasses.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
+                            <GraduationCap className="mx-auto h-8 w-8 mb-2 opacity-30 text-slate-500" />
+                            <p className="font-semibold text-xs text-slate-600 dark:text-slate-300">Không tìm thấy lớp học nào</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">Bấm nút &ldquo;Tạo lớp học mới&rdquo; để thêm lớp học phần</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredClasses.map((classItem) => {
+                          const isSelected = selectedClassId === classItem.id;
+                          return (
+                            <tr
+                              key={classItem.id}
+                              onClick={() => {
+                                setSelectedClassId(classItem.id);
+                                setStudentSearch('');
+                              }}
+                              className={`transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-blue-50/70 dark:bg-blue-500/15 font-medium'
+                                  : 'hover:bg-slate-50/70 dark:hover:bg-white/5'
+                              }`}
+                            >
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
                                 <span
@@ -1094,40 +1115,21 @@ function ClassManagerContent() {
                                 <span>{classItem.startDate || '05/09/2026'} – {classItem.endDate || '15/01/2027'}</span>
                               </div>
                             </td>
-                            <td className="px-2 py-3 text-center whitespace-nowrap font-bold text-slate-700">
+                            <td className="px-2 py-3 text-center whitespace-nowrap font-bold text-slate-700 dark:text-slate-200">
                               {classItem.studentCount}
                             </td>
-                            <td className="px-2 py-3 text-center whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedClassId(classItem.id);
-                                  setViewingClass(classItem);
-                                  setDetailTab('labs');
-                                }}
-                                className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50/80 px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition cursor-pointer shadow-2xs"
-                                title="Nhấp để xem và quản lý buổi thực hành"
-                              >
-                                <Code2 className="h-3 w-3 text-blue-600" />
-                                {(classItem.labs || []).length} buổi
-                              </button>
-                            </td>
-                            <td className="px-2 py-3 text-center whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedClassId(classItem.id);
-                                  setViewingClass(classItem);
-                                  setDetailTab('exams');
-                                }}
-                                className="inline-flex items-center gap-1 rounded-md border border-purple-200 bg-purple-50/80 px-2 py-0.5 text-[11px] font-bold text-purple-700 hover:bg-purple-100 transition cursor-pointer shadow-2xs"
-                                title="Nhấp để xem và quản lý bài thi"
-                              >
-                                <GraduationCap className="h-3 w-3 text-purple-600" />
-                                {(classItem.exams || []).length} bài thi
-                              </button>
+                            <td className="px-3 py-3 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[10px] font-bold text-blue-600 dark:bg-blue-500/15 dark:text-blue-400">
+                                  {classItem.lecturer ? classItem.lecturer.slice(0, 2).toUpperCase() : 'GV'}
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-slate-800 dark:text-slate-200 text-xs leading-tight">
+                                    {classItem.lecturer || 'Chưa phân công'}
+                                  </p>
+                                  <p className="text-[10px] text-slate-400">Phụ trách lớp</p>
+                                </div>
+                              </div>
                             </td>
                             <td className="px-3 py-3 text-center whitespace-nowrap">
                               <div className="inline-flex items-center gap-1.5">
@@ -1177,6 +1179,18 @@ function ClassManagerContent() {
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    openAddStudentModal(classItem);
+                                  }}
+                                  title={`Thêm sinh viên vào lớp ${classItem.id}`}
+                                  aria-label={`Thêm sinh viên vào lớp ${classItem.id}`}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-blue-50 hover:text-blue-600 cursor-pointer"
+                                >
+                                  <UserPlus className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setSelectedClassId(classItem.id);
                                     setStudentSearch('');
                                     setDetailTab('students');
@@ -1220,7 +1234,8 @@ function ClassManagerContent() {
                             </td>
                           </tr>
                         );
-                      })}
+                      })
+                    )}
                     </tbody>
                   </table>
                 </div>
@@ -1228,12 +1243,12 @@ function ClassManagerContent() {
 
               {/* Panel sinh viên trong lớp đang chọn */}
               <section className="flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs dark:border-white/10 dark:bg-[#0d1017] transition-colors">
-                <div className="border-b border-slate-100 p-3.5">
+                <div className="border-b border-slate-100 p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div>
                       <h2 className="text-sm font-bold text-slate-900 dark:text-white">Sinh viên lớp</h2>
                       {selectedClass ? (
-                        <p className="mt-0.5 text-xs font-semibold text-blue-700 truncate">
+                        <p className="mt-0.5 text-xs font-semibold text-blue-700 dark:text-blue-400 truncate">
                           {selectedClass.id} • {selectedClass.name}
                         </p>
                       ) : (
@@ -1241,14 +1256,29 @@ function ClassManagerContent() {
                       )}
                     </div>
                     {selectedClass && (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600 dark:bg-white/10 dark:text-slate-300">
                         {selectedClass.students.length} SV
                       </span>
                     )}
                   </div>
 
+                  {/* NÚT THÊM SINH VIÊN TRỰC TIẾP VÀO LỚP ĐANG CHỌN */}
+                  {selectedClass && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => openAddStudentModal(selectedClass)}
+                        className="inline-flex w-full items-center justify-center gap-2 h-9.5 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer"
+                        title={`Thêm 1 sinh viên vào lớp ${selectedClass.id}`}
+                      >
+                        <UserPlus className="h-4 w-4" />
+                        <span>Thêm sinh viên vào lớp</span>
+                      </button>
+                    </div>
+                  )}
+
                   {selectedClass && selectedClass.status === 'Chưa mở' && (
-                    <div className="mt-2.5 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs">
+                    <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs">
                       <span className="font-semibold text-amber-800 text-[11px]">Lớp chưa mở</span>
                       <button
                         type="button"
@@ -1261,46 +1291,82 @@ function ClassManagerContent() {
                     </div>
                   )}
 
-                  <div className="relative mt-2.5">
+                  <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
                       value={studentSearch}
                       onChange={(event) => setStudentSearch(event.target.value)}
                       placeholder="Tìm MSSV, tên, email..."
-                      className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 placeholder:text-slate-400"
+                      className="h-9.5 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 placeholder:text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-white"
                     />
                   </div>
                 </div>
 
-                <div className="max-h-[480px] flex-1 overflow-y-auto divide-y divide-slate-100">
+                <div className="max-h-[480px] flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-white/5">
                   {filteredStudents.length > 0 ? (
-                    filteredStudents.map((student) => (
-                      <div
-                        key={student.id}
-                        className="flex items-center gap-2.5 p-3 hover:bg-slate-50/70 dark:hover:bg-white/5 transition"
-                      >
+                    filteredStudents.map((student) => {
+                      const statusColor =
+                        student.status === 'Đang học'
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+                          : student.status === 'Học ghép'
+                          ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400'
+                          : student.status === 'Học lại'
+                          ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'
+                          : student.status === 'Học vượt'
+                          ? 'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400'
+                          : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-400';
+
+                      return (
                         <div
-                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${getAvatarColor(
-                            student.id
-                          )}`}
+                          key={student.id}
+                          className="group flex items-center justify-between gap-2 p-3 hover:bg-slate-50/70 dark:hover:bg-white/5 transition"
                         >
-                          {getStudentInitials(student.name)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1">
-                            <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
-                              {student.name}
-                            </p>
-                            <span className="rounded bg-emerald-50 px-1.5 py-0.2 text-[9.5px] font-bold text-emerald-700 shrink-0">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div
+                              className={`flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${getAvatarColor(
+                                student.id
+                              )}`}
+                            >
+                              {getStudentInitials(student.name)}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                                  {student.name}
+                                </p>
+                                {student.homeroomClass && (
+                                  <span className="rounded bg-slate-100 px-1.5 py-0.2 text-[9.5px] font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                                    {student.homeroomClass}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10.5px] text-slate-400 font-mono truncate">
+                                {student.id} • {student.email}
+                                {student.phone ? ` • ${student.phone}` : ''}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`rounded px-1.5 py-0.5 text-[9.5px] font-bold ${statusColor}`}>
                               {student.status}
                             </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTargetClassForStudent(selectedClass);
+                                setDeletingStudent(student);
+                              }}
+                              className="flex h-6 w-6 items-center justify-center rounded text-slate-300 hover:bg-red-50 hover:text-red-600 transition cursor-pointer opacity-0 group-hover:opacity-100 dark:hover:bg-red-500/15"
+                              title={`Xóa sinh viên ${student.name} khỏi lớp`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
-                          <p className="text-[10.5px] text-slate-400 font-mono">
-                            {student.id} • {student.email}
-                          </p>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="py-10 text-center text-xs text-slate-400">
                       Không có sinh viên nào phù hợp.
@@ -1401,7 +1467,7 @@ function ClassManagerContent() {
               <div className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-[#f8fafc] p-4 shadow-sm h-full">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                    SĨ SỐ & HOẠT ĐỘNG
+                    SĨ SỐ LỚP HỌC
                   </span>
                   <Users className="h-4 w-4 text-purple-500" />
                 </div>
@@ -1409,117 +1475,17 @@ function ClassManagerContent() {
                   <p className="text-base font-extrabold text-slate-900">
                     {viewingClass.students.length} <span className="text-xs font-normal text-slate-500">sinh viên</span>
                   </p>
-                  <p className="text-xs font-medium text-purple-700 mt-0.5">
-                    {(viewingClass.labs || []).length} bài lab • {(viewingClass.exams || []).length} bài thi
+                  <p className="text-xs font-medium text-emerald-700 mt-0.5">
+                    Đã ghi danh vào lớp
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* ── 3 KHỐI TAB ĐIỀU HƯỚNG ĐỀU NHAU (3 EQUAL SEGMENTED TABS) ── */}
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <button
-                type="button"
-                onClick={() => setDetailTab('students')}
-                className={`flex items-center justify-between rounded-2xl border p-3.5 text-left transition cursor-pointer ${
-                  detailTab === 'students'
-                    ? 'border-blue-600 bg-blue-50/70 text-blue-900 shadow-sm ring-1 ring-blue-500/20'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
-                      detailTab === 'students' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
-                    <Users className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-extrabold">Sinh viên & Sĩ số</p>
-                    <p className="text-[11px] text-slate-500">Danh sách quản lý lớp</p>
-                  </div>
-                </div>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                    detailTab === 'students' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {viewingClass.students.length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDetailTab('labs')}
-                className={`flex items-center justify-between rounded-2xl border p-3.5 text-left transition cursor-pointer ${
-                  detailTab === 'labs'
-                    ? 'border-blue-600 bg-blue-50/70 text-blue-900 shadow-sm ring-1 ring-blue-500/20'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
-                      detailTab === 'labs' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
-                    <Code2 className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-extrabold">Buổi học & Bài Lab</p>
-                    <p className="text-[11px] text-slate-500">Mỗi buổi 1 bài lab • {(viewingClass.labs || []).length} buổi</p>
-                  </div>
-                </div>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                    detailTab === 'labs' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {(viewingClass.labs || []).length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDetailTab('exams')}
-                className={`flex items-center justify-between rounded-2xl border p-3.5 text-left transition cursor-pointer ${
-                  detailTab === 'exams'
-                    ? 'border-purple-600 bg-purple-50/70 text-purple-900 shadow-sm ring-1 ring-purple-500/20'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
-                      detailTab === 'exams' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
-                    <GraduationCap className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-extrabold">Kỳ thi & Kiểm tra</p>
-                    <p className="text-[11px] text-slate-500">Giữa kỳ, quá trình & cuối kỳ</p>
-                  </div>
-                </div>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                    detailTab === 'exams' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {(viewingClass.exams || []).length}
-                </span>
-              </button>
-            </div>
-
-            {/* Khung nội dung chi tiết */}
+            {/* Khung nội dung chi tiết: Danh sách sinh viên */}
             <div className="mt-5 rounded-2xl border border-slate-200/80 bg-[#f8fafc]/70 p-5 sm:p-6">
-
-              {/* ── NỘI DUNG TAB 1: SINH VIÊN & SĨ SỐ ── */}
-              {detailTab === 'students' && (
-                <div className="mt-6">
-                  <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between mb-4">
-                    <div>
+              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between mb-4">
+                <div>
                       <h3 className="text-base font-extrabold text-slate-900">
                         Danh sách lớp • {viewingClass.students.length} sinh viên
                       </h3>
@@ -1542,19 +1508,6 @@ function ClassManagerContent() {
                       <button
                         type="button"
                         onClick={() => {
-                          handleResetImportStudentState();
-                          setIsImportStudentsOpen(true);
-                        }}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
-                        title="Thêm danh sách sinh viên từ file Excel / CSV"
-                      >
-                        <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-                        <span>Nhập Excel/CSV</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
                           setAddStudentError('');
                           setIsAddStudentOpen(true);
                         }}
@@ -1568,15 +1521,14 @@ function ClassManagerContent() {
 
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[550px] text-left text-xs">
+                      <table className="w-full min-w-[600px] text-left text-xs">
                         <thead className="bg-[#f8fafc] text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
                           <tr>
-                            <th className="px-4 py-3.5 w-16">STT</th>
-                            <th className="px-4 py-3.5 w-32">MÃ SV</th>
-                            <th className="px-4 py-3.5">HỌ VÀ TÊN &amp; EMAIL</th>
-                            <th className="px-4 py-3.5 w-28">LỚP</th>
-                            <th className="px-4 py-3.5 w-36 text-center">TRẠNG THÁI</th>
-                            <th className="px-4 py-3.5 w-20 text-right">THAO TÁC</th>
+                            <th className="px-3.5 py-3.5 w-14 text-center">STT</th>
+                            <th className="px-3.5 py-3.5 w-36">MÃ SINH VIÊN</th>
+                            <th className="px-3.5 py-3.5">HỌ VÀ TÊN &amp; EMAIL</th>
+                            <th className="px-3.5 py-3.5 w-36 text-center">PHÂN LOẠI</th>
+                            <th className="px-3.5 py-3.5 w-20 text-right">THAO TÁC</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -1597,8 +1549,8 @@ function ClassManagerContent() {
                                     hasMissing ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-slate-50/80'
                                   }`}
                                 >
-                                  <td className="px-4 py-3 font-medium text-slate-400">{index + 1}</td>
-                                  <td className="px-4 py-3 font-bold text-slate-900">
+                                  <td className="px-3.5 py-3 text-center font-medium text-slate-400">{index + 1}</td>
+                                  <td className="px-3.5 py-3 font-bold font-mono text-slate-900">
                                     {isMissingId ? (
                                       <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
                                         Thiếu Mã SV
@@ -1607,13 +1559,13 @@ function ClassManagerContent() {
                                       student.id
                                     )}
                                   </td>
-                                  <td className="px-4 py-3">
+                                  <td className="px-3.5 py-3">
                                     {isMissingName ? (
                                       <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
                                         Thiếu Họ và tên
                                       </span>
                                     ) : (
-                                      <p className="font-semibold text-slate-800">{student.name}</p>
+                                      <p className="font-bold text-slate-800">{student.name}</p>
                                     )}
                                     {isMissingEmail ? (
                                       <span className="mt-0.5 inline-flex items-center rounded bg-red-100 px-1.5 py-0.2 text-[10px] font-bold text-red-600">
@@ -1622,22 +1574,38 @@ function ClassManagerContent() {
                                           : 'Thiếu Email'}
                                       </span>
                                     ) : (
-                                      <p className="text-[11px] text-slate-400">{student.email}</p>
+                                      <p className="text-[11px] text-slate-400 font-mono">{student.email}</p>
+                                    )}
+                                    {student.note && (
+                                      <p className="text-[10px] text-amber-600 font-medium mt-0.5">
+                                        Ghi chú: {student.note}
+                                      </p>
                                     )}
                                   </td>
-                                  <td className="px-4 py-3 font-medium text-slate-600">{viewingClass.id}</td>
-                                  <td className="px-4 py-3 text-center">
+                                  <td className="px-3.5 py-3 text-center">
                                     {hasMissing ? (
                                       <span className="inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800">
                                         ⚠ {student.missingFields?.join(', ')}
                                       </span>
                                     ) : (
-                                      <span className="inline-block rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                      <span
+                                        className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                                          student.status === 'Đang học'
+                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                            : student.status === 'Học ghép'
+                                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                            : student.status === 'Học lại'
+                                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                            : student.status === 'Học vượt'
+                                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                            : 'bg-slate-100 text-slate-600'
+                                        }`}
+                                      >
                                         {student.status}
                                       </span>
                                     )}
                                   </td>
-                                  <td className="px-4 py-3 text-right">
+                                  <td className="px-3.5 py-3 text-right">
                                     <button
                                       type="button"
                                       onClick={() => setDeletingStudent(student)}
@@ -1653,7 +1621,7 @@ function ClassManagerContent() {
                             })
                           ) : (
                             <tr>
-                              <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                              <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
                                 Lớp chưa có sinh viên nào.
                               </td>
                             </tr>
@@ -1664,1791 +1632,340 @@ function ClassManagerContent() {
                   </div>
 
                   <p className="mt-3 text-xs text-slate-400">
-                    Việc tạo lớp khởi đối chiếu danh tính; điểm chưa được nhập trong luồng này.
+                    Danh sách sinh viên chính thức được ghi nhận trong lớp học phần.
                   </p>
                 </div>
-              )}
 
-              {/* ── NỘI DUNG TAB 2: BÀI LAB TRÊN LỚP (CHỈ PHỤC VỤ CÁC BÀI LAB THỰC HÀNH) ── */}
-              {detailTab === 'labs' && (
-                <div className="mt-6">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
-                    <div>
-                      <h3 className="text-base font-extrabold text-slate-900">
-                        Buổi thực hành & Bài Lab • {(viewingClass.labs || []).length} buổi
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        Mỗi buổi học thực hành có 1 bài lab. Trong mỗi bài lab bao gồm nhiều đề bài lập trình.
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddLabError('');
-                        setNewLabNumber((viewingClass.labs || []).length + 1);
-                        setIsAddLabOpen(true);
-                      }}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 cursor-pointer self-start sm:self-auto"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>Tạo buổi lab mới</span>
-                    </button>
-                  </div>
-
-                  {/* Danh sách các buổi thực hành */}
-                  {(viewingClass.labs || []).length > 0 ? (
-                    <div className="space-y-3.5">
-                      {(viewingClass.labs || []).map((lab) => (
-                        <div
-                          key={lab.id}
-                          className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm hover:border-blue-300 hover:shadow-md transition"
-                        >
-                          <div className="space-y-2">
-                            {/* Hàng nhãn */}
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-700">
-                                  🧪 Buổi 0{lab.labNumber} • Bài Lab 0{lab.labNumber}
-                                </span>
-
-                                {lab.isProctored ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                                    <ShieldCheck className="h-3 w-3" />
-                                    Có giám sát
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                                    Tự do
-                                  </span>
-                                )}
-                              </div>
-
-                              <span
-                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                                  lab.status === 'Đang mở'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : 'bg-slate-100 text-slate-600'
-                                }`}
-                              >
-                                <span
-                                  className={`h-1.5 w-1.5 rounded-full ${
-                                    lab.status === 'Đang mở' ? 'bg-emerald-500' : 'bg-slate-400'
-                                  }`}
-                                />
-                                {lab.status}
-                              </span>
-                            </div>
-
-                            {/* Tiêu đề bài lab */}
-                            <h4 className="text-sm sm:text-base font-bold text-slate-900">
-                              {lab.title}
-                            </h4>
-
-                            {/* Chi tiết thông tin cấu hình & Thời gian */}
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50/80 border border-blue-200/70 px-2.5 py-0.5 font-semibold text-blue-800">
-                                <Calendar className="h-3.5 w-3.5 text-blue-600" />
-                                {lab.startTime || '07:30, 28/10/2026'} – {lab.endTime ? lab.endTime.split(',')[0] : '09:50'}
-                              </span>
-
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50/80 border border-amber-200/70 px-2.5 py-0.5 font-semibold text-amber-800">
-                                <Clock className="h-3.5 w-3.5 text-amber-600" />
-                                {lab.durationMinutes || 120} phút
-                              </span>
-
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-0.5 font-semibold text-slate-700">
-                                <Terminal className="h-3.5 w-3.5 text-slate-400" />
-                                {lab.language}
-                              </span>
-
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-0.5 font-semibold text-slate-700">
-                                <Code2 className="h-3.5 w-3.5 text-slate-400" />
-                                {lab.questionCount} đề bài
-                              </span>
-
-                              {lab.scheduleNote && (
-                                <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-0.5 text-slate-600 font-medium">
-                                  {lab.scheduleNote}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Thông tin bộ đề liên kết từ module Đề & câu hỏi */}
-                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px] text-slate-500">
-                              <span>
-                                Bộ đề:{' '}
-                                <strong className="font-semibold text-slate-700">
-                                  {lab.templateId || 'TPL-LAB-01'}
-                                </strong>{' '}
-                                ({lab.questionCount} đề)
-                              </span>
-                              <span className="text-slate-300">•</span>
-                              <Link
-                                href={`/admin/questions?templateId=${encodeURIComponent(
-                                  lab.templateId || 'TPL-LAB-01'
-                                )}`}
-                                className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline"
-                                title="Xem thông tin định danh bộ đề (Bảo mật câu hỏi & Test Cases)"
-                              >
-                                <FileCode2 className="h-3 w-3" />
-                                Xem thông tin bộ đề
-                                <ExternalLink className="h-2.5 w-2.5" />
-                              </Link>
-                              <span className="text-slate-300">•</span>
-                              <span className="text-slate-400 font-medium">🔒 Bảo mật câu hỏi & Test Cases</span>
-                            </div>
-
-                            {/* Mã phòng & Mật khẩu phòng Lab */}
-                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs">
-                              <div className="flex flex-wrap items-center gap-3">
-                                <div className="flex items-center gap-1.5 font-mono">
-                                  <span className="text-[11px] font-semibold text-slate-500">Mã phòng:</span>
-                                  <span className="rounded bg-white border border-blue-200 px-2 py-0.5 font-bold text-blue-700 shadow-xs">
-                                    {lab.roomCode || `${lab.id}-ROOM`}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1.5 font-mono">
-                                  <span className="text-[11px] font-semibold text-slate-500">Mật khẩu:</span>
-                                  <span className="rounded bg-white border border-blue-200 px-2 py-0.5 font-bold text-slate-800 shadow-xs tracking-wider">
-                                    {lab.roomPassword || '123456'}
-                                  </span>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const rCode = lab.roomCode || `${lab.id}-ROOM`;
-                                  const rPass = lab.roomPassword || '123456';
-                                  const joinUrl = `${window.location.origin}/student/join?code=${rCode}`;
-                                  const info = `PHÒNG LAB: ${lab.title}\nLớp: ${viewingClass.id} - ${viewingClass.name}\nMã phòng: ${rCode}\nMật khẩu: ${rPass}\nCổng vào làm bài: ${joinUrl}`;
-                                  navigator.clipboard.writeText(info);
-                                  alert(`Đã sao chép phòng Lab ${rCode} và mật khẩu vào Clipboard!`);
-                                }}
-                                className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-2.5 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100/70 transition cursor-pointer shadow-xs"
-                              >
-                                <Copy className="h-3 w-3" />
-                                Sao chép phòng
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Footer căn đều lề với tiến độ bên trái & nút thao tác bên phải */}
-                          <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-slate-100 pt-3">
-                            <div className="flex items-center gap-3">
-                              <div className="h-2 w-32 sm:w-36 overflow-hidden rounded-full bg-slate-100">
-                                <div
-                                  className="h-full rounded-full bg-blue-600"
-                                  style={{
-                                    width: `${
-                                      viewingClass.students.length > 0
-                                        ? Math.min(100, Math.round((lab.submissionCount / viewingClass.students.length) * 100))
-                                        : 0
-                                    }%`,
-                                  }}
-                                />
-                              </div>
-                              <p className="text-xs font-bold text-slate-700">
-                                Đã nộp: <span className="text-blue-600 font-extrabold">{lab.submissionCount}</span>/{viewingClass.students.length} SV
-                              </p>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
-                              <button
-                                type="button"
-                                onClick={() => openEditLabModal(lab)}
-                                title="Giảng viên thay đổi đề hoặc cấu hình buổi thực hành này"
-                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:bg-blue-50/70 hover:text-blue-700 transition cursor-pointer"
-                              >
-                                <Pencil className="h-3 w-3" />
-                                <span>Thay đổi đề & cấu hình</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                className="h-8 rounded-lg border border-blue-200 bg-blue-50/60 px-3 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
-                              >
-                                {lab.isProctored ? 'Vào phòng Lab & Giám sát' : 'Xem bài nộp & Chấm điểm'}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteLab(lab.id)}
-                                title="Xóa buổi thực hành khỏi lớp"
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-xs text-slate-400">
-                      Lớp chưa có buổi thực hành nào. Bấm &quot;Tạo buổi lab mới&quot; để thêm bài lab cho buổi học.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── NỘI DUNG TAB 3: BÀI THI & KIỂM TRA LẬP TRÌNH ── */}
-              {detailTab === 'exams' && (
-                <div className="mt-6">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
-                    <div>
-                      <h3 className="text-base font-extrabold text-slate-900">
-                        Bài thi & Kiểm tra lập trình • {(viewingClass.exams || []).length} bài
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        Đề thi giữa kỳ, cuối kỳ và các bài kiểm tra thực hành có thiết lập thời gian làm bài.
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddExamError('');
-                        setIsAddExamOpen(true);
-                      }}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 text-xs font-semibold text-white shadow-sm shadow-purple-200 transition hover:bg-purple-700 cursor-pointer self-start sm:self-auto"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>Tạo bài thi mới</span>
-                    </button>
-                  </div>
-
-                  {/* Danh sách các bài thi */}
-                  {(viewingClass.exams || []).length > 0 ? (
-                    <div className="space-y-3.5">
-                      {(viewingClass.exams || []).map((exam) => (
-                        <div
-                          key={exam.id}
-                          className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm hover:border-purple-300 hover:shadow-md transition"
-                        >
-                          <div className="space-y-2">
-                            {/* Hàng nhãn */}
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-0.5 text-[11px] font-bold text-purple-700">
-                                  📝 {exam.type}
-                                </span>
-
-                                {exam.isProctored ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                                    <ShieldCheck className="h-3 w-3" />
-                                    Có giám sát
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                                    Tự do
-                                  </span>
-                                )}
-                              </div>
-
-                              <span
-                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                                  exam.status === 'Đang diễn ra'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : exam.status === 'Sắp diễn ra'
-                                    ? 'bg-amber-50 text-amber-700'
-                                    : 'bg-slate-100 text-slate-600'
-                                }`}
-                              >
-                                <span
-                                  className={`h-1.5 w-1.5 rounded-full ${
-                                    exam.status === 'Đang diễn ra'
-                                      ? 'bg-emerald-500 animate-pulse'
-                                      : exam.status === 'Sắp diễn ra'
-                                      ? 'bg-amber-500'
-                                      : 'bg-slate-400'
-                                  }`}
-                                />
-                                {exam.status}
-                              </span>
-                            </div>
-
-                            {/* Tiêu đề bài thi */}
-                            <h4 className="text-sm sm:text-base font-bold text-slate-900">
-                              {exam.title}
-                            </h4>
-
-                            {/* Chi tiết thông tin cấu hình */}
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-0.5 font-semibold text-slate-700">
-                                <Terminal className="h-3.5 w-3.5 text-slate-400" />
-                                {exam.language}
-                              </span>
-
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-0.5 font-semibold text-slate-700">
-                                <Code2 className="h-3.5 w-3.5 text-slate-400" />
-                                {exam.questionCount} bài coding
-                              </span>
-
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-0.5 font-semibold text-slate-700">
-                                <Clock className="h-3.5 w-3.5 text-slate-400" />
-                                {exam.durationMinutes} phút
-                              </span>
-
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-0.5 text-slate-600 font-medium">
-                                <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                                {exam.scheduledAt}
-                              </span>
-                            </div>
-
-                            {/* Thông tin bộ đề liên kết từ module Đề & câu hỏi */}
-                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px] text-slate-500">
-                              <span>
-                                Đề thi liên kết:{' '}
-                                <strong className="font-semibold text-slate-700">
-                                  {exam.templateId || 'TPL-EXAM-01'}
-                                </strong>
-                              </span>
-                              <span className="text-slate-300">•</span>
-                              <Link
-                                href={`/admin/questions?templateId=${encodeURIComponent(
-                                  exam.templateId || 'TPL-EXAM-01'
-                                )}`}
-                                className="inline-flex items-center gap-1 font-semibold text-purple-600 hover:underline"
-                                title="Xem thông tin định danh bộ đề (Bảo mật câu hỏi & Test Cases)"
-                              >
-                                <FileCode2 className="h-3 w-3" />
-                                Xem thông tin bộ đề
-                                <ExternalLink className="h-2.5 w-2.5" />
-                              </Link>
-                              <span className="text-slate-300">•</span>
-                              <span className="text-slate-400 font-medium">🔒 Bảo mật câu hỏi & Test Cases</span>
-                            </div>
-
-                            {/* Mã phòng thi & Mật khẩu phòng thi */}
-                            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-purple-100 bg-purple-50/60 px-3 py-2 text-xs">
-                              <div className="flex flex-wrap items-center gap-3">
-                                <div className="flex items-center gap-1.5 font-mono">
-                                  <span className="text-[11px] font-semibold text-slate-500">Mã phòng thi:</span>
-                                  <span className="rounded bg-white border border-purple-200 px-2 py-0.5 font-bold text-purple-700 shadow-xs">
-                                    {exam.roomCode || `${exam.id}-ROOM`}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1.5 font-mono">
-                                  <span className="text-[11px] font-semibold text-slate-500">Mật khẩu:</span>
-                                  <span className="rounded bg-white border border-purple-200 px-2 py-0.5 font-bold text-slate-800 shadow-xs tracking-wider">
-                                    {exam.roomPassword || '123456'}
-                                  </span>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const rCode = exam.roomCode || `${exam.id}-ROOM`;
-                                  const rPass = exam.roomPassword || '123456';
-                                  const joinUrl = `${window.location.origin}/student/join?code=${rCode}`;
-                                  const info = `PHÒNG THI: ${exam.title}\nLớp: ${viewingClass.id} - ${viewingClass.name}\nMã phòng thi: ${rCode}\nMật khẩu: ${rPass}\nCổng vào làm bài: ${joinUrl}`;
-                                  navigator.clipboard.writeText(info);
-                                  alert(`Đã sao chép phòng thi ${rCode} và mật khẩu vào Clipboard!`);
-                                }}
-                                className="inline-flex items-center gap-1 rounded-lg border border-purple-200 bg-white px-2.5 py-1 text-[11px] font-bold text-purple-700 hover:bg-purple-100/70 transition cursor-pointer shadow-xs"
-                              >
-                                <Copy className="h-3 w-3" />
-                                Sao chép phòng
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Footer căn đều lề với tiến độ bên trái & nút thao tác bên phải */}
-                          <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-slate-100 pt-3">
-                            <div className="flex items-center gap-3">
-                              <div className="h-2 w-32 sm:w-36 overflow-hidden rounded-full bg-slate-100">
-                                <div
-                                  className="h-full rounded-full bg-purple-600"
-                                  style={{
-                                    width: `${
-                                      viewingClass.students.length > 0
-                                        ? Math.min(100, Math.round((exam.submissionCount / viewingClass.students.length) * 100))
-                                        : 0
-                                    }%`,
-                                  }}
-                                />
-                              </div>
-                              <p className="text-xs font-bold text-slate-700">
-                                Đã nộp: <span className="text-purple-600 font-extrabold">{exam.submissionCount}</span>/{viewingClass.students.length} SV
-                              </p>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
-                              <button
-                                type="button"
-                                onClick={() => openEditExamModal(exam)}
-                                title="Giảng viên thay đổi đề hoặc cấu hình bài thi này"
-                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-purple-300 hover:bg-purple-50/70 hover:text-purple-700 transition cursor-pointer"
-                              >
-                                <Pencil className="h-3 w-3" />
-                                <span>Thay đổi đề & cấu hình</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                className="h-8 rounded-lg border border-purple-200 bg-purple-50/60 px-3 text-xs font-semibold text-purple-700 hover:bg-purple-100 transition cursor-pointer"
-                              >
-                                Vào phòng thi & Giám sát
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteExam(exam.id)}
-                                title="Xóa bài thi khỏi lớp"
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-xs text-slate-400">
-                      Lớp chưa có bài thi / kiểm tra nào. Bấm &quot;Tạo bài thi mới&quot; để thiết lập kỳ thi cho lớp.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Hàng nút bấm dưới cùng */}
-              <div className="mt-8 flex flex-wrap items-center justify-end gap-3 pt-2">
-                {/* Nút hành động Mở / Đóng lớp của Giảng viên */}
-                {viewingClass.status === 'Chưa mở' ? (
+                {/* Footer hành động của Modal Chi tiết lớp */}
+                <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-4">
                   <button
                     type="button"
-                    onClick={() => handleToggleClassStatus(viewingClass.id, 'Hoạt động')}
-                    className="inline-flex items-center gap-1.5 h-10 rounded-xl bg-emerald-600 px-5 text-xs font-bold text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-700 transition cursor-pointer"
-                    title="Giảng viên bấm để mở lớp cho sinh viên tham gia học và làm bài"
+                    onClick={() => setViewingClass(null)}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
                   >
-                    <Play className="h-4 w-4 fill-white" />
-                    Giảng viên mở lớp
+                    Đóng
                   </button>
-                ) : viewingClass.status === 'Hoạt động' ? (
                   <button
                     type="button"
-                    onClick={() => handleToggleClassStatus(viewingClass.id, 'Đã kết thúc')}
-                    className="inline-flex items-center gap-1.5 h-10 rounded-xl border border-amber-200 bg-amber-50 px-4 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition cursor-pointer"
-                    title="Kết thúc khóa học và đóng lớp này"
+                    onClick={handleEditFromDetail}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
                   >
-                    <CheckCircle className="h-4 w-4 text-amber-600" />
-                    Đóng lớp (Kết thúc môn)
+                    Sửa thông tin lớp
                   </button>
-                ) : (
                   <button
                     type="button"
-                    onClick={() => handleToggleClassStatus(viewingClass.id, 'Hoạt động')}
-                    className="inline-flex items-center gap-1.5 h-10 rounded-xl border border-blue-200 bg-blue-50 px-4 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
-                    title="Giảng viên bấm để mở lại lớp học"
-                  >
-                    <RotateCcw className="h-4 w-4 text-blue-600" />
-                    Mở lại lớp
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setViewingClass(null)}
-                  className="h-10 rounded-xl border border-slate-200 bg-white px-5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
-                >
-                  Về danh sách lớp
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleEditFromDetail}
-                  className="h-10 rounded-xl border border-slate-200 bg-white px-5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
-                >
-                  Sửa thông tin
-                </button>
-
-                {detailTab === 'students' ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddStudentError('');
-                      setIsAddStudentOpen(true);
-                    }}
+                    onClick={() => openAddStudentModal(viewingClass)}
                     className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
                   >
                     Thêm sinh viên
                   </button>
-                ) : detailTab === 'labs' ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddLabError('');
-                      setNewLabNumber((viewingClass.labs || []).length + 1);
-                      setIsAddLabOpen(true);
-                    }}
-                    className="h-10 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
-                  >
-                    Tạo buổi lab mới
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddExamError('');
-                      setIsAddExamOpen(true);
-                    }}
-                    className="h-10 rounded-xl bg-purple-600 px-5 text-xs font-semibold text-white shadow-sm shadow-purple-500/20 transition hover:bg-purple-700 cursor-pointer"
-                  >
-                    Tạo bài thi mới
-                  </button>
-                )}
+                </div>
               </div>
             </div>
-          </div>
-        </div>
       )}
 
-      {/* ── MODAL TẠO BÀI LAB THỰC HÀNH MỚI CHO LỚP ── */}
-      {isAddLabOpen && viewingClass && (
-        <div
-          className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/45 p-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setIsAddLabOpen(false);
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-lab-title"
-            className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-slate-100 my-8 overflow-y-auto max-h-[90vh]"
+      {/* ── MODAL TÌM KIẾM & GHI DANH SINH VIÊN VÀO LỚP HỌC PHẦN ── */}
+      {isAddStudentOpen && (targetClassForStudent || viewingClass || selectedClass) && (() => {
+        const targetAddClass = targetClassForStudent || viewingClass || selectedClass;
+        if (!targetAddClass) return null;
+        return (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setIsAddStudentOpen(false);
+                setSelectedStudentToEnroll(null);
+                setStudentSearchKeyword('');
+                setAddStudentError('');
+              }
+            }}
           >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
-              <div>
-                <h2 id="add-lab-title" className="text-base font-bold text-slate-900">
-                  Thêm buổi thực hành (Bài Lab) • Lớp {viewingClass.id}
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Mỗi buổi học có 1 bài lab. Trong bài lab có nhiều đề bài để sinh viên thực hành.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAddLabOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddLab} className="mt-4 space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold text-slate-700">
-                    CHỌN BỘ ĐỀ TỪ MODULE &quot;ĐỀ & CÂU HỎI&quot;
-                  </label>
-                  <Link
-                    href="/admin/questions"
-                    className="text-[11px] font-semibold text-blue-600 hover:underline inline-flex items-center gap-0.5"
-                    target="_blank"
-                  >
-                    Danh mục đề ↗
-                  </Link>
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="add-student-title"
+              className="w-full max-w-xl max-h-[88vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl border border-slate-200/80 dark:bg-[#0d1017] dark:border-white/10"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
+                <div>
+                  <h2 id="add-student-title" className="text-base font-bold text-slate-900 dark:text-white">
+                    Ghi danh sinh viên vào lớp học phần
+                  </h2>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold mt-0.5">
+                    {targetAddClass.id} • {targetAddClass.name} ({targetAddClass.semester})
+                  </p>
                 </div>
-                <select
-                  value={selectedLabTemplateId}
-                  onChange={(e) => handleSelectLabTemplate(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddStudentOpen(false);
+                    setSelectedStudentToEnroll(null);
+                    setStudentSearchKeyword('');
+                    setAddStudentError('');
+                  }}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer dark:hover:bg-white/10"
                 >
-                  <option value="">-- Tự nhập tiêu đề & cấu hình thủ công --</option>
-                  {questionTemplates.filter((t) => t.type === 'lab').map((tpl) => (
-                    <option key={tpl.id} value={tpl.id}>
-                      [{tpl.id}] {tpl.title} ({tpl.language} • {tpl.questionCount} đề)
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  💡 Bộ đề được nạp từ ngân hàng đề do Giảng viên biên soạn (Nội dung câu hỏi & Test Cases được bảo mật).
-                </p>
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
-              <div className="grid grid-cols-[110px_1fr] gap-3">
+              <div className="mt-4 space-y-4">
+                {/* Thanh tìm kiếm sinh viên từ hệ thống */}
                 <div>
-                  <label className="mb-1 block text-xs font-bold text-slate-700">
-                    BUỔI HỌC SỐ
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Tìm kiếm sinh viên trong hệ thống <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={newLabNumber}
-                    onChange={(e) => setNewLabNumber(Number(e.target.value))}
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs font-semibold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-slate-700">
-                    TIÊU ĐỀ BÀI LAB <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    value={newLabTitle}
-                    onChange={(e) => {
-                      setNewLabTitle(e.target.value);
-                      setAddLabError('');
-                    }}
-                    placeholder="Ví dụ: Cấu trúc điều khiển & Mảng một chiều"
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3.5 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-slate-700">
-                    NGÔN NGỮ LẬP TRÌNH
-                  </label>
-                  <select
-                    value={newLabLanguage}
-                    onChange={(e) => setNewLabLanguage(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  >
-                    <option value="Python">Python</option>
-                    <option value="C++">C++</option>
-                    <option value="Java">Java</option>
-                    <option value="JavaScript / Node.js">JavaScript / Node.js</option>
-                    <option value="TypeScript">TypeScript</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-slate-700">
-                    SỐ ĐỀ TRONG BÀI LAB
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={newLabQuestions}
-                    onChange={(e) => setNewLabQuestions(Number(e.target.value))}
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
-              </div>
-
-              {/* Cấu hình thời gian thực hành */}
-              <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-3.5 space-y-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                  <div className="flex items-center gap-1 text-blue-600">
-                    <Calendar className="h-4 w-4" />
-                    <Clock className="h-3.5 w-3.5 text-blue-500" />
-                  </div>
-                  <span>CẤU HÌNH THỜI GIAN BUỔI THỰC HÀNH</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                      <Calendar className="h-3 w-3 text-blue-600" />
-                      <span>GIỜ BẮT ĐẦU BUỔI LAB</span>
-                    </label>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const input = e.currentTarget.parentElement?.querySelector('input');
-                          input?.showPicker?.();
-                          input?.focus();
-                        }}
-                        className="absolute left-2.5 top-1/2 -translate-y-1/2 p-0.5 text-blue-600 hover:text-blue-700 cursor-pointer"
-                        title="Mở lịch chọn ngày và giờ"
-                      >
-                        <Calendar className="h-4 w-4" />
-                      </button>
-                      <input
-                        type="datetime-local"
-                        value={newLabStartTime}
-                        onClick={(e) => e.currentTarget.showPicker?.()}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setNewLabStartTime(val);
-                          if (val && newLabDuration) {
-                            setNewLabEndTime(addMinutesToIso(val, newLabDuration));
-                          }
-                        }}
-                        className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-2 text-xs font-medium outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                      <Calendar className="h-3 w-3 text-blue-600" />
-                      <span>GIỜ KẾT THÚC (HẠN NỘP)</span>
-                    </label>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const input = e.currentTarget.parentElement?.querySelector('input');
-                          input?.showPicker?.();
-                          input?.focus();
-                        }}
-                        className="absolute left-2.5 top-1/2 -translate-y-1/2 p-0.5 text-blue-600 hover:text-blue-700 cursor-pointer"
-                        title="Mở lịch chọn ngày và giờ"
-                      >
-                        <Calendar className="h-4 w-4" />
-                      </button>
-                      <input
-                        type="datetime-local"
-                        value={newLabEndTime}
-                        onClick={(e) => e.currentTarget.showPicker?.()}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setNewLabEndTime(val);
-                          if (newLabStartTime && val) {
-                            const diff = calculateDurationInMinutes(newLabStartTime, val);
-                            if (diff > 0) setNewLabDuration(diff);
-                          }
-                        }}
-                        className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-2 text-xs font-medium outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Chọn nhanh thời lượng để tự động tính khoảng thời gian */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  <span className="text-[10.5px] font-semibold text-slate-500">
-                    Khoảng thời lượng:
-                  </span>
-                  {[60, 90, 120, 135, 150, 180].map((mins) => (
-                    <button
-                      key={mins}
-                      type="button"
-                      onClick={() => {
-                        setNewLabDuration(mins);
-                        if (newLabStartTime) {
-                          setNewLabEndTime(addMinutesToIso(newLabStartTime, mins));
-                        }
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={studentSearchKeyword}
+                      onChange={(e) => {
+                        setStudentSearchKeyword(e.target.value);
+                        setAddStudentError('');
                       }}
-                      className={`rounded-lg px-2 py-0.5 text-[10.5px] font-semibold transition cursor-pointer ${
-                        newLabDuration === mins
-                          ? 'bg-blue-600 text-white shadow-xs'
-                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      +{mins}p
-                    </button>
-                  ))}
+                      placeholder="Nhập MSSV, Họ tên hoặc Email sinh viên..."
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-xs outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-white/5 dark:text-white font-medium"
+                    />
+                    {isSearchingStudent && (
+                      <RotateCcw className="absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-blue-600" />
+                    )}
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Tìm kiếm tức thì sinh viên đã có tài khoản trong hệ thống để ghi danh vào lớp.
+                  </p>
                 </div>
 
-                {/* Khoảng thời gian trực quan tóm tắt */}
-                {newLabStartTime && newLabEndTime && (
-                  <div className="rounded-xl border border-blue-200/80 bg-blue-50/90 px-3 py-1.5 text-[11px] text-blue-900 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 font-semibold">
-                      <Calendar className="h-3.5 w-3.5 text-blue-600" />
-                      {formatDatetimeVietnamese(newLabStartTime)} → {formatDatetimeVietnamese(newLabEndTime)}
-                    </span>
-                    <span className="font-bold text-blue-700 bg-white/80 px-2 py-0.5 rounded-md border border-blue-200">
-                      ⏱️ {calculateDurationInMinutes(newLabStartTime, newLabEndTime) || newLabDuration} phút
-                    </span>
+                {/* Danh sách kết quả tìm kiếm */}
+                {studentSearchKeyword.trim().length > 0 && !selectedStudentToEnroll && (
+                  <div className="rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02] p-2 max-h-56 overflow-y-auto space-y-1.5">
+                    {isSearchingStudent ? (
+                      <div className="py-6 text-center text-xs text-slate-400">
+                        Đang tìm kiếm sinh viên...
+                      </div>
+                    ) : searchedStudents.length > 0 ? (
+                      searchedStudents.map((st) => {
+                        const mssv = st.student_id || st.username || String(st.user_id);
+                        const isEnrolled =
+                          st.is_enrolled ||
+                          targetAddClass.students.some(
+                            (s) => s.id.toLowerCase() === mssv.toLowerCase()
+                          );
+
+                        return (
+                          <div
+                            key={st.user_id || mssv}
+                            onClick={() => {
+                              if (!isEnrolled) {
+                                setSelectedStudentToEnroll(st);
+                                setAddStudentError('');
+                              }
+                            }}
+                            className={`flex items-center justify-between gap-3 p-2.5 rounded-lg border transition ${
+                              isEnrolled
+                                ? 'bg-slate-100/70 border-slate-200 text-slate-400 cursor-not-allowed dark:bg-white/5 dark:border-white/5'
+                                : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer dark:bg-white/5 dark:border-white/10 dark:hover:bg-blue-500/10'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div
+                                className={`flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${getAvatarColor(
+                                  mssv
+                                )}`}
+                              >
+                                {getStudentInitials(st.full_name || 'SV')}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate leading-snug">
+                                  {st.full_name}
+                                </p>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate leading-normal mt-0.5">
+                                  MSSV: <span className="font-semibold text-slate-700 dark:text-slate-200">{mssv}</span> • {st.email}
+                                  {st.lop_sinh_hoat ? ` • ${st.lop_sinh_hoat}` : ''}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="shrink-0">
+                              {isEnrolled ? (
+                                <span className="inline-block rounded-full bg-slate-200 px-2.5 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-400">
+                                  Đã trong lớp
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedStudentToEnroll(st);
+                                    setAddStudentError('');
+                                  }}
+                                  className="rounded-lg bg-blue-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-blue-700 transition cursor-pointer"
+                                >
+                                  Chọn
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="py-6 text-center text-xs text-slate-400">
+                        Không tìm thấy sinh viên nào với từ khóa &quot;{studentSearchKeyword}&quot;.
+                      </div>
+                    )}
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
+                {/* Thẻ sinh viên đã được chọn */}
+                {selectedStudentToEnroll && (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 dark:border-blue-500/30 dark:bg-blue-500/10">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${getAvatarColor(
+                            selectedStudentToEnroll.student_id || selectedStudentToEnroll.username || ''
+                          )}`}
+                        >
+                          {getStudentInitials(selectedStudentToEnroll.full_name || 'SV')}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-bold text-slate-900 dark:text-white leading-snug">
+                              {selectedStudentToEnroll.full_name}
+                            </span>
+                            <span className="rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-[10px] font-bold dark:bg-blue-400/20 dark:text-blue-300">
+                              Đã chọn
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 font-mono mt-0.5 truncate dark:text-slate-400 leading-normal">
+                            MSSV: <span className="font-semibold text-slate-700 dark:text-slate-200">{selectedStudentToEnroll.student_id || selectedStudentToEnroll.username}</span> • {selectedStudentToEnroll.email}
+                            {selectedStudentToEnroll.lop_sinh_hoat ? ` • ${selectedStudentToEnroll.lop_sinh_hoat}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentToEnroll(null)}
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline cursor-pointer shrink-0 ml-1 dark:text-blue-400"
+                      >
+                        Đổi SV khác
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Cấu hình phân loại ghi danh & ghi chú */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                      <Clock className="h-3 w-3 text-amber-600" />
-                      <span>THỜI LƯỢNG LÀM BÀI</span>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Phân loại ghi danh <span className="text-red-500">*</span>
                     </label>
                     <select
-                      value={newLabDuration}
-                      onChange={(e) => setNewLabDuration(Number(e.target.value))}
-                      className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
+                      value={enrollStatus}
+                      onChange={(e) => setEnrollStatus(e.target.value as StudentStatus)}
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-white/5 dark:text-white cursor-pointer"
                     >
-                      <option value={60}>60 phút (1 giờ)</option>
-                      <option value={90}>90 phút (1.5 giờ)</option>
-                      <option value={120}>120 phút (2 giờ)</option>
-                      <option value={135}>135 phút (3 tiết)</option>
-                      <option value={150}>150 phút (2.5 giờ)</option>
-                      <option value={180}>180 phút (3 giờ)</option>
+                      <option value="Đang học">Đang học (Chính thức theo kế hoạch)</option>
+                      <option value="Học ghép">Học ghép (Đăng ký bổ sung)</option>
+                      <option value="Học lại">Học lại / Cải thiện điểm</option>
+                      <option value="Học vượt">Học vượt</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                      <Calendar className="h-3 w-3 text-slate-500" />
-                      <span>LỊCH HỌC / THỜI KHÓA BIỂU</span>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Ghi chú ghi danh
                     </label>
                     <input
-                      value={newLabSchedule}
-                      onChange={(e) => setNewLabSchedule(e.target.value)}
-                      placeholder="Ví dụ: Thứ 3 (Tuần 2)"
-                      className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      value={enrollNote}
+                      onChange={(e) => setEnrollNote(e.target.value)}
+                      placeholder="Ví dụ: Đăng ký tín chỉ bổ sung đợt 2..."
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-white/5 dark:text-white"
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* Checkbox Giám sát thực hành */}
-              <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-3.5">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newLabProctored}
-                    onChange={(e) => setNewLabProctored(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-bold text-slate-900">Bật giám sát phòng thực hành (Proctoring)</span>
-                    <p className="mt-0.5 text-[11px] text-slate-600">
-                      Ghi nhận thao tác, cảnh báo rời tab và giám sát màn hình sinh viên trong suốt buổi thực hành.
-                    </p>
-                  </div>
-                </label>
-              </div>
-
-              {/* Thông tin phòng ngẫu nhiên */}
-              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-                <KeyRound className="h-4 w-4 text-blue-600 shrink-0" />
-                <span>
-                  Hệ thống sẽ <strong>tự động sinh ngẫu nhiên Mã phòng & Mật khẩu (6 số)</strong> cho bài lab trong buổi học này ngay khi bạn bấm Tạo.
-                </span>
-              </div>
-
-              {addLabError && (
-                <p role="alert" className="text-xs font-medium text-red-600">
-                  {addLabError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddLabOpen(false)}
-                  className="h-9 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="h-9 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
-                >
-                  Tạo buổi lab
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {/* ── MODAL TẠO BÀI THI / KIỂM TRA MỚI CHO LỚP ── */}
-      {isAddExamOpen && viewingClass && (
-        <div
-          className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/45 p-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setIsAddExamOpen(false);
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-exam-title"
-            className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
-              <div>
-                <h2 id="create-exam-title" className="text-base font-bold text-slate-900">
-                  Tạo bài thi / Kiểm tra • Lớp {viewingClass.id}
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Thiết lập bài thi lập trình, thời gian làm bài và hình thức giám sát.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAddExamOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateExam} className="mt-4 space-y-3.5 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-bold text-slate-700">
-                    CHỌN ĐỀ THI TỪ NGÂN HÀNG &quot;ĐỀ & CÂU HỎI&quot;
-                  </label>
-                  <Link
-                    href="/admin/questions"
-                    className="text-[11px] font-semibold text-purple-600 hover:underline inline-flex items-center gap-0.5"
-                    target="_blank"
-                  >
-                    Danh mục đề ↗
-                  </Link>
-                </div>
-                <select
-                  value={selectedExamTemplateId}
-                  onChange={(e) => handleSelectExamTemplate(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
-                >
-                  <option value="">-- Tự nhập tiêu đề & cấu hình thủ công --</option>
-                  {questionTemplates.filter((t) => t.type === 'exam').map((tpl) => (
-                    <option key={tpl.id} value={tpl.id}>
-                      [{tpl.id}] {tpl.title} ({tpl.language} • {tpl.questionCount} bài coding)
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  💡 Đề thi được nạp từ ngân hàng đề do Giảng viên biên soạn (Nội dung câu hỏi & Test Cases được bảo mật).
-                </p>
-              </div>
-
-              <div>
-                <label className="mb-1 block font-bold text-slate-700">
-                  TIÊU ĐỀ BÀI THI <span className="text-red-500">*</span>
-                </label>
-                <input
-                  required
-                  value={newExamTitle}
-                  onChange={(e) => {
-                    setNewExamTitle(e.target.value);
-                    setAddExamError('');
-                  }}
-                  placeholder="Ví dụ: Kiểm tra giữa kỳ • Xây dựng ứng dụng Web tương tác"
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700">
-                    LOẠI BÀI KIỂM TRA
-                  </label>
-                  <select
-                    value={newExamType}
-                    onChange={(e) =>
-                      setNewExamType(
-                        e.target.value as
-                          | 'Kiểm tra giữa kỳ'
-                          | 'Kiểm tra quá trình'
-                          | 'Thi kết thúc môn'
-                          | 'Kiểm tra thực hành'
-                      )
-                    }
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                  >
-                    <option value="Kiểm tra giữa kỳ">Kiểm tra giữa kỳ</option>
-                    <option value="Kiểm tra quá trình">Kiểm tra quá trình</option>
-                    <option value="Thi kết thúc môn">Thi kết thúc môn</option>
-                    <option value="Kiểm tra thực hành">Kiểm tra thực hành</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700">
-                    NGÔN NGỮ LẬP TRÌNH
-                  </label>
-                  <select
-                    value={newExamLanguage}
-                    onChange={(e) => setNewExamLanguage(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                  >
-                    <option value="JavaScript / TypeScript">JavaScript / TypeScript</option>
-                    <option value="Python">Python</option>
-                    <option value="C / C++">C / C++</option>
-                    <option value="Java">Java</option>
-                    <option value="C#">C#</option>
-                    <option value="SQL">SQL</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700">
-                    THỜI GIAN LÀM BÀI (PHÚT)
-                  </label>
-                  <input
-                    type="number"
-                    min={15}
-                    max={360}
-                    value={newExamDuration}
-                    onChange={(e) => setNewExamDuration(Number(e.target.value))}
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700">
-                    SỐ CÂU HỎI CODING
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={newExamQuestions}
-                    onChange={(e) => setNewExamQuestions(Number(e.target.value))}
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block font-bold text-slate-700">
-                  LỊCH TRÌNH DIỄN RA
-                </label>
-                <input
-                  value={newExamSchedule}
-                  onChange={(e) => setNewExamSchedule(e.target.value)}
-                  placeholder="Ví dụ: 08:00 - 09:30, 20/11/2026"
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-medium text-slate-800"
-                />
-              </div>
-
-              {/* Checkbox Giám sát */}
-              <div className="rounded-2xl border border-purple-200 bg-purple-50/60 p-3.5">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newExamProctored}
-                    onChange={(e) => setNewExamProctored(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-purple-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-bold text-slate-900">Bật giám sát trực tuyến (Proctoring)</span>
-                    <p className="mt-0.5 text-[11px] text-slate-600">
-                      Ghi nhận thao tác, cảnh báo rời tab và giám sát camera/màn hình trong suốt thời gian thi.
-                    </p>
-                  </div>
-                </label>
-              </div>
-
-              {/* Thông tin phòng thi ngẫu nhiên */}
-              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-                <KeyRound className="h-4 w-4 text-purple-600 shrink-0" />
-                <span>
-                  Hệ thống sẽ <strong>tự động sinh ngẫu nhiên Mã phòng thi & Mật khẩu (6 số)</strong> cho bài thi này ngay khi bạn bấm Tạo.
-                </span>
-              </div>
-
-              {addExamError && (
-                <p role="alert" className="text-xs font-semibold text-red-600">
-                  {addExamError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddExamOpen(false)}
-                  className="h-9 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="h-9 rounded-xl bg-purple-600 px-5 text-xs font-semibold text-white shadow-sm shadow-purple-500/20 transition hover:bg-purple-700 cursor-pointer"
-                >
-                  Tạo bài thi
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {/* ── MODAL GIẢNG VIÊN THAY ĐỔI ĐỀ & CẤU HÌNH BÀI LAB ── */}
-      {editingLab && viewingClass && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 overflow-y-auto"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setEditingLab(null);
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="edit-lab-title"
-            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl border border-slate-200/80 my-8"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h2 id="edit-lab-title" className="text-base font-bold text-slate-900">
-                  Thay đổi đề & cấu hình • Buổi 0{editingLab.labNumber} (Bài Lab 0{editingLab.labNumber})
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Lớp {viewingClass.id} • Điều chỉnh thông tin bài lab và số lượng đề bên trong.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingLab(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEditLab} className="mt-4 space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold text-slate-700">
-                    CHỌN BỘ ĐỀ TỪ NGÂN HÀNG ĐỀ & CÂU HỎI
-                  </label>
-                  <Link
-                    href={`/admin/questions?templateId=${encodeURIComponent(editLabTemplateId || 'TPL-LAB-01')}`}
-                    className="text-[11px] font-semibold text-blue-600 hover:underline inline-flex items-center gap-0.5"
-                    target="_blank"
-                  >
-                    Xem thông tin đề ↗
-                  </Link>
-                </div>
-                <select
-                  value={editLabTemplateId}
-                  onChange={(e) => handleSwitchLabTemplateInEdit(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                >
-                  <option value="">-- Đề tự thiết lập riêng cho lớp này --</option>
-                  {questionTemplates.filter((t) => t.type === 'lab').map((tpl) => (
-                    <option key={tpl.id} value={tpl.id}>
-                      [{tpl.id}] {tpl.title} ({tpl.language} • {tpl.questionCount} đề)
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  💡 Giảng viên chọn đề khác từ ngân hàng sẽ tự động cập nhật tên và cấu hình bài tập tương ứng.
-                </p>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-700">
-                  TIÊU ĐỀ BÀI LAB <span className="text-red-500">*</span>
-                </label>
-                <input
-                  value={editLabTitle}
-                  onChange={(e) => {
-                    setEditLabTitle(e.target.value);
-                    setEditLabError('');
-                  }}
-                  placeholder="Ví dụ: Cấu trúc điều khiển & Mảng một chiều"
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3.5 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-slate-700">
-                    NGÔN NGỮ LẬP TRÌNH
-                  </label>
-                  <select
-                    value={editLabLanguage}
-                    onChange={(e) => setEditLabLanguage(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  >
-                    <option value="JavaScript / Python">JavaScript / Python</option>
-                    <option value="Python">Python</option>
-                    <option value="C++">C++</option>
-                    <option value="Java">Java</option>
-                    <option value="JavaScript">JavaScript</option>
-                    <option value="JavaScript / Node.js">JavaScript / Node.js</option>
-                    <option value="TypeScript">TypeScript</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-slate-700">
-                    SỐ ĐỀ TRONG BÀI LAB
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={editLabQuestions}
-                    onChange={(e) => setEditLabQuestions(Number(e.target.value))}
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
-              </div>
-
-              {/* Cấu hình thời gian thực hành */}
-              <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-3.5 space-y-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                  <div className="flex items-center gap-1 text-blue-600">
-                    <Calendar className="h-4 w-4" />
-                    <Clock className="h-3.5 w-3.5 text-blue-500" />
-                  </div>
-                  <span>CẤU HÌNH THỜI GIAN BUỔI THỰC HÀNH</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                      <Calendar className="h-3 w-3 text-blue-600" />
-                      <span>GIỜ BẮT ĐẦU BUỔI LAB</span>
-                    </label>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const input = e.currentTarget.parentElement?.querySelector('input');
-                          input?.showPicker?.();
-                          input?.focus();
-                        }}
-                        className="absolute left-2.5 top-1/2 -translate-y-1/2 p-0.5 text-blue-600 hover:text-blue-700 cursor-pointer"
-                        title="Mở lịch chọn ngày và giờ"
-                      >
-                        <Calendar className="h-4 w-4" />
-                      </button>
-                      <input
-                        type="datetime-local"
-                        value={editLabStartTime}
-                        onClick={(e) => e.currentTarget.showPicker?.()}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEditLabStartTime(val);
-                          if (val && editLabDuration) {
-                            setEditLabEndTime(addMinutesToIso(val, editLabDuration));
-                          }
-                        }}
-                        className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-2 text-xs font-medium outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                      <Calendar className="h-3 w-3 text-blue-600" />
-                      <span>GIỜ KẾT THÚC (HẠN NỘP)</span>
-                    </label>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const input = e.currentTarget.parentElement?.querySelector('input');
-                          input?.showPicker?.();
-                          input?.focus();
-                        }}
-                        className="absolute left-2.5 top-1/2 -translate-y-1/2 p-0.5 text-blue-600 hover:text-blue-700 cursor-pointer"
-                        title="Mở lịch chọn ngày và giờ"
-                      >
-                        <Calendar className="h-4 w-4" />
-                      </button>
-                      <input
-                        type="datetime-local"
-                        value={editLabEndTime}
-                        onClick={(e) => e.currentTarget.showPicker?.()}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEditLabEndTime(val);
-                          if (editLabStartTime && val) {
-                            const diff = calculateDurationInMinutes(editLabStartTime, val);
-                            if (diff > 0) setEditLabDuration(diff);
-                          }
-                        }}
-                        className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-2 text-xs font-medium outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Chọn nhanh thời lượng để tự động tính khoảng thời gian */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  <span className="text-[10.5px] font-semibold text-slate-500">
-                    Khoảng thời lượng:
-                  </span>
-                  {[60, 90, 120, 135, 150, 180].map((mins) => (
-                    <button
-                      key={mins}
-                      type="button"
-                      onClick={() => {
-                        setEditLabDuration(mins);
-                        if (editLabStartTime) {
-                          setEditLabEndTime(addMinutesToIso(editLabStartTime, mins));
-                        }
-                      }}
-                      className={`rounded-lg px-2 py-0.5 text-[10.5px] font-semibold transition cursor-pointer ${
-                        editLabDuration === mins
-                          ? 'bg-blue-600 text-white shadow-xs'
-                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      +{mins}p
-                    </button>
-                  ))}
-                </div>
-
-                {/* Khoảng thời gian trực quan tóm tắt */}
-                {editLabStartTime && editLabEndTime && (
-                  <div className="rounded-xl border border-blue-200/80 bg-blue-50/90 px-3 py-1.5 text-[11px] text-blue-900 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 font-semibold">
-                      <Calendar className="h-3.5 w-3.5 text-blue-600" />
-                      {formatDatetimeVietnamese(editLabStartTime)} → {formatDatetimeVietnamese(editLabEndTime)}
-                    </span>
-                    <span className="font-bold text-blue-700 bg-white/80 px-2 py-0.5 rounded-md border border-blue-200">
-                      ⏱️ {calculateDurationInMinutes(editLabStartTime, editLabEndTime) || editLabDuration} phút
-                    </span>
-                  </div>
+                {addStudentError && (
+                  <p role="alert" className="text-xs font-medium text-red-600 bg-red-50 p-2.5 rounded-xl border border-red-200">
+                    {addStudentError}
+                  </p>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                      <Clock className="h-3 w-3 text-amber-600" />
-                      <span>THỜI LƯỢNG LÀM BÀI</span>
-                    </label>
-                    <select
-                      value={editLabDuration}
-                      onChange={(e) => {
-                        const mins = Number(e.target.value);
-                        setEditLabDuration(mins);
-                        if (editLabStartTime) {
-                          setEditLabEndTime(addMinutesToIso(editLabStartTime, mins));
-                        }
-                      }}
-                      className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 cursor-pointer"
-                    >
-                      <option value={60}>60 phút (1 giờ)</option>
-                      <option value={90}>90 phút (1.5 giờ)</option>
-                      <option value={120}>120 phút (2 giờ)</option>
-                      <option value={135}>135 phút (3 tiết)</option>
-                      <option value={150}>150 phút (2.5 giờ)</option>
-                      <option value={180}>180 phút (3 giờ)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
-                      <Calendar className="h-3 w-3 text-slate-500" />
-                      <span>LỊCH HỌC / GHI CHÚ</span>
-                    </label>
-                    <div className="relative">
-                      <Calendar className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                      <input
-                        value={editLabSchedule}
-                        onChange={(e) => setEditLabSchedule(e.target.value)}
-                        placeholder="Ví dụ: Thứ 3 (Tuần 2)"
-                        className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                      />
-                    </div>
-                  </div>
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddStudentOpen(false);
+                      setSelectedStudentToEnroll(null);
+                      setStudentSearchKeyword('');
+                      setAddStudentError('');
+                    }}
+                    className="h-9.5 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/10"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedStudentToEnroll}
+                    onClick={handleConfirmEnrollStudent}
+                    className={`h-9.5 rounded-xl px-5 text-xs font-semibold text-white shadow-sm transition ${
+                      selectedStudentToEnroll
+                        ? 'bg-blue-600 shadow-blue-500/20 hover:bg-blue-700 cursor-pointer'
+                        : 'bg-slate-300 cursor-not-allowed opacity-70'
+                    }`}
+                  >
+                    Xác nhận ghi danh vào lớp
+                  </button>
                 </div>
               </div>
+            </section>
+          </div>
+        );
+      })()}
 
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-700">
-                  TRẠNG THÁI BÀI LAB
-                </label>
-                <select
-                  value={editLabStatus}
-                  onChange={(e) => setEditLabStatus(e.target.value as LabStatus)}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                >
-                  <option value="Đang mở">Đang mở (Sinh viên nộp bài)</option>
-                  <option value="Đã đóng">Đã đóng (Khóa nộp bài)</option>
-                </select>
-              </div>
-
-              {/* Checkbox Giám sát thực hành */}
-              <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-3.5">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editLabProctored}
-                    onChange={(e) => setEditLabProctored(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-bold text-slate-900 text-xs">Bật giám sát phòng thực hành (Proctoring)</span>
-                    <p className="mt-0.5 text-[11px] text-slate-600">
-                      Ghi nhận thao tác, cảnh báo rời tab và giám sát màn hình sinh viên trong suốt buổi thực hành.
-                    </p>
-                  </div>
-                </label>
-              </div>
-
-              {editLabError && (
-                <p role="alert" className="text-xs font-medium text-red-600">
-                  {editLabError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2.5 pt-2">
+{/* ── MODAL NHẬP HÀNG LOẠT SINH VIÊN BẰNG EXCEL / CSV (ĐỒNG BỘ MODULE NGƯỜI DÙNG) ── */}
+      {isImportStudentsOpen && (targetClassForStudent || viewingClass || selectedClass) && (() => {
+        const targetImportClass = targetClassForStudent || viewingClass || selectedClass;
+        if (!targetImportClass) return null;
+        return (
+          <div
+            className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                setIsImportStudentsOpen(false);
+                handleResetImportStudentState();
+              }
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="import-student-title"
+              className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl border border-slate-200/80 dark:bg-[#0d1017] dark:border-white/10"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="import-student-title" className="text-lg font-bold text-slate-900 dark:text-white">
+                    Nhập danh sách sinh viên bổ sung (Excel / CSV)
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Bổ sung danh sách sinh viên vào lớp học phần{' '}
+                    <strong className="text-blue-600 dark:text-blue-400 font-bold">{targetImportClass.id}</strong> ({targetImportClass.name}).
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setEditingLab(null)}
-                  className="h-9 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="h-9 rounded-xl bg-blue-600 px-5 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700 cursor-pointer"
-                >
-                  Lưu thay đổi bài Lab
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {/* ── MODAL GIẢNG VIÊN THAY ĐỔI ĐỀ THI & CẤU HÌNH BÀI THI ── */}
-      {editingExam && viewingClass && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 overflow-y-auto"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setEditingExam(null);
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="edit-exam-title"
-            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl border border-slate-200/80 my-8"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h2 id="edit-exam-title" className="text-base font-bold text-slate-900">
-                  Thay đổi đề thi & cấu hình • {viewingClass.id}
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Giảng viên có thể đổi sang đề thi khác trong ngân hàng hoặc điều chỉnh lịch thi & thời gian.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingExam(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEditExam} className="mt-4 space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-bold text-slate-700 text-xs">
-                    CHỌN BỘ ĐỀ THI TỪ NGÂN HÀNG ĐỀ & CÂU HỎI
-                  </label>
-                  <Link
-                    href={`/admin/questions?templateId=${encodeURIComponent(editExamTemplateId || 'TPL-EXAM-01')}`}
-                    className="text-[11px] font-semibold text-purple-600 hover:underline inline-flex items-center gap-0.5"
-                    target="_blank"
-                  >
-                    Xem thông tin đề thi ↗
-                  </Link>
-                </div>
-                <select
-                  value={editExamTemplateId}
-                  onChange={(e) => handleSwitchExamTemplateInEdit(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
-                >
-                  <option value="">-- Đề tự thiết lập riêng cho lớp này --</option>
-                  {questionTemplates.filter((t) => t.type === 'exam').map((tpl) => (
-                    <option key={tpl.id} value={tpl.id}>
-                      [{tpl.id}] {tpl.title} ({tpl.language} • {tpl.questionCount} bài coding)
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  💡 Đổi sang đề thi khác sẽ tự động cập nhật nội dung bài thi và thời gian theo chuẩn ngân hàng đề.
-                </p>
-              </div>
-
-              <div>
-                <label className="mb-1 block font-bold text-slate-700 text-xs">
-                  TIÊU ĐỀ BÀI THI <span className="text-red-500">*</span>
-                </label>
-                <input
-                  required
-                  value={editExamTitle}
-                  onChange={(e) => {
-                    setEditExamTitle(e.target.value);
-                    setEditExamError('');
+                  onClick={() => {
+                    setIsImportStudentsOpen(false);
+                    handleResetImportStudentState();
                   }}
-                  placeholder="Ví dụ: Kiểm tra giữa kỳ • Xây dựng ứng dụng Web tương tác"
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 text-xs">
-                    LOẠI BÀI KIỂM TRA
-                  </label>
-                  <select
-                    value={editExamType}
-                    onChange={(e) =>
-                      setEditExamType(
-                        e.target.value as
-                          | 'Kiểm tra giữa kỳ'
-                          | 'Kiểm tra quá trình'
-                          | 'Thi kết thúc môn'
-                          | 'Kiểm tra thực hành'
-                      )
-                    }
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                  >
-                    <option value="Kiểm tra giữa kỳ">Kiểm tra giữa kỳ</option>
-                    <option value="Kiểm tra quá trình">Kiểm tra quá trình</option>
-                    <option value="Thi kết thúc môn">Thi kết thúc môn</option>
-                    <option value="Kiểm tra thực hành">Kiểm tra thực hành</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 text-xs">
-                    NGÔN NGỮ LẬP TRÌNH
-                  </label>
-                  <select
-                    value={editExamLanguage}
-                    onChange={(e) => setEditExamLanguage(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                  >
-                    <option value="JavaScript / TypeScript">JavaScript / TypeScript</option>
-                    <option value="JavaScript / Node.js">JavaScript / Node.js</option>
-                    <option value="Python">Python</option>
-                    <option value="C / C++">C / C++</option>
-                    <option value="C++">C++</option>
-                    <option value="Java">Java</option>
-                    <option value="C#">C#</option>
-                    <option value="SQL">SQL</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 text-xs">
-                    THỜI GIAN LÀM BÀI (PHÚT)
-                  </label>
-                  <input
-                    type="number"
-                    min={15}
-                    max={360}
-                    value={editExamDuration}
-                    onChange={(e) => setEditExamDuration(Number(e.target.value))}
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 text-xs">
-                    SỐ BÀI TẬP CODING
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={15}
-                    value={editExamQuestions}
-                    onChange={(e) => setEditExamQuestions(Number(e.target.value))}
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 text-xs">
-                    LỊCH THI
-                  </label>
-                  <input
-                    value={editExamSchedule}
-                    onChange={(e) => setEditExamSchedule(e.target.value)}
-                    placeholder="Ví dụ: 08:00 - 09:30, 20/11/2026"
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3.5 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block font-bold text-slate-700 text-xs">
-                    TRẠNG THÁI BÀI THI
-                  </label>
-                  <select
-                    value={editExamStatus}
-                    onChange={(e) => setEditExamStatus(e.target.value as ExamStatus)}
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 text-xs font-semibold text-slate-800"
-                  >
-                    <option value="Sắp diễn ra">Sắp diễn ra</option>
-                    <option value="Đang diễn ra">Đang diễn ra</option>
-                    <option value="Đã kết thúc">Đã kết thúc</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Checkbox Giám sát bài thi */}
-              <div className="rounded-2xl border border-purple-200 bg-purple-50/60 p-3.5">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editExamProctored}
-                    onChange={(e) => setEditExamProctored(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-purple-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-bold text-slate-900 text-xs">Bật giám sát phòng thi (Proctoring)</span>
-                    <p className="mt-0.5 text-[11px] text-slate-600">
-                      Ghi nhận thao tác, cảnh báo rời tab và giám sát camera/màn hình trong suốt thời gian thi.
-                    </p>
-                  </div>
-                </label>
-              </div>
-
-              {editExamError && (
-                <p role="alert" className="text-xs font-semibold text-red-600">
-                  {editExamError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingExam(null)}
-                  className="h-9 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+                  aria-label="Đóng"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 cursor-pointer dark:hover:bg-white/10"
                 >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="h-9 rounded-xl bg-purple-600 px-5 text-xs font-semibold text-white shadow-sm shadow-purple-500/20 transition hover:bg-purple-700 cursor-pointer"
-                >
-                  Lưu thay đổi bài thi
+                  <X className="h-4 w-4" />
                 </button>
               </div>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {/* Modal Thêm sinh viên vào lớp */}
-      {isAddStudentOpen && viewingClass && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setIsAddStudentOpen(false);
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-student-title"
-            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-200/80"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 id="add-student-title" className="text-base font-bold text-slate-900">
-                Thêm sinh viên vào lớp {viewingClass.id}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setIsAddStudentOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddStudent} className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-700">
-                  Mã sinh viên <span className="text-red-500">*</span>
-                </label>
-                <input
-                  name="studentId"
-                  required
-                  placeholder="Ví dụ: SE184805"
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-700">
-                  Họ và tên <span className="text-red-500">*</span>
-                </label>
-                <input
-                  name="studentName"
-                  required
-                  placeholder="Ví dụ: Nguyễn Hoàng Nam"
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-700">
-                  Email sinh viên <span className="text-red-500">*</span>
-                </label>
-                <input
-                  name="email"
-                  type="email"
-                  required
-                  placeholder="Ví dụ: nam.nh@school.edu.vn"
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
-              </div>
-
-              {addStudentError && (
-                <p role="alert" className="text-xs font-medium text-red-600">
-                  {addStudentError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddStudentOpen(false)}
-                  className="h-9 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="h-9 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white transition hover:bg-blue-700 cursor-pointer"
-                >
-                  Xác nhận thêm
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {/* ── MODAL NHẬP HÀNG LOẠT SINH VIÊN BẰNG EXCEL / CSV (ĐỒNG BỘ MODULE NGƯỜI DÙNG) ── */}
-      {isImportStudentsOpen && viewingClass && (
-        <div
-          className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/45 p-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) {
-              setIsImportStudentsOpen(false);
-              handleResetImportStudentState();
-            }
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="import-student-title"
-            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl border border-slate-200/80"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 id="import-student-title" className="text-lg font-bold text-slate-900">
-                  Nhập danh sách sinh viên bằng Excel / CSV
-                </h2>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  Thêm nhanh danh sách sinh viên vào lớp học phần{' '}
-                  <strong className="text-slate-800">{viewingClass.id}</strong> ({viewingClass.name}).
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsImportStudentsOpen(false);
-                  handleResetImportStudentState();
-                }}
-                aria-label="Đóng"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
 
             <div className="mt-5 space-y-4">
               {/* Thẻ input ẩn để chọn tệp */}
@@ -3571,6 +2088,22 @@ function ClassManagerContent() {
                 </div>
               )}
 
+              {/* Thông báo quy định tài khoản bắt buộc */}
+              <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 text-xs text-blue-900 flex items-start gap-3">
+                <div className="mt-0.5 rounded-lg bg-blue-600 p-1.5 text-white shrink-0">
+                  <UserRoundCheck className="h-4 w-4" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold text-blue-950">
+                    Quy định: Sinh viên bắt buộc phải có tài khoản người dùng
+                  </p>
+                  <p className="text-[11.5px] leading-relaxed text-blue-800">
+                    Để tham gia lớp, thi trực tuyến và thực hành lập trình có AI giám sát, tất cả sinh viên buộc phải có tài khoản.
+                    Đối với các sinh viên trong danh sách <strong>chưa có tài khoản</strong>, hệ thống sẽ <strong>tự động tạo tài khoản</strong> (quyền Học viên, gửi thông tin đăng nhập qua Email) và ghi danh ngay vào lớp học phần này.
+                  </p>
+                </div>
+              </div>
+
               {/* BẢNG XEM TRƯỚC DANH SÁCH SINH VIÊN */}
               {previewStudents.length > 0 && (
                 <div className="space-y-2">
@@ -3594,7 +2127,7 @@ function ClassManagerContent() {
                           <th className="px-3 py-2.5 w-28">Mã sinh viên</th>
                           <th className="px-3 py-2.5">Họ và tên</th>
                           <th className="px-3 py-2.5">Email</th>
-                          <th className="px-3 py-2.5 w-32">Kiểm tra</th>
+                          <th className="px-3 py-2.5 w-44">Tài khoản &amp; Trạng thái</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -3610,7 +2143,7 @@ function ClassManagerContent() {
                           return (
                             <tr
                               key={st.id || i}
-                              className={hasMissing ? 'bg-amber-50/50 hover:bg-amber-50' : 'hover:bg-slate-50/60'}
+                              className={isMissingId || isMissingName ? 'bg-red-50/40 hover:bg-red-50/70' : hasMissing ? 'bg-amber-50/50 hover:bg-amber-50' : 'hover:bg-slate-50/60'}
                             >
                               <td className="px-3 py-2 text-center font-medium text-slate-400">{i + 1}</td>
                               <td className="px-3 py-2 font-bold text-slate-900">
@@ -3643,13 +2176,13 @@ function ClassManagerContent() {
                                 )}
                               </td>
                               <td className="px-3 py-2">
-                                {hasMissing ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                                    ⚠ {st.missingFields.join(', ')}
+                                {isMissingId || isMissingName ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
+                                    ✕ Thiếu thông tin tạo TK
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                                    ✓ Đủ thông tin
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                                    ✓ Tự động kích hoạt tài khoản
                                   </span>
                                 )}
                               </td>
@@ -3699,21 +2232,22 @@ function ClassManagerContent() {
                 </button>
                 <button
                   type="button"
-                  disabled={previewStudents.length === 0}
+                  disabled={previewStudents.length === 0 || previewStudents.filter((s) => s.id && s.name).length === 0}
                   onClick={handleConfirmBulkImportStudents}
                   className={`h-10 rounded-xl px-5 text-xs font-semibold transition cursor-pointer ${
-                    previewStudents.length > 0
+                    previewStudents.filter((s) => s.id && s.name).length > 0
                       ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm shadow-blue-500/20'
                       : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                   }`}
                 >
-                  Xác nhận nhập ({previewStudents.length} sinh viên)
+                  Xác nhận nhập ({previewStudents.filter((s) => s.id && s.name).length} sinh viên hợp lệ)
                 </button>
               </div>
             </div>
           </section>
         </div>
-      )}
+        );
+      })()}
 
       {/* Modal Xác nhận xóa sinh viên khỏi lớp */}
       {deletingStudent && (

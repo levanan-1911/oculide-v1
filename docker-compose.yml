@@ -16,6 +16,11 @@ services:
       # Auto-init: schema.sql runs once on first start via entrypoint wrapper
       - ./database/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
       - ./database/schema.sql:/schema.sql:ro
+      - ./database/sample_data.sql:/sample_data.sql:ro
+    entrypoint:
+      - "/bin/bash"
+      - "-c"
+      - "bash /docker-entrypoint-initdb.d/init-db.sh & /opt/mssql/bin/sqlservr"
     networks:
       - exam-network
     healthcheck:
@@ -29,14 +34,14 @@ services:
           "sa",
           "-P",
           "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}",
-          "-No", # trust server cert (new flag in mssql-tools18)
+          "-No",
           "-Q",
           "SELECT 1"
         ]
-      interval: 15s
+      interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 40s
+      retries: 6
+      start_period: 20s
 
   # ─── Redis ────────────────────────────────────────────────────────────────────
   redis:

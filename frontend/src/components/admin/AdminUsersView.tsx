@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { ChevronDown, UserPlus, Shield } from 'lucide-react';
 import AdminUserCreateView from './AdminUserCreateView';
 import AdminUserBulkImportView from './AdminUserBulkImportView';
@@ -20,65 +20,57 @@ export interface UserItem {
 }
 
 // Dữ liệu mẫu tĩnh theo đúng 100% hình ảnh thiết kế
-const INITIAL_USERS: UserItem[] = [
-  {
-    id: 1,
-    userCode: 'GV0012',
-    fullName: 'Nguyễn Minh Anh',
-    email: 'minhanh@oclide.edu.vn',
-    role: 'instructor',
-    roleDisplay: 'Giảng viên',
-    status: 'active',
-    statusDisplay: 'Hoạt động',
-    lastLogin: '16/10/2026 19:42',
-    department: 'Khoa Kỹ thuật phần mềm',
-  },
-  {
-    id: 2,
-    userCode: 'SV184801',
-    fullName: 'Trần Thu Bình',
-    email: 'binhtt@oclide.edu.vn',
-    role: 'student',
-    roleDisplay: 'Sinh viên',
-    status: 'active',
-    statusDisplay: 'Hoạt động',
-    lastLogin: '16/10/2026 19:37',
-    department: 'Lớp SE1848 - Khoa CNTT',
-  },
-  {
-    id: 3,
-    userCode: 'GV0026',
-    fullName: 'Lê Hải Nam',
-    email: 'namlh@oclide.edu.vn',
-    role: 'instructor',
-    roleDisplay: 'Giảng viên',
-    status: 'locked',
-    statusDisplay: 'Bị khóa',
-    lastLogin: '15/10/2026 08:21',
-    department: 'Bộ môn An toàn thông tin',
-  },
-  {
-    id: 4,
-    userCode: 'SV184803',
-    fullName: 'Phạm Minh Châu',
-    email: 'chaupm@oclide.edu.vn',
-    role: 'student',
-    roleDisplay: 'Sinh viên',
-    status: 'active',
-    statusDisplay: 'Hoạt động',
-    lastLogin: '16/10/2026 18:56',
-    department: 'Lớp SE1848 - Khoa CNTT',
-  },
-];
+const INITIAL_USERS: UserItem[] = [];
 
 export default function AdminUsersView() {
   const [subView, setSubView] = useState<'list' | 'create' | 'bulk-import' | 'detail'>('list');
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
   const [userList, setUserList] = useState<UserItem[]>(INITIAL_USERS);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRole, setSelectedRole] = useState<'all' | 'instructor' | 'student'>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'locked'>('all');
+
+  // Tải danh sách người dùng thật từ CSDL SQL Server qua API
+  const fetchUsers = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      const res = await fetch('/api/v1/admin/users?page=1&page_size=100', {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.users && Array.isArray(data.users)) {
+          const mapped: UserItem[] = data.users.map((u: any) => ({
+            id: u.user_id,
+            userCode: u.student_id || u.ma_dinh_danh || u.username,
+            fullName: u.full_name,
+            email: u.email,
+            role: u.role,
+            roleDisplay: u.role === 'admin' ? 'Quản trị viên' : (u.role === 'instructor' ? 'Giảng viên' : 'Sinh viên'),
+            status: u.is_active ? 'active' : 'locked',
+            statusDisplay: u.is_active ? 'Hoạt động' : 'Bị khóa',
+            lastLogin: u.last_login ? new Date(u.last_login).toLocaleString('vi-VN') : 'Chưa đăng nhập',
+            department: u.department || u.khoa_bo_mon || 'Khoa CNTT',
+          }));
+          setUserList(mapped);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Lỗi kết nối API users, sử dụng fallback', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   // Lọc dữ liệu theo tìm kiếm, vai trò, trạng thái
   const filteredUsers = useMemo(() => {
@@ -99,31 +91,27 @@ export default function AdminUsersView() {
     });
   }, [userList, searchTerm, selectedRole, selectedStatus]);
 
-  // Xử lý khi thêm tài khoản mới từ form Tạo tài khoản
-  const handleUserCreated = (newUser: {
-    fullName: string;
-    email: string;
-    userCode: string;
-    role: 'instructor' | 'student';
-    departmentOrClass: string;
-    status: 'active' | 'locked';
-  }) => {
-    const item: UserItem = {
-      id: Date.now(),
-      userCode: newUser.userCode,
-      fullName: newUser.fullName,
-      email: newUser.email,
-      role: newUser.role,
-      roleDisplay: newUser.role === 'instructor' ? 'Giảng viên' : 'Sinh viên',
-      status: newUser.status,
-      statusDisplay: newUser.status === 'active' ? 'Hoạt động' : 'Bị khóa',
-      lastLogin: 'Vừa tạo (Chưa đăng nhập)',
-    };
-    setUserList((prev) => [item, ...prev]);
+  // Xử lý khi thêm tài khoản mới từ form Tạo tài khoản: Gọi lại API nạp mới
+  const handleUserCreated = () => {
+    fetchUsers();
   };
 
-  // Xử lý đổi trạng thái Khóa / Mở khóa
-  const handleToggleStatus = (userId: number, newStatus: 'active' | 'locked') => {
+  // Xử lý đổi trạng thái Khóa / Mở khóa qua API
+  const handleToggleStatus = async (userId: number, newStatus: 'active' | 'locked') => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      await fetch(`/api/v1/admin/users/${userId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ is_active: newStatus === 'active' }),
+      });
+    } catch (e) {
+      console.error('Lỗi khi cập nhật trạng thái người dùng', e);
+    }
+
     setUserList((prev) =>
       prev.map((u) =>
         u.id === userId

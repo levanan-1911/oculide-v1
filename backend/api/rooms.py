@@ -6,13 +6,14 @@ from schemas.room import (
     RoomCreateRequest, RoomUpdateRequest, RoomResponse, PublicRoomResponse,
     RoomDashboardResponse, RoomDashboardStudentItem, RoomEnrollmentRequest
 )
+from schemas.auth import JoinRoomRequest
 from core.permissions import get_current_user, instructor_or_admin_required
 from database.room_db import (
     create_room, get_room_by_id, get_room_by_code, get_rooms_by_instructor,
     get_all_rooms, update_room, delete_room, get_room_dashboard_data
 )
 from database.scoreboard_db import get_room_scoreboard
-from database.enrollment_db import enroll_student, get_enrollments_by_room, remove_enrollment
+from database.enrollment_db import enroll_student, get_enrollments_by_room, remove_enrollment, is_student_enrolled
 from database.session_db import get_sessions_by_room
 from database.violation_db import get_violations_by_session
 from services.livekit_service import livekit_service
@@ -46,6 +47,38 @@ async def create_new_room(
         passcode=room_data.passcode,
         livekit_room_name=livekit_room_name
     )
+
+@router.post("/join", response_model=RoomResponse)
+async def join_room_authenticated(
+    join_data: JoinRoomRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Thí sinh / Sinh viên ĐÃ ĐĂNG NHẬP tham gia phòng thi bằng mã phòng và passcode.
+    Tuyệt đối không cấp quyền cho khách vãng lai chưa xác thực tài khoản trường.
+    """
+    room = get_room_by_code(join_data.room_code)
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Phòng với mã '{join_data.room_code}' không tồn tại"
+        )
+    if not room.get("is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phòng học/thi này đã bị đóng"
+        )
+    if room.get("passcode") and room["passcode"] != join_data.passcode:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Mật khẩu vào phòng (passcode) không chính xác"
+        )
+        
+    student_id = current_user["user_id"]
+    if not is_student_enrolled(room["room_id"], student_id):
+        enroll_student(room["room_id"], student_id, enrolled_by=room.get("instructor_id") or 1)
+        
+    return room
 
 @router.get("", response_model=List[RoomResponse])
 async def list_rooms(

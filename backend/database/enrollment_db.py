@@ -7,8 +7,8 @@ def is_student_enrolled(room_id: int, student_id: int) -> bool:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT COUNT(*) FROM Enrollments 
-            WHERE room_id = ? AND student_id = ?
+            SELECT COUNT(*) FROM SinhVienLopHoc 
+            WHERE ma_phong = ? AND ma_sinh_vien = ?
         """, (room_id, student_id))
         count = cursor.fetchone()[0]
         return count > 0
@@ -21,16 +21,21 @@ def enroll_student(room_id: int, student_id: int, enrolled_by: int) -> Dict:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO Enrollments (room_id, student_id, enrolled_by)
-            OUTPUT inserted.enrollment_id, inserted.room_id, inserted.student_id, 
-                   inserted.enrolled_at, inserted.enrolled_by
+            INSERT INTO SinhVienLopHoc (ma_phong, ma_sinh_vien, nguoi_them)
+            OUTPUT inserted.ma_dong, inserted.ma_phong, inserted.ma_sinh_vien, 
+                   inserted.ngay_tham_gia, inserted.nguoi_them
             VALUES (?, ?, ?)
         """, (room_id, student_id, enrolled_by))
         row = cursor.fetchone()
         conn.commit()
         if row:
-            columns = [column[0] for column in cursor.description]
-            return dict(zip(columns, row))
+            return {
+                "enrollment_id": row[0],
+                "room_id": row[1],
+                "student_id": row[2],
+                "enrolled_at": row[3],
+                "enrolled_by": row[4]
+            }
         raise Exception("Không thể ghi danh sinh viên")
     finally:
         cursor.close()
@@ -41,12 +46,19 @@ def get_enrollments_by_room(room_id: int) -> List[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT e.enrollment_id, e.room_id, e.student_id, e.enrolled_at, e.enrolled_by,
-                   u.username, u.full_name, u.student_id as student_code, u.email
-            FROM Enrollments e
-            JOIN Users u ON e.student_id = u.user_id
-            WHERE e.room_id = ?
-            ORDER BY e.enrolled_at DESC
+            SELECT e.ma_dong AS enrollment_id, 
+                   e.ma_phong AS room_id, 
+                   e.ma_sinh_vien AS student_id, 
+                   e.ngay_tham_gia AS enrolled_at, 
+                   e.nguoi_them AS enrolled_by,
+                   u.ten_dang_nhap AS username, 
+                   u.ho_va_ten AS full_name, 
+                   u.ma_dinh_danh AS student_code, 
+                   u.email
+            FROM SinhVienLopHoc e
+            JOIN NguoiDung u ON e.ma_sinh_vien = u.ma_nguoi_dung
+            WHERE e.ma_phong = ?
+            ORDER BY e.ngay_tham_gia DESC
         """, (room_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -60,8 +72,8 @@ def remove_enrollment(room_id: int, student_id: int) -> bool:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            DELETE FROM Enrollments 
-            WHERE room_id = ? AND student_id = ?
+            DELETE FROM SinhVienLopHoc 
+            WHERE ma_phong = ? AND ma_sinh_vien = ?
         """, (room_id, student_id))
         conn.commit()
         return cursor.rowcount > 0

@@ -5,10 +5,7 @@ from typing import Optional, Dict, Any
 from core.config import settings
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Xác thực mật khẩu người dùng với chuỗi hash bcrypt"""
-    # Hỗ trợ tài khoản mặc định trong môi trường phát triển
-    if plain_password in ("admin123", "instructor123", "student123", "12345678"):
-        return True
+    """Xác thực mật khẩu người dùng với chuỗi hash bcrypt an toàn"""
     try:
         if hashed_password and hashed_password.startswith("$2"):
             return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
@@ -22,12 +19,12 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
-    """Tạo JWT access token ngắn hạn (mặc định 60 phút)"""
+    """Tạo JWT access token (mặc định 24 giờ / 1440 phút)"""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=min(settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES, 60))
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire, "token_type": "access"})
     encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
     return encoded_jwt

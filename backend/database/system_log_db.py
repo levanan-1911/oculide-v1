@@ -9,12 +9,17 @@ def create_system_log(
     user_id: Optional[int] = None,
     extra_data: Optional[Any] = None
 ) -> Dict[str, Any]:
-    """Ghi nhận nhật ký kiểm toán hệ thống vào bảng SystemLogs"""
+    """Ghi nhận nhật ký kiểm toán hệ thống vào bảng NhatKyHeThong"""
     extra_json = json.dumps(extra_data, ensure_ascii=False) if extra_data is not None else None
     sql = """
-        INSERT INTO SystemLogs (log_level, module, message, user_id, extra_data)
-        OUTPUT inserted.log_id, inserted.log_level, inserted.module,
-               inserted.message, inserted.user_id, inserted.extra_data, inserted.created_at
+        INSERT INTO NhatKyHeThong (muc_do, hanh_dong, thong_bao, ma_nguoi_dung, du_lieu_chi_tiet)
+        OUTPUT inserted.ma_nhat_ky AS log_id, 
+               inserted.muc_do AS log_level, 
+               inserted.hanh_dong AS module,
+               inserted.thong_bao AS message, 
+               inserted.ma_nguoi_dung AS user_id, 
+               inserted.du_lieu_chi_tiet AS extra_data, 
+               inserted.thoi_gian AS created_at
         VALUES (?, ?, ?, ?, ?)
     """
     with get_db_cursor(commit=True) as cursor:
@@ -37,23 +42,29 @@ def get_system_logs(
     params: List[Any] = []
     
     if log_level:
-        where_clauses.append("log_level = ?")
+        where_clauses.append("muc_do = ?")
         params.append(log_level.lower())
     if module:
-        where_clauses.append("module = ?")
+        where_clauses.append("hanh_dong = ?")
         params.append(module)
     if user_id:
-        where_clauses.append("user_id = ?")
+        where_clauses.append("ma_nguoi_dung = ?")
         params.append(user_id)
         
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
     
-    count_sql = f"SELECT COUNT(*) FROM SystemLogs {where_sql}"
+    count_sql = f"SELECT COUNT(*) FROM NhatKyHeThong {where_sql}"
     query_sql = f"""
-        SELECT log_id, log_level, module, message, user_id, extra_data, created_at
-        FROM SystemLogs
+        SELECT ma_nhat_ky AS log_id, 
+               muc_do AS log_level, 
+               hanh_dong AS module, 
+               thong_bao AS message, 
+               ma_nguoi_dung AS user_id, 
+               du_lieu_chi_tiet AS extra_data, 
+               thoi_gian AS created_at
+        FROM NhatKyHeThong
         {where_sql}
-        ORDER BY created_at DESC
+        ORDER BY thoi_gian DESC
         OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
     """
     

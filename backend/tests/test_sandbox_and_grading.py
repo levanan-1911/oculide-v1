@@ -1,4 +1,5 @@
 import pytest
+import shutil
 from services.docker_sandbox_service import sandbox_service
 from celery_app import celery_app
 
@@ -45,6 +46,7 @@ def test_python_time_limit_exceeded():
     assert result["status"] == "TLE"
     assert result["is_passed"] is False
 
+@pytest.mark.skipif(not shutil.which("g++"), reason="g++ compiler not installed on host")
 def test_cpp_code_execution():
     code = """
 #include <iostream>
@@ -61,6 +63,7 @@ int main() {
     assert result["is_passed"] is True
     assert result["stdout"].strip() == "42"
 
+@pytest.mark.skipif(not shutil.which("g++"), reason="g++ compiler not installed on host")
 def test_cpp_compilation_error():
     code = """
 #include <iostream>

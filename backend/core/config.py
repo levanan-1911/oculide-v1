@@ -1,17 +1,32 @@
 import os
 from typing import List
+from pathlib import Path
 import pyodbc
 from dotenv import load_dotenv
 
+# Tìm và nạp file .env từ thư mục backend hoặc root
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BACKEND_DIR.parent
+ENV_PATH = BACKEND_DIR / ".env" if (BACKEND_DIR / ".env").exists() else (PROJECT_ROOT / ".env")
+load_dotenv(ENV_PATH)
 load_dotenv()
 
 try:
     from pydantic_settings import BaseSettings
+    from pydantic import field_validator
+
     class Settings(BaseSettings):
         APP_NAME: str = "Oculide Core API"
         APP_VERSION: str = "1.0.0"
         API_V1_PREFIX: str = "/api/v1"
         DEBUG: bool = True
+
+        @field_validator("DEBUG", mode="before")
+        @classmethod
+        def parse_debug(cls, v):
+            if isinstance(v, str):
+                return v.strip().lower() in ("true", "1", "t", "yes", "y", "debug")
+            return bool(v)
 
         DATABASE_DRIVER: str = "ODBC Driver 18 for SQL Server"
         DATABASE_SERVER: str = "localhost"
@@ -46,8 +61,18 @@ try:
         SANDBOX_TIME_LIMIT_S: int = 10
         SANDBOX_NANO_CPUS: int = 500000000
 
+        # SMTP & Email Settings (Brevo / Sendinblue Relay default)
+        SMTP_HOST: str = "smtp-relay.brevo.com"
+        SMTP_PORT: int = 587
+        SMTP_USER: str = ""
+        SMTP_PASSWORD: str = ""
+        SMTP_FROM_NAME: str = "Hệ thống Khảo thí Oculide"
+        SMTP_FROM_EMAIL: str = ""
+        SMTP_TLS: bool = True
+        FRONTEND_URL: str = "http://localhost:3000"
+
         class Config:
-            env_file = ".env"
+            env_file = str(ENV_PATH) if ENV_PATH.exists() else ".env"
             case_sensitive = True
             extra = "allow"
 except ImportError:
@@ -90,6 +115,16 @@ except ImportError:
         SANDBOX_MEM_LIMIT: str = os.getenv("SANDBOX_MEM_LIMIT", "128m")
         SANDBOX_TIME_LIMIT_S: int = int(os.getenv("SANDBOX_TIME_LIMIT_S", "10"))
         SANDBOX_NANO_CPUS: int = int(os.getenv("SANDBOX_NANO_CPUS", "500000000"))
+
+        # SMTP & Email Settings (Brevo / Sendinblue Relay default)
+        SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp-relay.brevo.com")
+        SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+        SMTP_USER: str = os.getenv("SMTP_USER", "")
+        SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+        SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "Hệ thống Khảo thí Oculide")
+        SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "")
+        SMTP_TLS: bool = os.getenv("SMTP_TLS", "True").lower() == "true"
+        FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 settings = Settings()
 

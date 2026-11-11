@@ -26,6 +26,7 @@ import {
   FileSpreadsheet,
   AlertCircle,
   LogOut,
+  Send,
 } from 'lucide-react';
 import {
   RoomSession,
@@ -34,6 +35,8 @@ import {
   INSTRUCTOR_SCHEDULES_STORAGE_KEY,
   ScheduleSessionItem,
 } from '@/components/instructor/classes/types';
+import { fetchWithAuth } from '@/services/apiClient';
+import SendNotificationModal from '@/components/instructor/monitoring/SendNotificationModal';
 
 interface Props {
   roomId: string;
@@ -42,8 +45,11 @@ interface Props {
 export default function InstructorWaitingRoomView({ roomId }: Props) {
   const router = useRouter();
 
+  const [rawRoomId, setRawRoomId] = useState<number | null>(null);
   const [room, setRoom] = useState<RoomSession | null>(null);
   const [attendees, setAttendees] = useState<RoomAttendee[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isActionLoading, setIsActionLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'waiting' | 'absent'>('all');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -53,56 +59,101 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [conflictSession, setConflictSession] = useState<RoomSession | null>(null);
   const [isConflictModalOpen, setIsConflictModalOpen] = useState(false);
+  const [isNoticeModalOpen, setIsNoticeModalOpen] = useState(false);
+  const [noticeTarget, setNoticeTarget] = useState<{
+    type: 'all' | 'group' | 'individual';
+    studentId?: string;
+    studentName?: string;
+  } | undefined>(undefined);
 
-  // Load room data from localStorage or create fallback
+  const handleOpenNotice = (target?: { type: 'all' | 'group' | 'individual'; studentId?: string; studentName?: string }) => {
+    setNoticeTarget(target || { type: 'all' });
+    setIsNoticeModalOpen(true);
+  };
+
+  // Nạp dữ liệu phòng chờ và danh sách sinh viên thực tế từ Backend CSDL SQL Server
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    let isCancelled = false;
 
-    let found: RoomSession | null = null;
-    try {
-      const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-      if (raw) {
-        const parsed: RoomSession[] = JSON.parse(raw);
-        found = parsed.find((r) => r.id.toLowerCase() === roomId.toLowerCase()) || null;
-      }
-    } catch {
-      // fallback
-    }
+    async function loadLobbyData(silent = false) {
+      if (!silent) setIsLoading(true);
+      try {
+        const data = await fetchWithAuth<any>(`/api/v1/rooms/lobby/${encodeURIComponent(roomId)}`);
+        if (isCancelled || !data) return;
 
-    if (!found) {
-      // Khởi tạo phòng giả lập nếu truy cập trực tiếp bằng URL
-      found = {
-        id: roomId,
-        classId: roomId.slice(0, 5) || 'CS101',
-        className: 'Nhập môn Lập trình C/C++',
-        password: '883921',
-        type: roomId.toLowerCase().includes('exam') ? 'exam' : 'lab',
-        title: `Phòng Chờ Điểm Danh • ${roomId}`,
-        templateId: 'TPL-LAB-01',
-        templateTitle: 'Cấu trúc điều khiển & Mảng một chiều (C++)',
-        templateLanguage: 'C++',
-        durationMinutes: 120,
-        status: 'waiting',
-        createdAt: '07:30',
-        proctoringConfig: {
+        setRawRoomId(data.room_id);
+
+        let parsedConfig = {
           lockdownFullscreen: false,
           aiFaceDetection: false,
           aiObjectDetection: false,
           allowTabSwitch: true,
-        },
-        attendees: [
-          { studentId: 'SE184801', studentName: 'Nguyễn Văn An', studentEmail: 'an.nv@school.edu.vn', status: 'waiting', joinedAt: '07:31:12', device: 'Laptop Windows 11 / Chrome 124', cameraReady: true },
-          { studentId: 'SE184802', studentName: 'Trần Thị Bình', studentEmail: 'binh.tt@school.edu.vn', status: 'waiting', joinedAt: '07:32:05', device: 'MacBook Air M2 / Safari', cameraReady: true },
-          { studentId: 'SE184803', studentName: 'Lê Hoàng Cường', studentEmail: 'cuong.lh@school.edu.vn', status: 'waiting', joinedAt: '07:33:40', device: 'Laptop Dell / Chrome', cameraReady: true },
-          { studentId: 'SE184804', studentName: 'Phạm Minh Châu', studentEmail: 'chau.pm@school.edu.vn', status: 'waiting', joinedAt: '07:34:15', device: 'Laptop Asus / Edge', cameraReady: true },
-          { studentId: 'SE184805', studentName: 'Đặng Tuấn Dương', studentEmail: 'duong.dt@school.edu.vn', status: 'waiting', joinedAt: '07:35:00', device: 'Laptop Lenovo / Chrome', cameraReady: true },
-          { studentId: 'SE184806', studentName: 'Vũ Hải Yến', studentEmail: 'yen.vh@school.edu.vn', status: 'absent' },
-        ],
-      };
+        };
+        if (data.proctoring_config) {
+          try {
+            parsedConfig = typeof data.proctoring_config === 'string'
+              ? JSON.parse(data.proctoring_config)
+              : data.proctoring_config;
+          } catch {}
+        }
+
+        const realAttendees: RoomAttendee[] = (data.attendees || []).map((a: any) => ({
+          studentId: String(a.student_id),
+          studentName: a.student_name,
+          studentEmail: a.student_email || `${a.student_id}@dtu.edu.vn`,
+          status: (a.status === 'waiting' || a.status === 'completed') ? 'waiting' : 'absent',
+          joinedAt: a.joined_at ? new Date(a.joined_at).toLocaleTimeString('vi-VN') : undefined,
+          device: a.device || 'Laptop cá nhân / Web Browser',
+          cameraReady: Boolean(a.camera_ready),
+        }));
+
+        const realRoom: RoomSession = {
+          id: data.room_code,
+          classId: data.class_code || (data.class_id ? String(data.class_id) : 'LỚP HỌC PHẦN'),
+          className: data.class_name || data.course_name || 'Lớp học phần',
+          password: data.passcode || '',
+          type: (data.room_type === 'exam' ? 'exam' : 'lab') as 'lab' | 'exam',
+          title: data.room_name || `Phòng Chờ • ${data.room_code}`,
+          templateId: data.template_code || (data.template_id ? String(data.template_id) : undefined),
+          templateTitle: data.template_title || (data.template_id ? `Bộ đề #${data.template_id}` : 'Chưa gán đề (Tự do)'),
+          templateLanguage: data.template_language || 'C/C++/Java/Python',
+          durationMinutes: data.duration_minutes || 60,
+          status: data.status === 'dang_dien_ra' ? 'in_progress' : (data.status === 'da_dong' ? 'ended' : 'waiting'),
+          createdAt: data.created_at ? new Date(data.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '08:00',
+          proctoringConfig: parsedConfig,
+          attendees: realAttendees,
+        };
+
+        setRoom(realRoom);
+        setAttendees(realAttendees);
+      } catch (err) {
+        // Fallback kiểm tra từ localStorage nếu truy cập offline
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+            if (raw) {
+              const parsed: RoomSession[] = JSON.parse(raw);
+              const found = parsed.find((r) => r.id.toLowerCase() === roomId.toLowerCase());
+              if (found) {
+                setRoom(found);
+                setAttendees(found.attendees || []);
+              }
+            }
+          } catch {}
+        }
+      } finally {
+        if (!isCancelled && !silent) setIsLoading(false);
+      }
     }
 
-    setRoom(found);
-    setAttendees(found.attendees || []);
+    loadLobbyData();
+    // Tự động làm mới danh sách sinh viên vào phòng sau mỗi 8 giây
+    const pollInterval = setInterval(() => loadLobbyData(true), 8000);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(pollInterval);
+    };
   }, [roomId]);
 
   const showToast = (msg: string) => {
@@ -136,12 +187,16 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
   const absentCount = attendees.filter((a) => a.status === 'absent').length;
   const attendancePercent = attendees.length > 0 ? Math.round((waitingCount / attendees.length) * 100) : 0;
 
-  // Toggle điểm danh thủ công
-  const handleToggleAttendance = (studentId: string) => {
+  // Toggle điểm danh thủ công: đồng bộ tức thì với Backend CSDL
+  const handleToggleAttendance = async (studentId: string) => {
+    const target = attendees.find((a) => a.studentId === studentId);
+    if (!target) return;
+    const newStatus = target.status === 'waiting' ? 'absent' : 'waiting';
+
+    // Cập nhật giao diện lập tức (Optimistic UI)
     setAttendees((prev) =>
       prev.map((a) => {
         if (a.studentId !== studentId) return a;
-        const newStatus = a.status === 'waiting' ? 'absent' : 'waiting';
         return {
           ...a,
           status: newStatus,
@@ -150,41 +205,22 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
         };
       })
     );
+
+    if (rawRoomId) {
+      try {
+        await fetchWithAuth(`/api/v1/rooms/${rawRoomId}/attendance`, {
+          method: 'POST',
+          body: JSON.stringify({ student_id: studentId, status: newStatus }),
+        });
+        showToast(`Đã cập nhật: ${target.studentName} → ${newStatus === 'waiting' ? 'Có mặt' : 'Vắng mặt'}`);
+      } catch {
+        showToast('Không thể đồng bộ điểm danh với máy chủ.');
+      }
+    }
   };
 
   // Kích hoạt ca thi và chuyển sang màn hình giám sát trực tiếp
   const activateRoomMonitoring = (targetRoomId: string) => {
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-        if (raw) {
-          const parsed: RoomSession[] = JSON.parse(raw);
-          const updated = parsed.map((r) =>
-            r.id.toLowerCase() === targetRoomId.toLowerCase()
-              ? { ...r, status: 'in_progress' as const, attendees }
-              : r
-          );
-          localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(updated));
-        }
-
-        // Cập nhật trạng thái trong Lịch Giảng Dạy sang 'Đang diễn ra'
-        const rawSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-        if (rawSched) {
-          const parsedSched: ScheduleSessionItem[] = JSON.parse(rawSched);
-          const updatedSched = parsedSched.map((s) =>
-            s.roomCode.toLowerCase() === targetRoomId.toLowerCase()
-              ? { ...s, status: 'Đang diễn ra' as const }
-              : s
-          );
-          localStorage.setItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY, JSON.stringify(updatedSched));
-        }
-
-        window.dispatchEvent(new Event('storage'));
-      } catch {
-        // fallback
-      }
-    }
-
     showToast('Đang chuyển hướng vào Trung tâm giám sát trực tiếp...');
     setTimeout(() => {
       router.push(`/instructor/monitoring?room=${encodeURIComponent(targetRoomId)}`);
@@ -192,131 +228,128 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
   };
 
   // Kiểm tra quy định: Được lên lịch trước nhưng KHÔNG được giám sát song song 2 phòng cùng lúc
-  const handleStartExamAndMonitoring = () => {
+  const handleStartExamAndMonitoring = async () => {
     if (!room) return;
+    setIsActionLoading(true);
 
-    if (typeof window !== 'undefined') {
+    if (rawRoomId) {
       try {
-        const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-        if (raw) {
-          const parsed: RoomSession[] = JSON.parse(raw);
-          // Tìm xem có phòng nào KHÁC đang ở trạng thái in_progress hay không
-          const activeRunningRoom = parsed.find(
-            (r) => r.status === 'in_progress' && r.id.toLowerCase() !== room.id.toLowerCase()
-          );
+        await fetchWithAuth(`/api/v1/rooms/${rawRoomId}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'dang_dien_ra', force_close_conflicts: false }),
+        });
 
-          if (activeRunningRoom) {
-            // Phát hiện xung đột giám sát song song
-            setConflictSession(activeRunningRoom);
-            setIsConflictModalOpen(true);
-            return;
-          }
+        activateRoomMonitoring(room.id);
+        return;
+      } catch (err: any) {
+        const conflictData = err?.conflict_room || err?.detail?.conflict_room;
+        if (conflictData) {
+          setConflictSession({
+            id: conflictData.room_code,
+            classId: String(conflictData.room_id),
+            className: conflictData.class_name || conflictData.room_name || 'Phòng học phần khác',
+            password: '',
+            type: 'lab',
+            title: conflictData.room_name || conflictData.room_code,
+            durationMinutes: 120,
+            status: 'in_progress',
+            createdAt: conflictData.start_time || '',
+            proctoringConfig: { lockdownFullscreen: false, aiFaceDetection: false, aiObjectDetection: false, allowTabSwitch: true },
+            attendees: [],
+          });
+          setIsConflictModalOpen(true);
+          return;
         }
-      } catch {
-        // ignore
+        showToast(err?.detail?.message || err?.message || 'Có lỗi khi bắt đầu phòng thi');
+        return;
+      } finally {
+        setIsActionLoading(false);
       }
     }
 
-    // Không có xung đột, mở phiên giám sát bình thường
+    // Fallback nếu không có rawRoomId
     activateRoomMonitoring(room.id);
+    setIsActionLoading(false);
   };
 
   // Giảng viên chọn: Kết thúc ca cũ đang chạy để kích hoạt ca thi này
-  const handleResolveConflictAndStart = () => {
-    if (!conflictSession || !room) return;
+  const handleResolveConflictAndStart = async () => {
+    if (!room) return;
+    setIsActionLoading(true);
 
-    if (typeof window !== 'undefined') {
+    if (rawRoomId) {
       try {
-        const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-        if (raw) {
-          const parsed: RoomSession[] = JSON.parse(raw);
-          const updated = parsed.map((r) => {
-            if (r.id.toLowerCase() === conflictSession.id.toLowerCase()) {
-              return { ...r, status: 'ended' as const };
-            }
-            if (r.id.toLowerCase() === room.id.toLowerCase()) {
-              return { ...r, status: 'in_progress' as const, attendees };
-            }
-            return r;
-          });
-          localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(updated));
-        }
-
-        // Cập nhật schedules
-        const rawSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-        if (rawSched) {
-          const parsedSched: ScheduleSessionItem[] = JSON.parse(rawSched);
-          const updatedSched = parsedSched.map((s) => {
-            if (s.roomCode.toLowerCase() === conflictSession.id.toLowerCase()) {
-              return { ...s, status: 'Đã kết thúc' as const };
-            }
-            if (s.roomCode.toLowerCase() === room.id.toLowerCase()) {
-              return { ...s, status: 'Đang diễn ra' as const };
-            }
-            return s;
-          });
-          localStorage.setItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY, JSON.stringify(updatedSched));
-        }
-
-        window.dispatchEvent(new Event('storage'));
-      } catch {
-        // fallback
+        await fetchWithAuth(`/api/v1/rooms/${rawRoomId}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'dang_dien_ra', force_close_conflicts: true }),
+        });
+        setIsConflictModalOpen(false);
+        showToast(`Đã đóng ca cũ và kích hoạt ca thi ${room.id}!`);
+        setTimeout(() => {
+          router.push(`/instructor/monitoring?room=${encodeURIComponent(room.id)}`);
+        }, 400);
+        return;
+      } catch (err: any) {
+        showToast(err?.message || 'Không thể đóng ca cũ');
+      } finally {
+        setIsActionLoading(false);
       }
     }
 
     setIsConflictModalOpen(false);
-    showToast(`Đã đóng ca ${conflictSession.id} và kích hoạt ca thi ${room.id}!`);
-    setTimeout(() => {
-      router.push(`/instructor/monitoring?room=${encodeURIComponent(room.id)}`);
-    }, 400);
+    activateRoomMonitoring(room.id);
   };
 
   // Thao tác: Hủy phòng chờ điểm danh
-  const handleConfirmCancelRoom = () => {
+  const handleConfirmCancelRoom = async () => {
     if (!room) return;
+    setIsActionLoading(true);
 
-    if (typeof window !== 'undefined') {
+    if (rawRoomId) {
       try {
-        const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-        if (raw) {
-          const parsed: RoomSession[] = JSON.parse(raw);
-          const updated = parsed.map((r) =>
-            r.id.toLowerCase() === room.id.toLowerCase()
-              ? { ...r, status: 'ended' as const }
-              : r
-          );
-          localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(updated));
-        }
-
-        // Cập nhật lịch giảng dạy
-        const rawSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-        if (rawSched) {
-          const parsedSched: ScheduleSessionItem[] = JSON.parse(rawSched);
-          const updatedSched = parsedSched.map((s) =>
-            s.roomCode.toLowerCase() === room.id.toLowerCase()
-              ? { ...s, status: 'Đã kết thúc' as const }
-              : s
-          );
-          localStorage.setItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY, JSON.stringify(updatedSched));
-        }
-
-        window.dispatchEvent(new Event('storage'));
-      } catch {
-        // fallback
+        await fetchWithAuth(`/api/v1/rooms/${rawRoomId}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'da_dong' }),
+        });
+        showToast(`Đã hủy phòng chờ ${room.id} thành công! Lớp ${room.classId} đã sẵn sàng tạo ca mới.`);
+        setIsCancelModalOpen(false);
+        setTimeout(() => {
+          router.push('/instructor/classes');
+        }, 400);
+        return;
+      } catch (err: any) {
+        showToast(err?.message || 'Không thể hủy phòng trên hệ thống');
+      } finally {
+        setIsActionLoading(false);
       }
     }
 
-    showToast(`Đã hủy phòng chờ ${room.id} thành công! Lớp ${room.classId} đã sẵn sàng tạo ca mới.`);
     setIsCancelModalOpen(false);
     setTimeout(() => {
       router.push('/instructor/classes');
     }, 400);
   };
 
+  if (isLoading && !room) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-2 text-xs font-semibold text-slate-500">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+        <span>Đang nạp thông tin phòng chờ và sĩ số lớp từ CSDL...</span>
+      </div>
+    );
+  }
+
   if (!room) {
     return (
-      <div className="flex h-64 items-center justify-center text-xs font-semibold text-slate-500">
-        Đang tải thông tin phòng chờ...
+      <div className="flex h-64 flex-col items-center justify-center gap-3 text-xs text-slate-500">
+        <AlertTriangle className="h-8 w-8 text-amber-500" />
+        <span className="font-bold">Không tìm thấy dữ liệu phòng chờ &quot;{roomId}&quot;</span>
+        <button
+          onClick={() => router.push('/instructor/classes')}
+          className="rounded-xl bg-slate-900 px-4 py-2 font-bold text-white hover:bg-slate-800"
+        >
+          Quay lại Quản lý Lớp học
+        </button>
       </div>
     );
   }
@@ -482,8 +515,18 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
           </div>
         </div>
 
-        {/* Nút Hủy Phòng Chờ & Nút Bắt đầu làm bài */}
+        {/* Nút Thông Báo, Hủy Phòng Chờ & Nút Bắt đầu làm bài */}
         <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => handleOpenNotice({ type: 'all' })}
+            className="h-10 inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 hover:border-blue-300 px-4 text-xs font-extrabold text-blue-700 shadow-2xs transition-all active:scale-[0.99] cursor-pointer"
+            title="Phát thông báo nhanh cho sinh viên trong phòng chờ"
+          >
+            <Send className="h-3.5 w-3.5 text-blue-600" />
+            <span>Phát Thông Báo</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setIsCancelModalOpen(true)}
@@ -766,17 +809,27 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleAttendance(a.studentId)}
-                          className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer ${
-                            isPresent
-                              ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-700 border border-slate-200'
-                              : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
-                          }`}
-                        >
-                          {isPresent ? 'Hủy Điểm Danh' : 'Điểm Danh Nhanh'}
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenNotice({ type: 'individual', studentId: a.studentId, studentName: a.studentName })}
+                            className="rounded-lg p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
+                            title={`Gửi thông báo riêng cho ${a.studentName}`}
+                          >
+                            <Send className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAttendance(a.studentId)}
+                            className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer ${
+                              isPresent
+                                ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-700 border border-slate-200'
+                                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                            }`}
+                          >
+                            {isPresent ? 'Hủy Điểm Danh' : 'Điểm Danh Nhanh'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -786,6 +839,17 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
           </table>
         </div>
       </div>
+
+      {/* ── MODAL 3: PHÁT THÔNG BÁO CHO SINH VIÊN TRONG PHÒNG CHỜ ── */}
+      <SendNotificationModal
+        isOpen={isNoticeModalOpen}
+        onClose={() => setIsNoticeModalOpen(false)}
+        defaultTarget={noticeTarget}
+        studentsList={attendees.map((a) => ({ id: a.studentId, name: a.studentName }))}
+        onSend={(targetType, targetLabel, message) => {
+          showToast(`Đã phát thông báo tới ${targetLabel}: "${message}"`);
+        }}
+      />
     </div>
   );
 }

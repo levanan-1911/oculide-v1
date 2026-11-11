@@ -7,6 +7,7 @@ class RoomCreateRequest(BaseModel):
     room_name: str = Field(..., min_length=1, max_length=200)
     room_type: str = Field("lab", pattern="^(exam|lab|classroom)$")
     class_id: Optional[Union[int, str]] = None
+    template_id: Optional[Union[int, str]] = None
     description: Optional[str] = None
     start_time: datetime
     end_time: datetime
@@ -20,6 +21,7 @@ class RoomUpdateRequest(BaseModel):
     room_name: Optional[str] = None
     room_type: Optional[str] = None
     class_id: Optional[Union[int, str]] = None
+    template_id: Optional[Union[int, str]] = None
     description: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
@@ -45,6 +47,7 @@ class RoomResponse(BaseModel):
     passcode: Optional[str] = None
     livekit_room_name: Optional[str] = None
     class_id: Optional[int] = None
+    template_id: Optional[int] = None
     proctoring_config: Optional[str] = None
     status: Optional[str] = "chua_mo"
     created_at: datetime
@@ -81,3 +84,48 @@ class RoomDashboardResponse(BaseModel):
 
 class RoomEnrollmentRequest(BaseModel):
     student_ids: List[int]
+
+class RoomStatusUpdateRequest(BaseModel):
+    status: str = Field(..., pattern="^(chua_mo|dang_dien_ra|da_dong|da_huy|waiting|in_progress|ended)$")
+    force_close_conflicts: Optional[bool] = False
+
+class RoomAttendeeResponse(BaseModel):
+    student_id: str
+    user_id: Optional[int] = None
+    student_name: str
+    student_email: Optional[str] = None
+    status: str = "absent"  # waiting, absent, completed
+    joined_at: Optional[str] = None
+    device: Optional[str] = None
+    camera_ready: Optional[bool] = False
+
+class RoomLobbyResponse(BaseModel):
+    room_id: int
+    room_code: str
+    room_name: str
+    room_type: str
+    instructor_id: int
+    class_id: Optional[int] = None
+    class_code: Optional[str] = None
+    class_name: Optional[str] = None
+    course_name: Optional[str] = None
+    template_id: Optional[int] = None
+    template_title: Optional[str] = None
+    template_code: Optional[str] = None
+    template_language: Optional[str] = None
+    description: Optional[str] = None
+    start_time: datetime
+    end_time: datetime
+    duration_minutes: int
+    max_attempts: int
+    is_active: bool
+    passcode: Optional[str] = None
+    livekit_room_name: Optional[str] = None
+    proctoring_config: Optional[Union[Dict[str, Any], str]] = None
+    status: str
+    created_at: datetime
+    attendees: List[RoomAttendeeResponse] = []
+
+class RoomManualAttendanceRequest(BaseModel):
+    student_id: Union[int, str]
+    status: str = Field(..., pattern="^(waiting|absent)$")

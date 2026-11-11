@@ -4,13 +4,16 @@ from datetime import datetime
 
 from schemas.room import (
     RoomCreateRequest, RoomUpdateRequest, RoomResponse, PublicRoomResponse,
-    RoomDashboardResponse, RoomDashboardStudentItem, RoomEnrollmentRequest
+    RoomDashboardResponse, RoomDashboardStudentItem, RoomEnrollmentRequest,
+    RoomStatusUpdateRequest, RoomLobbyResponse, RoomManualAttendanceRequest
 )
 from schemas.auth import JoinRoomRequest
 from core.permissions import get_current_user, instructor_or_admin_required
 from database.room_db import (
     create_room, get_room_by_id, get_room_by_code, get_rooms_by_instructor,
-    get_all_rooms, update_room, delete_room, get_room_dashboard_data
+    get_all_rooms, update_room, delete_room, get_room_dashboard_data,
+    get_exam_templates, get_room_lobby_details, check_instructor_active_room,
+    update_room_status, toggle_manual_attendance
 )
 from database.scoreboard_db import get_room_scoreboard
 from database.enrollment_db import enroll_student, get_enrollments_by_room, remove_enrollment, is_student_enrolled
@@ -20,6 +23,75 @@ from services.livekit_service import livekit_service
 from core.config import settings
 
 router = APIRouter()
+
+@router.get("/templates")
+async def list_exam_templates(
+    room_type: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lấy danh sách các bộ đề mẫu có trong CSDL (BoDeMau)"""
+    instructor_id = current_user["user_id"] if current_user.get("role") == "instructor" else None
+    return get_exam_templates(instructor_id=instructor_id, room_type=room_type)
+
+@router.get("/lobby/{room_code}", response_model=RoomLobbyResponse)
+async def get_lobby_room_info(
+    room_code: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lấy thông tin chi tiết phòng chờ và danh sách điểm danh sinh viên thời gian thực"""
+    lobby_data = get_room_lobby_details(room_code)
+    if not lobby_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng chờ")
+    return lobby_data
+
+@router.patch("/{room_id}/status")
+async def change_room_status(
+    room_id: int,
+    status_data: RoomStatusUpdateRequest,
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Cập nhật trạng thái phòng thi (bắt đầu thi, kết thúc thi, hủy phòng)"""
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền thay đổi trạng thái phòng này")
+
+    # Kiểm tra xung đột nếu chuyển sang dang_dien_ra / in_progress
+    target_status = status_data.status.lower()
+    if target_status in ("dang_dien_ra", "in_progress"):
+        active_conflict = check_instructor_active_room(current_user["user_id"], room_id)
+        if active_conflict and not status_data.force_close_conflicts:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": f"Giảng viên hiện đang có phòng [{active_conflict['room_code']}] đang diễn ra.",
+                    "conflict_room": active_conflict
+                }
+            )
+
+    updated = update_room_status(
+        room_id=room_id,
+        status=target_status,
+        instructor_id=current_user["user_id"],
+        force_close_conflicts=bool(status_data.force_close_conflicts)
+    )
+    return updated
+
+@router.post("/{room_id}/attendance")
+async def mark_manual_attendance(
+    room_id: int,
+    att_data: RoomManualAttendanceRequest,
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Điểm danh thủ công sinh viên trong phòng chờ"""
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    success = toggle_manual_attendance(room_id, att_data.student_id, att_data.status)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Không thể cập nhật trạng thái điểm danh cho sinh viên")
+    return {"success": True, "student_id": att_data.student_id, "status": att_data.status}
 
 @router.post("", response_model=RoomResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_room(
@@ -55,6 +127,7 @@ async def create_new_room(
         passcode=room_data.passcode,
         livekit_room_name=livekit_room_name,
         class_id=room_data.class_id,
+        template_id=room_data.template_id,
         proctoring_config=cfg_str,
         status=room_data.status or "chua_mo"
     )

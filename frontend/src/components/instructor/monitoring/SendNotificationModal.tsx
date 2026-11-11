@@ -18,6 +18,7 @@ import {
 interface SendNotificationModalProps {
   isOpen: boolean;
   onClose: () => void;
+  studentsList?: Array<{ id: string; name: string }>;
   defaultTarget?: {
     type: 'all' | 'group' | 'individual';
     studentId?: string;
@@ -50,6 +51,16 @@ const PREDEFINED_GROUPS = [
 
 const TEMPLATES = [
   {
+    type: 'info' as const,
+    label: '📢 Nhắc chuẩn bị vào thi',
+    text: 'Chào các em, ca học / ca thi sẽ bắt đầu trong ít phút nữa. Các em hãy giữ nguyên màn hình phòng chờ để hệ thống tự động phát đề.',
+  },
+  {
+    type: 'warning' as const,
+    label: '📹 Nhắc kiểm tra camera',
+    text: 'Vui lòng kiểm tra lại thiết bị camera và micro. Đảm bảo khuôn mặt hiển thị rõ ràng trước khi giảng viên mở đề.',
+  },
+  {
     type: 'time' as const,
     label: '⏱️ Nhắc còn 15 phút',
     text: 'Còn 15 phút là hết giờ làm bài! Các em hãy kiểm tra lại code, chạy thử test cases và bấm Nộp bài.',
@@ -69,24 +80,27 @@ const TEMPLATES = [
     label: '🔒 Cảnh báo thoát Fullscreen',
     text: 'Cảnh báo: Bạn vừa cố ý thao tác phím tắt thoát chế độ khóa toàn màn hình. Hãy tập trung làm bài thi trên ứng dụng Oculide.',
   },
-  {
-    type: 'info' as const,
-    label: 'ℹ️ Hướng dẫn webcam',
-    text: 'Vui lòng điều chỉnh lại góc webcam để khuôn mặt và bàn làm việc hiển thị rõ ràng trong khung hình giám sát.',
-  },
 ];
 
 export default function SendNotificationModal({
   isOpen,
   onClose,
+  studentsList,
   defaultTarget,
   onSend,
 }: SendNotificationModalProps) {
+  const activeStudents = (studentsList && studentsList.length > 0) ? studentsList : ALL_STUDENTS;
   const [targetType, setTargetType] = useState<'all' | 'group' | 'individual'>('all');
   const [selectedGroup, setSelectedGroup] = useState<string>(PREDEFINED_GROUPS[0].id);
-  const [selectedStudentId, setSelectedStudentId] = useState<string>(ALL_STUDENTS[0].id);
-  const [noticeType, setNoticeType] = useState<'info' | 'warning' | 'time' | 'urgent'>('warning');
+  const [selectedStudentId, setSelectedStudentId] = useState<string>(activeStudents[0]?.id || 'SE184801');
+  const [noticeType, setNoticeType] = useState<'info' | 'warning' | 'time' | 'urgent'>('info');
   const [message, setMessage] = useState<string>('');
+
+  useEffect(() => {
+    if (activeStudents.length > 0 && !activeStudents.some((s) => s.id === selectedStudentId)) {
+      setSelectedStudentId(activeStudents[0].id);
+    }
+  }, [activeStudents, selectedStudentId]);
 
   useEffect(() => {
     if (defaultTarget) {
@@ -108,16 +122,16 @@ export default function SendNotificationModal({
     e.preventDefault();
     if (!message.trim()) return;
 
-    let targetLabel = 'Toàn bộ sinh viên phòng thi (46 SV)';
+    let targetLabel = `Toàn bộ sinh viên (${activeStudents.length} SV)`;
     let studentId: string | undefined = undefined;
 
     if (targetType === 'group') {
       const g = PREDEFINED_GROUPS.find((grp) => grp.id === selectedGroup);
       targetLabel = g ? g.label : 'Nhóm sinh viên được chọn';
     } else if (targetType === 'individual') {
-      const s = ALL_STUDENTS.find((st) => st.id === selectedStudentId);
+      const s = activeStudents.find((st) => st.id === selectedStudentId) || activeStudents[0];
       targetLabel = s ? `Sinh viên: ${s.name} (${s.id})` : selectedStudentId;
-      studentId = selectedStudentId;
+      studentId = s ? s.id : selectedStudentId;
     }
 
     onSend(targetType, targetLabel, message.trim(), noticeType, studentId);
@@ -236,7 +250,7 @@ export default function SendNotificationModal({
                 onChange={(e) => setSelectedStudentId(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 outline-none transition focus:border-blue-600"
               >
-                {ALL_STUDENTS.map((st) => (
+                {activeStudents.map((st) => (
                   <option key={st.id} value={st.id}>
                     {st.name} ({st.id})
                   </option>

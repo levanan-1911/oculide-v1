@@ -20,7 +20,7 @@ from api import (
 )
 from websocket.connection_manager import manager
 from database.chat_db import create_message
-from database.room_db import get_room_by_id
+from database.room_db import get_room_by_id, is_student_in_class
 from database.enrollment_db import is_student_enrolled
 
 
@@ -250,8 +250,8 @@ async def websocket_endpoint(
         if user_id != token_user_id:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="user_id không khớp với token xác thực")
             return
-        # Kiểm tra ghi danh trong phòng
-        if not is_student_enrolled(room_id, int(token_user_id)):
+        # Kiểm tra ghi danh trong phòng hoặc thuộc lớp của phòng
+        if not is_student_enrolled(room_id, int(token_user_id)) and not is_student_in_class(room_id, int(token_user_id)):
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Sinh viên chưa ghi danh vào phòng thi này")
             return
 
@@ -290,6 +290,25 @@ async def websocket_endpoint(
                         }))
                         continue
                     await manager.broadcast_json(room_id, message)
+
+                elif msg_type == "unlock_student":
+                    if token_role not in ("instructor", "admin"):
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "message": "Chỉ giám thị mới có quyền mở khóa bài thi"
+                        }))
+                        continue
+                    target_student_id = message.get("student_id")
+                    if target_student_id:
+                        await manager.send_personal_message(
+                            json.dumps({
+                                "type": "student_unlocked",
+                                "student_id": int(target_student_id),
+                                "unlocked_by": token_user_id,
+                            }),
+                            room_id,
+                            str(target_student_id),
+                        )
                     
                 elif msg_type == "send_hint":
                     if token_role not in ("instructor", "admin"):

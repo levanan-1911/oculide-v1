@@ -27,6 +27,7 @@ import {
 
 export interface StudentDetailInfo {
   id: string;
+  userId?: number;
   name: string;
   status: 'normal' | 'warning' | 'critical' | 'submitted';
   statusText: string;

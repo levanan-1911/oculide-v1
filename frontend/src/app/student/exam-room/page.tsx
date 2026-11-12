@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
 import LiveKitVideoFeed from "@/components/livekit/LiveKitVideoFeed";
-import { fetchWithAuth } from "@/services/apiClient";
+import { fetchWithAuth, getAuthToken } from "@/services/apiClient";
 import {
   AlertOctagon,
   AlertTriangle,
@@ -149,6 +149,7 @@ function getInitialCodeTemplate(language: string): string {
 export default function ExamWorkspacePage() {
   const [examState, setExamState] = useState<ExamState>("doing");
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [examData, setExamData] = useState<ExamData>(mockExamData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -390,17 +391,92 @@ useEffect(() => {
     return () => clearInterval(interval);
   }, [examState, isLocked]);
 
+  useEffect(() => {
+    if (!activeRoomId) return;
+    let cancelled = false;
+    let ws: WebSocket | null = null;
+
+    async function initSessionAndWs() {
+      try {
+        const sess = await fetchWithAuth<{ session_id: number }>("/api/v1/sessions", {
+          method: "POST",
+          body: JSON.stringify({ room_id: activeRoomId }),
+        });
+        if (!cancelled && sess?.session_id) {
+          setActiveSessionId(sess.session_id);
+        }
+
+        const me = await fetchWithAuth<{ user_id: number }>("/api/v1/auth/me");
+        const token = getAuthToken();
+        if (cancelled || !me?.user_id || !token || typeof window === "undefined") return;
+
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${protocol}//${window.location.host}/ws/${activeRoomId}/${me.user_id}?token=${encodeURIComponent(token)}`;
+        ws = new WebSocket(wsUrl);
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "student_unlocked") {
+              setIsLocked(false);
+              setPasteCount(0);
+              setTabSwitchCount(0);
+              setAiViolationCount(0);
+              setTeacherPasscode("");
+              showToast("ĐÃ MỞ KHÓA: Giảng viên đã phê duyệt mở khóa bài thi từ xa!");
+            }
+          } catch {
+            // Bỏ qua message không phải JSON
+          }
+        };
+      } catch {
+        // Giữ chế độ offline/demo nếu chưa đăng nhập hoặc phòng chưa mở session
+      }
+    }
+
+    initSessionAndWs();
+    return () => {
+      cancelled = true;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    };
+  }, [activeRoomId]);
+
+  const reportViolationToBackend = (
+    violationType: "tab_switch" | "copy_paste" | "fullscreen_exit",
+    severity: "low" | "medium" | "high",
+    description: string,
+  ) => {
+    if (!activeSessionId) return;
+    fetchWithAuth("/api/v1/violations", {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: activeSessionId,
+        violation_type: violationType,
+        severity,
+        description,
+      }),
+    }).catch(() => {
+      // Không làm gián đoạn giao diện nếu mạng tạm lỗi
+    });
+  };
+
   // Giám sát Chuyển Tab
   useEffect(() => {
     function handleVisibilityChange() {
       if (document.hidden && examState === "doing" && !isLocked) {
         setTabSwitchCount((prev) => prev + 1);
         showToast("CẢNH BÁO: Rời khỏi cửa sổ bài thi (Chuyển Tab)!");
+        reportViolationToBackend(
+          "tab_switch",
+          "medium",
+          "Sinh viên chuyển tab hoặc rời khỏi cửa sổ làm bài.",
+        );
       }
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [examState, isLocked]);
+  }, [examState, isLocked, activeSessionId]);
 
   // Chặn Ctrl+V & Paste
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -409,6 +485,11 @@ useEffect(() => {
       e.preventDefault();
       setPasteCount((prev) => prev + 1);
       showToast("CẢNH BÁO CẤM DÁN: Hệ thống chặn dán code bên ngoài!");
+      reportViolationToBackend(
+        "copy_paste",
+        "medium",
+        "Sinh viên nhấn tổ hợp Ctrl+V / Cmd+V trong trình soạn thảo.",
+      );
     }
   }
 
@@ -417,6 +498,11 @@ useEffect(() => {
     e.preventDefault();
     setPasteCount((prev) => prev + 1);
     showToast("CẢNH BÁO CẤM DÁN: Hệ thống chặn dán code bên ngoài!");
+    reportViolationToBackend(
+      "copy_paste",
+      "medium",
+      "Sinh viên thực hiện thao tác dán (Paste) vào trình soạn thảo.",
+    );
   }
 
   function showToast(msg: string) {

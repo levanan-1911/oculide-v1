@@ -122,3 +122,23 @@ async def finish_session(
     end_session(session_id)
     return {"message": "Phiên thi đã kết thúc thành công"}
 
+@router.post("/room/{room_id}/unlock/{student_id}")
+async def unlock_student_exam(
+    room_id: int,
+    student_id: int,
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Giảng viên mở khóa bài thi cho sinh viên từ xa qua WebSocket"""
+    import json
+    from websocket.connection_manager import manager
+    await manager.send_personal_message(
+        json.dumps({
+            "type": "student_unlocked",
+            "student_id": student_id,
+            "unlocked_by": current_user["user_id"],
+        }),
+        room_id,
+        str(student_id),
+    )
+    return {"message": "Đã gửi lệnh mở khóa bài thi cho sinh viên", "room_id": room_id, "student_id": student_id}
+

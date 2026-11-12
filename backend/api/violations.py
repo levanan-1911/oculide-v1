@@ -2,15 +2,17 @@ from fastapi import APIRouter, HTTPException, Depends, status, Query
 from typing import Optional, List, Dict, Any
 
 from schemas.violation import (
-    ViolationCreateRequest, SnapshotAnalyzeRequest, ViolationResponse, ViolationStatsItem, ViolationReviewRequest
+    ViolationCreateRequest, AIViolationHookRequest, SnapshotAnalyzeRequest,
+    ViolationResponse, ViolationStatsItem, ViolationReviewRequest
 )
 from core.permissions import get_current_user, instructor_or_admin_required
 from database.violation_db import (
     create_violation, get_violations_by_session, get_violations_by_student,
     get_violations_by_room, update_violation_review, get_student_violation_stats
 )
-from database.session_db import get_session_by_id
+from database.session_db import get_session_by_id, get_sessions_by_student
 from database.room_db import get_room_by_id
+from websocket.connection_manager import manager
 
 router = APIRouter()
 
@@ -42,7 +44,7 @@ async def log_violation(
             "reviewed_at": None
         }
 
-    return create_violation(
+    created = create_violation(
         session_id=violation_data.session_id,
         student_id=session["student_id"],
         violation_type=violation_data.violation_type,
@@ -50,6 +52,62 @@ async def log_violation(
         description=violation_data.description,
         snapshot_url=violation_data.snapshot_url
     )
+    try:
+        await manager.broadcast_json(session["room_id"], {
+            "type": "violation_alert",
+            "room_id": session["room_id"],
+            "student_id": session["student_id"],
+            "violation": {
+                **created,
+                "detected_at": created["detected_at"].isoformat() if created.get("detected_at") else None,
+            },
+        })
+    except Exception:
+        pass
+    return created
+
+@router.post("/ai-event", response_model=ViolationResponse, status_code=status.HTTP_201_CREATED)
+async def ingest_ai_violation_event(
+    ai_event: AIViolationHookRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Đầu chờ chuẩn cho mô-đun AI Proctoring (YOLOv8 / Pose) đẩy cảnh báo vi phạm vào hệ thống"""
+    session_id = ai_event.session_id
+    if not session_id:
+        active_sessions = get_sessions_by_student(ai_event.student_id, room_id=ai_event.room_id, active_only=True)
+        if not active_sessions:
+            active_sessions = get_sessions_by_student(ai_event.student_id, room_id=ai_event.room_id, active_only=False)
+        if not active_sessions:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phiên làm bài của sinh viên trong phòng này")
+        session_id = active_sessions[0]["session_id"]
+
+    desc = ai_event.description or f"AI Proctoring phát hiện: {ai_event.violation_type}"
+    if ai_event.confidence is not None:
+        desc = f"{desc} (Độ tin cậy: {round(ai_event.confidence * 100)}%)"
+
+    created = create_violation(
+        session_id=session_id,
+        student_id=ai_event.student_id,
+        violation_type=ai_event.violation_type,
+        severity=ai_event.severity,
+        description=desc,
+        snapshot_url=ai_event.snapshot_url,
+    )
+    try:
+        await manager.broadcast_json(ai_event.room_id, {
+            "type": "violation_alert",
+            "source": "ai_proctoring",
+            "room_id": ai_event.room_id,
+            "student_id": ai_event.student_id,
+            "confidence": ai_event.confidence,
+            "violation": {
+                **created,
+                "detected_at": created["detected_at"].isoformat() if created.get("detected_at") else None,
+            },
+        })
+    except Exception:
+        pass
+    return created
 
 @router.post("/analyze", status_code=status.HTTP_202_ACCEPTED)
 async def analyze_webcam_snapshot(

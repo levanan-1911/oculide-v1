@@ -25,17 +25,18 @@ import {
   ToggleLeft,
   ToggleRight,
   Radio,
+  Unlock,
 } from 'lucide-react';
 import {
   RoomSession,
   INSTRUCTOR_ROOMS_STORAGE_KEY,
 } from '@/components/instructor/classes/types';
-import { useMonitoring } from '@/components/instructor/monitoring/MonitoringContext';
+import { useMonitoring, ViolationAlert } from '@/components/instructor/monitoring/MonitoringContext';
 import ExtendSessionModal from '@/components/instructor/monitoring/ExtendSessionModal';
 import SendNotificationModal from '@/components/instructor/monitoring/SendNotificationModal';
 import StudentDetailModal, { StudentDetailInfo } from '@/components/instructor/monitoring/StudentDetailModal';
 import InstructorRoomChat from '@/components/instructor/monitoring/InstructorRoomChat';
-import { fetchWithAuth } from '@/services/apiClient';
+import { fetchWithAuth, getAuthToken } from '@/services/apiClient';
 import { useLiveKitRoom } from '@/hooks/useLiveKitRoom';
 import LiveKitVideoFeed from '@/components/livekit/LiveKitVideoFeed';
 
@@ -331,7 +332,141 @@ function InstructorMonitoringContent() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'warning' | 'normal' | 'submitted'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSideTab, setActiveSideTab] = useState<'violations' | 'announcements' | 'chat'>('violations');
+  const [realViolations, setRealViolations] = useState<ViolationAlert[] | null>(null);
+  const [unlockNotice, setUnlockNotice] = useState<string | null>(null);
   const chatRoomCode = activeRoomSession?.id || roomIdParam || session.roomCode;
+
+  useEffect(() => {
+    if (!realRoomId) {
+      setRealViolations(null);
+      return;
+    }
+    let cancelled = false;
+    let ws: WebSocket | null = null;
+
+    async function loadViolationsAndWs() {
+      try {
+        const vioRows = await fetchWithAuth<Array<{
+          violation_id: number;
+          student_id: number;
+          student_name?: string;
+          student_code?: string;
+          violation_type: string;
+          severity: string;
+          description?: string | null;
+          detected_at: string;
+          review_status: 'pending' | 'confirmed' | 'rejected';
+        }>>(`/api/v1/violations/room/${realRoomId}`);
+        if (!cancelled && Array.isArray(vioRows)) {
+          const mapped: ViolationAlert[] = vioRows.map((v) => ({
+            id: String(v.violation_id),
+            studentId: v.student_code || String(v.student_id),
+            studentName: v.student_name || `Sinh viên #${v.student_id}`,
+            classCode: activeRoomSession?.classId || '',
+            roomCode: chatRoomCode,
+            type: v.violation_type,
+            severity: (v.severity === 'critical' ? 'critical' : v.severity === 'high' ? 'high' : 'medium'),
+            timestamp: new Date(v.detected_at).toLocaleTimeString('vi-VN'),
+            description: v.description || v.violation_type,
+            status: v.review_status === 'confirmed' ? 'recorded' : v.review_status === 'rejected' ? 'dismissed' : 'pending',
+          }));
+          setRealViolations(mapped);
+        }
+      } catch {
+        // Giữ fallback context nếu chưa tải được
+      }
+
+      try {
+        const me = await fetchWithAuth<{ user_id: number }>('/api/v1/auth/me');
+        const token = getAuthToken();
+        if (cancelled || !me?.user_id || !token || typeof window === 'undefined') return;
+        const baseWs = process.env.NEXT_PUBLIC_WS_URL
+          ? process.env.NEXT_PUBLIC_WS_URL.replace(/\/$/, '')
+          : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+        ws = new WebSocket(`${baseWs}/ws/${realRoomId}/proctor_${me.user_id}?token=${encodeURIComponent(token)}`);
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'violation_alert' && msg.violation) {
+              const v = msg.violation;
+              const newAlert: ViolationAlert = {
+                id: String(v.violation_id),
+                studentId: String(v.student_id),
+                studentName: `Sinh viên #${v.student_id}`,
+                classCode: activeRoomSession?.classId || '',
+                roomCode: chatRoomCode,
+                type: v.violation_type,
+                severity: (v.severity === 'critical' ? 'critical' : v.severity === 'high' ? 'high' : 'medium'),
+                timestamp: v.detected_at ? new Date(v.detected_at).toLocaleTimeString('vi-VN') : new Date().toLocaleTimeString('vi-VN'),
+                description: v.description || v.violation_type,
+                status: 'pending',
+              };
+              setRealViolations((prev) => [newAlert, ...(prev || [])]);
+              setRealStudents((prev) =>
+                prev
+                  ? prev.map((s) =>
+                      s.userId === Number(v.student_id)
+                        ? { ...s, status: 'warning', statusText: `Cảnh báo: ${v.violation_type}`, violationsCount: (s.violationsCount || 0) + 1 }
+                        : s,
+                    )
+                  : prev,
+              );
+            }
+          } catch {
+            // ignore
+          }
+        };
+      } catch {
+        // ignore WS error
+      }
+    }
+
+    loadViolationsAndWs();
+    return () => {
+      cancelled = true;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+    };
+  }, [realRoomId, activeRoomSession?.classId, chatRoomCode]);
+
+  const handleUnlockStudent = async (student: StudentDetailInfo) => {
+    const targetUserId = student.userId ?? (Number.isInteger(Number(student.id)) ? Number(student.id) : null);
+    if (!realRoomId || !targetUserId) return;
+    try {
+      await fetchWithAuth(`/api/v1/sessions/room/${realRoomId}/unlock/${targetUserId}`, {
+        method: 'POST',
+      });
+      setUnlockNotice(`Đã gửi lệnh mở khóa bài thi cho ${student.name}.`);
+      setTimeout(() => setUnlockNotice(null), 3500);
+    } catch {
+      setUnlockNotice(`Không thể gửi lệnh mở khóa cho ${student.name}.`);
+      setTimeout(() => setUnlockNotice(null), 3500);
+    }
+  };
+
+  const handleReviewViolation = (id: string, action: 'warn' | 'record' | 'dismiss') => {
+    if (realViolations !== null && /^\d+$/.test(id)) {
+      const reviewStatus = action === 'record' ? 'confirmed' : action === 'dismiss' ? 'rejected' : null;
+      if (reviewStatus) {
+        fetchWithAuth(`/api/v1/violations/${id}/review`, {
+          method: 'PATCH',
+          body: JSON.stringify({ review_status: reviewStatus }),
+        }).catch(() => {});
+      }
+      setRealViolations((prev) =>
+        prev
+          ? prev.map((v) =>
+              v.id === id
+                ? { ...v, status: action === 'record' ? 'recorded' : action === 'dismiss' ? 'dismissed' : 'warned' }
+                : v,
+            )
+          : prev,
+      );
+      return;
+    }
+    reviewViolation(id, action);
+  };
+
+  const displayViolations = realViolations ?? violations;
 
   const handleOpenIndividualNotice = (studentId: string, studentName: string) => {
     setTargetedStudent({ id: studentId, name: studentName });
@@ -559,10 +694,10 @@ function InstructorMonitoringContent() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-xs">
             <div className="flex flex-wrap items-center gap-1.5">
               {[
-                { id: 'all', label: `Tất cả (${INITIAL_CAMERAS.length})` },
-                { id: 'warning', label: 'Cảnh báo AI (3)' },
-                { id: 'normal', label: 'Bình thường (2)' },
-                { id: 'submitted', label: 'Đã nộp (1)' },
+                { id: 'all', label: `Tất cả (${camerasSource.length})` },
+                { id: 'warning', label: `Cảnh báo AI (${camerasSource.filter((c) => c.status === 'warning' || c.status === 'critical').length})` },
+                { id: 'normal', label: `Bình thường (${camerasSource.filter((c) => c.status === 'normal').length})` },
+                { id: 'submitted', label: `Đã nộp (${camerasSource.filter((c) => c.status === 'submitted').length})` },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -721,6 +856,18 @@ function InstructorMonitoringContent() {
                         Phóng to
                       </button>
 
+                      {realRoomId && student.userId && (
+                        <button
+                          type="button"
+                          onClick={() => handleUnlockStudent(student)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 transition cursor-pointer"
+                          title="Mở khóa bài thi từ xa cho sinh viên"
+                        >
+                          <Unlock className="h-3 w-3" />
+                          Mở khóa
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => handleOpenIndividualNotice(student.id, student.name)}
@@ -802,14 +949,19 @@ function InstructorMonitoringContent() {
           {/* Tab 1: Cảnh báo vi phạm (THIẾT KẾ SIÊU GỌN NHẤT CÓ THỂ THEO HÌNH ẢNH USER) */}
           {activeSideTab === 'violations' && (
             <div className="space-y-1.5 max-h-[580px] overflow-y-auto pr-0.5">
-              {violations.length === 0 ? (
+              {unlockNotice && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
+                  {unlockNotice}
+                </div>
+              )}
+              {displayViolations.length === 0 ? (
                 <div className="p-4 text-center text-xs text-slate-400">
                   <ShieldCheck className="mx-auto h-6 w-6 text-emerald-400" />
                   <p className="mt-1 font-bold text-slate-600 text-xs">Không có vi phạm</p>
                 </div>
               ) : (
-                violations.map((vio) => {
-                  const matchedStudent = INITIAL_CAMERAS.find((c) => c.id === vio.studentId);
+                displayViolations.map((vio) => {
+                  const matchedStudent = camerasSource.find((c) => c.id === vio.studentId || String(c.userId) === vio.studentId);
                   const isRecorded = vio.status === 'recorded';
                   const isDismissed = vio.status === 'dismissed';
 
@@ -893,7 +1045,7 @@ function InstructorMonitoringContent() {
                             <>
                               <button
                                 type="button"
-                                onClick={() => reviewViolation(vio.id, 'record')}
+                                onClick={() => handleReviewViolation(vio.id, 'record')}
                                 className="rounded bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-red-700 cursor-pointer shadow-2xs"
                                 title="Lập biên bản vi phạm"
                               >
@@ -901,7 +1053,7 @@ function InstructorMonitoringContent() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => reviewViolation(vio.id, 'dismiss')}
+                                onClick={() => handleReviewViolation(vio.id, 'dismiss')}
                                 className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                                 title="Bỏ qua cảnh báo"
                               >

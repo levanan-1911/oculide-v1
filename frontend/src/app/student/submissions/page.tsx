@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { fetchWithAuth } from "@/services/apiClient";
 import {
   Search,
   FileCode2,
@@ -136,11 +137,65 @@ function formatDate(value: string) {
 export default function StudentSubmissionsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | SubmissionStatus>("all");
+  const [submissions, setSubmissions] = useState<Submission[]>(sampleSubmissions);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMySubmissions() {
+      try {
+        const me = await fetchWithAuth<{ user_id: number }>("/api/v1/auth/me");
+        if (!me?.user_id || cancelled) return;
+        const rows = await fetchWithAuth<Array<{
+          submission_id: number;
+          room_id: number;
+          room_code?: string;
+          room_name?: string;
+          question_id: number;
+          question_title?: string;
+          language: string;
+          submitted_at: string;
+          status: string;
+          score_percentage?: number;
+        }>>(`/api/v1/submissions/student/${me.user_id}`);
+        if (cancelled || !Array.isArray(rows)) return;
+
+        const mapped: Submission[] = rows.map((s) => {
+          const pct = s.score_percentage ?? 0;
+          const mappedStatus: SubmissionStatus =
+            s.status === "completed"
+              ? pct >= 100
+                ? "accepted"
+                : "failed"
+              : s.status === "failed"
+              ? "failed"
+              : "pending";
+          return {
+            id: String(s.submission_id),
+            problem: s.question_title || `Câu hỏi #${s.question_id}`,
+            exam: s.room_name || s.room_code || `Phòng #${s.room_id}`,
+            language: s.language,
+            submittedAt: s.submitted_at,
+            status: mappedStatus,
+            score: s.status === "completed" ? Math.round(pct) : null,
+            runtime: "—",
+            memory: "—",
+          };
+        });
+        setSubmissions(mapped);
+      } catch {
+        // Giữ fallback sampleSubmissions nếu chưa đăng nhập hoặc offline
+      }
+    }
+    loadMySubmissions();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredSubmissions = useMemo(() => {
     const keyword = search.trim().toLowerCase();
 
-    return sampleSubmissions.filter((submission) => {
+    return submissions.filter((submission) => {
       const matchesSearch =
         !keyword ||
         submission.id.toLowerCase().includes(keyword) ||
@@ -153,24 +208,24 @@ export default function StudentSubmissionsPage() {
 
       return matchesSearch && matchesStatus;
     });
-  }, [search, statusFilter]);
+  }, [search, statusFilter, submissions]);
 
   const counts = useMemo(
     () => ({
-      all: sampleSubmissions.length,
-      accepted: sampleSubmissions.filter((item) => item.status === "accepted").length,
-      failed: sampleSubmissions.filter((item) => item.status === "failed").length,
-      pending: sampleSubmissions.filter((item) => item.status === "pending").length,
+      all: submissions.length,
+      accepted: submissions.filter((item) => item.status === "accepted").length,
+      failed: submissions.filter((item) => item.status === "failed").length,
+      pending: submissions.filter((item) => item.status === "pending").length,
     }),
-    []
+    [submissions]
   );
 
   const averageScore = useMemo(() => {
-    const scoredSubmissions = sampleSubmissions.filter((item) => item.score !== null);
+    const scoredSubmissions = submissions.filter((item) => item.score !== null);
     if (!scoredSubmissions.length) return "—";
     const total = scoredSubmissions.reduce((sum, item) => sum + (item.score ?? 0), 0);
     return (total / scoredSubmissions.length).toFixed(1);
-  }, []);
+  }, [submissions]);
 
   return (
     <main className="min-h-screen bg-slate-50/80 p-4 sm:p-6 lg:p-8">

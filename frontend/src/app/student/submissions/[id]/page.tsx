@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { fetchWithAuth } from "@/services/apiClient";
 import {
   ArrowLeft,
   Code2,
@@ -271,9 +272,101 @@ export default function SubmissionDetailPage() {
 
   // Nhận dạng submission ID từ route dynamic
   const rawId = (params?.id as string) || "cb_111";
+  const [apiSubmission, setApiSubmission] = useState<SubmissionDetail | null>(null);
+
+  useEffect(() => {
+    if (!/^\d+$/.test(rawId)) return;
+    let cancelled = false;
+    async function loadSubmissionDetail() {
+      try {
+        const data = await fetchWithAuth<{
+          submission_id: number;
+          question_id: number;
+          question_title?: string;
+          student_name?: string;
+          student_code?: string;
+          submitted_at: string;
+          language: string;
+          status: string;
+          total_points?: number;
+          max_points?: number;
+          score_percentage?: number;
+          code_content: string;
+          grading_results?: Array<{
+            result_id: number;
+            test_case_id: number;
+            is_passed: boolean;
+            is_hidden?: boolean;
+            input_data?: string | null;
+            expected_output?: string | null;
+            actual_output?: string | null;
+            execution_time_ms?: number | null;
+            memory_used_mb?: number | null;
+            error_message?: string | null;
+          }>;
+        }>(`/api/v1/submissions/${rawId}`);
+        if (cancelled || !data) return;
+
+        const results = data.grading_results || [];
+        const maxTimeMs = results.reduce((m, r) => Math.max(m, r.execution_time_ms || 0), 0);
+        const maxMemMb = results.reduce((m, r) => Math.max(m, r.memory_used_mb || 0), 0);
+        const pct = data.score_percentage ?? 0;
+        const mappedStatus: "accepted" | "failed" | "pending" =
+          data.status === "completed"
+            ? pct >= 100
+              ? "accepted"
+              : "failed"
+            : data.status === "failed"
+            ? "failed"
+            : "pending";
+
+        setApiSubmission({
+          id: String(data.submission_id),
+          problemCode: `Q-${data.question_id}`,
+          problemTitle: data.question_title || `Câu hỏi #${data.question_id}`,
+          authorName: data.student_name || "Sinh viên",
+          authorUsername: data.student_code || "",
+          authorMssv: data.student_code || "",
+          submittedAt: new Date(data.submitted_at).toLocaleString("vi-VN"),
+          language: data.language,
+          compiler: data.language.toUpperCase(),
+          status: mappedStatus,
+          scoreEarned: results.filter((r) => r.is_passed).length,
+          scoreMax: results.length || 1,
+          pointsScaled: `${data.total_points ?? 0} / ${data.max_points ?? 10} điểm (${pct}%)`,
+          maxRuntime: `${(maxTimeMs / 1000).toFixed(3)}s`,
+          maxMemory: `${maxMemMb.toFixed(2)} MB`,
+          code: data.code_content || "",
+          testCases: results.map((r, idx) => ({
+            id: idx + 1,
+            name: r.is_hidden ? `Test case #${idx + 1} (Ẩn)` : `Test case #${idx + 1}`,
+            status: r.is_passed ? "AC" : "WA",
+            statusText: r.is_passed ? "Chính xác (AC)" : "Chưa đạt (WA)",
+            runtime: `${((r.execution_time_ms || 0) / 1000).toFixed(3)}s`,
+            memory: `${(r.memory_used_mb || 0).toFixed(2)} MB`,
+            scoreEarned: r.is_passed ? 1 : 0,
+            scoreMax: 1,
+            input: r.is_hidden ? "[Test case ẩn]" : (r.input_data ?? ""),
+            expectedOutput: r.is_hidden ? "[Test case ẩn]" : (r.expected_output ?? ""),
+            actualOutput: r.actual_output || r.error_message || "",
+            diffNote: r.is_passed ? "Đạt" : r.error_message || "Kết quả chưa khớp",
+          })),
+        });
+      } catch {
+        // Giữ fallback mock nếu không tải được từ server
+      }
+    }
+    loadSubmissionDetail();
+    return () => {
+      cancelled = true;
+    };
+  }, [rawId]);
 
   // Lấy dữ liệu hoặc fallback về cb_111
   const submission: SubmissionDetail = useMemo(() => {
+    if (apiSubmission) {
+      return apiSubmission;
+    }
     if (mockSubmissionsDatabase[rawId]) {
       return mockSubmissionsDatabase[rawId];
     }
@@ -297,7 +390,7 @@ export default function SubmissionDetailPage() {
       code: mockSubmissionsDatabase.cb_111.code,
       testCases: mockSubmissionsDatabase.cb_111.testCases,
     };
-  }, [rawId]);
+  }, [rawId, apiSubmission]);
 
   // Tab đang kích hoạt: "result" (Xem kết quả) hoặc "code" (Xem code)
   const queryTab = searchParams.get("tab");

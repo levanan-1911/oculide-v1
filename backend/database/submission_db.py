@@ -2,15 +2,20 @@ from core.config import get_db_connection
 from datetime import datetime
 from typing import Optional, List, Dict
 
-def get_submission_by_id(submission_id: int) -> Optional[Dict]:
+def get_submission_by_id(submission_id: int, include_hidden_details: bool = True) -> Optional[Dict]:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("""
             SELECT s.ma_bai_nop AS submission_id, 
                    s.ma_phong AS room_id, 
+                   p.ma_phong_code AS room_code,
+                   p.tieu_de AS room_name,
                    s.ma_sinh_vien AS student_id, 
+                   u.ho_va_ten AS student_name,
+                   u.ma_dinh_danh AS student_code,
                    s.ma_cau_hoi AS question_id, 
+                   q.tieu_de AS question_title,
                    s.lan_nop AS attempt_number,
                    s.ma_nguon_nop AS code_content, 
                    s.ngon_ngu AS language, 
@@ -25,6 +30,8 @@ def get_submission_by_id(submission_id: int) -> Optional[Dict]:
                    q.diem_toi_da AS max_points
             FROM BaiNop s
             JOIN CauHoi q ON s.ma_cau_hoi = q.ma_cau_hoi
+            LEFT JOIN Phong p ON s.ma_phong = p.ma_phong
+            LEFT JOIN NguoiDung u ON s.ma_sinh_vien = u.ma_nguoi_dung
             WHERE s.ma_bai_nop = ?
         """, (submission_id,))
         row = cursor.fetchone()
@@ -33,7 +40,7 @@ def get_submission_by_id(submission_id: int) -> Optional[Dict]:
             sub = dict(zip(columns, row))
             sub["total_points"] = float(sub["total_points"]) if sub["total_points"] is not None else 0.0
             sub["max_points"] = float(sub["max_points"]) if sub["max_points"] is not None else 10.0
-            sub["grading_results"] = get_grading_results(submission_id)
+            sub["grading_results"] = get_grading_results(submission_id, include_hidden_details=include_hidden_details)
             if sub.get("max_points") and sub["max_points"] > 0:
                 sub["score_percentage"] = round((sub["total_points"] / sub["max_points"]) * 100, 2)
             else:
@@ -58,8 +65,11 @@ def get_submissions_by_student(student_id: int, room_id: Optional[int] = None) -
         cursor.execute(f"""
             SELECT s.ma_bai_nop AS submission_id, 
                    s.ma_phong AS room_id, 
+                   p.ma_phong_code AS room_code,
+                   p.tieu_de AS room_name,
                    s.ma_sinh_vien AS student_id, 
                    s.ma_cau_hoi AS question_id, 
+                   q.tieu_de AS question_title,
                    s.lan_nop AS attempt_number,
                    s.ma_nguon_nop AS code_content, 
                    s.ngon_ngu AS language, 
@@ -74,6 +84,7 @@ def get_submissions_by_student(student_id: int, room_id: Optional[int] = None) -
                    q.diem_toi_da AS max_points
             FROM BaiNop s
             JOIN CauHoi q ON s.ma_cau_hoi = q.ma_cau_hoi
+            LEFT JOIN Phong p ON s.ma_phong = p.ma_phong
             {where_sql}
             ORDER BY s.thoi_gian_nop DESC
         """, tuple(params))
@@ -143,12 +154,23 @@ def create_submission(
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            """
+            SELECT COALESCE(MAX(lan_nop), 0)
+            FROM BaiNop
+            WHERE ma_phong = ? AND ma_sinh_vien = ? AND ma_cau_hoi = ?
+            """,
+            (room_id, student_id, question_id),
+        )
+        max_attempt = cursor.fetchone()[0] or 0
+        next_attempt = max(attempt_number, max_attempt + 1)
+
         cursor.execute("""
             INSERT INTO BaiNop (ma_phong, ma_sinh_vien, ma_cau_hoi, lan_nop, ma_nguon_nop, ngon_ngu, trang_thai_cham)
             OUTPUT inserted.ma_bai_nop, inserted.ma_phong, inserted.ma_sinh_vien, inserted.ma_cau_hoi,
                    inserted.lan_nop, inserted.ma_nguon_nop, inserted.ngon_ngu, inserted.thoi_gian_nop, inserted.trang_thai_cham
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (room_id, student_id, question_id, attempt_number, code_content, language, status))
+        """, (room_id, student_id, question_id, next_attempt, code_content, language, status))
         row = cursor.fetchone()
         conn.commit()
         if row:
@@ -181,23 +203,76 @@ def update_submission_status(submission_id: int, status: str) -> bool:
         cursor.close()
         conn.close()
 
-def get_grading_results(submission_id: int) -> List[Dict]:
+def get_submissions_by_room(room_id: int) -> List[Dict]:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_ket_qua AS result_id, 
-                   ma_bai_nop AS submission_id, 
-                   ma_test_case AS test_case_id, 
-                   la_chinh_xac AS is_passed,
-                   ket_qua_thuc_te AS actual_output, 
-                   thoi_gian_chay_ms AS execution_time_ms, 
-                   bo_nho_su_dung_mb AS memory_used_mb,
-                   thong_bao_loi AS error_message, 
-                   thoi_gian_cham AS graded_at
-            FROM KetQuaChamDiem
-            WHERE ma_bai_nop = ?
-            ORDER BY ma_ket_qua ASC
+            SELECT s.ma_bai_nop AS submission_id,
+                   s.ma_phong AS room_id,
+                   p.ma_phong_code AS room_code,
+                   p.tieu_de AS room_name,
+                   s.ma_sinh_vien AS student_id,
+                   u.ho_va_ten AS student_name,
+                   u.ma_dinh_danh AS student_code,
+                   s.ma_cau_hoi AS question_id,
+                   q.tieu_de AS question_title,
+                   s.lan_nop AS attempt_number,
+                   s.ma_nguon_nop AS code_content,
+                   s.ngon_ngu AS language,
+                   s.thoi_gian_nop AS submitted_at,
+                   s.trang_thai_cham AS status,
+                   COALESCE((
+                       SELECT SUM(tc.diem_test)
+                       FROM KetQuaChamDiem gr
+                       JOIN BoKiemThu tc ON gr.ma_test_case = tc.ma_test_case
+                       WHERE gr.ma_bai_nop = s.ma_bai_nop AND gr.la_chinh_xac = 1
+                   ), 0) AS total_points,
+                   q.diem_toi_da AS max_points
+            FROM BaiNop s
+            JOIN CauHoi q ON s.ma_cau_hoi = q.ma_cau_hoi
+            JOIN NguoiDung u ON s.ma_sinh_vien = u.ma_nguoi_dung
+            LEFT JOIN Phong p ON s.ma_phong = p.ma_phong
+            WHERE s.ma_phong = ?
+            ORDER BY s.thoi_gian_nop DESC
+        """, (room_id,))
+        rows = cursor.fetchall()
+        columns = [column[0] for column in cursor.description]
+        results = []
+        for row in rows:
+            item = dict(zip(columns, row))
+            item["total_points"] = float(item["total_points"]) if item["total_points"] is not None else 0.0
+            item["max_points"] = float(item["max_points"]) if item["max_points"] is not None else 10.0
+            if item["max_points"] > 0:
+                item["score_percentage"] = round((item["total_points"] / item["max_points"]) * 100, 2)
+            results.append(item)
+        return results
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_grading_results(submission_id: int, include_hidden_details: bool = True) -> List[Dict]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT gr.ma_ket_qua AS result_id, 
+                   gr.ma_bai_nop AS submission_id, 
+                   gr.ma_test_case AS test_case_id, 
+                   gr.la_chinh_xac AS is_passed,
+                   COALESCE(tc.la_test_an, 0) AS is_hidden,
+                   tc.du_lieu_dau_vao AS input_data,
+                   tc.ket_qua_mong_doi AS expected_output,
+                   gr.ket_qua_thuc_te AS actual_output, 
+                   gr.thoi_gian_chay_ms AS execution_time_ms, 
+                   gr.bo_nho_su_dung_mb AS memory_used_mb,
+                   gr.thong_bao_loi AS error_message, 
+                   gr.thoi_gian_cham AS graded_at
+            FROM KetQuaChamDiem gr
+            LEFT JOIN BoKiemThu tc ON gr.ma_test_case = tc.ma_test_case
+            WHERE gr.ma_bai_nop = ?
+            ORDER BY gr.ma_ket_qua ASC
         """, (submission_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -205,6 +280,12 @@ def get_grading_results(submission_id: int) -> List[Dict]:
         for row in rows:
             r = dict(zip(columns, row))
             r["is_passed"] = bool(r["is_passed"])
+            r["is_hidden"] = bool(r.get("is_hidden"))
+            if not include_hidden_details and r["is_hidden"]:
+                r["input_data"] = "[Test case ẩn]"
+                r["expected_output"] = "[Test case ẩn]"
+                r["actual_output"] = "[Test case ẩn]"
+                r["error_message"] = None
             results.append(r)
         return results
     finally:

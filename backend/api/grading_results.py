@@ -24,7 +24,7 @@ async def list_submission_grading_results(
     if current_user["role"] == "student" and submission["student_id"] != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem kết quả chấm của thí sinh khác")
         
-    return get_grading_results(submission_id)
+    return get_grading_results(submission_id, include_hidden_details=(current_user["role"] != "student"))
 
 @router.get("/{result_id}", response_model=GradingResultResponse)
 async def get_single_grading_result(

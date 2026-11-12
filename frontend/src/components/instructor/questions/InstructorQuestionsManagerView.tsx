@@ -418,15 +418,10 @@ function handleUpdateTestCaseField(
       const endpoint = isCreatingNew
         ? '/api/v1/templates'
         : `/api/v1/templates/${encodeURIComponent(editingTemplate.id)}`;
-      const res = await fetchWithAuth(endpoint, {
+      const savedTpl = await fetchWithAuth<QuestionTemplate>(endpoint, {
         method: isCreatingNew ? 'POST' : 'PUT',
         body: JSON.stringify(payload),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Không thể lưu bộ đề lên máy chủ.');
-      }
-      const savedTpl: QuestionTemplate = await res.json();
 
       const nextTemplates = isCreatingNew
         ? [savedTpl, ...templates]
@@ -466,13 +461,9 @@ function handleUpdateTestCaseField(
     }
 
     try {
-      const res = await fetchWithAuth(`/api/v1/templates/${encodeURIComponent(templateId)}`, {
+      await fetchWithAuth(`/api/v1/templates/${encodeURIComponent(templateId)}`, {
         method: 'DELETE',
       });
-      if (!res.ok && res.status !== 204) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Không thể xóa bộ đề.');
-      }
 
       const next = templates.filter((t) => t.id !== templateId);
       setTemplates(next);

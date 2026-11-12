@@ -175,10 +175,8 @@ export default function ExamWorkspacePage() {
     let cancelled = false;
     async function loadExamContent() {
       try {
-        const res = await fetchWithAuth(`/api/v1/rooms/${activeRoomId}/exam-content`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
+        const data = await fetchWithAuth(`/api/v1/rooms/${activeRoomId}/exam-content`);
+        if (cancelled || !data) return;
 
         if (Array.isArray(data.questions) && data.questions.length > 0) {
           const mappedProblems: ExamProblem[] = data.questions.map((q: {
@@ -464,7 +462,7 @@ useEffect(() => {
 
     try {
       if (activeTestTab === "custom") {
-        const res = await fetchWithAuth("/api/v1/submissions/run", {
+        const data = await fetchWithAuth<{ stdout?: string; error?: string | null; execution_ms?: number }>("/api/v1/submissions/run", {
           method: "POST",
           body: JSON.stringify({
             code_content: codeContent,
@@ -472,10 +470,6 @@ useEffect(() => {
             custom_input: customInput,
           }),
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(data.detail || "Không thể chạy thử mã nguồn.");
-        }
         setCustomRunOutput({
           stdout: data.stdout || "",
           error: data.error || null,
@@ -486,7 +480,7 @@ useEffect(() => {
         await Promise.all(
           currentProblem.testcases.map(async (tc) => {
             try {
-              const res = await fetchWithAuth("/api/v1/submissions/run", {
+              const data = await fetchWithAuth<{ stdout?: string; error?: string | null; execution_ms?: number }>("/api/v1/submissions/run", {
                 method: "POST",
                 body: JSON.stringify({
                   code_content: codeContent,
@@ -494,15 +488,6 @@ useEffect(() => {
                   custom_input: tc.input,
                 }),
               });
-              const data = await res.json().catch(() => ({}));
-              if (!res.ok) {
-                results[tc.id] = {
-                  status: "failed",
-                  actualOutput: data.detail || "Lỗi máy chủ khi chạy test",
-                  time: "0.00s",
-                };
-                return;
-              }
               const actual = (data.stdout ?? "").trim();
               const expected = (tc.expectedOutput ?? "").trim();
               const isPass = !data.error && actual === expected;
@@ -511,10 +496,10 @@ useEffect(() => {
                 actualOutput: data.error ? String(data.error) : String(data.stdout ?? ""),
                 time: `${((data.execution_ms || 0) / 1000).toFixed(2)}s`,
               };
-            } catch {
+            } catch (err) {
               results[tc.id] = {
                 status: "failed",
-                actualOutput: "Lỗi kết nối máy chủ",
+                actualOutput: err instanceof Error ? err.message : "Lỗi kết nối máy chủ",
                 time: "0.00s",
               };
             }
@@ -538,7 +523,7 @@ useEffect(() => {
         for (const prob of realProblems) {
           const code = codes[prob.id] ?? "";
           if (!code.trim()) continue;
-          const res = await fetchWithAuth("/api/v1/submissions", {
+          await fetchWithAuth("/api/v1/submissions", {
             method: "POST",
             body: JSON.stringify({
               room_id: activeRoomId,
@@ -548,10 +533,6 @@ useEffect(() => {
               language: selectedLanguage,
             }),
           });
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || `Lỗi khi nộp bài câu "${prob.title}"`);
-          }
         }
       }
       setExamState("completed");

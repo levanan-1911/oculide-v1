@@ -24,6 +24,9 @@ class GradingResultResponse(BaseModel):
     submission_id: int
     test_case_id: int
     is_passed: bool
+    is_hidden: Optional[bool] = False
+    input_data: Optional[str] = None
+    expected_output: Optional[str] = None
     actual_output: Optional[str] = None
     execution_time_ms: Optional[float] = None
     memory_used_mb: Optional[float] = None
@@ -33,8 +36,13 @@ class GradingResultResponse(BaseModel):
 class SubmissionResponse(BaseModel):
     submission_id: int
     room_id: int
+    room_code: Optional[str] = None
+    room_name: Optional[str] = None
     student_id: int
+    student_name: Optional[str] = None
+    student_code: Optional[str] = None
     question_id: int
+    question_title: Optional[str] = None
     attempt_number: int
     code_content: str
     language: str

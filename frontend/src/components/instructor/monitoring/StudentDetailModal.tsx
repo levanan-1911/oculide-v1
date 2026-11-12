@@ -399,10 +399,6 @@ export default function StudentDetailModal({
             {/* Thông tin thiết bị cá nhân & Môi trường thi */}
             <div className="rounded-2xl border border-slate-800 bg-slate-800/50 p-3.5 space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-slate-400">Thiết bị làm bài:</span>
-                <strong className="text-slate-200">{student.deviceInfo || 'Thiết bị cá nhân (BYOD)'}</strong>
-              </div>
-              <div className="flex items-center justify-between">
                 <span className="text-slate-400">Lớp sinh hoạt:</span>
                 <strong className="text-slate-200">{student.studentClass}</strong>
               </div>

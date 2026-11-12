@@ -315,6 +315,13 @@ export default function InstructorReportsPage() {
     );
   }, [currentRecords, selectedScoreBandInfo]);
 
+  // Chỉ sắp xếp bảng điểm theo điểm chính thức từ cao xuống thấp.
+  // Không tính hoặc hiển thị thứ hạng; các sinh viên bằng điểm giữ cùng mức điểm.
+  const sortedScoreRecords = useMemo(
+    () => [...currentRecords].sort((a, b) => b.finalScore - a.finalScore),
+    [currentRecords]
+  );
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -502,7 +509,7 @@ export default function InstructorReportsPage() {
     const headers = [
       'MSSV',
       'Họ và Tên',
-      'Lớp',
+      'Lớp môn học',
       'Bài thi',
       'Thời gian nộp',
       'Điểm Test Cases',
@@ -526,7 +533,7 @@ export default function InstructorReportsPage() {
       return [
         r.id,
         `"${r.name}"`,
-        r.studentClass,
+        selectedClass,
         `"${r.examTitle}"`,
         r.submitTime,
         r.testScore,
@@ -606,16 +613,19 @@ export default function InstructorReportsPage() {
       )}
 
       {/* ── 1. HEADER BAR: TIÊU ĐỀ + NÚT CÔNG BỐ ĐIỂM TOÀN LỚP + XUẤT CSV ── */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between pb-4 border-b border-slate-200">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between pb-4 border-b border-slate-200 dark:border-white/10">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-2xl">
               Kết quả &amp; Báo cáo phiên làm bài
             </h1>
-            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-800">
+            <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
               {selectedClass}
             </span>
           </div>
+          <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+            Theo dõi chuyên cần, kết quả bài làm và thẩm định cảnh báo AI.
+          </p>
         </div>
 
         {activeReportTab === 'results' && (
@@ -624,9 +634,9 @@ export default function InstructorReportsPage() {
           <button
             type="button"
             onClick={handleTogglePublishAll}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold shadow-xs transition cursor-pointer ${
+            className={`inline-flex h-11 items-center gap-1.5 rounded-xl px-4 text-xs font-bold shadow-xs transition cursor-pointer ${
               stats.allPublished
-                ? 'bg-amber-100 text-amber-900 hover:bg-amber-200 border border-amber-300'
+                ? 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30'
                 : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-600/20'
             }`}
             title="Quyết định sinh viên có được xem điểm bài thi trên Dashboard hay không"
@@ -648,7 +658,7 @@ export default function InstructorReportsPage() {
           <button
             type="button"
             onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 cursor-pointer"
+            className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white shadow-xs hover:bg-blue-700 cursor-pointer"
             title="Tải về file Excel/CSV chuẩn UTF-8"
           >
             <Download className="h-3.5 w-3.5" />
@@ -659,13 +669,13 @@ export default function InstructorReportsPage() {
       </div>
 
       {/* Bộ lọc phạm vi báo cáo áp dụng cho cả bốn tab */}
-      <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-4 shadow-xs sm:grid-cols-2">
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-slate-600">Học phần</span>
+          <span className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">Học phần</span>
           <select
             value={selectedClass}
             onChange={(event) => setSelectedClass(event.target.value)}
-            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200"
           >
             <option value="CS101">CS101 — Nhập môn lập trình (có dữ liệu mẫu)</option>
             <option value="CS102">CS102</option>
@@ -674,18 +684,18 @@ export default function InstructorReportsPage() {
           </select>
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-slate-600">Phiên làm bài</span>
+          <span className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">Phiên làm bài</span>
           <select
             value={selectedSession}
             onChange={(event) => setSelectedSession(event.target.value)}
-            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200"
           >
             {REPORT_SESSIONS.map((session) => (
               <option key={session.id} value={session.id}>{session.label}</option>
             ))}
           </select>
         </label>
-        <div className="sm:col-span-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+        <div className="sm:col-span-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
           <CalendarDays className="h-3.5 w-3.5" />
           <span>Ngày: {selectedSessionInfo?.dateLabel ?? '—'}</span>
           <span>•</span>
@@ -697,7 +707,7 @@ export default function InstructorReportsPage() {
       </div>
 
       {/* Điều hướng báo cáo */}
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200/80 bg-white p-2 shadow-xs" role="tablist" aria-label="Các loại báo cáo">
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-2 shadow-xs" role="tablist" aria-label="Các loại báo cáo">
         {[
           { id: 'overview', label: 'Tổng quan', icon: Layers },
           { id: 'attendance', label: 'Chuyên cần', icon: UserCheck },
@@ -713,7 +723,7 @@ export default function InstructorReportsPage() {
               role="tab"
               aria-selected={active}
               onClick={() => setActiveReportTab(tab.id as typeof activeReportTab)}
-              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-xs font-bold transition ${active ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}
+              className={`inline-flex h-10 items-center gap-2 rounded-xl px-3.5 text-xs font-bold transition ${active ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100'}`}
             >
               <Icon className="h-4 w-4" />
               {tab.label}
@@ -723,7 +733,7 @@ export default function InstructorReportsPage() {
       </div>
 
       { !hasDemoDataset && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="status">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200" role="status">
           Chưa có dữ liệu mẫu cho học phần hoặc phiên đã chọn. Bản thử nghiệm hiện chỉ có dữ liệu minh họa cho CS101 / phiên kiểm tra quá trình.
         </div>
       )}
@@ -732,58 +742,58 @@ export default function InstructorReportsPage() {
       {(activeReportTab === 'overview' || activeReportTab === 'results') && (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Điểm trung bình */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+        <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Điểm trung bình lớp
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
               <Sparkles className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{stats.avgScore}</span>
-            <span className="text-xs font-semibold text-slate-500">/ 10.0</span>
+            <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-slate-100">{stats.avgScore}</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">/ 10.0</span>
           </div>
-          <p className="mt-1 text-xs text-blue-600 font-medium">Docker Test Cases tự động</p>
+          <p className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400">Docker Test Cases tự động</p>
         </div>
 
         {/* Tỷ lệ Đạt */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+        <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Tỷ lệ Đạt (≥ 5.0)
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300">
               <CheckCircle2 className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-600">{stats.passRate}%</span>
-            <span className="text-xs font-semibold text-slate-500">
+            <span className="text-2xl font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400">{stats.passRate}%</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
               ({stats.passedCount}/{stats.total} SV)
             </span>
           </div>
-          <p className="mt-1 text-xs text-slate-500">Đạt chuẩn đánh giá học phần</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Đạt chuẩn đánh giá học phần</p>
         </div>
 
         {/* Cảnh báo AI Chờ Duyệt (Quan trọng) */}
         <div
           className={`rounded-2xl border p-5 shadow-xs transition ${
             stats.studentsWithPendingViolations > 0
-              ? 'border-amber-300 bg-amber-50/40'
-              : 'border-slate-200/80 bg-white'
+              ? 'border-amber-300 bg-amber-50/70 dark:border-amber-500/30 dark:bg-amber-500/10'
+              : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824]'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Cảnh báo AI cần duyệt
             </span>
             <div
               className={`flex h-9 w-9 items-center justify-center rounded-xl ${
                 stats.studentsWithPendingViolations > 0
-                  ? 'bg-amber-100 text-amber-700 animate-pulse'
-                  : 'bg-slate-100 text-slate-500'
+                  ? 'bg-amber-50 text-amber-800 animate-pulse dark:bg-amber-500/15 dark:text-amber-300'
+                  : 'bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-slate-400'
               }`}
             >
               <AlertTriangle className="h-4 w-4" />
@@ -792,14 +802,14 @@ export default function InstructorReportsPage() {
           <div className="mt-3 flex items-baseline gap-2">
             <span
               className={`text-2xl font-black ${
-                stats.studentsWithPendingViolations > 0 ? 'text-amber-700' : 'text-slate-900'
+                stats.studentsWithPendingViolations > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-slate-100'
               }`}
             >
               {stats.studentsWithPendingViolations}
             </span>
-            <span className="text-xs font-semibold text-slate-500">thí sinh có nghi vấn</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">thí sinh có nghi vấn</span>
           </div>
-          <p className="mt-1 text-xs text-amber-700 font-semibold">
+          <p className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
             {stats.studentsWithPendingViolations > 0
               ? 'Cần GV thẩm định trước khi công bố'
               : 'Tất cả vi phạm đã được xử lý'}
@@ -807,30 +817,30 @@ export default function InstructorReportsPage() {
         </div>
 
         {/* Trạng thái công bố điểm */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+        <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Công bố điểm thi
             </span>
             <div
               className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                stats.allPublished ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+                stats.allPublished ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-slate-400'
               }`}
             >
               <BookOpen className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">
+            <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-slate-100">
               {stats.publishedCount}/{stats.total}
             </span>
-            <span className="text-xs font-semibold text-slate-500">sinh viên đã công bố</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">sinh viên đã công bố</span>
           </div>
-          <p className="mt-1 text-xs font-bold text-slate-600">
+          <p className="mt-1 text-xs font-bold text-slate-600 dark:text-slate-300">
             {stats.allPublished ? (
-              <span className="text-emerald-600">✓ Đã mở điểm cho cả lớp</span>
+              <span className="text-emerald-600 dark:text-emerald-400">✓ Đã mở điểm cho cả lớp</span>
             ) : (
-              <span className="text-amber-600">Đang ẩn một phần ({stats.total - stats.publishedCount} SV)</span>
+              <span className="text-amber-600 dark:text-amber-300">Đang ẩn một phần ({stats.total - stats.publishedCount} SV)</span>
             )}
           </p>
         </div>
@@ -840,55 +850,130 @@ export default function InstructorReportsPage() {
       {/* Tổng quan: chuyên cần + phổ điểm tóm tắt */}
       {activeReportTab === 'overview' && hasDemoDataset && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+          <section className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-xs">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-extrabold text-slate-900">Chuyên cần phiên làm bài</h2>
-                <p className="mt-1 text-xs text-slate-500">{attendanceStats.total} sinh viên trong danh sách demo</p>
+                <h2 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Chuyên cần phiên làm bài</h2>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{attendanceStats.total} sinh viên trong danh sách demo</p>
               </div>
               <Users className="h-5 w-5 text-blue-600" />
             </div>
             <div className="mt-4 grid grid-cols-3 gap-2">
-              <button type="button" onClick={() => { setAttendanceFilter('ontime'); setActiveReportTab('attendance'); }} className="rounded-xl bg-emerald-50 p-3 text-left hover:ring-2 hover:ring-emerald-200">
-                <span className="text-[11px] font-semibold text-emerald-700">Đúng giờ</span>
-                <span className="mt-1 block text-2xl font-black text-emerald-700">{attendanceStats.ontime}</span>
+              <button type="button" onClick={() => { setAttendanceFilter('ontime'); setActiveReportTab('attendance'); }} className="rounded-xl bg-emerald-50 p-3 text-left hover:ring-2 hover:ring-emerald-200 dark:bg-emerald-500/10 dark:hover:ring-emerald-500/30">
+                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">Đúng giờ</span>
+                <span className="mt-1 block text-2xl font-black text-emerald-700 dark:text-emerald-300">{attendanceStats.ontime}</span>
               </button>
-              <button type="button" onClick={() => { setAttendanceFilter('late'); setActiveReportTab('attendance'); }} className="rounded-xl bg-amber-50 p-3 text-left hover:ring-2 hover:ring-amber-200">
-                <span className="text-[11px] font-semibold text-amber-700">Đi muộn</span>
-                <span className="mt-1 block text-2xl font-black text-amber-700">{attendanceStats.late}</span>
+              <button type="button" onClick={() => { setAttendanceFilter('late'); setActiveReportTab('attendance'); }} className="rounded-xl bg-amber-50 p-3 text-left hover:ring-2 hover:ring-amber-200 dark:bg-amber-500/10 dark:hover:ring-amber-500/30">
+                <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">Đi muộn</span>
+                <span className="mt-1 block text-2xl font-black text-amber-700 dark:text-amber-300">{attendanceStats.late}</span>
               </button>
-              <button type="button" onClick={() => { setAttendanceFilter('absent'); setActiveReportTab('attendance'); }} className="rounded-xl bg-red-50 p-3 text-left hover:ring-2 hover:ring-red-200">
-                <span className="text-[11px] font-semibold text-red-700">Vắng</span>
-                <span className="mt-1 block text-2xl font-black text-red-700">{attendanceStats.absent}</span>
+              <button type="button" onClick={() => { setAttendanceFilter('absent'); setActiveReportTab('attendance'); }} className="rounded-xl bg-red-50 p-3 text-left hover:ring-2 hover:ring-red-200 dark:bg-red-500/10 dark:hover:ring-red-500/30">
+                <span className="text-[11px] font-semibold text-red-700 dark:text-red-300">Vắng</span>
+                <span className="mt-1 block text-2xl font-black text-red-700 dark:text-red-300">{attendanceStats.absent}</span>
               </button>
             </div>
-            <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-slate-100" aria-label="Tỷ lệ chuyên cần">
+            <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]" aria-label="Tỷ lệ chuyên cần">
               <div className="bg-emerald-500" style={{ width: `${attendanceStats.total ? attendanceStats.ontime / attendanceStats.total * 100 : 0}%` }} />
               <div className="bg-amber-500" style={{ width: `${attendanceStats.total ? attendanceStats.late / attendanceStats.total * 100 : 0}%` }} />
               <div className="bg-red-500" style={{ width: `${attendanceStats.total ? attendanceStats.absent / attendanceStats.total * 100 : 0}%` }} />
             </div>
-            <button type="button" onClick={() => setActiveReportTab('attendance')} className="mt-4 text-xs font-bold text-blue-600 hover:text-blue-800">Xem danh sách chuyên cần →</button>
+            <button type="button" onClick={() => setActiveReportTab('attendance')} className="mt-4 text-xs font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">Xem danh sách chuyên cần →</button>
           </section>
 
-          <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+          <section className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-xs">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-extrabold text-slate-900">Phổ điểm phiên</h2>
-                <p className="mt-1 text-xs text-slate-500">Điểm chính thức của {currentRecords.length} bài có kết quả</p>
+                <h2 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Phổ điểm phiên</h2>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Điểm chính thức của {currentRecords.length} bài có kết quả</p>
               </div>
               <BarChart3 className="h-5 w-5 text-blue-600" />
             </div>
             <div className="mt-4 space-y-3">
               {scoreDistribution.map((band) => (
                 <button key={band.id} type="button" onClick={() => { setSelectedScoreBand(band.id); setActiveReportTab('scores'); }} className="block w-full text-left">
-                  <div className="mb-1 flex justify-between gap-3 text-[11px]"><span className="text-slate-600">{band.label}</span><span className="font-bold text-slate-800">{band.count} SV</span></div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${currentRecords.length ? band.count / Math.max(...scoreDistribution.map((item) => item.count), 1) * 100 : 0}%` }} /></div>
+                  <div className="mb-1 flex justify-between gap-3 text-[11px]"><span className="text-slate-600 dark:text-slate-300">{band.label}</span><span className="font-bold text-slate-800 dark:text-slate-200">{band.count} SV</span></div>
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]"><div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${currentRecords.length ? band.count / Math.max(...scoreDistribution.map((item) => item.count), 1) * 100 : 0}%` }} /></div>
                 </button>
               ))}
             </div>
-            <button type="button" onClick={() => setActiveReportTab('scores')} className="mt-4 text-xs font-bold text-blue-600 hover:text-blue-800">Xem phổ điểm chi tiết →</button>
+            <button type="button" onClick={() => setActiveReportTab('scores')} className="mt-4 text-xs font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">Xem phổ điểm chi tiết →</button>
           </section>
         </div>
+      )}
+
+      {/* Bảng điểm được sắp xếp theo điểm chính thức từ cao xuống thấp */}
+      {(activeReportTab === 'overview' || activeReportTab === 'scores') && (
+        <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-xs dark:border-white/10 dark:bg-[#121824]">
+          <div className="flex flex-col gap-2 border-b border-slate-100 px-5 py-4 dark:border-white/5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
+                <BarChart3 className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">Bảng điểm sinh viên</h2>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                  Điểm chính thức được sắp xếp từ cao xuống thấp sau khi trừ các vi phạm đã xác nhận.
+                </p>
+              </div>
+            </div>
+            <span className="inline-flex h-7 items-center self-start rounded-lg bg-blue-50 px-2.5 text-[11px] font-semibold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300 sm:self-center">
+              {sortedScoreRecords.length} sinh viên có điểm
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px] text-left text-xs">
+              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
+                <tr>
+                  <th className="w-16 px-5 py-3 text-center">STT</th>
+                  <th className="px-5 py-3">Sinh viên</th>
+                  <th className="px-5 py-3">Lớp môn học</th>
+                  <th className="px-5 py-3 text-center">Test Cases</th>
+                  <th className="px-5 py-3 text-right">Điểm chính thức</th>
+                  <th className="px-5 py-3 text-center">Vi phạm đã xác nhận</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                {sortedScoreRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-12 text-center text-slate-400 dark:text-slate-500">
+                      Chưa có kết quả cho phiên này.
+                    </td>
+                  </tr>
+                ) : sortedScoreRecords.map((student, index) => {
+                  const confirmedCount = student.violations.filter((violation) => violation.status === 'confirmed').length;
+
+                  return (
+                    <tr key={student.id} className="transition-colors hover:bg-slate-50/80 dark:hover:bg-white/[0.03]">
+                      <td className="px-5 py-3.5 text-center font-mono font-semibold tabular-nums text-slate-500 dark:text-slate-400">
+                        {index + 1}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <p className="font-semibold text-slate-900 dark:text-slate-100">{student.name}</p>
+                        <p className="mt-0.5 font-mono text-[10px] text-slate-500 dark:text-slate-400">{student.id}</p>
+                      </td>
+                      <td className="px-5 py-3.5 font-mono text-slate-600 dark:text-slate-300">{selectedClass}</td>
+                      <td className="px-5 py-3.5 text-center font-mono tabular-nums text-slate-700 dark:text-slate-300">{student.passedCases}</td>
+                      <td className="px-5 py-3.5 text-right">
+                        <span className="font-mono text-sm font-black tabular-nums text-slate-900 dark:text-slate-100">{student.finalScore.toFixed(1)} / 10</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-center">
+                        {confirmedCount > 0 ? (
+                          <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">{confirmedCount} lần</span>
+                        ) : (
+                          <span className="text-slate-400 dark:text-slate-500">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="border-t border-slate-100 px-5 py-3 text-[11px] leading-relaxed text-slate-500 dark:border-white/5 dark:text-slate-400">
+            Danh sách tự sắp xếp lại khi điểm chính thức thay đổi sau quá trình thẩm định vi phạm AI.
+          </p>
+        </section>
       )}
 
       {/* Tab chuyên cần */}
@@ -901,20 +986,20 @@ export default function InstructorReportsPage() {
               { id: 'late', label: 'Đi muộn', count: attendanceStats.late, tone: 'amber' },
               { id: 'absent', label: 'Vắng', count: attendanceStats.absent, tone: 'red' },
             ].map((item) => (
-              <button key={item.id} type="button" onClick={() => setAttendanceFilter(item.id as typeof attendanceFilter)} className={`rounded-2xl border bg-white p-4 text-left shadow-xs transition hover:-translate-y-0.5 ${attendanceFilter === item.id ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200/80'}`}>
-                <span className="text-xs font-semibold text-slate-500">{item.label}</span>
-                <span className="mt-2 block text-2xl font-black text-slate-900">{item.count}</span>
+              <button key={item.id} type="button" onClick={() => setAttendanceFilter(item.id as typeof attendanceFilter)} className={`rounded-2xl border bg-white dark:bg-[#121824] p-4 text-left shadow-xs transition hover:-translate-y-0.5 ${attendanceFilter === item.id ? 'border-blue-400 ring-2 ring-blue-100 dark:ring-blue-500/20' : 'border-slate-200/90 dark:border-white/10'}`}>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{item.label}</span>
+                <span className="mt-2 block text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-slate-100">{item.count}</span>
               </button>
             ))}
           </div>
 
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+          <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-4 shadow-xs">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-sm font-extrabold text-slate-900">Danh sách chuyên cần</h2>
-                <p className="mt-1 text-xs text-slate-500">Phân loại: đúng giờ trong thời gian hạn {selectedSessionInfo?.gracePeriodMinutes ?? 5} phút; vắng chỉ chốt sau khi phiên kết thúc.</p>
+                <h2 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Danh sách chuyên cần</h2>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Phân loại: đúng giờ trong thời gian hạn {selectedSessionInfo?.gracePeriodMinutes ?? 5} phút; vắng chỉ chốt sau khi phiên kết thúc.</p>
               </div>
-              <button type="button" onClick={handleExportAttendanceCsv} disabled={attendanceRecords.length === 0} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" onClick={handleExportAttendanceCsv} disabled={attendanceRecords.length === 0} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3.5 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
                 <Download className="h-4 w-4" /> Xuất chuyên cần CSV
               </button>
             </div>
@@ -927,44 +1012,44 @@ export default function InstructorReportsPage() {
                   { id: 'absent', label: 'Vắng' },
                   { id: 'not_arrived', label: 'Chưa vào phòng' },
                 ].map((filter) => (
-                  <button key={filter.id} type="button" onClick={() => setAttendanceFilter(filter.id as typeof attendanceFilter)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${attendanceFilter === filter.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                  <button key={filter.id} type="button" onClick={() => setAttendanceFilter(filter.id as typeof attendanceFilter)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${attendanceFilter === filter.id ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/[0.10]'}`}>
                     {filter.label}
                   </button>
                 ))}
               </div>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input value={attendanceSearch} onChange={(event) => setAttendanceSearch(event.target.value)} placeholder="Tìm MSSV, tên hoặc lớp..." className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs outline-none focus:border-blue-500 sm:w-64" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                <input value={attendanceSearch} onChange={(event) => setAttendanceSearch(event.target.value)} placeholder="Tìm MSSV, tên hoặc lớp..." className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] pl-9 pr-3 text-xs text-slate-900 outline-none focus:border-blue-500 dark:text-slate-100 sm:w-64" />
               </div>
             </div>
             <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[760px] text-left text-xs text-slate-600">
-                <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+              <table className="w-full min-w-[760px] text-left text-xs text-slate-600 dark:text-slate-300">
+                <thead className="border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.04] text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   <tr><th className="px-4 py-3">Sinh viên</th><th className="px-4 py-3">Lớp</th><th className="px-4 py-3 text-center">Giờ bắt đầu</th><th className="px-4 py-3 text-center">Giờ vào phòng</th><th className="px-4 py-3 text-center">Độ trễ</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Bài làm</th></tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                   {filteredAttendance.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">Không có sinh viên phù hợp với bộ lọc.</td></tr>
+                    <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400 dark:text-slate-500">Không có sinh viên phù hợp với bộ lọc.</td></tr>
                   ) : filteredAttendance.map((student) => {
                     const submission = currentRecords.find((record) => record.id === student.studentId);
                     const statusLabel: Record<AttendanceStatus, string> = { ontime: 'Đúng giờ', late: 'Đi muộn', absent: 'Vắng', not_arrived: 'Chưa vào phòng' };
-                    const statusClass: Record<AttendanceStatus, string> = { ontime: 'bg-emerald-50 text-emerald-700 border-emerald-200', late: 'bg-amber-50 text-amber-700 border-amber-200', absent: 'bg-red-50 text-red-700 border-red-200', not_arrived: 'bg-slate-100 text-slate-600 border-slate-200' };
+                    const statusClass: Record<AttendanceStatus, string> = { ontime: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30', late: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30', absent: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30', not_arrived: 'bg-slate-100 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10' };
                     return (
-                      <tr key={student.studentId} className="hover:bg-slate-50/80">
-                        <td className="px-4 py-3"><div className="font-mono font-bold text-slate-900">{student.studentId}</div><div className="mt-0.5 font-semibold text-slate-700">{student.name}</div></td>
+                      <tr key={student.studentId} className="hover:bg-slate-50/80 dark:hover:bg-white/[0.03]">
+                        <td className="px-4 py-3"><div className="font-mono font-bold text-slate-900 dark:text-slate-100">{student.studentId}</div><div className="mt-0.5 font-semibold text-slate-700 dark:text-slate-300">{student.name}</div></td>
                         <td className="px-4 py-3">{student.studentClass}</td>
                         <td className="px-4 py-3 text-center font-mono">{selectedSessionInfo?.startTime ?? '—'}</td>
                         <td className="px-4 py-3 text-center font-mono">{student.checkInTime ?? '—'}</td>
                         <td className="px-4 py-3 text-center">{student.lateMinutes && student.lateMinutes > 0 ? `${student.lateMinutes} phút` : '—'}</td>
                         <td className="px-4 py-3"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusClass[student.status]}`}>{statusLabel[student.status]}</span></td>
-                        <td className="px-4 py-3">{submission ? <span className="font-semibold text-emerald-700">Đã nộp</span> : student.status === 'absent' ? <span className="text-slate-500">Chưa nộp</span> : <span className="text-slate-400">Chưa có dữ liệu</span>}</td>
+                        <td className="px-4 py-3">{submission ? <span className="font-semibold text-emerald-700">Đã nộp</span> : student.status === 'absent' ? <span className="text-slate-500 dark:text-slate-400">Chưa nộp</span> : <span className="text-slate-400 dark:text-slate-500">Chưa có dữ liệu</span>}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-            <p className="mt-3 text-[11px] text-slate-400">Đây là dữ liệu mẫu trên frontend. Thời gian vào phòng và danh sách vắng thực tế cần lấy từ nguồn điểm danh/backend khi tích hợp.</p>
+            <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">Đây là dữ liệu mẫu trên frontend. Thời gian vào phòng và danh sách vắng thực tế cần lấy từ nguồn điểm danh/backend khi tích hợp.</p>
           </div>
         </section>
       )}
@@ -973,41 +1058,41 @@ export default function InstructorReportsPage() {
       {activeReportTab === 'scores' && (
         <section className="space-y-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs"><p className="text-xs font-semibold text-slate-500">Bài có điểm</p><p className="mt-2 text-2xl font-black text-slate-900">{currentRecords.length}</p></div>
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs"><p className="text-xs font-semibold text-slate-500">Điểm trung bình</p><p className="mt-2 text-2xl font-black text-blue-700">{stats.avgScore}/10</p></div>
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs"><p className="text-xs font-semibold text-slate-500">Cao nhất</p><p className="mt-2 text-2xl font-black text-emerald-700">{currentRecords.length ? Math.max(...currentRecords.map((record) => record.finalScore)).toFixed(1) : '—'}</p></div>
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs"><p className="text-xs font-semibold text-slate-500">Thấp nhất</p><p className="mt-2 text-2xl font-black text-amber-700">{currentRecords.length ? Math.min(...currentRecords.map((record) => record.finalScore)).toFixed(1) : '—'}</p></div>
+            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-4 shadow-xs"><p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Bài có điểm</p><p className="mt-2 text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-slate-100">{currentRecords.length}</p></div>
+            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-4 shadow-xs"><p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Điểm trung bình</p><p className="mt-2 font-mono text-2xl font-black tabular-nums text-blue-700 dark:text-blue-400">{stats.avgScore}/10</p></div>
+            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-4 shadow-xs"><p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Cao nhất</p><p className="mt-2 font-mono text-2xl font-black tabular-nums text-emerald-700 dark:text-emerald-400">{currentRecords.length ? Math.max(...currentRecords.map((record) => record.finalScore)).toFixed(1) : '—'}</p></div>
+            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-4 shadow-xs"><p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Thấp nhất</p><p className="mt-2 font-mono text-2xl font-black tabular-nums text-amber-700 dark:text-amber-300">{currentRecords.length ? Math.min(...currentRecords.map((record) => record.finalScore)).toFixed(1) : '—'}</p></div>
           </div>
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-sm font-extrabold text-slate-900">Phân bố điểm chính thức</h2><p className="mt-1 text-xs text-slate-500">Nhấn một khoảng điểm để xem danh sách sinh viên tương ứng.</p></div><span className="text-xs text-slate-500">Điểm sau vi phạm đã xác nhận / 10</span></div>
-            {currentRecords.length === 0 ? <p className="py-12 text-center text-sm text-slate-400">Chưa có dữ liệu điểm cho phiên này.</p> : (
+          <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-xs">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Phân bố điểm chính thức</h2><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Nhấn một khoảng điểm để xem danh sách sinh viên tương ứng.</p></div><span className="text-xs text-slate-500 dark:text-slate-400">Điểm sau vi phạm đã xác nhận / 10</span></div>
+            {currentRecords.length === 0 ? <p className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">Chưa có dữ liệu điểm cho phiên này.</p> : (
               <div className="mt-6 space-y-4">
                 {scoreDistribution.map((band) => {
                   const maxCount = Math.max(...scoreDistribution.map((item) => item.count), 1);
                   const selected = selectedScoreBand === band.id;
                   return (
-                    <button key={band.id} type="button" onClick={() => setSelectedScoreBand(selected ? 'all' : band.id)} className={`block w-full rounded-xl p-2 text-left transition ${selected ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-slate-50'}`}>
-                      <div className="mb-2 flex items-center justify-between gap-3 text-xs"><span className={`font-semibold ${selected ? 'text-blue-800' : 'text-slate-600'}`}>{band.label} điểm</span><span className="font-bold text-slate-800">{band.count} SV ({currentRecords.length ? Math.round(band.count / currentRecords.length * 100) : 0}%)</span></div>
-                      <div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${selected ? 'bg-blue-600' : 'bg-blue-400'}`} style={{ width: `${band.count / maxCount * 100}%` }} /></div>
+                    <button key={band.id} type="button" onClick={() => setSelectedScoreBand(selected ? 'all' : band.id)} className={`block w-full rounded-xl p-2 text-left transition ${selected ? 'bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-500/10 dark:ring-blue-500/30' : 'hover:bg-slate-50 dark:hover:bg-white/[0.03]'}`}>
+                      <div className="mb-2 flex items-center justify-between gap-3 text-xs"><span className={`font-semibold ${selected ? 'text-blue-800 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300'}`}>{band.label} điểm</span><span className="font-bold text-slate-800 dark:text-slate-200">{band.count} SV ({currentRecords.length ? Math.round(band.count / currentRecords.length * 100) : 0}%)</span></div>
+                      <div className="h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]"><div className={`h-full rounded-full transition-all ${selected ? 'bg-blue-600' : 'bg-blue-400'}`} style={{ width: `${band.count / maxCount * 100}%` }} /></div>
                     </button>
                   );
                 })}
               </div>
             )}
           </div>
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-extrabold text-slate-900">Danh sách sinh viên theo phổ điểm</h3><p className="mt-1 text-xs text-slate-500">{selectedScoreBandInfo ? `Khoảng đang chọn: ${selectedScoreBandInfo.label}` : 'Tất cả sinh viên có điểm'}</p></div><button type="button" onClick={() => setSelectedScoreBand('all')} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200">Bỏ lọc</button></div>
-            <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-left text-xs"><thead className="border-b bg-slate-50 text-[10px] font-bold uppercase text-slate-500"><tr><th className="px-4 py-3">MSSV</th><th className="px-4 py-3">Họ tên</th><th className="px-4 py-3">Lớp</th><th className="px-4 py-3 text-right">Điểm</th></tr></thead><tbody className="divide-y divide-slate-100">{selectedScoreStudents.length === 0 ? <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-400">Không có sinh viên trong khoảng điểm này.</td></tr> : selectedScoreStudents.map((student) => <tr key={student.id}><td className="px-4 py-3 font-mono font-bold text-slate-900">{student.id}</td><td className="px-4 py-3 font-semibold text-slate-700">{student.name}</td><td className="px-4 py-3 text-slate-500">{student.studentClass}</td><td className="px-4 py-3 text-right font-black text-slate-900">{student.finalScore.toFixed(1)}/10</td></tr>)}</tbody></table></div>
-            <p className="mt-3 text-[11px] text-slate-400">Sinh viên chưa có kết quả không được tự động coi là 0 điểm; dữ liệu mẫu hiện chỉ chứa các bản ghi đã có điểm.</p>
+          <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-xs">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Danh sách sinh viên theo phổ điểm</h3><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{selectedScoreBandInfo ? `Khoảng đang chọn: ${selectedScoreBandInfo.label}` : 'Tất cả sinh viên có điểm'}</p></div><button type="button" onClick={() => setSelectedScoreBand('all')} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200 dark:bg-white/[0.06] dark:text-slate-300 dark:hover:bg-white/[0.10]">Bỏ lọc</button></div>
+            <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-left text-xs"><thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-400"><tr><th className="px-4 py-3">MSSV</th><th className="px-4 py-3">Họ tên</th><th className="px-4 py-3">Lớp môn học</th><th className="px-4 py-3 text-right">Điểm</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-white/5">{selectedScoreStudents.length === 0 ? <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-400 dark:text-slate-500">Không có sinh viên trong khoảng điểm này.</td></tr> : selectedScoreStudents.map((student) => <tr key={student.id}><td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-slate-100">{student.id}</td><td className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{student.name}</td><td className="px-4 py-3 font-mono text-slate-500 dark:text-slate-400">{selectedClass}</td><td className="px-4 py-3 text-right font-black text-slate-900 dark:text-slate-100">{student.finalScore.toFixed(1)}/10</td></tr>)}</tbody></table></div>
+            <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500">Sinh viên chưa có kết quả không được tự động coi là 0 điểm; dữ liệu mẫu hiện chỉ chứa các bản ghi đã có điểm.</p>
           </div>
         </section>
       )}
 
       {/* ── 3. BỘ LỌC BẢNG ĐIỂM ── */}
       {activeReportTab === 'results' && <>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-3.5 shadow-xs">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-bold text-slate-500 mr-1">Lọc:</span>
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 mr-1">Lọc:</span>
           {[
             { id: 'all', label: `Tất cả (${currentRecords.length})` },
             { id: 'needs-review', label: `Chờ duyệt AI (${stats.studentsWithPendingViolations})` },
@@ -1021,7 +1106,7 @@ export default function InstructorReportsPage() {
               className={`rounded-xl px-2.5 py-1 text-[11.5px] font-bold transition cursor-pointer ${
                 statusFilter === tab.id
                   ? 'bg-slate-900 text-white'
-                  : 'text-slate-500 hover:bg-slate-100'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100'
               }`}
             >
               {tab.label}
@@ -1031,22 +1116,22 @@ export default function InstructorReportsPage() {
 
         {/* Thanh tìm kiếm MSSV / Tên */}
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
           <input
             type="text"
             placeholder="Tìm MSSV hoặc Tên sinh viên..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-9 w-full sm:w-64 rounded-xl border border-slate-200/90 bg-slate-50/70 pl-10 pr-3.5 text-xs outline-none transition-all hover:bg-slate-50 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 placeholder:text-slate-400"
+            className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 pl-10 pr-3.5 text-xs text-slate-900 outline-none transition-all focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/10 placeholder:text-slate-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:focus:bg-[#121824] dark:placeholder:text-slate-500 sm:w-64"
           />
         </div>
       </div>
 
       {/* ── 4. BẢNG ĐIỂM CHI TIẾT & CÔNG CỤ THẨM ĐỊNH VI PHẠM AI ── */}
-      <div className="rounded-3xl border border-slate-200/90 bg-white overflow-hidden shadow-xs">
+      <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-600">
-            <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-700 uppercase font-bold text-[10px] tracking-wider">
+          <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
+            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-white/[0.04] border-b border-slate-200/90 dark:border-white/10 text-slate-700 dark:text-slate-300 uppercase font-bold text-[10px] tracking-wider">
               <tr>
                 <th className="px-5 py-3.5">MSSV</th>
                 <th className="px-5 py-3.5">Họ và Tên</th>
@@ -1058,10 +1143,10 @@ export default function InstructorReportsPage() {
                 <th className="px-5 py-3.5 text-right">Thao Tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-sans">
+            <tbody className="divide-y divide-slate-100 dark:divide-white/5 font-sans">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400 dark:text-slate-500">
                     Không tìm thấy sinh viên nào phù hợp với bộ lọc.
                   </td>
                 </tr>
@@ -1076,29 +1161,29 @@ export default function InstructorReportsPage() {
                   return (
                     <tr
                       key={st.id}
-                      className={`hover:bg-slate-50/70 transition ${
-                        hasPending ? 'bg-amber-50/30' : ''
+                      className={`transition hover:bg-slate-50/70 dark:hover:bg-white/[0.03] ${
+                        hasPending ? 'bg-amber-50/30 dark:bg-amber-500/5' : ''
                       }`}
                     >
                       {/* Cột 1: MSSV */}
-                      <td className="px-5 py-4 font-mono font-bold text-slate-900">
+                      <td className="px-5 py-4 font-mono font-bold text-slate-900 dark:text-slate-100">
                         {st.id}
                       </td>
 
                       {/* Cột 2: Tên & Lớp */}
                       <td className="px-5 py-4">
-                        <div className="font-bold text-slate-900 text-xs">{st.name}</div>
-                        <div className="text-[10.5px] text-slate-400 font-mono">{st.studentClass}</div>
+                        <div className="font-bold text-slate-900 dark:text-slate-100 text-xs">{st.name}</div>
+                        <div className="text-[10.5px] text-slate-400 dark:text-slate-500 font-mono">{st.studentClass}</div>
                       </td>
 
                       {/* Cột 3: Giờ nộp bài */}
-                      <td className="px-5 py-4 text-center font-mono text-[11px] text-slate-500">
+                      <td className="px-5 py-4 text-center font-mono text-[11px] text-slate-500 dark:text-slate-400">
                         {st.submitTime}
                       </td>
 
                       {/* Cột 4: Test case */}
                       <td className="px-5 py-4 text-center">
-                        <span className="font-mono text-xs font-semibold text-slate-700">
+                        <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
                           {st.passedCases}
                         </span>
                       </td>
@@ -1109,18 +1194,18 @@ export default function InstructorReportsPage() {
                           <span
                             className={`rounded-lg px-2.5 py-0.5 text-xs font-black ${
                               st.finalScore >= 9.0
-                                ? 'bg-emerald-100 text-emerald-800'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30'
                                 : st.finalScore >= 7.0
-                                ? 'bg-blue-100 text-blue-800'
+                                ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
                                 : st.finalScore >= 5.0
-                                ? 'bg-slate-100 text-slate-800'
-                                : 'bg-red-100 text-red-800'
+                                ? 'bg-slate-100 text-slate-800 dark:bg-white/[0.06] dark:text-slate-300'
+                                : 'bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300'
                             }`}
                           >
                             {st.finalScore.toFixed(1)} / 10
                           </span>
                           {Number(penaltyDeducted) > 0 && (
-                            <span className="text-[9.5px] font-bold text-red-600 mt-0.5">
+                            <span className="mt-0.5 text-[9.5px] font-bold text-red-600 dark:text-red-300">
                               (Đã trừ {penaltyDeducted}đ)
                             </span>
                           )}
@@ -1130,28 +1215,28 @@ export default function InstructorReportsPage() {
                       {/* Cột 6: Báo cáo Vi phạm AI */}
                       <td className="px-5 py-4">
                         {st.violations.length === 0 ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-600 font-medium text-xs">
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-300">
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             0 vi phạm (Tuân thủ tốt)
                           </span>
                         ) : hasPending ? (
                           <div className="flex flex-col items-start gap-1">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold text-amber-800 border border-amber-300 animate-pulse">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold text-amber-800 animate-pulse dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300">
                               <AlertTriangle className="h-3 w-3 text-amber-600" />
                               {pendingViolations.length} cảnh báo chờ thẩm định
                             </span>
-                            <span className="text-[10px] text-slate-500">
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400">
                               Lỗi: {pendingViolations[0].type}
                             </span>
                           </div>
                         ) : confirmedViolations.length > 0 ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10.5px] font-bold text-red-800 border border-red-200">
-                            <ShieldAlert className="h-3 w-3 text-red-600" />
+                          <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-100 px-2 py-0.5 text-[10.5px] font-bold text-red-800 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
+                            <ShieldAlert className="h-3 w-3 text-red-600 dark:text-red-300" />
                             Đã xác nhận phạt ({confirmedViolations.length} lỗi)
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10.5px] font-bold text-emerald-800 border border-emerald-200">
-                            <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-100 px-2 py-0.5 text-[10.5px] font-bold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
+                            <ShieldCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-300" />
                             Đã bác bỏ lỗi AI ({rejectedViolations.length})
                           </span>
                         )}
@@ -1164,8 +1249,8 @@ export default function InstructorReportsPage() {
                           onClick={() => handleTogglePublishSingle(st.id)}
                           className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold transition cursor-pointer border ${
                             st.isPublished
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                              : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30'
+                              : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200 dark:bg-white/[0.06] dark:text-slate-300 dark:border-white/10 dark:hover:bg-white/[0.10]'
                           }`}
                           title="Nhấp để chuyển trạng thái công bố điểm"
                         >
@@ -1179,17 +1264,17 @@ export default function InstructorReportsPage() {
                           <button
                             type="button"
                             onClick={() => setReviewingStudent(st)}
-                            className={`inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer shadow-2xs ${
+                            className={`inline-flex h-8 items-center gap-1 rounded-xl px-3 text-xs font-bold transition cursor-pointer shadow-2xs ${
                               hasPending
-                                ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-amber-500/20'
-                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                ? 'bg-amber-600 text-white hover:bg-amber-700 shadow-amber-500/20'
+                                : 'bg-slate-100 text-slate-700 dark:bg-white/[0.06] dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/[0.10]'
                             }`}
                           >
                             <Eye className="h-3 w-3" />
                             <span>{hasPending ? 'Thẩm định AI' : 'Xem lại'}</span>
                           </button>
                         ) : (
-                          <span className="text-[10px] text-slate-400 font-medium">Hợp lệ</span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Hợp lệ</span>
                         )}
                       </td>
                     </tr>

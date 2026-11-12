@@ -28,6 +28,7 @@ import {
   syncClassesWithTemplate,
   ClassRow,
 } from '@/app/admin/classes/types';
+import { fetchWithAuth } from '@/services/apiClient';
 
 function createDefaultTestCase(
   index: number,
@@ -90,31 +91,48 @@ export default function InstructorQuestionsManagerView() {
   const [editQuestions, setEditQuestions] = useState<TemplateQuestionItem[]>([]);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
 
-  // Load templates & classes from localStorage
+  // Load templates from Backend API (fallback localStorage if offline)
   useEffect(() => {
-    const loadedTemplates = getStoredQuestionTemplates().map((template) => ({
-      ...template,
-      questions: template.questions?.map(normalizeQuestionForEditor) ?? [],
-    }));
-    const loadedClasses = getStoredClasses();
-    setTemplates(loadedTemplates);
-    setClasses(loadedClasses);
+    let isCancelled = false;
 
-    // If templateId is in URL, auto-expand and open edit modal
-    if (directTemplateId) {
-      const match = loadedTemplates.find((t) => t.id === directTemplateId);
-      if (match) {
-        setEditingTemplate(match);
-        setEditQuestions(
-          match.questions
-            ? JSON.parse(JSON.stringify(match.questions)).map(
-              normalizeQuestionForEditor,
-            )
-          : [],
-    );
-        setExpandedTemplateIds((prev) => ({ ...prev, [directTemplateId]: true }));
+    const loadTemplates = async () => {
+      try {
+        const apiTemplates = await fetchWithAuth<QuestionTemplate[]>('/api/v1/templates');
+        if (isCancelled) return;
+        const normalized = (apiTemplates || []).map((template) => ({
+          ...template,
+          questions: template.questions?.map(normalizeQuestionForEditor) ?? [],
+        }));
+        setTemplates(normalized);
+        saveStoredQuestionTemplates(normalized);
+
+        if (directTemplateId) {
+          const match = normalized.find((t) => t.id === directTemplateId);
+          if (match) {
+            setEditingTemplate(match);
+            setEditQuestions(
+              match.questions
+                ? JSON.parse(JSON.stringify(match.questions)).map(normalizeQuestionForEditor)
+                : [],
+            );
+            setExpandedTemplateIds((prev) => ({ ...prev, [directTemplateId]: true }));
+          }
+        }
+      } catch {
+        if (isCancelled) return;
+        const loadedTemplates = getStoredQuestionTemplates().map((template) => ({
+          ...template,
+          questions: template.questions?.map(normalizeQuestionForEditor) ?? [],
+        }));
+        setTemplates(loadedTemplates);
       }
-    }
+      setClasses(getStoredClasses());
+    };
+
+    loadTemplates();
+    return () => {
+      isCancelled = true;
+    };
   }, [directTemplateId]);
 
   // Hide notification after 4 seconds
@@ -348,7 +366,7 @@ function handleUpdateTestCaseField(
   );
 }
   // Save changes
-  function handleSaveTemplate(e: React.FormEvent) {
+  async function handleSaveTemplate(e: React.FormEvent) {
     e.preventDefault();
     if (!editingTemplate) return;
 
@@ -358,57 +376,85 @@ function handleUpdateTestCaseField(
       return;
     }
     const questionWithoutTestCases = editQuestions.findIndex(
-  (question) =>
-    !question.testCases || question.testCases.length === 0,
-);
+      (question) =>
+        !question.testCases || question.testCases.length === 0,
+    );
 
-if (questionWithoutTestCases >= 0) {
-  alert(
-    `Câu hỏi ${questionWithoutTestCases + 1} cần có ít nhất một Test Case.`,
-  );
-  return;
-}
-
-const updatedQuestions = editQuestions.map((question) => ({
-  ...question,
-  testCasesCount: question.testCases?.length || 0,
-}));
-
-    const updatedTpl: QuestionTemplate = {
-      ...editingTemplate,
-      title: trimmedTitle,
-      questionCount: updatedQuestions.length,
-      questions: updatedQuestions,
-      updatedAt: 'Vừa xong',
-    };
-
-    let nextTemplates: QuestionTemplate[];
-    if (isCreatingNew) {
-      nextTemplates = [updatedTpl, ...templates];
-    } else {
-      nextTemplates = templates.map((t) => (t.id === updatedTpl.id ? updatedTpl : t));
+    if (questionWithoutTestCases >= 0) {
+      alert(
+        `Câu hỏi ${questionWithoutTestCases + 1} cần có ít nhất một Test Case.`,
+      );
+      return;
     }
 
-    setTemplates(nextTemplates);
-    saveStoredQuestionTemplates(nextTemplates);
+    const updatedQuestions = editQuestions.map((question) => ({
+      ...question,
+      testCasesCount: question.testCases?.length || 0,
+    }));
 
-    // Synchronize classes that use this template
-    syncClassesWithTemplate(updatedTpl);
-    setClasses(getStoredClasses());
+    const payload = {
+      code: editingTemplate.id,
+      title: trimmedTitle,
+      type: editingTemplate.type,
+      duration_minutes: editingTemplate.durationMinutes,
+      questions: updatedQuestions.map((q) => ({
+        id: q.id,
+        title: q.title,
+        description: q.description,
+        difficulty: q.difficulty,
+        programming_language: ('language' in q && typeof q.language === 'string' && q.language) ? q.language : 'cpp',
+        max_points: ('maxPoints' in q && typeof q.maxPoints === 'number') ? q.maxPoints : 10,
+        test_cases: (q.testCases || []).map((tc) => ({
+          id: tc.id,
+          input_data: tc.inputData,
+          expected_output: tc.expectedOutput,
+          is_hidden: tc.isHidden,
+          points: tc.points,
+        })),
+      })),
+    };
 
-    const affectedClasses = templateUsageMap[updatedTpl.id] || [];
-    const classCount = affectedClasses.length;
+    try {
+      const endpoint = isCreatingNew
+        ? '/api/v1/templates'
+        : `/api/v1/templates/${encodeURIComponent(editingTemplate.id)}`;
+      const res = await fetchWithAuth(endpoint, {
+        method: isCreatingNew ? 'POST' : 'PUT',
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Không thể lưu bộ đề lên máy chủ.');
+      }
+      const savedTpl: QuestionTemplate = await res.json();
 
-    setNotification({
-      type: 'success',
-      message: `Đã lưu thành công bộ đề "${updatedTpl.id}" và tự động đồng bộ sang ${classCount} lớp học liên kết (${affectedClasses.map((c) => c.classId).join(', ') || 'Chưa gán'}).`,
-    });
+      const nextTemplates = isCreatingNew
+        ? [savedTpl, ...templates]
+        : templates.map((t) => (t.id === savedTpl.id ? savedTpl : t));
 
-    setEditingTemplate(null);
+      setTemplates(nextTemplates);
+      saveStoredQuestionTemplates(nextTemplates);
+
+      // Synchronize classes that use this template
+      syncClassesWithTemplate(savedTpl);
+      setClasses(getStoredClasses());
+
+      const affectedClasses = templateUsageMap[savedTpl.id] || [];
+      const classCount = affectedClasses.length;
+
+      setNotification({
+        type: 'success',
+        message: `Đã lưu thành công bộ đề "${savedTpl.id}" vào CSDL và tự động đồng bộ sang ${classCount} lớp học liên kết (${affectedClasses.map((c) => c.classId).join(', ') || 'Chưa gán'}).`,
+      });
+
+      setEditingTemplate(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Lỗi kết nối máy chủ khi lưu bộ đề.');
+    }
   }
 
   // Delete a template
-  function handleDeleteTemplate(templateId: string) {
+  async function handleDeleteTemplate(templateId: string) {
     const usage = templateUsageMap[templateId] || [];
     if (usage.length > 0) {
       const confirmForce = confirm(
@@ -419,13 +465,25 @@ const updatedQuestions = editQuestions.map((question) => ({
       if (!confirm(`Bạn có chắc chắn muốn xóa bộ đề "${templateId}"?`)) return;
     }
 
-    const next = templates.filter((t) => t.id !== templateId);
-    setTemplates(next);
-    saveStoredQuestionTemplates(next);
-    setNotification({
-      type: 'info',
-      message: `Đã xóa bộ đề "${templateId}".`,
-    });
+    try {
+      const res = await fetchWithAuth(`/api/v1/templates/${encodeURIComponent(templateId)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Không thể xóa bộ đề.');
+      }
+
+      const next = templates.filter((t) => t.id !== templateId);
+      setTemplates(next);
+      saveStoredQuestionTemplates(next);
+      setNotification({
+        type: 'info',
+        message: `Đã xóa bộ đề "${templateId}" khỏi CSDL.`,
+      });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Lỗi kết nối máy chủ khi xóa bộ đề.');
+    }
   }
 
   return (

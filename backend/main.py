@@ -16,7 +16,7 @@ from core.security import decode_access_token
 from api import (
     auth, admin, rooms, questions, submissions, sessions, violations, chat, livekit,
     drafts, device_checks, support, classes, snapshots, test_cases, enrollments,
-    grading_results, system_logs, users
+    grading_results, system_logs, users, templates
 )
 from websocket.connection_manager import manager
 from database.chat_db import create_message
@@ -178,6 +178,7 @@ app.include_router(enrollments.router, prefix=f"{settings.API_V1_PREFIX}/enrollm
 app.include_router(grading_results.router, prefix=f"{settings.API_V1_PREFIX}/grading-results", tags=["Grading Results"])
 app.include_router(system_logs.router, prefix=f"{settings.API_V1_PREFIX}/system-logs", tags=["System Logs"])
 app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["Users"])
+app.include_router(templates.router, prefix=f"{settings.API_V1_PREFIX}/templates", tags=["Question Templates"])
 
 # Tương thích ngược với tiền tố cũ /api/...
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication (Legacy)"], include_in_schema=False)
@@ -199,6 +200,7 @@ app.include_router(enrollments.router, prefix="/api/enrollments", tags=["Enrollm
 app.include_router(grading_results.router, prefix="/api/grading-results", tags=["Grading Results (Legacy)"], include_in_schema=False)
 app.include_router(system_logs.router, prefix="/api/system-logs", tags=["System Logs (Legacy)"], include_in_schema=False)
 app.include_router(users.router, prefix="/api/users", tags=["Users (Legacy)"], include_in_schema=False)
+app.include_router(templates.router, prefix="/api/templates", tags=["Question Templates (Legacy)"], include_in_schema=False)
 
 # Cấu hình Mount phục vụ ảnh tĩnh Webcam Snapshots
 uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")

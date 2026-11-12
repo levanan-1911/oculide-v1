@@ -7,6 +7,7 @@ from schemas.submission import (
 )
 from core.permissions import get_current_user
 from database.room_db import get_room_by_id
+from database.template_db import is_question_valid_for_room
 from database.question_db import get_question_by_id
 from database.submission_db import (
     create_submission, get_submission_by_id, get_submissions_by_student,
@@ -36,7 +37,7 @@ async def create_submission_endpoint(
     question = get_question_by_id(submission_data.question_id)
     if not question:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
-    if question["room_id"] != submission_data.room_id:
+    if not is_question_valid_for_room(submission_data.room_id, room.get("template_id"), submission_data.question_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Câu hỏi không thuộc phòng này")
         
     submission = create_submission(

@@ -19,6 +19,7 @@ from database.room_db import (
     save_student_device_check
 )
 from database.scoreboard_db import get_room_scoreboard
+from database.template_db import get_exam_content_for_room
 from database.enrollment_db import enroll_student, get_enrollments_by_room, remove_enrollment, is_student_enrolled
 from database.session_db import get_sessions_by_room
 from database.violation_db import get_violations_by_session
@@ -361,6 +362,19 @@ async def get_scoreboard(
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
     return get_room_scoreboard(room_id)
+
+@router.get("/{room_id}/exam-content")
+async def get_room_exam_content(
+    room_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lấy danh sách câu hỏi và test case công khai cho phòng thi (/student/exam-room)"""
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    include_hidden = current_user.get("role") in ("instructor", "admin")
+    return get_exam_content_for_room(room_id, include_hidden_tests=include_hidden)
+
 
 @router.get("/{room_id}/config")
 async def get_room_config(

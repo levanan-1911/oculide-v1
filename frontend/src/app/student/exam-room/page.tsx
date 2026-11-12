@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
 import LiveKitVideoFeed from "@/components/livekit/LiveKitVideoFeed";
+import { fetchWithAuth } from "@/services/apiClient";
 import {
   AlertOctagon,
   AlertTriangle,
@@ -108,9 +109,54 @@ const mockExamData = {
 
 type ExamState = "doing" | "confirm_submit" | "completed";
 
+interface ExamTestcase {
+  id: number;
+  input: string;
+  expectedOutput: string;
+}
+
+interface ExamProblem {
+  id: string;
+  question_id?: number;
+  title: string;
+  points: number;
+  language: string;
+  description: string;
+  testcases: ExamTestcase[];
+  initialCode: string;
+}
+
+interface ExamData {
+  id: string;
+  title: string;
+  subject: string;
+  durationMinutes: number;
+  roomCode: string;
+  problems: ExamProblem[];
+}
+
+function getInitialCodeTemplate(language: string): string {
+  const lang = language.toLowerCase();
+  if (lang === "python") {
+    return "# Viết mã nguồn Python của bạn tại đây\nimport sys\n\ndef main():\n    pass\n\nif __name__ == '__main__':\n    main()\n";
+  }
+  if (lang === "java") {
+    return "import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // Viết mã nguồn Java của bạn tại đây\n    }\n}\n";
+  }
+  return "#include <iostream>\nusing namespace std;\n\nint main() {\n    // Viết mã nguồn của bạn tại đây\n    return 0;\n}\n";
+}
+
 export default function ExamWorkspacePage() {
   const [examState, setExamState] = useState<ExamState>("doing");
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
+  const [examData, setExamData] = useState<ExamData>(mockExamData);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [customRunOutput, setCustomRunOutput] = useState<{
+    stdout: string;
+    error: string | null;
+    time: string;
+  } | null>(null);
 
   useEffect(() => {
     try {
@@ -123,6 +169,81 @@ export default function ExamWorkspacePage() {
       // Bỏ qua lỗi đọc sessionStorage
     }
   }, []);
+
+  useEffect(() => {
+    if (!activeRoomId) return;
+    let cancelled = false;
+    async function loadExamContent() {
+      try {
+        const res = await fetchWithAuth(`/api/v1/rooms/${activeRoomId}/exam-content`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (Array.isArray(data.questions) && data.questions.length > 0) {
+          const mappedProblems: ExamProblem[] = data.questions.map((q: {
+            id?: string;
+            question_id?: number;
+            title?: string;
+            max_points?: number;
+            programming_language?: string;
+            description?: string;
+            test_cases?: Array<{ input?: string; inputData?: string; expectedOutput?: string }>;
+          }) => {
+            const lang = q.programming_language || "cpp";
+            return {
+              id: q.id || String(q.question_id),
+              question_id: q.question_id,
+              title: q.title || "Câu hỏi lập trình",
+              points: q.max_points ?? 10,
+              language: lang,
+              description: q.description || "",
+              testcases: (q.test_cases || []).map((tc, idx) => ({
+                id: idx + 1,
+                input: tc.input ?? tc.inputData ?? "",
+                expectedOutput: tc.expectedOutput ?? "",
+              })),
+              initialCode: getInitialCodeTemplate(lang),
+            };
+          });
+
+          setExamData({
+            id: data.template_id || String(data.room_id),
+            title: data.template_title || data.room_name || mockExamData.title,
+            subject: data.room_type === "lab" ? "Thực hành (Lab)" : "Kiểm tra / Thi",
+            durationMinutes: data.duration_minutes || mockExamData.durationMinutes,
+            roomCode: data.room_code || mockExamData.roomCode,
+            problems: mappedProblems,
+          });
+          setCodes((prev) => {
+            const next: Record<string, string> = { ...prev };
+            for (const p of mappedProblems) {
+              if (!next[p.id]) next[p.id] = p.initialCode;
+            }
+            return next;
+          });
+          setSelectedLanguage(mappedProblems[0]?.language || "cpp");
+          setTimeLeft((data.duration_minutes || mockExamData.durationMinutes) * 60);
+        } else {
+          setExamData((prev) => ({
+            ...prev,
+            title: data.room_name || prev.title,
+            roomCode: data.room_code || prev.roomCode,
+            durationMinutes: data.duration_minutes || prev.durationMinutes,
+          }));
+          if (data.duration_minutes) {
+            setTimeLeft(data.duration_minutes * 60);
+          }
+        }
+      } catch {
+        // Giữ fallback mockExamData nếu không tải được đề từ server
+      }
+    }
+    loadExamContent();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRoomId]);
 
   const {
     connectionState: livekitState,
@@ -175,7 +296,7 @@ export default function ExamWorkspacePage() {
   >({});
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const currentProblem = mockExamData.problems[activeProblemIdx];
+  const currentProblem = examData.problems[activeProblemIdx] ?? examData.problems[0];
 
   const totalViolations = pasteCount + tabSwitchCount + aiViolationCount;
 
@@ -334,25 +455,111 @@ useEffect(() => {
     }, 800);
   };
 
-  const handleRunAllTests = () => {
+  const handleRunAllTests = async () => {
     setIsRunning(true);
     setTestResults({});
+    setCustomRunOutput(null);
 
-    setTimeout(() => {
+    const codeContent = codes[currentProblem.id] ?? "";
+
+    try {
+      if (activeTestTab === "custom") {
+        const res = await fetchWithAuth("/api/v1/submissions/run", {
+          method: "POST",
+          body: JSON.stringify({
+            code_content: codeContent,
+            language: selectedLanguage,
+            custom_input: customInput,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.detail || "Không thể chạy thử mã nguồn.");
+        }
+        setCustomRunOutput({
+          stdout: data.stdout || "",
+          error: data.error || null,
+          time: `${((data.execution_ms || 0) / 1000).toFixed(2)}s`,
+        });
+      } else {
+        const results: Record<number, { status: "passed" | "failed"; actualOutput: string; time: string }> = {};
+        await Promise.all(
+          currentProblem.testcases.map(async (tc) => {
+            try {
+              const res = await fetchWithAuth("/api/v1/submissions/run", {
+                method: "POST",
+                body: JSON.stringify({
+                  code_content: codeContent,
+                  language: selectedLanguage,
+                  custom_input: tc.input,
+                }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                results[tc.id] = {
+                  status: "failed",
+                  actualOutput: data.detail || "Lỗi máy chủ khi chạy test",
+                  time: "0.00s",
+                };
+                return;
+              }
+              const actual = (data.stdout ?? "").trim();
+              const expected = (tc.expectedOutput ?? "").trim();
+              const isPass = !data.error && actual === expected;
+              results[tc.id] = {
+                status: isPass ? "passed" : "failed",
+                actualOutput: data.error ? String(data.error) : String(data.stdout ?? ""),
+                time: `${((data.execution_ms || 0) / 1000).toFixed(2)}s`,
+              };
+            } catch {
+              results[tc.id] = {
+                status: "failed",
+                actualOutput: "Lỗi kết nối máy chủ",
+                time: "0.00s",
+              };
+            }
+          }),
+        );
+        setTestResults(results);
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Lỗi khi chạy thử code.");
+    } finally {
       setIsRunning(false);
-      const results: Record<number, { status: "passed" | "failed"; actualOutput: string; time: string }> = {};
+    }
+  };
 
-      currentProblem.testcases.forEach((tc) => {
-        const isPass = Math.random() > 0.25;
-        results[tc.id] = {
-          status: isPass ? "passed" : "failed",
-          actualOutput: isPass ? tc.expectedOutput : "0",
-          time: "0.0" + Math.floor(Math.random() * 8 + 1) + "s",
-        };
-      });
-
-      setTestResults(results);
-    }, 1000);
+  const handleSubmitExam = async () => {
+    setSubmitError(null);
+    setIsSubmitting(true);
+    try {
+      if (activeRoomId) {
+        const realProblems = examData.problems.filter((p) => typeof p.question_id === "number");
+        for (const prob of realProblems) {
+          const code = codes[prob.id] ?? "";
+          if (!code.trim()) continue;
+          const res = await fetchWithAuth("/api/v1/submissions", {
+            method: "POST",
+            body: JSON.stringify({
+              room_id: activeRoomId,
+              question_id: prob.question_id,
+              attempt_number: 1,
+              code_content: code,
+              language: selectedLanguage,
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `Lỗi khi nộp bài câu "${prob.title}"`);
+          }
+        }
+      }
+      setExamState("completed");
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Không thể nộp bài. Vui lòng thử lại.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const toggleFullscreen = () => {
@@ -387,10 +594,10 @@ useEffect(() => {
           </div>
           <div>
             <h1 className="text-sm font-bold text-white truncate max-w-xs sm:max-w-md">
-              {mockExamData.title}
+              {examData.title}
             </h1>
             <p className="text-[11px] text-slate-400">
-              Mã phòng: <span className="font-mono font-semibold text-blue-400">{mockExamData.roomCode}</span>
+              Mã phòng: <span className="font-mono font-semibold text-blue-400">{examData.roomCode}</span>
             </p>
           </div>
         </div>
@@ -455,7 +662,7 @@ useEffect(() => {
           <div className="lg:col-span-5 flex flex-col border-r border-slate-800 bg-slate-950/60 overflow-hidden relative">
             {/* Tabs chọn câu hỏi */}
             <div className="flex items-center gap-1 border-b border-slate-800 bg-slate-900/50 p-2 overflow-x-auto scrollbar-none">
-              {mockExamData.problems.map((prob, idx) => {
+              {examData.problems.map((prob, idx) => {
                 const isAnswered = (codes[prob.id] ?? "").trim().length > 30;
                 return (
                   <button
@@ -800,6 +1007,16 @@ useEffect(() => {
                       placeholder="Nhập dữ liệu testcase..."
                       className="w-full h-16 rounded-lg border border-slate-800 bg-slate-900 p-2 text-xs font-mono text-slate-200 outline-none focus:border-blue-500 disabled:opacity-30"
                     />
+                    {customRunOutput && (
+                      <div className="pt-1 space-y-1">
+                        <p className="text-[10px] font-sans font-bold text-slate-400">
+                          Kết quả chạy thử ({customRunOutput.time}):
+                        </p>
+                        <pre className={`rounded-lg bg-slate-900 p-2 border border-slate-800 ${customRunOutput.error ? "text-rose-400" : "text-emerald-400"}`}>
+                          {customRunOutput.error || customRunOutput.stdout || "(Không có output)"}
+                        </pre>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -916,7 +1133,7 @@ useEffect(() => {
             </div>
 
             <div className="space-y-2 text-xs">
-              {mockExamData.problems.map((prob, idx) => {
+              {examData.problems.map((prob, idx) => {
                 const isAnswered = (codes[prob.id] ?? "").trim().length > 30;
                 return (
                   <div key={prob.id} className="flex items-center justify-between rounded-xl bg-slate-950 p-3 border border-slate-800">
@@ -935,20 +1152,29 @@ useEffect(() => {
               })}
             </div>
 
+            {submitError && (
+              <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-300">
+                {submitError}
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => setExamState("doing")}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition"
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition disabled:opacity-50"
               >
                 Quay lại làm bài
               </button>
               <button
                 type="button"
-                onClick={() => setExamState("completed")}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-emerald-500 transition shadow-sm"
+                disabled={isSubmitting}
+                onClick={handleSubmitExam}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-emerald-500 transition shadow-sm disabled:opacity-50"
               >
-                <Send size={14} /> Nộp bài ngay
+                {isSubmitting ? <LoaderCircle size={14} className="animate-spin" /> : <Send size={14} />}
+                <span>{isSubmitting ? "Đang nộp bài..." : "Nộp bài ngay"}</span>
               </button>
             </div>
           </div>

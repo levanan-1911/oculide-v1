@@ -35,6 +35,9 @@ import ExtendSessionModal from '@/components/instructor/monitoring/ExtendSession
 import SendNotificationModal from '@/components/instructor/monitoring/SendNotificationModal';
 import StudentDetailModal, { StudentDetailInfo } from '@/components/instructor/monitoring/StudentDetailModal';
 import InstructorRoomChat from '@/components/instructor/monitoring/InstructorRoomChat';
+import { fetchWithAuth } from '@/services/apiClient';
+import { useLiveKitRoom } from '@/hooks/useLiveKitRoom';
+import LiveKitVideoFeed from '@/components/livekit/LiveKitVideoFeed';
 
 const INITIAL_CAMERAS: StudentDetailInfo[] = [
   {
@@ -225,6 +228,8 @@ function InstructorMonitoringContent() {
   const searchParams = useSearchParams();
   const roomIdParam = searchParams?.get('room');
   const [activeRoomSession, setActiveRoomSession] = useState<RoomSession | null>(null);
+  const [realRoomId, setRealRoomId] = useState<number | null>(null);
+  const [realStudents, setRealStudents] = useState<(StudentDetailInfo & { userId?: number })[] | null>(null);
 
   const {
     session,
@@ -238,26 +243,80 @@ function InstructorMonitoringContent() {
     simulateViolation,
   } = useMonitoring();
 
-  // Đọc thông tin phòng từ URL và localStorage
+  // Kết nối LiveKit SFU (Chế độ Subscribe nhận video stream của tất cả sinh viên trong phòng)
+  const { connectionState: livekitState, remoteTracks } = useLiveKitRoom({
+    roomId: realRoomId,
+    mode: 'subscribe',
+    enabled: Boolean(realRoomId),
+  });
+
+  // Đọc thông tin phòng thật từ Backend (fallback localStorage nếu offline)
   useEffect(() => {
     if (typeof window === 'undefined' || !roomIdParam) return;
-    try {
-      const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-      if (raw) {
-        const parsed: RoomSession[] = JSON.parse(raw);
-        const found = parsed.find((r) => r.id.toLowerCase() === roomIdParam.toLowerCase());
-        if (found) {
-          setActiveRoomSession(found);
-          if (found.type === 'lab') {
-            setSessionType('LAB');
-          } else {
-            setSessionType('EXAM');
+    let isCancelled = false;
+
+    const loadRealRoom = async () => {
+      try {
+        const data = await fetchWithAuth<any>(`/api/v1/rooms/lobby/${encodeURIComponent(roomIdParam)}`);
+        if (isCancelled || !data) return;
+
+        setRealRoomId(data.room_id);
+        setSessionType(data.room_type === 'exam' ? 'EXAM' : 'LAB');
+
+        const mappedAttendees = (data.attendees || []).map((a: any) => ({
+          id: String(a.student_id),
+          userId: a.user_id,
+          name: a.student_name,
+          studentClass: data.class_code || 'Lớp học phần',
+          status: (a.status === 'completed' ? 'submitted' : 'normal') as 'normal' | 'warning' | 'critical' | 'submitted',
+          statusText: a.status === 'waiting' ? 'Đang làm bài (Live)' : a.status === 'completed' ? 'Đã nộp bài' : 'Chưa vào phòng',
+          fps: a.status === 'waiting' ? 30 : 0,
+          activeApp: 'Oculide Exam IDE',
+          currentFile: 'main.cpp',
+          passedCases: '0/0',
+          codeSnippet: '// Đang chờ dữ liệu đồng bộ từ trình soạn thảo...',
+          logs: [],
+        }));
+
+        if (mappedAttendees.length > 0) {
+          setRealStudents(mappedAttendees);
+        }
+
+        setActiveRoomSession({
+          id: data.room_code,
+          classId: data.class_code || '',
+          className: data.class_name || '',
+          password: data.passcode || '',
+          type: data.room_type === 'exam' ? 'exam' : 'lab',
+          title: data.room_name,
+          durationMinutes: data.duration_minutes || 60,
+          status: data.status === 'dang_dien_ra' ? 'in_progress' : data.status === 'da_dong' ? 'ended' : 'waiting',
+          createdAt: data.created_at,
+          proctoringConfig: { lockdownFullscreen: true, aiFaceDetection: true, aiObjectDetection: true, allowTabSwitch: false },
+          attendees: [],
+        });
+      } catch {
+        // Fallback localStorage nếu offline
+        try {
+          const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+          if (raw) {
+            const parsed: RoomSession[] = JSON.parse(raw);
+            const found = parsed.find((r) => r.id.toLowerCase() === roomIdParam.toLowerCase());
+            if (found) {
+              setActiveRoomSession(found);
+              setSessionType(found.type === 'lab' ? 'LAB' : 'EXAM');
+            }
           }
+        } catch {
+          // ignore
         }
       }
-    } catch {
-      // fallback
-    }
+    };
+
+    loadRealRoom();
+    return () => {
+      isCancelled = true;
+    };
   }, [roomIdParam, setSessionType]);
 
   // Modals state
@@ -279,7 +338,9 @@ function InstructorMonitoringContent() {
     setIsSendNoticeModalOpen(true);
   };
 
-  const filteredCameras = INITIAL_CAMERAS.filter((c) => {
+  const camerasSource = realStudents ?? INITIAL_CAMERAS;
+
+  const filteredCameras = camerasSource.filter((c) => {
     const matchesSearch =
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.id.toLowerCase().includes(searchQuery.toLowerCase());
@@ -535,6 +596,9 @@ function InstructorMonitoringContent() {
             {filteredCameras.map((student) => {
               const hasAlert = student.status === 'warning' || student.status === 'critical';
               const isSubmitted = student.status === 'submitted';
+              const lkTrack = (student as any).userId
+                ? remoteTracks[`user_${(student as any).userId}`]
+                : undefined;
 
               return (
                 <div
@@ -567,7 +631,15 @@ function InstructorMonitoringContent() {
                       </div>
                     ) : (
                       <>
-                        <Video className="h-9 w-9 text-slate-700" />
+                        {lkTrack ? (
+                          <LiveKitVideoFeed
+                            track={lkTrack}
+                            muted
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <Video className="h-9 w-9 text-slate-700" />
+                        )}
                         {/* Giả lập khung nhận diện khuôn mặt */}
                         {session.isAiActive && (
                           <div
@@ -587,14 +659,14 @@ function InstructorMonitoringContent() {
                       </>
                     )}
 
-                    {/* Tag FPS góc trên trái */}
+                    {/* Tag FPS / LiveKit góc trên trái */}
                     <div className="absolute top-2 left-2 flex items-center gap-1 rounded-md bg-black/75 px-1.5 py-0.2 text-[9px] text-white font-mono backdrop-blur-xs">
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${
-                          hasAlert ? 'bg-red-400 animate-ping' : 'bg-emerald-400'
+                          hasAlert ? 'bg-red-400 animate-ping' : lkTrack ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'
                         }`}
                       />
-                      <span>{student.fps} FPS</span>
+                      <span>{lkTrack ? 'LIVE • LiveKit' : `${student.fps} FPS`}</span>
                     </div>
 
                     {/* Lớp phủ Hover: Bấm để phóng to */}

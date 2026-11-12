@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
+import LiveKitVideoFeed from "@/components/livekit/LiveKitVideoFeed";
 import {
   AlertOctagon,
   AlertTriangle,
@@ -108,6 +110,28 @@ type ExamState = "doing" | "confirm_submit" | "completed";
 
 export default function ExamWorkspacePage() {
   const [examState, setExamState] = useState<ExamState>("doing");
+  const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("oculide_student_pending_exam");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.roomId) setActiveRoomId(Number(parsed.roomId));
+      }
+    } catch {
+      // Bỏ qua lỗi đọc sessionStorage
+    }
+  }, []);
+
+  const {
+    connectionState: livekitState,
+    localVideoTrack,
+  } = useLiveKitRoom({
+    roomId: activeRoomId,
+    mode: "publish",
+    enabled: Boolean(activeRoomId) && examState === "doing",
+  });
   const [activeProblemIdx, setActiveProblemIdx] = useState(0);
   const [codes, setCodes] = useState<Record<string, string>>({
     P1: mockExamData.problems[0].initialCode,
@@ -545,9 +569,17 @@ useEffect(() => {
             {/* ------------------------------------------------------------------ */}
             <div className="absolute top-3 right-4 z-20 flex flex-col items-end gap-1">
               <div className="relative h-28 w-40 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 p-1 shadow-2xl backdrop-blur-md">
-                {/* Giả lập Luồng Video Camera */}
+                {/* Luồng Video Camera thật qua LiveKit WebRTC */}
                 <div className="relative h-full w-full rounded-xl bg-slate-900 overflow-hidden flex items-center justify-center">
-                  <Camera size={24} className="text-slate-600" />
+                  {localVideoTrack ? (
+                    <LiveKitVideoFeed
+                      track={localVideoTrack}
+                      muted
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <Camera size={24} className="text-slate-600" />
+                  )}
 
                   {/* Khung Bounding Box nhận diện AI của YOLOv8 */}
                   {yoloDetections.bbox.w > 0 && (
@@ -581,10 +613,12 @@ useEffect(() => {
                     </div>
                   )}
 
-                  {/* HUD Overlay thông số YOLOv8 */}
+                  {/* HUD Overlay thông số YOLOv8 & LiveKit */}
                   <div className="absolute bottom-1 left-1.5 right-1.5 flex items-center justify-between text-[8px] font-mono text-slate-400 bg-slate-950/80 px-1 py-0.5 rounded">
-                    <span>YOLOv8n-pose</span>
-                    <span className="text-emerald-400 font-bold">30 FPS</span>
+                    <span>{livekitState === "connected" ? "LiveKit LIVE" : "YOLOv8n-pose"}</span>
+                    <span className="text-emerald-400 font-bold">
+                      {localVideoTrack ? "CAM ON" : "30 FPS"}
+                    </span>
                   </div>
                 </div>
               </div>

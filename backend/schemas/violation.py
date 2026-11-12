@@ -5,7 +5,17 @@ from datetime import datetime
 class ViolationCreateRequest(BaseModel):
     session_id: int
     violation_type: str = Field(..., pattern="^(tab_switch|copy_paste|no_face_detected|multiple_faces|phone_detected|suspicious_object|fullscreen_exit|camera_blocked|time_exceeded|inactive_30s|multiple_people)$")
-    severity: str = Field("warning", pattern="^(low|medium|high|critical)$")
+    severity: str = Field("medium", pattern="^(low|medium|high|critical)$")
+    description: Optional[str] = None
+    snapshot_url: Optional[str] = None
+
+class AIViolationHookRequest(BaseModel):
+    room_id: int
+    student_id: int
+    session_id: Optional[int] = None
+    violation_type: str = Field(..., pattern="^(no_face_detected|multiple_faces|phone_detected|suspicious_object|camera_blocked|multiple_people|looking_away|tab_switch|copy_paste|fullscreen_exit)$")
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    severity: str = Field("high", pattern="^(low|medium|high|critical)$")
     description: Optional[str] = None
     snapshot_url: Optional[str] = None
 

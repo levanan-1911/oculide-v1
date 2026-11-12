@@ -267,6 +267,23 @@ export default function InstructorReportsPage() {
   const [liveRooms, setLiveRooms] = useState<Array<{ room_id: number; room_code: string; room_name: string }>>([]);
   const [selectedLiveRoomId, setSelectedLiveRoomId] = useState<number | null>(null);
   const [liveRecords, setLiveRecords] = useState<StudentReportRecord[] | null>(null);
+  const [liveAttendanceRecords, setLiveAttendanceRecords] = useState<AttendanceRecord[] | null>(null);
+  const [liveSubmissions, setLiveSubmissions] = useState<Array<{
+    submission_id: number;
+    student_id: number;
+    student_name?: string;
+    student_code?: string;
+    question_id: number;
+    question_title?: string;
+    attempt_number: number;
+    language: string;
+    code_content: string;
+    submitted_at: string;
+    status: string;
+    total_points?: number;
+    max_points?: number;
+  }>>([]);
+  const [inspectingStudentKey, setInspectingStudentKey] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -291,28 +308,95 @@ export default function InstructorReportsPage() {
   useEffect(() => {
     if (!selectedLiveRoomId) {
       setLiveRecords(null);
+      setLiveAttendanceRecords(null);
+      setLiveSubmissions([]);
       return;
     }
     let cancelled = false;
-    async function loadScoreboard() {
+    async function loadRoomReportData() {
       try {
         const roomInfo = liveRooms.find((r) => r.room_id === selectedLiveRoomId);
-        const rows = await fetchWithAuth<Array<{
-          student_id: number;
-          student_name: string;
-          student_code?: string;
-          total_score: number;
-          max_room_points?: number;
-          score_scale_10?: number;
-          solved_questions: number;
-          total_submissions: number;
-          last_submission_time?: string | null;
-        }>>(`/api/v1/rooms/${selectedLiveRoomId}/scoreboard`);
-        if (cancelled || !Array.isArray(rows)) return;
+        const [sbRes, vioRes, sessRes, subRes] = await Promise.allSettled([
+          fetchWithAuth<Array<{
+            student_id: number;
+            student_name: string;
+            student_code?: string;
+            total_score: number;
+            max_room_points?: number;
+            score_scale_10?: number;
+            solved_questions: number;
+            total_submissions: number;
+            last_submission_time?: string | null;
+          }>>(`/api/v1/rooms/${selectedLiveRoomId}/scoreboard`),
+          fetchWithAuth<Array<{
+            violation_id: number;
+            student_id: number;
+            violation_type: string;
+            severity: string;
+            description?: string | null;
+            detected_at: string;
+            review_status: 'pending' | 'confirmed' | 'rejected';
+          }>>(`/api/v1/violations/room/${selectedLiveRoomId}`),
+          fetchWithAuth<Array<{
+            session_id: number;
+            student_id: number;
+            started_at: string;
+            status: string;
+          }>>(`/api/v1/sessions/room/${selectedLiveRoomId}`),
+          fetchWithAuth<Array<{
+            submission_id: number;
+            student_id: number;
+            student_name?: string;
+            student_code?: string;
+            question_id: number;
+            question_title?: string;
+            attempt_number: number;
+            language: string;
+            code_content: string;
+            submitted_at: string;
+            status: string;
+            total_points?: number;
+            max_points?: number;
+          }>>(`/api/v1/submissions/room/${selectedLiveRoomId}`),
+        ]);
 
-        const mapped: StudentReportRecord[] = rows.map((row) => {
+        if (cancelled) return;
+        if (sbRes.status !== 'fulfilled' || !Array.isArray(sbRes.value)) {
+          setLiveRecords(null);
+          return;
+        }
+
+        const sbRows = sbRes.value;
+        const vioRows = vioRes.status === 'fulfilled' && Array.isArray(vioRes.value) ? vioRes.value : [];
+        const sessRows = sessRes.status === 'fulfilled' && Array.isArray(sessRes.value) ? sessRes.value : [];
+        const subRows = subRes.status === 'fulfilled' && Array.isArray(subRes.value) ? subRes.value : [];
+
+        setLiveSubmissions(subRows);
+
+        const mappedRecords: StudentReportRecord[] = sbRows.map((row) => {
           const score10 = Number((row.score_scale_10 ?? row.total_score ?? 0).toFixed(1));
           const maxPts = row.max_room_points && row.max_room_points > 0 ? row.max_room_points : null;
+          const studentVios = vioRows
+            .filter((v) => v.student_id === row.student_id)
+            .map((v) => ({
+              id: String(v.violation_id),
+              type: v.violation_type,
+              timestamp: new Date(v.detected_at).toLocaleTimeString('vi-VN'),
+              severity: (v.severity === 'critical'
+                ? 'critical'
+                : v.severity === 'high'
+                ? 'high'
+                : 'medium') as 'medium' | 'high' | 'critical',
+              confidence: 95,
+              description: v.description || `Vi phạm hệ thống: ${v.violation_type}`,
+              evidenceSnapshot: {
+                webcamLabel: 'Oculide Proctoring',
+                detectedObject: v.violation_type,
+                screenState: roomInfo?.room_code || `Phòng #${selectedLiveRoomId}`,
+              },
+              status: v.review_status || 'pending',
+            }));
+
           return {
             id: row.student_code || `SV-${row.student_id}`,
             name: row.student_name || `Sinh viên #${row.student_id}`,
@@ -327,15 +411,33 @@ export default function InstructorReportsPage() {
               ? `${row.total_score}/${maxPts}đ · ${row.solved_questions ?? 0} câu (${row.total_submissions ?? 0} lần nộp)`
               : `${row.solved_questions ?? 0} câu đạt (${row.total_submissions ?? 0} lần nộp)`,
             isPublished: true,
-            violations: [],
+            violations: studentVios,
           };
         });
-        setLiveRecords(mapped);
+
+        const mappedAttendance: AttendanceRecord[] = sbRows.map((row) => {
+          const sess = sessRows.find((s) => s.student_id === row.student_id);
+          return {
+            studentId: row.student_code || `SV-${row.student_id}`,
+            name: row.student_name || `Sinh viên #${row.student_id}`,
+            studentClass: roomInfo?.room_code || `Phòng #${selectedLiveRoomId}`,
+            checkInTime: sess ? new Date(sess.started_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : null,
+            lateMinutes: sess ? 0 : null,
+            status: sess ? 'ontime' : 'absent',
+          };
+        });
+
+        setLiveRecords(mappedRecords);
+        setLiveAttendanceRecords(mappedAttendance);
       } catch {
-        if (!cancelled) setLiveRecords(null);
+        if (!cancelled) {
+          setLiveRecords(null);
+          setLiveAttendanceRecords(null);
+          setLiveSubmissions([]);
+        }
       }
     }
-    loadScoreboard();
+    loadRoomReportData();
     return () => {
       cancelled = true;
     };
@@ -348,8 +450,8 @@ export default function InstructorReportsPage() {
     [liveRecords, hasDemoDataset, records]
   );
   const attendanceRecords = useMemo(
-    () => (hasDemoDataset ? INITIAL_ATTENDANCE : []),
-    [hasDemoDataset]
+    () => (liveAttendanceRecords !== null ? liveAttendanceRecords : hasDemoDataset ? INITIAL_ATTENDANCE : []),
+    [liveAttendanceRecords, hasDemoDataset]
   );
   const selectedSessionInfo = REPORT_SESSIONS.find((session) => session.id === selectedSession);
 
@@ -459,7 +561,7 @@ export default function InstructorReportsPage() {
     penalty: number,
     note: string
   ) => {
-    setRecords((prev) =>
+    const updater = (prev: StudentReportRecord[]) =>
       prev.map((rec) => {
         if (rec.id !== studentId) return rec;
 
@@ -491,8 +593,21 @@ export default function InstructorReportsPage() {
           finalScore: Number(newFinalScore.toFixed(1)),
           violations: updatedViolations,
         };
-      })
-    );
+      });
+
+    if (liveRecords !== null) {
+      setLiveRecords((prev) => (prev ? updater(prev) : prev));
+      if (/^\d+$/.test(violationId)) {
+        fetchWithAuth(`/api/v1/violations/${violationId}/review`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            review_status: action === 'confirm' ? 'confirmed' : 'rejected',
+          }),
+        }).catch(() => {});
+      }
+    } else {
+      setRecords(updater);
+    }
 
     showToast(
       action === 'confirm'
@@ -508,14 +623,14 @@ export default function InstructorReportsPage() {
     totalPenalty: number,
     note: string
   ) => {
-    setRecords((prev) =>
+    const batchUpdater = (prev: StudentReportRecord[]) =>
       prev.map((rec) => {
         if (rec.id !== studentId) return rec;
 
         const updatedViolations = rec.violations.map((v) => ({
           ...v,
           status: action === 'confirm' ? ('confirmed' as const) : ('rejected' as const),
-          penaltyApplied: action === 'confirm' ? totalPenalty / rec.violations.length : 0,
+          penaltyApplied: action === 'confirm' ? totalPenalty / (rec.violations.length || 1) : 0,
           resolutionNote: note,
           reviewedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
         }));
@@ -527,8 +642,26 @@ export default function InstructorReportsPage() {
           finalScore: Number(newFinalScore.toFixed(1)),
           violations: updatedViolations,
         };
-      })
-    );
+      });
+
+    if (liveRecords !== null) {
+      const targetRec = liveRecords.find((r) => r.id === studentId);
+      setLiveRecords((prev) => (prev ? batchUpdater(prev) : prev));
+      if (targetRec) {
+        for (const v of targetRec.violations) {
+          if (v.status === 'pending' && /^\d+$/.test(v.id)) {
+            fetchWithAuth(`/api/v1/violations/${v.id}/review`, {
+              method: 'PATCH',
+              body: JSON.stringify({
+                review_status: action === 'confirm' ? 'confirmed' : 'rejected',
+              }),
+            }).catch(() => {});
+          }
+        }
+      }
+    } else {
+      setRecords(batchUpdater);
+    }
 
     showToast(
       action === 'confirm'
@@ -1351,24 +1484,36 @@ export default function InstructorReportsPage() {
                         </button>
                       </td>
 
-                      {/* Cột 8: Nút Thẩm Định Bằng Chứng */}
+                      {/* Cột 8: Nút Thẩm Định Bằng Chứng & Xem bài nộp */}
                       <td className="px-5 py-4 text-right">
-                        {st.violations.length > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => setReviewingStudent(st)}
-                            className={`inline-flex h-8 items-center gap-1 rounded-xl px-3 text-xs font-bold transition cursor-pointer shadow-2xs ${
-                              hasPending
-                                ? 'bg-amber-600 text-white hover:bg-amber-700 shadow-amber-500/20'
-                                : 'bg-slate-100 text-slate-700 dark:bg-white/[0.06] dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/[0.10]'
-                            }`}
-                          >
-                            <Eye className="h-3 w-3" />
-                            <span>{hasPending ? 'Thẩm định AI' : 'Xem lại'}</span>
-                          </button>
-                        ) : (
-                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Hợp lệ</span>
-                        )}
+                        <div className="inline-flex items-center gap-1.5 justify-end">
+                          {liveRecords !== null && liveSubmissions.some((s) => (s.student_code || `SV-${s.student_id}`) === st.id) && (
+                            <button
+                              type="button"
+                              onClick={() => setInspectingStudentKey(st.id)}
+                              className="inline-flex h-8 items-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
+                            >
+                              <Eye className="h-3 w-3" />
+                              <span>Xem code</span>
+                            </button>
+                          )}
+                          {st.violations.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => setReviewingStudent(st)}
+                              className={`inline-flex h-8 items-center gap-1 rounded-xl px-3 text-xs font-bold transition cursor-pointer shadow-2xs ${
+                                hasPending
+                                  ? 'bg-amber-600 text-white hover:bg-amber-700 shadow-amber-500/20'
+                                  : 'bg-slate-100 text-slate-700 dark:bg-white/[0.06] dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/[0.10]'
+                              }`}
+                            >
+                              <Eye className="h-3 w-3" />
+                              <span>{hasPending ? 'Thẩm định AI' : 'Xem lại'}</span>
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Hợp lệ</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1379,6 +1524,58 @@ export default function InstructorReportsPage() {
         </div>
       </div>
       </>}
+
+      {/* ── MODAL XEM BÀI NỘP & MÃ NGUỒN CỦA SINH VIÊN ── */}
+      {inspectingStudentKey && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#121824]">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100">
+                  Bài nộp của sinh viên ({inspectingStudentKey})
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Danh sách các lần nộp bài và mã nguồn trong phòng thi
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInspectingStudentKey(null)}
+                className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300"
+              >
+                Đóng
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {liveSubmissions
+                .filter((s) => (s.student_code || `SV-${s.student_id}`) === inspectingStudentKey)
+                .map((sub) => (
+                  <div key={sub.submission_id} className="rounded-xl border border-slate-200 p-4 space-y-2.5 dark:border-white/10">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                        {sub.question_title || `Câu #${sub.question_id}`} (Lần {sub.attempt_number})
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono font-semibold text-slate-700 dark:bg-white/10 dark:text-slate-200">
+                          {sub.language}
+                        </span>
+                        <span className="rounded-md bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                          {sub.total_points ?? 0}/{sub.max_points ?? 10}đ
+                        </span>
+                        <span className="text-slate-400">
+                          {new Date(sub.submitted_at).toLocaleString('vi-VN')}
+                        </span>
+                      </div>
+                    </div>
+                    <pre className="overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs font-mono text-slate-100">
+                      {sub.code_content}
+                    </pre>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── MODAL XEM BẰNG CHỨNG SNAPSHOT & HỘI ĐỒNG THẨM ĐỊNH VI PHẠM ── */}
       <ReviewViolationModal

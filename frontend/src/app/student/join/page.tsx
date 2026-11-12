@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   KeyRound,
   LogIn,
@@ -13,24 +13,31 @@ import {
   Mail,
   Code2,
   GraduationCap,
+  LoaderCircle,
+  ShieldCheck,
 } from 'lucide-react';
-import {
-  ClassExam,
-  ClassLab,
-  ClassRow,
-  StudentRow,
-  getStoredClasses,
-  saveStoredClasses,
-} from '@/app/admin/classes/types';
+import { fetchWithAuth } from '@/services/apiClient';
 
-interface JoinedSession {
-  type: 'class' | 'lab' | 'exam';
-  classRow: ClassRow;
-  lab?: ClassLab;
-  exam?: ClassExam;
+interface JoinedRoomData {
+  room_id: number;
+  room_code: string;
+  room_name: string;
+  room_type: string;
+  duration_minutes: number;
+  status: string;
+  session_id?: number;
+  livekit_room_name?: string;
+  class_id?: number;
+  class_code?: string;
+  class_name?: string;
+  course_name?: string;
+  proctoring_config?: string;
+  start_time?: string;
+  end_time?: string;
 }
 
 function JoinClassContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialCode = searchParams.get('code') || '';
 
@@ -41,8 +48,8 @@ function JoinClassContent() {
   const [studentEmail, setStudentEmail] = useState('');
 
   const [errorMsg, setErrorMsg] = useState('');
-  const [joinedSession, setJoinedSession] = useState<JoinedSession | null>(null);
-  const [isAlreadyEnrolled, setIsAlreadyEnrolled] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [joinedRoom, setJoinedRoom] = useState<JoinedRoomData | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   // Lấy thông tin sinh viên từ phiên đăng nhập
@@ -57,8 +64,8 @@ function JoinClassContent() {
         if (parsed.name || parsed.fullName || parsed.full_name) {
           setStudentName(parsed.name || parsed.fullName || parsed.full_name);
         }
-        if (parsed.studentId || parsed.student_id || parsed.userCode) {
-          setStudentId(parsed.studentId || parsed.student_id || parsed.userCode);
+        if (parsed.studentId || parsed.student_id || parsed.userCode || parsed.ma_dinh_danh) {
+          setStudentId(parsed.studentId || parsed.student_id || parsed.userCode || parsed.ma_dinh_danh);
         }
       } else {
         setIsLoggedIn(false);
@@ -68,11 +75,10 @@ function JoinClassContent() {
     }
   }, []);
 
-  function handleJoin(event: React.FormEvent<HTMLFormElement>) {
+  async function handleJoin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMsg('');
 
-    // Ràng buộc bắt buộc đăng nhập
     const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
     if (!token) {
       setErrorMsg('Bạn chưa đăng nhập. Thí sinh bắt buộc phải đăng nhập bằng Email trường trước khi tham gia phòng thi.');
@@ -81,9 +87,6 @@ function JoinClassContent() {
 
     const trimmedCode = roomCode.trim().toUpperCase();
     const trimmedPass = passcode.trim();
-    const trimmedId = studentId.trim().toUpperCase();
-    const trimmedName = studentName.trim();
-    const trimmedEmail = studentEmail.trim().toLowerCase();
 
     if (!trimmedCode) {
       setErrorMsg('Vui lòng nhập Mã phòng (Room Code).');
@@ -93,191 +96,72 @@ function JoinClassContent() {
       setErrorMsg('Vui lòng nhập Mật khẩu phòng (Passcode).');
       return;
     }
-    if (!trimmedId) {
-      setErrorMsg('Vui lòng nhập Mã số sinh viên (MSSV).');
-      return;
-    }
-    if (!trimmedName) {
-      setErrorMsg('Vui lòng nhập Họ và tên sinh viên.');
-      return;
-    }
-    if (!trimmedEmail) {
-      setErrorMsg('Vui lòng nhập Email sinh viên.');
-      return;
-    }
 
-    // Kiểm tra định dạng email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmedEmail)) {
-      setErrorMsg('Email không đúng định dạng. Vui lòng kiểm tra lại.');
-      return;
-    }
-
-    const currentClasses = getStoredClasses();
-
-    // 1. Tìm xem mã phòng có thuộc về một bài Lab cụ thể không
-    for (const c of currentClasses) {
-      const targetLab = (c.labs || []).find(
-        (l) =>
-          (l.roomCode && l.roomCode.toUpperCase() === trimmedCode) ||
-          l.id.toUpperCase() === trimmedCode
-      );
-
-      if (targetLab) {
-        // Kiểm tra mật khẩu phòng Lab
-        const expectedPass = targetLab.roomPassword || '123456';
-        if (trimmedPass !== expectedPass) {
-          setErrorMsg('Mật khẩu phòng Lab (Passcode) không chính xác.');
-          return;
-        }
-
-        // Kiểm tra trạng thái lớp
-        if (c.status === 'Chưa mở') {
-          setErrorMsg(
-            `Lớp "${c.id} - ${c.name}" hiện chưa được giảng viên mở. Bạn chưa thể vào phòng thực hành Lab.`
-          );
-          return;
-        }
-
-        // RÀNG BUỘC BẢO MẬT: Sinh viên trong lớp đó mới được dùng mã phòng để vào
-        const isEnrolled = (c.students || []).some(
-          (s) => s.id.toUpperCase() === trimmedId || s.email.toLowerCase() === trimmedEmail
-        );
-
-        if (!isEnrolled) {
-          setErrorMsg(
-            `Bạn (${trimmedId} - ${trimmedName}) không có tên trong danh sách sinh viên lớp ${c.id} (${c.name}). Chỉ sinh viên trong lớp mới có quyền truy cập bài Lab "${targetLab.title}".`
-          );
-          return;
-        }
-
-        setJoinedSession({
-          type: 'lab',
-          classRow: c,
-          lab: targetLab,
-        });
-        return;
-      }
-    }
-
-    // 2. Tìm xem mã phòng có thuộc về một bài Thi cụ thể không
-    for (const c of currentClasses) {
-      const targetExam = (c.exams || []).find(
-        (e) =>
-          (e.roomCode && e.roomCode.toUpperCase() === trimmedCode) ||
-          e.id.toUpperCase() === trimmedCode
-      );
-
-      if (targetExam) {
-        // Kiểm tra mật khẩu phòng thi
-        const expectedPass = targetExam.roomPassword || '123456';
-        if (trimmedPass !== expectedPass) {
-          setErrorMsg('Mật khẩu phòng thi (Passcode) không chính xác.');
-          return;
-        }
-
-        // Kiểm tra trạng thái lớp
-        if (c.status === 'Chưa mở') {
-          setErrorMsg(
-            `Lớp "${c.id} - ${c.name}" hiện chưa được giảng viên mở. Bạn chưa thể vào phòng thi này.`
-          );
-          return;
-        }
-
-        // RÀNG BUỘC BẢO MẬT: Sinh viên trong lớp mới được phép vào thi
-        const isEnrolled = (c.students || []).some(
-          (s) => s.id.toUpperCase() === trimmedId || s.email.toLowerCase() === trimmedEmail
-        );
-
-        if (!isEnrolled) {
-          setErrorMsg(
-            `Bạn (${trimmedId} - ${trimmedName}) không có tên trong danh sách lớp ${c.id} (${c.name}). Chỉ sinh viên trong lớp mới có quyền làm bài thi "${targetExam.title}".`
-          );
-          return;
-        }
-
-        setJoinedSession({
-          type: 'exam',
-          classRow: c,
-          exam: targetExam,
-        });
-        return;
-      }
-    }
-
-    // 3. Tìm xem mã phòng có thuộc về Lớp học chung không
-    const foundClass = currentClasses.find(
-      (c) =>
-        (c.roomCode && c.roomCode.toUpperCase() === trimmedCode) ||
-        c.id.toUpperCase() === trimmedCode
-    );
-
-    if (foundClass) {
-      const expectedPassword = foundClass.roomPassword || '123456';
-      if (trimmedPass !== expectedPassword) {
-        setErrorMsg('Mật khẩu phòng lớp học (Passcode) không chính xác.');
-        return;
-      }
-
-      if (foundClass.status === 'Chưa mở') {
-        setErrorMsg(
-          `Lớp "${foundClass.id} - ${foundClass.name}" hiện đang ở trạng thái CHƯA MỞ. Giảng viên chưa cho phép sinh viên vào lớp.`
-        );
-        return;
-      }
-
-      const existingStudent = (foundClass.students || []).find(
-        (s) => s.id.toUpperCase() === trimmedId || s.email.toLowerCase() === trimmedEmail
-      );
-
-      if (existingStudent) {
-        setIsAlreadyEnrolled(true);
-        setJoinedSession({
-          type: 'class',
-          classRow: foundClass,
-        });
-        return;
-      }
-
-      // Ghi danh sinh viên mới vào lớp
-      const newStudent: StudentRow = {
-        id: trimmedId,
-        name: trimmedName,
-        email: trimmedEmail,
-        status: 'Đang học',
-      };
-
-      const updatedStudents = [...(foundClass.students || []), newStudent];
-      const updatedClass: ClassRow = {
-        ...foundClass,
-        students: updatedStudents,
-        studentCount: updatedStudents.length,
-      };
-
-      const updatedClasses = currentClasses.map((item) =>
-        item.id === foundClass.id ? updatedClass : item
-      );
-
-      saveStoredClasses(updatedClasses);
-      setIsAlreadyEnrolled(false);
-      setJoinedSession({
-        type: 'class',
-        classRow: updatedClass,
+    setIsSubmitting(true);
+    try {
+      const data = await fetchWithAuth<JoinedRoomData>('/api/v1/rooms/join', {
+        method: 'POST',
+        body: JSON.stringify({
+          room_code: trimmedCode,
+          passcode: trimmedPass,
+        }),
       });
-      return;
-    }
 
-    // Không tìm thấy bất kỳ phòng nào
-    setErrorMsg(
-      `Không tìm thấy phòng học, phòng lab hoặc phòng thi nào với mã "${trimmedCode}". Vui lòng kiểm tra lại với giảng viên.`
-    );
+      let parsedProctoring: Record<string, any> = {};
+      if (data.proctoring_config) {
+        try {
+          parsedProctoring =
+            typeof data.proctoring_config === 'string'
+              ? JSON.parse(data.proctoring_config)
+              : data.proctoring_config;
+        } catch {
+          parsedProctoring = {};
+        }
+      }
+
+      const pendingSession = {
+        roomId: data.room_id,
+        roomCode: data.room_code,
+        examTitle: data.room_name,
+        subject: data.course_name || data.class_name || 'Thực hành / Kiểm tra lập trình',
+        classCode: data.class_code || '',
+        className: data.class_name || '',
+        duration: data.duration_minutes || 60,
+        roomType: data.room_type === 'exam' ? 'exam' : 'lab',
+        status: data.status || 'chua_mo',
+        sessionId: data.session_id,
+        livekitRoomName: data.livekit_room_name || `room_${data.room_code}`,
+        proctoringConfig: parsedProctoring,
+      };
+
+      sessionStorage.setItem('oculide_student_pending_exam', JSON.stringify(pendingSession));
+      setJoinedRoom(data);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Không thể tham gia phòng. Vui lòng kiểm tra lại Mã phòng và Mã PIN.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleReset() {
-    setJoinedSession(null);
-    setIsAlreadyEnrolled(false);
+    setJoinedRoom(null);
     setErrorMsg('');
   }
+
+  const isProctored = (() => {
+    if (!joinedRoom?.proctoring_config) return true;
+    try {
+      const cfg =
+        typeof joinedRoom.proctoring_config === 'string'
+          ? JSON.parse(joinedRoom.proctoring_config)
+          : joinedRoom.proctoring_config;
+      return Boolean(cfg.enableCamera ?? true);
+    } catch {
+      return true;
+    }
+  })();
+
+  const isExam = joinedRoom?.room_type === 'exam';
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-[#f4f7f9] text-slate-800">
@@ -301,7 +185,7 @@ function JoinClassContent() {
               <span className="text-xl font-extrabold tracking-tight text-[#2563eb]">
                 OCULIDE
               </span>
-              <span className="ml-2 border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 rounded-md">
+              <span className="ml-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">
                 Cổng tham gia phòng học & bài thi
               </span>
             </div>
@@ -309,27 +193,27 @@ function JoinClassContent() {
 
           <div className="flex items-center gap-3 text-xs">
             <Link
-              href="/login"
+              href="/student/dashboard"
               className="font-semibold text-slate-600 transition hover:text-blue-600"
             >
-              Đăng nhập tài khoản
+              Bảng điều khiển Sinh viên
             </Link>
             <span className="text-slate-300">•</span>
             <Link
-              href="/admin/classes"
+              href="/login"
               className="font-semibold text-blue-600 hover:underline"
             >
-              Dành cho Giảng viên
+              Đổi tài khoản
             </Link>
           </div>
         </div>
       </header>
 
-      {/* Nội dung chính */}
-      <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">
+      {/* Main Content */}
+      <main className="flex-1 px-4 py-8 sm:px-6 lg:py-12">
         <div className="mx-auto max-w-xl">
-          {joinedSession ? (
-            /* MÀN HÌNH THAM GIA THÀNH CÔNG */
+          {joinedRoom ? (
+            /* MÀN HÌNH XÁC NHẬN THAM GIA THÀNH CÔNG */
             <div className="rounded-3xl border border-emerald-200/90 bg-white p-6 shadow-xl shadow-emerald-900/5 sm:p-8">
               <div className="flex items-center gap-3.5 border-b border-slate-100 pb-5">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 shadow-xs">
@@ -337,269 +221,106 @@ function JoinClassContent() {
                 </div>
                 <div>
                   <h2 className="text-xl font-extrabold text-slate-900">
-                    {joinedSession.type === 'lab'
-                      ? 'Vào phòng buổi thực hành thành công!'
-                      : joinedSession.type === 'exam'
-                      ? 'Vào phòng thi lập trình thành công!'
-                      : isAlreadyEnrolled
-                      ? 'Bạn đã có tên trong lớp học này!'
-                      : 'Tham gia lớp học thành công!'}
+                    {isExam ? 'Xác nhận vào phòng thi thành công!' : 'Xác nhận vào phòng thực hành thành công!'}
                   </h2>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    Xác thực định danh sinh viên hợp lệ • Sẵn sàng làm bài
+                    Hệ thống đã ghi nhận điểm danh của bạn vào phòng chờ giảng viên
                   </p>
                 </div>
               </div>
 
-              {/* TRƯỜNG HỢP 1: LAB */}
-              {joinedSession.type === 'lab' && joinedSession.lab && (
-                <div className="mt-5 space-y-4">
-                  <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-5">
-                    <div className="flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2.5 py-1 font-mono text-xs font-bold text-blue-700">
-                        <Code2 className="h-3.5 w-3.5" />
-                        Mã phòng: {joinedSession.lab.roomCode || roomCode}
-                      </span>
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700">
-                        {joinedSession.lab.status}
-                      </span>
-                    </div>
+              <div className="mt-5 space-y-4">
+                <div
+                  className={`rounded-2xl border p-5 ${
+                    isExam ? 'border-purple-200 bg-purple-50/50' : 'border-blue-200 bg-blue-50/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-bold ${
+                        isExam ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                      }`}
+                    >
+                      {isExam ? <GraduationCap className="h-3.5 w-3.5" /> : <Code2 className="h-3.5 w-3.5" />}
+                      Mã phòng: {joinedRoom.room_code}
+                    </span>
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700">
+                      {joinedRoom.status === 'dang_dien_ra' ? 'Đang diễn ra' : 'Đang mở phòng chờ'}
+                    </span>
+                  </div>
 
-                    <h3 className="mt-2 text-lg font-extrabold text-slate-900">
-                      {joinedSession.lab.title}
-                    </h3>
+                  <h3 className="mt-3 text-lg font-extrabold text-slate-900">
+                    {joinedRoom.room_name}
+                  </h3>
 
+                  {(joinedRoom.class_code || joinedRoom.class_name) && (
                     <p className="mt-1 text-xs font-medium text-slate-600">
-                      Lớp: <strong>{joinedSession.classRow.id}</strong> - {joinedSession.classRow.name}
+                      Lớp: <strong>{joinedRoom.class_code}</strong>
+                      {joinedRoom.class_name ? ` — ${joinedRoom.class_name}` : ''}
                     </p>
+                  )}
 
-                    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-blue-200/60 pt-3 text-xs">
-                      <div>
-                        <span className="text-slate-500">Khung giờ thực hành:</span>
-                        <p className="font-bold text-slate-800">
-                          {joinedSession.lab.startTime || '07:30, 28/10/2026'} –{' '}
-                          {joinedSession.lab.endTime ? joinedSession.lab.endTime.split(',')[0] : '09:50'}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Thời lượng làm bài:</span>
-                        <p className="font-bold text-amber-700">
-                          {joinedSession.lab.durationMinutes || 120} phút
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Ngôn ngữ:</span>
-                        <p className="font-bold text-slate-800">{joinedSession.lab.language}</p>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Số đề trong bài lab:</span>
-                        <p className="font-bold text-slate-800">{joinedSession.lab.questionCount} đề</p>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Sinh viên:</span>
-                        <p className="font-bold text-slate-800">{studentName} ({studentId})</p>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Giám sát:</span>
-                        <p className="font-bold text-blue-700">
-                          {joinedSession.lab.isProctored ? '🛡️ Có giám sát phòng máy' : 'Tự do'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      alert(`Đang khởi động không gian lập trình IDE cho "${joinedSession.lab?.title}"!`);
-                    }}
-                    className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-bold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700"
+                  <div
+                    className={`mt-4 grid grid-cols-2 gap-3 border-t pt-3 text-xs ${
+                      isExam ? 'border-purple-200/60' : 'border-blue-200/60'
+                    }`}
                   >
-                    <Code2 className="h-5 w-5" />
-                    <span>Bắt đầu buổi thực hành ngay</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
-
-              {/* TRƯỜNG HỢP 2: EXAM */}
-              {joinedSession.type === 'exam' && joinedSession.exam && (
-                <div className="mt-5 space-y-4">
-                  <div className="rounded-2xl border border-purple-200 bg-purple-50/50 p-5">
-                    <div className="flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1 rounded-md bg-purple-100 px-2.5 py-1 font-mono text-xs font-bold text-purple-700">
-                        <GraduationCap className="h-3.5 w-3.5" />
-                        Mã phòng thi: {joinedSession.exam.roomCode || roomCode}
-                      </span>
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700">
-                        {joinedSession.exam.status}
-                      </span>
+                    <div>
+                      <span className="text-slate-500">Hình thức:</span>
+                      <p className="font-bold text-slate-800">
+                        {isExam ? 'Bài thi Lập trình' : 'Buổi Thực hành (Lab)'}
+                      </p>
                     </div>
-
-                    <h3 className="mt-2 text-lg font-extrabold text-slate-900">
-                      {joinedSession.exam.title}
-                    </h3>
-
-                    <p className="mt-1 text-xs font-medium text-slate-600">
-                      Lớp: <strong>{joinedSession.classRow.id}</strong> - {joinedSession.classRow.name}
-                    </p>
-
-                    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-purple-200/60 pt-3 text-xs">
-                      <div>
-                        <span className="text-slate-500">Hình thức:</span>
-                        <p className="font-bold text-slate-800">{joinedSession.exam.type}</p>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Thời gian làm bài:</span>
-                        <p className="font-bold text-purple-700">{joinedSession.exam.durationMinutes} phút</p>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Sinh viên dự thi:</span>
-                        <p className="font-bold text-slate-800">{studentName} ({studentId})</p>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Chế độ giám sát:</span>
-                        <p className="font-bold text-blue-700">
-                          {joinedSession.exam.isProctored ? '🛡️ Giám sát chống gian lận' : 'Tự do'}
-                        </p>
-                      </div>
+                    <div>
+                      <span className="text-slate-500">Thời lượng làm bài:</span>
+                      <p className={`font-bold ${isExam ? 'text-purple-700' : 'text-blue-700'}`}>
+                        {joinedRoom.duration_minutes} phút
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Thí sinh:</span>
+                      <p className="font-bold text-slate-800">
+                        {studentName || 'Sinh viên'} {studentId ? `(${studentId})` : ''}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Giám sát AI:</span>
+                      <p className="inline-flex items-center gap-1 font-bold text-emerald-700">
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        {isProctored ? 'Có giám sát Camera/AI' : 'Chế độ mở'}
+                      </p>
                     </div>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      alert(`Đang khởi động phòng thi bảo mật cho "${joinedSession.exam?.title}". Chúc bạn làm bài tốt!`);
-                    }}
-                    className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-purple-600 text-sm font-bold text-white shadow-lg shadow-purple-600/25 transition hover:bg-purple-700"
-                  >
-                    <GraduationCap className="h-5 w-5" />
-                    <span>Vào phòng thi & Bắt đầu tính giờ</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
                 </div>
-              )}
 
-              {/* TRƯỜNG HỢP 3: CLASS */}
-              {joinedSession.type === 'class' && (
-                <div className="mt-5 space-y-4">
-                  <div className="rounded-2xl border border-slate-200/90 bg-[#f8fafc] p-5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="font-mono text-xs font-bold text-blue-700 bg-blue-100 rounded-md px-2 py-0.5">
-                          {joinedSession.classRow.id}
-                        </span>
-                        <h3 className="mt-1.5 text-lg font-extrabold text-slate-900">
-                          {joinedSession.classRow.name}
-                        </h3>
-                      </div>
-                      <span className="inline-flex items-center gap-1.5 border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 rounded-full">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        {joinedSession.classRow.status}
-                      </span>
-                    </div>
+                <button
+                  type="button"
+                  onClick={() => router.push('/student/device-check')}
+                  className={`flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl text-sm font-bold text-white shadow-lg transition ${
+                    isExam
+                      ? 'bg-purple-600 shadow-purple-600/25 hover:bg-purple-700'
+                      : 'bg-blue-600 shadow-blue-600/25 hover:bg-blue-700'
+                  }`}
+                >
+                  <span>Tiếp tục Kiểm tra Thiết bị & Vào phòng chờ</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
 
-                    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200/80 pt-3 text-xs">
-                      <div>
-                        <p className="font-medium text-slate-400">Giảng viên:</p>
-                        <p className="font-bold text-slate-800">{joinedSession.classRow.lecturer || 'Long Phạm'}</p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-slate-400">Học kỳ:</p>
-                        <p className="font-bold text-slate-800">{joinedSession.classRow.semester}</p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-slate-400">Thời gian khóa học:</p>
-                        <p className="font-bold text-slate-800">
-                          {joinedSession.classRow.startDate || '05/09/2026'} – {joinedSession.classRow.endDate || '15/01/2027'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-slate-400">Sĩ số lớp hiện tại:</p>
-                        <p className="font-bold text-slate-800">{joinedSession.classRow.students.length} sinh viên</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-                      Hoạt động học tập sẵn sàng ({joinedSession.classRow.labs?.length || 0} lab, {joinedSession.classRow.exams?.length || 0} bài thi)
-                    </h4>
-
-                    {(joinedSession.classRow.labs || []).length > 0 && (
-                      <div className="space-y-2">
-                        {joinedSession.classRow.labs?.map((lab) => (
-                          <div
-                            key={lab.id}
-                            className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3 shadow-xs transition hover:border-blue-300"
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <Code2 className="h-4 w-4 shrink-0 text-blue-600" />
-                              <div>
-                                <p className="text-xs font-bold text-slate-900">{lab.title}</p>
-                                <p className="text-[11px] font-medium text-slate-400">
-                                  Mã phòng: <strong className="font-mono text-blue-700">{lab.roomCode}</strong> • {lab.language}
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => alert(`Bắt đầu làm bài Lab: ${lab.title}`)}
-                              className="shrink-0 cursor-pointer rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 transition hover:bg-blue-100"
-                            >
-                              Làm bài Lab
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {(joinedSession.classRow.exams || []).length > 0 && (
-                      <div className="space-y-2">
-                        {joinedSession.classRow.exams?.map((exam) => (
-                          <div
-                            key={exam.id}
-                            className="flex items-center justify-between rounded-xl border border-purple-200 bg-white p-3 shadow-xs transition hover:border-purple-300"
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <GraduationCap className="h-4 w-4 shrink-0 text-purple-600" />
-                              <div>
-                                <p className="text-xs font-bold text-slate-900">{exam.title}</p>
-                                <p className="text-[11px] font-medium text-slate-400">
-                                  Mã phòng: <strong className="font-mono text-purple-700">{exam.roomCode}</strong> • {exam.durationMinutes} phút
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => alert(`Vào phòng thi: ${exam.title}`)}
-                              className="shrink-0 cursor-pointer rounded-lg bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700 transition hover:bg-purple-100"
-                            >
-                              Vào thi
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-7 flex items-center justify-between border-t border-slate-100 pt-5">
+              <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
                 <button
                   type="button"
                   onClick={handleReset}
-                  className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
-                  Tham gia phòng khác
+                  Đổi mã phòng khác
                 </button>
 
                 <Link
-                  href="/admin/classes"
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#2563eb] px-5 py-2.5 text-xs font-bold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700"
+                  href="/student/waiting-room"
+                  className="text-xs font-semibold text-blue-600 hover:underline"
                 >
-                  <span>Xem trong trang Quản lý</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
+                  Vào thẳng phòng chờ →
                 </Link>
               </div>
             </div>
@@ -615,7 +336,7 @@ function JoinClassContent() {
                     Tham gia phòng Lab / Phòng thi
                   </h2>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    Nhập mã phòng và mật khẩu do Giảng viên cung cấp để vào làm bài.
+                    Nhập mã phòng và mật khẩu PIN do Giảng viên cung cấp để vào phòng chờ.
                   </p>
                 </div>
               </div>
@@ -628,7 +349,7 @@ function JoinClassContent() {
               )}
 
               {!isLoggedIn && (
-                <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-xs text-amber-900">
+                <div className="mt-5 flex flex-col justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-xs text-amber-900 sm:flex-row sm:items-center">
                   <div className="flex items-center gap-2.5">
                     <span className="text-lg">🔒</span>
                     <p className="font-semibold leading-snug">
@@ -657,7 +378,7 @@ function JoinClassContent() {
                         setRoomCode(e.target.value.toUpperCase());
                         setErrorMsg('');
                       }}
-                      placeholder="Ví dụ: LAB-1848-01 hoặc EXAM-1848-MID"
+                      placeholder="Ví dụ: CS316-EXAM-01"
                       required
                       className="h-11 w-full rounded-xl border border-blue-200 bg-white px-4 font-mono text-sm font-extrabold uppercase text-blue-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     />
@@ -681,63 +402,54 @@ function JoinClassContent() {
                   </div>
                 </div>
 
-                {/* Khối 2: Thông tin định danh */}
+                {/* Khối 2: Thông tin định danh (tự động từ phiên đăng nhập) */}
                 <div className="space-y-3.5 pt-1">
                   <div>
                     <label className="mb-1 block text-xs font-bold text-slate-700">
-                      MÃ SỐ SINH VIÊN (MSSV) <span className="text-red-500">*</span>
+                      MÃ SỐ SINH VIÊN (MSSV)
                     </label>
                     <div className="relative">
                       <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
                         value={studentId}
-                        onChange={(e) => {
-                          setStudentId(e.target.value.toUpperCase());
-                          setErrorMsg('');
-                        }}
-                        placeholder="Ví dụ: SE184801"
-                        required
-                        className="h-11 w-full rounded-xl border border-slate-200 pl-10 pr-4 text-xs font-bold uppercase text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        onChange={(e) => setStudentId(e.target.value.toUpperCase())}
+                        placeholder="Tự động điền từ tài khoản đăng nhập"
+                        readOnly={Boolean(isLoggedIn && studentId)}
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/60 pl-10 pr-4 text-xs font-bold uppercase text-slate-800 outline-none"
                       />
                     </div>
                   </div>
 
                   <div>
                     <label className="mb-1 block text-xs font-bold text-slate-700">
-                      HỌ VÀ TÊN SINH VIÊN <span className="text-red-500">*</span>
+                      HỌ VÀ TÊN SINH VIÊN
                     </label>
                     <input
                       value={studentName}
-                      onChange={(e) => {
-                        setStudentName(e.target.value);
-                        setErrorMsg('');
-                      }}
-                      placeholder="Ví dụ: Nguyễn Minh Anh"
-                      required
-                      className="h-11 w-full rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      onChange={(e) => setStudentName(e.target.value)}
+                      placeholder="Tự động điền từ tài khoản đăng nhập"
+                      readOnly={Boolean(isLoggedIn && studentName)}
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 text-xs font-semibold text-slate-800 outline-none"
                     />
                   </div>
 
                   <div>
                     <label className="mb-1 block text-xs font-bold text-slate-700">
-                      EMAIL SINH VIÊN <span className="text-red-500">*</span>
+                      EMAIL SINH VIÊN
                     </label>
                     <div className="relative">
                       <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
                         type="email"
                         value={studentEmail}
-                        onChange={(e) => {
-                          setStudentEmail(e.target.value);
-                          setErrorMsg('');
-                        }}
-                        placeholder="Ví dụ: anh.nm@school.edu.vn"
-                        required
-                        className="h-11 w-full rounded-xl border border-slate-200 pl-10 pr-4 text-xs font-semibold text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        onChange={(e) => setStudentEmail(e.target.value)}
+                        placeholder="Tự động điền từ tài khoản đăng nhập"
+                        readOnly={Boolean(isLoggedIn && studentEmail)}
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/60 pl-10 pr-4 text-xs font-semibold text-slate-800 outline-none"
                       />
                     </div>
                     <p className="mt-1 text-[11px] text-slate-400">
-                      Email dùng để đối soát danh sách lớp và xác thực phiên làm bài thi.
+                      Hệ thống tự động đối soát tài khoản đang đăng nhập với danh sách lớp học phần trên máy chủ.
                     </p>
                   </div>
                 </div>
@@ -745,10 +457,20 @@ function JoinClassContent() {
                 <div className="pt-2">
                   <button
                     type="submit"
-                    className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#2563eb] text-sm font-bold text-white shadow-md shadow-blue-500/25 transition hover:bg-blue-700"
+                    disabled={isSubmitting}
+                    className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#2563eb] text-sm font-bold text-white shadow-md shadow-blue-500/25 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <LogIn className="h-4 w-4" />
-                    <span>Xác thực & Tham gia ngay</span>
+                    {isSubmitting ? (
+                      <>
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                        <span>Đang xác thực phòng...</span>
+                      </>
+                    ) : (
+                      <>
+                        <LogIn className="h-4 w-4" />
+                        <span>Xác thực & Tham gia ngay</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

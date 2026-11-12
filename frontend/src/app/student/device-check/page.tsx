@@ -20,8 +20,10 @@ import {
   Wifi,
   XCircle,
 } from "lucide-react";
+import { fetchWithAuth } from "@/services/apiClient";
 
 interface PendingSession {
+  roomId?: number;
   roomCode: string;
   examTitle: string;
   subject: string;
@@ -95,8 +97,30 @@ export default function StudentDeviceCheckPage() {
     }, 1000);
   };
 
-  // Chuyển tiếp vào Phòng chờ thi
-  const handleProceedToWaitingRoom = () => {
+  // Chuyển tiếp vào Phòng chờ thi và lưu trạng thái thiết bị về CSDL
+  const [isSavingCheck, setIsSavingCheck] = useState(false);
+
+  const handleProceedToWaitingRoom = async () => {
+    if (sessionInfo?.roomId) {
+      setIsSavingCheck(true);
+      try {
+        await fetchWithAuth(`/api/v1/rooms/${sessionInfo.roomId}/device-check`, {
+          method: "POST",
+          body: JSON.stringify({
+            camera_ready: camStatus === "success",
+            mic_ready: micStatus === "success",
+            screen_ready: screenStatus === "success",
+            network_latency_ms: 25,
+            os_info: typeof navigator !== "undefined" ? navigator.platform : "Web",
+            browser_info: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 120) : "Browser",
+          }),
+        });
+      } catch (err) {
+        console.error("Không thể lưu trạng thái kiểm tra thiết bị:", err);
+      } finally {
+        setIsSavingCheck(false);
+      }
+    }
     router.push("/student/waiting-room");
   };
 

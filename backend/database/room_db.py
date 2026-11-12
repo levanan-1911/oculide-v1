@@ -657,3 +657,149 @@ def get_system_overview_stats() -> Dict:
     finally:
         cursor.close()
         conn.close()
+
+
+def is_student_in_class(class_id: int, student_id: int) -> bool:
+    """Kiểm tra sinh viên có nằm trong danh sách lớp học phần hay không"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT 1 FROM SinhVienLopHoc WHERE ma_lop = ? AND ma_sinh_vien = ?",
+            (class_id, student_id),
+        )
+        return cursor.fetchone() is not None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_class_metadata(class_id: int) -> Optional[Dict]:
+    """Lấy thông tin mã lớp, tên lớp, mã môn học từ LopHoc"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT ma_lop_hoc AS class_code, ten_lop AS class_name, ma_mon_hoc AS course_name FROM LopHoc WHERE ma_lop = ?",
+            (class_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        columns = [col[0] for col in cursor.description]
+        return dict(zip(columns, row))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def upsert_student_lobby_session(
+    room_id: int,
+    student_id: int,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> int:
+    """Tạo hoặc kích hoạt lại phiên làm bài (PhienLamBai) ở trạng thái dang_lam khi sinh viên join phòng"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT TOP 1 ma_phien, trang_thai FROM PhienLamBai WHERE ma_phong = ? AND ma_sinh_vien = ? ORDER BY ma_phien DESC",
+            (room_id, student_id),
+        )
+        row = cursor.fetchone()
+        ua_trimmed = (user_agent or "")[:250] or None
+        if row:
+            session_id = row[0]
+            if row[1] not in ("completed", "da_nop"):
+                cursor.execute(
+                    """
+                    UPDATE PhienLamBai
+                    SET trang_thai = 'dang_lam',
+                        dia_chi_ip = COALESCE(?, dia_chi_ip),
+                        thong_tin_trinh_duyet = COALESCE(?, thong_tin_trinh_duyet)
+                    WHERE ma_phien = ?
+                    """,
+                    (ip_address, ua_trimmed, session_id),
+                )
+                conn.commit()
+            return session_id
+
+        cursor.execute(
+            """
+            INSERT INTO PhienLamBai (ma_phong, ma_sinh_vien, dia_chi_ip, thong_tin_trinh_duyet, trang_thai, thoi_gian_bat_dau)
+            OUTPUT INSERTED.ma_phien
+            VALUES (?, ?, ?, ?, 'dang_lam', GETDATE())
+            """,
+            (room_id, student_id, ip_address, ua_trimmed),
+        )
+        new_id = cursor.fetchone()[0]
+        conn.commit()
+        return new_id
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def save_student_device_check(
+    room_id: int,
+    student_id: int,
+    camera_ready: bool,
+    mic_ready: bool,
+    network_latency_ms: int = 25,
+    os_info: Optional[str] = None,
+    browser_info: Optional[str] = None,
+) -> Dict:
+    """Lưu trạng thái kiểm tra Camera/Mic của sinh viên vào bảng KiemTraThietBi"""
+    session_id = upsert_student_lobby_session(room_id, student_id, user_agent=browser_info)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        du_dieu_kien = 1 if (camera_ready and mic_ready) else 0
+        cam_bit = 1 if camera_ready else 0
+        mic_bit = 1 if mic_ready else 0
+
+        cursor.execute(
+            "SELECT TOP 1 ma_kiem_tra FROM KiemTraThietBi WHERE ma_phien = ? AND ma_sinh_vien = ?",
+            (session_id, student_id),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            cursor.execute(
+                """
+                UPDATE KiemTraThietBi
+                SET trang_thai_camera = ?,
+                    trang_thai_micro = ?,
+                    do_tre_mang_ms = ?,
+                    thong_tin_he_dieu_hanh = COALESCE(?, thong_tin_he_dieu_hanh),
+                    thong_tin_trinh_duyet = COALESCE(?, thong_tin_trinh_duyet),
+                    du_dieu_kien_thi = ?,
+                    thoi_gian_kiem_tra = GETDATE()
+                WHERE ma_kiem_tra = ?
+                """,
+                (cam_bit, mic_bit, network_latency_ms, os_info, browser_info, du_dieu_kien, existing[0]),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO KiemTraThietBi (
+                    ma_phien, ma_sinh_vien, trang_thai_camera, trang_thai_micro,
+                    do_tre_mang_ms, thong_tin_he_dieu_hanh, thong_tin_trinh_duyet,
+                    du_dieu_kien_thi, thoi_gian_kiem_tra
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
+                """,
+                (session_id, student_id, cam_bit, mic_bit, network_latency_ms, os_info, browser_info, du_dieu_kien),
+            )
+        conn.commit()
+        return {
+            "success": True,
+            "session_id": session_id,
+            "camera_ready": camera_ready,
+            "mic_ready": mic_ready,
+            "eligible": bool(du_dieu_kien),
+        }
+    finally:
+        cursor.close()
+        conn.close()
+

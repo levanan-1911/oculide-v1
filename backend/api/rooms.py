@@ -1,11 +1,12 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi import APIRouter, HTTPException, Depends, status, Query, Request
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from schemas.room import (
     RoomCreateRequest, RoomUpdateRequest, RoomResponse, PublicRoomResponse,
     RoomDashboardResponse, RoomDashboardStudentItem, RoomEnrollmentRequest,
-    RoomStatusUpdateRequest, RoomLobbyResponse, RoomManualAttendanceRequest
+    RoomStatusUpdateRequest, RoomLobbyResponse, RoomManualAttendanceRequest,
+    StudentJoinRoomResponse, DeviceCheckRequest, StudentRoomStatusResponse
 )
 from schemas.auth import JoinRoomRequest
 from core.permissions import get_current_user, instructor_or_admin_required
@@ -13,7 +14,9 @@ from database.room_db import (
     create_room, get_room_by_id, get_room_by_code, get_rooms_by_instructor,
     get_all_rooms, update_room, delete_room, get_room_dashboard_data,
     get_exam_templates, get_room_lobby_details, check_instructor_active_room,
-    update_room_status, toggle_manual_attendance
+    update_room_status, toggle_manual_attendance,
+    is_student_in_class, get_class_metadata, upsert_student_lobby_session,
+    save_student_device_check
 )
 from database.scoreboard_db import get_room_scoreboard
 from database.enrollment_db import enroll_student, get_enrollments_by_room, remove_enrollment, is_student_enrolled
@@ -132,37 +135,112 @@ async def create_new_room(
         status=room_data.status or "chua_mo"
     )
 
-@router.post("/join", response_model=RoomResponse)
+@router.post("/join", response_model=StudentJoinRoomResponse)
 async def join_room_authenticated(
     join_data: JoinRoomRequest,
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Thí sinh / Sinh viên ĐÃ ĐĂNG NHẬP tham gia phòng thi bằng mã phòng và passcode.
-    Tuyệt đối không cấp quyền cho khách vãng lai chưa xác thực tài khoản trường.
+    Kiểm tra lớp học phần, ghi nhận PhienLamBai ở trạng thái dang_lam để Giảng viên thấy ngay trên Lobby.
     """
-    room = get_room_by_code(join_data.room_code)
+    room_code = join_data.room_code.strip().upper()
+    room = get_room_by_code(room_code)
     if not room:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Phòng với mã '{join_data.room_code}' không tồn tại"
         )
-    if not room.get("is_active", True):
+    if not room.get("is_active", True) or room.get("status") in ("da_dong", "da_huy"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phòng học/thi này đã bị đóng"
+            detail="Phòng học/thi này đã kết thúc hoặc bị hủy"
         )
-    if room.get("passcode") and room["passcode"] != join_data.passcode:
+    if room.get("passcode") and room["passcode"] != join_data.passcode.strip():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Mật khẩu vào phòng (passcode) không chính xác"
         )
-        
+
     student_id = current_user["user_id"]
+    class_meta = None
+    if room.get("class_id"):
+        if current_user.get("role") == "student" and not is_student_in_class(room["class_id"], student_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bạn không có tên trong danh sách lớp học phần của phòng này"
+            )
+        class_meta = get_class_metadata(room["class_id"])
+
     if not is_student_enrolled(room["room_id"], student_id):
-        enroll_student(room["room_id"], student_id, enrolled_by=room.get("instructor_id") or 1)
-        
-    return room
+        try:
+            enroll_student(room["room_id"], student_id, enrolled_by=room.get("instructor_id") or 1)
+        except Exception:
+            pass
+
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    session_id = upsert_student_lobby_session(
+        room_id=room["room_id"],
+        student_id=student_id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+    )
+
+    return {
+        **room,
+        "session_id": session_id,
+        "class_code": class_meta.get("class_code") if class_meta else None,
+        "class_name": class_meta.get("class_name") if class_meta else None,
+        "course_name": class_meta.get("course_name") if class_meta else None,
+    }
+
+
+@router.post("/{room_id}/device-check")
+async def save_device_check_endpoint(
+    room_id: int,
+    payload: DeviceCheckRequest,
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lưu kết quả kiểm tra Camera/Mic của sinh viên vào bảng KiemTraThietBi"""
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+
+    browser_info = payload.browser_info or request.headers.get("user-agent")
+    return save_student_device_check(
+        room_id=room_id,
+        student_id=current_user["user_id"],
+        camera_ready=payload.camera_ready,
+        mic_ready=payload.mic_ready,
+        network_latency_ms=payload.network_latency_ms,
+        os_info=payload.os_info,
+        browser_info=browser_info,
+    )
+
+
+@router.get("/{room_code}/student-status", response_model=StudentRoomStatusResponse)
+async def get_student_room_status(
+    room_code: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Endpoint nhẹ cho màn hình Phòng Chờ Sinh Viên polling trạng thái bắt đầu thi từ Giảng viên"""
+    room = get_room_by_code(room_code.strip().upper())
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    return {
+        "room_id": room["room_id"],
+        "room_code": room["room_code"],
+        "room_name": room["room_name"],
+        "room_type": room["room_type"],
+        "status": room.get("status") or "chua_mo",
+        "is_active": bool(room.get("is_active", True)),
+        "duration_minutes": room.get("duration_minutes") or 60,
+        "start_time": room["start_time"],
+        "end_time": room["end_time"],
+    }
 
 @router.get("", response_model=List[RoomResponse])
 async def list_rooms(

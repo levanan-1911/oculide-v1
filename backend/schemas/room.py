@@ -129,3 +129,29 @@ class RoomLobbyResponse(BaseModel):
 class RoomManualAttendanceRequest(BaseModel):
     student_id: Union[int, str]
     status: str = Field(..., pattern="^(waiting|absent)$")
+
+class StudentJoinRoomResponse(RoomResponse):
+    session_id: Optional[int] = None
+    class_code: Optional[str] = None
+    class_name: Optional[str] = None
+    course_name: Optional[str] = None
+
+class DeviceCheckRequest(BaseModel):
+    camera_ready: bool = True
+    mic_ready: bool = True
+    screen_ready: bool = False
+    network_latency_ms: int = 25
+    os_info: Optional[str] = None
+    browser_info: Optional[str] = None
+
+class StudentRoomStatusResponse(BaseModel):
+    room_id: int
+    room_code: str
+    room_name: str
+    room_type: str
+    status: str
+    is_active: bool
+    duration_minutes: int
+    start_time: datetime
+    end_time: datetime
+

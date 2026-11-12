@@ -14,11 +14,17 @@ class LiveKitService:
         self.api_key = settings.LIVEKIT_API_KEY
         self.api_secret = settings.LIVEKIT_API_SECRET
 
-    def _generate_admin_token(self) -> str:
+    def _generate_admin_token(self, room_name: Optional[str] = None) -> str:
         if AccessToken is None or VideoGrants is None:
             return "simulated_livekit_admin_token"
         token = AccessToken(self.api_key, self.api_secret)
-        token.with_grants(VideoGrants(room_admin=True))
+        grants = VideoGrants(
+            room_create=True,
+            room_list=True,
+            room_admin=True,
+            room=room_name or "",
+        )
+        token.with_grants(grants)
         return token.to_jwt()
 
     def create_room(self, room_name: str, empty_timeout: int = 300) -> Dict:
@@ -59,7 +65,7 @@ class LiveKitService:
         try:
             url = f"{self.base_url}/twirp/livekit.RoomService/DeleteRoom"
             headers = {
-                "Authorization": f"Bearer {self._generate_admin_token()}",
+                "Authorization": f"Bearer {self._generate_admin_token(room_name=room_name)}",
                 "Content-Type": "application/json"
             }
             data = {"room": room_name}

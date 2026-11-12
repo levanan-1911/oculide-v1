@@ -11,8 +11,10 @@ from database.template_db import is_question_valid_for_room
 from database.question_db import get_question_by_id
 from database.submission_db import (
     create_submission, get_submission_by_id, get_submissions_by_student,
-    get_submissions_by_question, update_submission_status, get_grading_results
+    get_submissions_by_question, get_submissions_by_room,
+    update_submission_status, get_grading_results
 )
+from services.grading_service import grade_submission_sync
 
 router = APIRouter()
 
@@ -65,9 +67,20 @@ async def create_submission_endpoint(
                 queue="grading"
             )
         except Exception as e:
-            print(f"Warning: Không thể gửi task chấm bài đến Celery: {e}")
+            print(f"Warning: Không thể gửi task chấm bài đến Celery ({e}), chuyển sang chấm trực tiếp.")
+            grade_submission_sync(
+                submission["submission_id"],
+                submission_data.question_id,
+                submission_data.code_content,
+                submission_data.language,
+            )
+            refreshed = get_submission_by_id(
+                submission["submission_id"],
+                include_hidden_details=(current_user["role"] != "student"),
+            )
+            if refreshed:
+                submission = refreshed
 
-            
     return submission
 
 @router.post("/run", response_model=CodeRunResponse)
@@ -103,7 +116,8 @@ async def get_submission(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Lấy chi tiết bài nộp và kết quả chấm điểm"""
-    sub = get_submission_by_id(submission_id)
+    include_hidden = current_user["role"] != "student"
+    sub = get_submission_by_id(submission_id, include_hidden_details=include_hidden)
     if not sub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài nộp")
         
@@ -117,12 +131,22 @@ async def get_submission_results(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Lấy chi tiết kết quả chạy qua từng test case (Chống IDOR)"""
-    sub = get_submission_by_id(submission_id)
+    sub = get_submission_by_id(submission_id, include_hidden_details=False)
     if not sub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài nộp")
     if current_user["role"] == "student" and sub["student_id"] != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem kết quả bài nộp của người khác")
-    return get_grading_results(submission_id)
+    return get_grading_results(submission_id, include_hidden_details=(current_user["role"] != "student"))
+
+@router.get("/room/{room_id}", response_model=List[SubmissionResponse])
+async def get_submissions_by_room_endpoint(
+    room_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Giảng viên xem toàn bộ bài nộp trong một phòng thi"""
+    if current_user["role"] not in ("instructor", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ giảng viên mới được xem toàn bộ bài nộp của phòng")
+    return get_submissions_by_room(room_id)
 
 
 @router.get("/student/{student_id}", response_model=List[SubmissionResponse])

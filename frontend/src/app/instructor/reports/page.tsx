@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { fetchWithAuth } from '@/services/apiClient';
 import {
   BookOpen,
   Download,
@@ -263,12 +264,88 @@ export default function InstructorReportsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [reviewingStudent, setReviewingStudent] = useState<StudentReportRecord | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [liveRooms, setLiveRooms] = useState<Array<{ room_id: number; room_code: string; room_name: string }>>([]);
+  const [selectedLiveRoomId, setSelectedLiveRoomId] = useState<number | null>(null);
+  const [liveRecords, setLiveRecords] = useState<StudentReportRecord[] | null>(null);
 
-  // ZIP hiện chỉ có dữ liệu demo cho CS101 / session-01. Các lựa chọn khác hiển thị trạng thái chưa có dữ liệu.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadRooms() {
+      try {
+        const rooms = await fetchWithAuth<Array<{ room_id: number; room_code: string; room_name: string }>>('/api/v1/rooms');
+        if (cancelled || !Array.isArray(rooms)) return;
+        setLiveRooms(rooms);
+        if (rooms.length > 0) {
+          setSelectedLiveRoomId(rooms[0].room_id);
+        }
+      } catch {
+        // Giữ fallback dữ liệu mẫu khi chưa đăng nhập hoặc backend offline
+      }
+    }
+    loadRooms();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedLiveRoomId) {
+      setLiveRecords(null);
+      return;
+    }
+    let cancelled = false;
+    async function loadScoreboard() {
+      try {
+        const roomInfo = liveRooms.find((r) => r.room_id === selectedLiveRoomId);
+        const rows = await fetchWithAuth<Array<{
+          student_id: number;
+          student_name: string;
+          student_code?: string;
+          total_score: number;
+          max_room_points?: number;
+          score_scale_10?: number;
+          solved_questions: number;
+          total_submissions: number;
+          last_submission_time?: string | null;
+        }>>(`/api/v1/rooms/${selectedLiveRoomId}/scoreboard`);
+        if (cancelled || !Array.isArray(rows)) return;
+
+        const mapped: StudentReportRecord[] = rows.map((row) => {
+          const score10 = Number((row.score_scale_10 ?? row.total_score ?? 0).toFixed(1));
+          const maxPts = row.max_room_points && row.max_room_points > 0 ? row.max_room_points : null;
+          return {
+            id: row.student_code || `SV-${row.student_id}`,
+            name: row.student_name || `Sinh viên #${row.student_id}`,
+            studentClass: roomInfo?.room_code || `Phòng #${selectedLiveRoomId}`,
+            examTitle: roomInfo?.room_name || `Phòng thi #${selectedLiveRoomId}`,
+            submitTime: row.last_submission_time
+              ? new Date(row.last_submission_time).toLocaleTimeString('vi-VN')
+              : 'Chưa nộp',
+            testScore: score10,
+            finalScore: score10,
+            passedCases: maxPts
+              ? `${row.total_score}/${maxPts}đ · ${row.solved_questions ?? 0} câu (${row.total_submissions ?? 0} lần nộp)`
+              : `${row.solved_questions ?? 0} câu đạt (${row.total_submissions ?? 0} lần nộp)`,
+            isPublished: true,
+            violations: [],
+          };
+        });
+        setLiveRecords(mapped);
+      } catch {
+        if (!cancelled) setLiveRecords(null);
+      }
+    }
+    loadScoreboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLiveRoomId, liveRooms]);
+
+  // ZIP hiện chỉ có dữ liệu demo cho CS101 / session-01. Nếu chọn phòng thật từ CSDL thì ưu tiên dữ liệu thật.
   const hasDemoDataset = selectedClass === 'CS101' && selectedSession === 'session-01';
   const currentRecords = useMemo(
-    () => (hasDemoDataset ? records : []),
-    [hasDemoDataset, records]
+    () => (liveRecords !== null ? liveRecords : hasDemoDataset ? records : []),
+    [liveRecords, hasDemoDataset, records]
   );
   const attendanceRecords = useMemo(
     () => (hasDemoDataset ? INITIAL_ATTENDANCE : []),
@@ -620,8 +697,24 @@ export default function InstructorReportsPage() {
               Kết quả &amp; Báo cáo phiên làm bài
             </h1>
             <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
-              {selectedClass}
+              {liveRecords !== null
+                ? liveRooms.find((r) => r.room_id === selectedLiveRoomId)?.room_code || 'CSDL'
+                : selectedClass}
             </span>
+            {liveRooms.length > 0 && (
+              <select
+                value={selectedLiveRoomId ?? ''}
+                onChange={(e) => setSelectedLiveRoomId(e.target.value ? Number(e.target.value) : null)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200"
+              >
+                <option value="">Dữ liệu mẫu (CS101)</option>
+                {liveRooms.map((room) => (
+                  <option key={room.room_id} value={room.room_id}>
+                    {room.room_code} — {room.room_name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
             Theo dõi chuyên cần, kết quả bài làm và thẩm định cảnh báo AI.

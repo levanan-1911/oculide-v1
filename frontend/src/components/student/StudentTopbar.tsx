@@ -11,13 +11,26 @@ import {
   LogOut,
   User,
   GraduationCap,
-  ShieldCheck,
+  ShieldAlert,
   CheckCircle2,
+  CalendarDays,
+  Sparkles,
 } from "lucide-react";
-import { studentNotifications } from "./student-data";
+import { fetchWithAuth } from "@/services/apiClient";
+import type { ApiStudentRoom } from "./student-data";
 
 interface StudentTopbarProps {
   title?: string;
+}
+
+interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  unread: boolean;
+  type: "room" | "violation" | "system";
+  href?: string;
 }
 
 export default function StudentTopbar({
@@ -35,6 +48,7 @@ export default function StudentTopbar({
     studentId: "SV001",
   });
 
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -70,25 +84,142 @@ export default function StudentTopbar({
   };
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("oculide_user");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const name = parsed.full_name || parsed.name || parsed.username || "Sinh viên";
-        const email = parsed.email || "student@school.edu.vn";
-        const studentId = parsed.student_id || "SV001";
-        setUserProfile({ name, email, studentId });
-        const init = name
-          .split(" ")
-          .filter(Boolean)
-          .slice(-2)
-          .map((w: string) => w[0]?.toUpperCase())
-          .join("") || "SV";
-        setInitials(init);
+    let isSubscribed = true;
+
+    async function loadUserAndNotifications() {
+      let currentUserId: number | null = null;
+      try {
+        const stored = localStorage.getItem("oculide_user");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const name = parsed.full_name || parsed.fullName || parsed.name || parsed.username || "Sinh viên";
+          const email = parsed.email || "student@school.edu.vn";
+          const studentId = parsed.student_code || parsed.studentId || parsed.student_id || "SV001";
+          if (isSubscribed) {
+            setUserProfile({ name, email, studentId });
+            const init = name
+              .split(" ")
+              .filter(Boolean)
+              .slice(-2)
+              .map((w: string) => w[0]?.toUpperCase())
+              .join("") || "SV";
+            setInitials(init);
+          }
+          const idCandidate = Number(parsed.user_id || parsed.id);
+          if (!Number.isNaN(idCandidate) && idCandidate > 0) currentUserId = idCandidate;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+
+      try {
+        const me = await fetchWithAuth<{
+          user_id: number;
+          full_name?: string;
+          email?: string;
+          username?: string;
+          student_code?: string;
+        }>("/api/v1/auth/me");
+        if (isSubscribed && me) {
+          currentUserId = me.user_id;
+          const name = me.full_name || me.username || "Sinh viên";
+          const email = me.email || "student@school.edu.vn";
+          const studentId = me.student_code || me.username || "SV001";
+          setUserProfile({ name, email, studentId });
+          const init = name
+            .split(" ")
+            .filter(Boolean)
+            .slice(-2)
+            .map((w: string) => w[0]?.toUpperCase())
+            .join("") || "SV";
+          setInitials(init);
+        }
+      } catch {
+        // ignore
+      }
+
+      // Tải thông báo thực từ rooms và violations
+      const notifs: NotificationItem[] = [];
+      try {
+        const rooms = await fetchWithAuth<ApiStudentRoom[]>("/api/v1/rooms?limit=5");
+        if (Array.isArray(rooms)) {
+          const ongoing = rooms.filter(
+            (r) => (r.status || "").toLowerCase() === "dang_dien_ra"
+          );
+          ongoing.forEach((r) => {
+            notifs.push({
+              id: `room-${r.room_id}`,
+              title: "Ca thi đang diễn ra",
+              message: `Phòng "${r.room_name}" (${r.room_code}) đang mở. Bạn có thể tham gia ngay.`,
+              time: "Hiện tại",
+              unread: true,
+              type: "room",
+              href: `/student/exams?code=${r.room_code}`,
+            });
+          });
+
+          const upcoming = rooms.filter(
+            (r) => (r.status || "chua_mo").toLowerCase() === "chua_mo" && r.is_active !== false
+          );
+          if (upcoming.length > 0) {
+            const first = upcoming[0];
+            notifs.push({
+              id: `upcoming-${first.room_id}`,
+              title: "Lịch thi sắp tới",
+              message: `Ca thi "${first.room_name}" dự kiến diễn ra. Hãy chuẩn bị thiết bị.`,
+              time: "Sắp tới",
+              unread: false,
+              type: "room",
+              href: "/student/schedule",
+            });
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      if (currentUserId) {
+        try {
+          const vios = await fetchWithAuth<any[]>(
+            `/api/v1/violations/student/${currentUserId}`
+          );
+          if (Array.isArray(vios) && vios.length > 0) {
+            const pending = vios.filter((v) => (v.review_status || "pending") === "pending");
+            if (pending.length > 0) {
+              notifs.push({
+                id: `vio-${pending[0].violation_id}`,
+                title: "Nhật ký cảnh báo AI",
+                message: `Bạn có ${pending.length} sự kiện cảnh báo đang chờ giảng viên xem xét.`,
+                time: "Gần đây",
+                unread: true,
+                type: "violation",
+                href: "/student/violations",
+              });
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (notifs.length === 0) {
+        notifs.push({
+          id: "sys-welcome",
+          title: "Hệ thống an toàn",
+          message: "Chào mừng bạn đến với Oculide. Hãy kiểm tra webcam và micro trước ca thi.",
+          time: "Hôm nay",
+          unread: false,
+          type: "system",
+          href: "/student/device-check",
+        });
+      }
+
+      if (isSubscribed) {
+        setNotifications(notifs);
+      }
     }
+
+    loadUserAndNotifications();
 
     function handleClickOutside(event: MouseEvent) {
       if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
@@ -99,7 +230,10 @@ export default function StudentTopbar({
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      isSubscribed = false;
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, []);
 
   const handleLogout = () => {
@@ -111,7 +245,7 @@ export default function StudentTopbar({
     window.location.replace('/login');
   };
 
-  const unreadCount = studentNotifications.filter((n) => n.unread).length;
+  const unreadCount = notifications.filter((n) => n.unread).length;
 
   return (
     <header className="flex h-16 w-full shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 px-6 lg:px-8 relative z-30 backdrop-blur-md dark:border-white/10 dark:bg-[#0d1017]/80 transition-colors">
@@ -133,7 +267,15 @@ export default function StudentTopbar({
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
           <input
             type="text"
-            placeholder="Tìm kiếm ca thi, bài nộp..."
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const target = (e.target as HTMLInputElement).value;
+                if (target.trim()) {
+                  router.push(`/student/schedule?q=${encodeURIComponent(target.trim())}`);
+                }
+              }
+            }}
+            placeholder="Tìm kiếm ca thi, bài nộp... (Enter)"
             className="h-9 w-64 xl:w-72 rounded-xl border border-slate-200/80 bg-slate-50/80 pl-9 pr-4 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none dark:border-white/10 dark:bg-[#121824] dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-500 transition-all"
           />
         </div>
@@ -186,28 +328,34 @@ export default function StudentTopbar({
               </div>
 
               <div className="mt-3 space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                {studentNotifications.map((notification) => (
-                  <div
+                {notifications.map((notification) => (
+                  <Link
                     key={notification.id}
-                    className="rounded-xl border border-slate-100 p-2.5 text-xs dark:border-white/5 dark:bg-white/[0.02]"
+                    href={notification.href || "#"}
+                    onClick={() => setShowNotifications(false)}
+                    className="block rounded-xl border border-slate-100 p-2.5 text-xs transition hover:bg-slate-50 dark:border-white/5 dark:bg-white/[0.02] dark:hover:bg-white/5"
                   >
                     <div className="flex items-start gap-2">
-                      {notification.unread && (
+                      {notification.unread ? (
                         <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600 dark:bg-blue-400" />
+                      ) : (
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600" />
                       )}
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-slate-800 dark:text-slate-100">
-                          {notification.title}
-                        </p>
+                        <div className="flex items-center justify-between gap-1">
+                          <p className="font-semibold text-slate-800 dark:text-slate-100">
+                            {notification.title}
+                          </p>
+                          <span className="text-[10px] text-slate-400 shrink-0">
+                            {notification.time}
+                          </span>
+                        </div>
                         <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                           {notification.message}
                         </p>
-                        <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
-                          {notification.time}
-                        </p>
                       </div>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
@@ -250,6 +398,15 @@ export default function StudentTopbar({
 
               <div className="py-1">
                 <Link
+                  href="/student/profile"
+                  onClick={() => setIsProfileOpen(false)}
+                  className="flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 rounded-xl transition"
+                >
+                  <User className="h-4 w-4 text-slate-400" />
+                  <span>Hồ sơ cá nhân</span>
+                </Link>
+
+                <Link
                   href="/student/schedule"
                   onClick={() => setIsProfileOpen(false)}
                   className="flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 rounded-xl transition"
@@ -265,6 +422,15 @@ export default function StudentTopbar({
                 >
                   <CheckCircle2 className="h-4 w-4 text-slate-400" />
                   <span>Kết quả làm bài</span>
+                </Link>
+
+                <Link
+                  href="/student/violations"
+                  onClick={() => setIsProfileOpen(false)}
+                  className="flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 rounded-xl transition"
+                >
+                  <ShieldAlert className="h-4 w-4 text-slate-400" />
+                  <span>Cảnh báo vi phạm AI</span>
                 </Link>
               </div>
 

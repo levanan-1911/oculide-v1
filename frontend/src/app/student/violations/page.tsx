@@ -1,19 +1,40 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Camera,
   CheckCircle2,
   Clock,
   Info,
+  LoaderCircle,
   RotateCcw,
   Search,
   ShieldAlert,
   ShieldCheck,
+  X,
 } from "lucide-react";
+import { fetchWithAuth } from "@/services/apiClient";
 
-type ViolationStatus = "pending" | "rejected" | "approved";
+type ViolationStatus = "pending" | "rejected" | "confirmed";
+
+interface ApiViolation {
+  violation_id: number;
+  session_id: number;
+  student_id: number;
+  room_id?: number | null;
+  room_code?: string | null;
+  room_name?: string | null;
+  violation_type: string;
+  severity: string;
+  description?: string | null;
+  snapshot_url?: string | null;
+  detected_at: string;
+  is_reviewed?: boolean;
+  review_status?: string | null;
+  reviewed_by?: number | null;
+  reviewed_at?: string | null;
+}
 
 interface ViolationItem {
   id: number;
@@ -21,47 +42,139 @@ interface ViolationItem {
   timestamp: string;
   type: string;
   typeName: string;
-  duration: string;
+  severity: string;
   status: ViolationStatus;
   statusText: string;
   statusClass: string;
   evidenceNote: string;
+  snapshotUrl?: string | null;
 }
 
-const initialViolations: ViolationItem[] = [
-  {
-    id: 1,
-    examTitle: "PRJ301 • Kiểm Tra Giữa Kỳ Java OOP",
-    timestamp: "27/10/2026 14:15:22",
-    type: "TAB_SWITCH",
-    typeName: "Rời khỏi cửa sổ thi (Chuyển Tab)",
-    duration: "12 giây",
-    status: "pending",
-    statusText: "Đang chờ GV xem xét",
-    statusClass: "bg-amber-50 text-amber-700 border-amber-200/80",
-    evidenceNote: "Hệ thống phát hiện mất tiêu điểm màn hình thi 12 giây.",
-  },
-  {
-    id: 2,
-    examTitle: "CS101 • Thực Hành C++ Lab 02",
-    timestamp: "20/10/2026 09:32:05",
-    type: "HEAD_POSE",
-    typeName: "Quay mặt khỏi camera > 10s",
-    duration: "15 giây",
-    status: "rejected",
-    statusText: "Đã hủy (Không tính vi phạm)",
-    statusClass: "bg-slate-100 text-slate-600 border-slate-200",
-    evidenceNote: "Giảng viên đã xác nhận sinh viên cúi xuống ghi nháp.",
-  },
-];
+const VIOLATION_TYPE_NAMES: Record<string, string> = {
+  tab_switch: "Rời khỏi cửa sổ thi (Chuyển Tab)",
+  TAB_SWITCH: "Rời khỏi cửa sổ thi (Chuyển Tab)",
+  copy_paste: "Thao tác sao chép / dán code trái phép",
+  COPY_PASTE: "Thao tác sao chép / dán code trái phép",
+  no_face_detected: "Không phát hiện khuôn mặt trước camera",
+  multiple_faces: "Phát hiện nhiều người trước camera",
+  multiple_people: "Phát hiện nhiều người trước camera",
+  phone_detected: "Phát hiện sử dụng điện thoại di động",
+  suspicious_object: "Phát hiện tài liệu / vật thể bất thường",
+  looking_away: "Quay mặt khỏi màn hình thi",
+  head_pose: "Quay mặt khỏi camera > 10s",
+  HEAD_POSE: "Quay mặt khỏi camera > 10s",
+  camera_blocked: "Camera giám sát bị che khuất",
+  fullscreen_exit: "Thoát chế độ toàn màn hình",
+};
+
+function formatViolationTime(isoStr: string): string {
+  try {
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return isoStr;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(
+      d.getHours()
+    )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  } catch {
+    return isoStr;
+  }
+}
 
 export default function StudentViolationsPage() {
+  const [violations, setViolations] = useState<ViolationItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [selectedEvidence, setSelectedEvidence] = useState<ViolationItem | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadViolations() {
+      setLoading(true);
+      try {
+        let studentId: number | null = null;
+        try {
+          const stored = localStorage.getItem("oculide_user");
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            const idVal = Number(parsed.user_id || parsed.id);
+            if (!Number.isNaN(idVal) && idVal > 0) studentId = idVal;
+          }
+        } catch {
+          // ignore
+        }
+
+        if (!studentId) {
+          const me = await fetchWithAuth<{ user_id: number }>("/api/v1/auth/me");
+          if (me && me.user_id) studentId = me.user_id;
+        }
+
+        if (studentId) {
+          const data = await fetchWithAuth<ApiViolation[]>(
+            `/api/v1/violations/student/${studentId}`
+          );
+          if (isMounted && Array.isArray(data)) {
+            const mapped: ViolationItem[] = data.map((v) => {
+              const rawStatus = (v.review_status || "pending").toLowerCase();
+              let status: ViolationStatus = "pending";
+              let statusText = "Đang chờ GV xem xét";
+              let statusClass = "bg-amber-50 text-amber-700 border-amber-200/80";
+
+              if (rawStatus === "rejected") {
+                status = "rejected";
+                statusText = "Đã hủy (Không tính vi phạm)";
+                statusClass = "bg-slate-100 text-slate-600 border-slate-200";
+              } else if (rawStatus === "confirmed" || rawStatus === "approved") {
+                status = "confirmed";
+                statusText = "Đã xác nhận vi phạm";
+                statusClass = "bg-rose-50 text-rose-700 border-rose-200/80";
+              }
+
+              const examTitle =
+                v.room_name && v.room_code
+                  ? `${v.room_code} • ${v.room_name}`
+                  : v.room_name || v.room_code || `Phiên thi #${v.session_id}`;
+
+              const typeName =
+                VIOLATION_TYPE_NAMES[v.violation_type] ||
+                v.violation_type.replace(/_/g, " ").toUpperCase();
+
+              return {
+                id: v.violation_id,
+                examTitle,
+                timestamp: formatViolationTime(v.detected_at),
+                type: v.violation_type,
+                typeName,
+                severity: v.severity || "medium",
+                status,
+                statusText,
+                statusClass,
+                evidenceNote:
+                  v.description ||
+                  `Hệ thống phát hiện hành vi ${typeName.toLowerCase()} trong ca thi.`,
+                snapshotUrl: v.snapshot_url,
+              };
+            });
+            setViolations(mapped);
+          }
+        }
+      } catch {
+        if (isMounted) setViolations([]);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    loadViolations();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filteredViolations = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-    return initialViolations.filter((v) => {
+    return violations.filter((v) => {
       const matchesSearch =
         !keyword ||
         v.examTitle.toLowerCase().includes(keyword) ||
@@ -73,16 +186,16 @@ export default function StudentViolationsPage() {
 
       return matchesSearch && matchesStatus;
     });
-  }, [search, filterStatus]);
+  }, [search, filterStatus, violations]);
 
   const counts = useMemo(
     () => ({
-      all: initialViolations.length,
-      pending: initialViolations.filter((v) => v.status === "pending").length,
-      rejected: initialViolations.filter((v) => v.status === "rejected").length,
-      approved: initialViolations.filter((v) => v.status === "approved").length,
+      all: violations.length,
+      pending: violations.filter((v) => v.status === "pending").length,
+      rejected: violations.filter((v) => v.status === "rejected").length,
+      confirmed: violations.filter((v) => v.status === "confirmed").length,
     }),
-    []
+    [violations]
   );
 
   return (
@@ -186,7 +299,7 @@ export default function StudentViolationsPage() {
                 <button
                   type="button"
                   onClick={() => setFilterStatus("all")}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition cursor-pointer ${
                     filterStatus === "all"
                       ? "bg-blue-600 text-white"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -197,7 +310,7 @@ export default function StudentViolationsPage() {
                 <button
                   type="button"
                   onClick={() => setFilterStatus("pending")}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition cursor-pointer ${
                     filterStatus === "pending"
                       ? "bg-amber-600 text-white"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -208,13 +321,24 @@ export default function StudentViolationsPage() {
                 <button
                   type="button"
                   onClick={() => setFilterStatus("rejected")}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition cursor-pointer ${
                     filterStatus === "rejected"
                       ? "bg-slate-800 text-white"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
                   Đã hủy ({counts.rejected})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterStatus("confirmed")}
+                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                    filterStatus === "confirmed"
+                      ? "bg-rose-600 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  Đã xác nhận ({counts.confirmed})
                 </button>
               </div>
             </div>
@@ -223,7 +347,12 @@ export default function StudentViolationsPage() {
 
         {/* Table & Cards */}
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-          {filteredViolations.length > 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-xs text-slate-500">
+              <LoaderCircle className="h-4 w-4 animate-spin text-blue-600" />
+              Đang tải nhật ký cảnh báo và vi phạm từ hệ thống...
+            </div>
+          ) : filteredViolations.length > 0 ? (
             <>
               {/* Desktop Table View */}
               <div className="hidden overflow-x-auto md:block">
@@ -233,7 +362,7 @@ export default function StudentViolationsPage() {
                       <th className="px-6 py-3.5">Ca thi / Bài Lab</th>
                       <th className="px-6 py-3.5">Thời gian ghi nhận</th>
                       <th className="px-6 py-3.5">Loại hành vi cảnh báo</th>
-                      <th className="px-6 py-3.5">Thời lượng</th>
+                      <th className="px-6 py-3.5">Mức độ</th>
                       <th className="px-6 py-3.5">Trạng thái xử lý</th>
                       <th className="px-6 py-3.5 text-right">Chi tiết Bằng chứng</th>
                     </tr>
@@ -255,8 +384,18 @@ export default function StudentViolationsPage() {
                             {item.evidenceNote}
                           </p>
                         </td>
-                        <td className="px-6 py-4 font-mono font-semibold text-slate-700">
-                          {item.duration}
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                              item.severity === "high" || item.severity === "critical"
+                                ? "bg-rose-100 text-rose-700"
+                                : item.severity === "medium"
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {item.severity}
+                          </span>
                         </td>
                         <td className="px-6 py-4">
                           <span
@@ -268,15 +407,11 @@ export default function StudentViolationsPage() {
                         <td className="px-6 py-4 text-right">
                           <button
                             type="button"
-                            onClick={() =>
-                              alert(
-                                `[BẰNG CHỨNG AI GHI NHẬN]\n\nCa thi: ${item.examTitle}\nThời gian: ${item.timestamp}\nHành vi: ${item.typeName}\nThời lượng: ${item.duration}\n\nGhi chú: ${item.evidenceNote}`
-                              )
-                            }
+                            onClick={() => setSelectedEvidence(item)}
                             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-blue-600 transition cursor-pointer"
                           >
                             <Camera size={14} className="text-slate-400" />
-                            Xem ảnh chụp
+                            Xem bằng chứng
                           </button>
                         </td>
                       </tr>
@@ -310,19 +445,15 @@ export default function StudentViolationsPage() {
 
                     <div className="flex items-center justify-between text-xs text-slate-500 border-t border-slate-100 pt-2.5">
                       <span className="font-mono">{item.timestamp}</span>
-                      <span className="font-mono font-semibold text-slate-700">
-                        {item.duration}
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase">
+                        {item.severity}
                       </span>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() =>
-                        alert(
-                          `[BẰNG CHỨNG AI GHI NHẬN]\n\nCa thi: ${item.examTitle}\nThời gian: ${item.timestamp}\nHành vi: ${item.typeName}\nThời lượng: ${item.duration}\n\nGhi chú: ${item.evidenceNote}`
-                        )
-                      }
-                      className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      onClick={() => setSelectedEvidence(item)}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                     >
                       <Camera size={14} className="text-slate-400" />
                       Xem ảnh chụp bằng chứng
@@ -346,13 +477,95 @@ export default function StudentViolationsPage() {
                   setSearch("");
                   setFilterStatus("all");
                 }}
-                className="mt-4 inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3.5 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-100 transition"
+                className="mt-4 inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3.5 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-100 transition cursor-pointer"
               >
                 <RotateCcw size={12} /> Xóa bộ lọc
               </button>
             </div>
           )}
         </section>
+
+        {/* Modal Xem Bằng Chứng */}
+        {selectedEvidence && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+            <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="h-5 w-5 text-amber-600" />
+                  <h3 className="text-sm font-bold text-slate-900">Chi tiết bằng chứng cảnh báo AI</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvidence(null)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <span className="text-slate-400">Ca thi:</span>
+                  <p className="font-bold text-slate-900 mt-0.5">{selectedEvidence.examTitle}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-slate-400">Thời gian:</span>
+                    <p className="font-mono font-semibold text-slate-700 mt-0.5">
+                      {selectedEvidence.timestamp}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Trạng thái duyệt:</span>
+                    <p className="mt-0.5">
+                      <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold ${selectedEvidence.statusClass}`}>
+                        {selectedEvidence.statusText}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-slate-400">Hành vi phát hiện:</span>
+                  <p className="font-semibold text-slate-800 mt-0.5">{selectedEvidence.typeName}</p>
+                  <p className="text-slate-500 text-[11px] mt-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    {selectedEvidence.evidenceNote}
+                  </p>
+                </div>
+
+                {selectedEvidence.snapshotUrl ? (
+                  <div>
+                    <span className="text-slate-400 mb-1.5 block">Ảnh chụp bằng chứng:</span>
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-black flex items-center justify-center max-h-56">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={selectedEvidence.snapshotUrl}
+                        alt="Bằng chứng vi phạm"
+                        className="object-contain max-h-56 w-full"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-slate-400">
+                    <Camera className="mx-auto h-6 w-6 text-slate-300 mb-1" />
+                    Sự kiện nhật ký từ trình duyệt (Tab switch / Blur / Copy-paste) - Không yêu cầu ảnh chụp webcam.
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvidence(null)}
+                  className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 transition"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <footer className="pt-2 text-center text-xs text-slate-400">
           Oculide · Hệ thống thi lập trình trực tuyến

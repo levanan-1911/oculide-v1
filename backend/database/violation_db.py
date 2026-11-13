@@ -92,6 +92,9 @@ def get_violations_by_student(student_id: int, room_id: Optional[int] = None) ->
                 SELECT v.ma_vi_pham AS violation_id, 
                        v.ma_phien AS session_id, 
                        v.ma_sinh_vien AS student_id, 
+                       COALESCE(v.ma_phong, s.ma_phong) AS room_id,
+                       p.ma_phong_code AS room_code,
+                       p.tieu_de AS room_name,
                        v.loai_vi_pham AS violation_type, 
                        v.muc_do_nghiem_trong AS severity,
                        v.mo_ta AS description, 
@@ -102,27 +105,33 @@ def get_violations_by_student(student_id: int, room_id: Optional[int] = None) ->
                        v.nguoi_duyet AS reviewed_by, 
                        v.thoi_gian_duyet AS reviewed_at
                 FROM ViPhamGiamSat v
-                JOIN PhienLamBai s ON v.ma_phien = s.ma_phien
-                WHERE v.ma_sinh_vien = ? AND s.ma_phong = ?
+                LEFT JOIN PhienLamBai s ON v.ma_phien = s.ma_phien
+                LEFT JOIN Phong p ON COALESCE(v.ma_phong, s.ma_phong) = p.ma_phong
+                WHERE v.ma_sinh_vien = ? AND (v.ma_phong = ? OR s.ma_phong = ?)
                 ORDER BY v.thoi_gian_phat_hien DESC
-            """, (student_id, room_id))
+            """, (student_id, room_id, room_id))
         else:
             cursor.execute("""
-                SELECT ma_vi_pham AS violation_id, 
-                       ma_phien AS session_id, 
-                       ma_sinh_vien AS student_id, 
-                       loai_vi_pham AS violation_type, 
-                       muc_do_nghiem_trong AS severity,
-                       mo_ta AS description, 
-                       link_anh_bang_chung AS snapshot_url, 
-                       thoi_gian_phat_hien AS detected_at, 
-                       da_kiem_tra AS is_reviewed, 
-                       trang_thai_duyet AS review_status, 
-                       nguoi_duyet AS reviewed_by, 
-                       thoi_gian_duyet AS reviewed_at
-                FROM ViPhamGiamSat 
-                WHERE ma_sinh_vien = ?
-                ORDER BY thoi_gian_phat_hien DESC
+                SELECT v.ma_vi_pham AS violation_id, 
+                       v.ma_phien AS session_id, 
+                       v.ma_sinh_vien AS student_id, 
+                       COALESCE(v.ma_phong, s.ma_phong) AS room_id,
+                       p.ma_phong_code AS room_code,
+                       p.tieu_de AS room_name,
+                       v.loai_vi_pham AS violation_type, 
+                       v.muc_do_nghiem_trong AS severity,
+                       v.mo_ta AS description, 
+                       v.link_anh_bang_chung AS snapshot_url, 
+                       v.thoi_gian_phat_hien AS detected_at, 
+                       v.da_kiem_tra AS is_reviewed, 
+                       v.trang_thai_duyet AS review_status, 
+                       v.nguoi_duyet AS reviewed_by, 
+                       v.thoi_gian_duyet AS reviewed_at
+                FROM ViPhamGiamSat v
+                LEFT JOIN PhienLamBai s ON v.ma_phien = s.ma_phien
+                LEFT JOIN Phong p ON COALESCE(v.ma_phong, s.ma_phong) = p.ma_phong
+                WHERE v.ma_sinh_vien = ?
+                ORDER BY v.thoi_gian_phat_hien DESC
             """, (student_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]

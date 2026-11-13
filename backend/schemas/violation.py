@@ -32,6 +32,9 @@ class ViolationResponse(BaseModel):
     violation_id: int
     session_id: int
     student_id: int
+    room_id: Optional[int] = None
+    room_code: Optional[str] = None
+    room_name: Optional[str] = None
     violation_type: str
     severity: str
     description: Optional[str] = None

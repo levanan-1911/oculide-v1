@@ -41,9 +41,9 @@ import {
   ArrowRight,
   LogOut,
   RefreshCw,
+  LoaderCircle,
 } from "lucide-react";
-
-import { currentStudent } from "@/components/student/student-data";
+import { fetchWithAuth } from "@/services/apiClient";
 
 type ProfileTab = "info" | "biometrics" | "security" | "stats" | "preferences";
 
@@ -57,16 +57,36 @@ interface ActiveSessionItem {
   isCurrent: boolean;
 }
 
+interface UserProfileData {
+  user_id: number;
+  username: string;
+  email: string;
+  full_name: string;
+  role: string;
+  student_code?: string;
+  phone_number?: string;
+  department?: string;
+  created_at?: string;
+}
+
 export default function StudentProfilePage() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("info");
+  const [loading, setLoading] = useState(true);
 
   // ─── 1. THÔNG TIN HỌC THUẬT & CÁ NHÂN (Editable & Locked) ─────────────────
-  const [phone, setPhone] = useState("0912 345 678");
-  const [secondaryEmail, setSecondaryEmail] = useState("minhanh.personal@gmail.com");
+  const [userId, setUserId] = useState<number | null>(null);
+  const [mssv, setMssv] = useState("SV001");
+  const [fullName, setFullName] = useState("Sinh viên");
+  const [email, setEmail] = useState("student@school.edu.vn");
+  const [className, setClassName] = useState("Kỹ thuật Phần mềm");
+  const [major, setMajor] = useState("Công nghệ Thông tin");
+  const [phone, setPhone] = useState("");
+  const [secondaryEmail, setSecondaryEmail] = useState("");
   const [preferredLang, setPreferredLang] = useState("C++20");
-  const [bio, setBio] = useState("Sinh viên K27 ngành Kỹ thuật Phần mềm. Đam mê thuật toán & lập trình thi đấu ICPC.");
+  const [bio, setBio] = useState("Sinh viên Oculide. Đam mê thuật toán & lập trình thi đấu.");
   const [isSavingInfo, setIsSavingInfo] = useState(false);
   const [infoSaveSuccess, setInfoSaveSuccess] = useState(false);
+  const [infoSaveError, setInfoSaveError] = useState("");
 
   // ─── 2. ĐỔI MẬT KHẨU (Security) ───────────────────────────────────────────
   const [currentPassword, setCurrentPassword] = useState("");
@@ -97,26 +117,103 @@ export default function StudentProfilePage() {
   const [sessions, setSessions] = useState<ActiveSessionItem[]>([
     {
       id: "SES-01",
-      device: "Máy trạm Phòng Lab 402 - PC-18",
-      browser: "Chrome 130 (Windows 11)",
-      ip: currentStudent.ipAddress,
-      location: "Khuôn viên Trường (Campus LAN)",
-      lastActive: "Đang hoạt động (Hiện tại)",
+      device: "Máy trạm Phòng Lab - Thiết bị hiện tại",
+      browser: "Chrome 130 (Windows)",
+      ip: "172.16.20.105 (Campus LAN)",
+      location: "Khuôn viên Trường",
+      lastActive: "Đang hoạt động",
       isCurrent: true,
-    },
-    {
-      id: "SES-02",
-      device: "Laptop cá nhân ThinkPad T14",
-      browser: "Firefox 132 (Windows 11)",
-      ip: "118.69.182.44",
-      location: "Ký túc xá Đại học",
-      lastActive: "2 giờ trước",
-      isCurrent: false,
     },
   ]);
 
-  // Load cấu hình đã lưu từ localStorage
+  // ─── 6. THỐNG KÊ HỌC THUẬT THỰC TẾ (Stats) ────────────────────────────────
+  const [submissionsCount, setSubmissionsCount] = useState<number>(0);
+  const [avgScore, setAvgScore] = useState<number>(0);
+  const [acRate, setAcRate] = useState<number>(100);
+  const [violationsCount, setViolationsCount] = useState<number>(0);
+
+  // Tải dữ liệu Profile từ Backend
   useEffect(() => {
+    let isMounted = true;
+
+    async function loadProfile() {
+      setLoading(true);
+      try {
+        const me = await fetchWithAuth<UserProfileData>("/api/v1/auth/me");
+        if (isMounted && me) {
+          setUserId(me.user_id);
+          setMssv(me.student_code || me.username || "SV001");
+          setFullName(me.full_name || me.username || "Sinh viên");
+          setEmail(me.email || "student@school.edu.vn");
+          if (me.phone_number) setPhone(me.phone_number);
+          if (me.department) {
+            setClassName(me.department);
+            setMajor(me.department);
+          }
+
+          // Lấy thống kê bài nộp thật
+          try {
+            const subs = await fetchWithAuth<any[]>(
+              `/api/v1/submissions/student/${me.user_id}`
+            );
+            if (Array.isArray(subs) && subs.length > 0) {
+              setSubmissionsCount(subs.length);
+              const totalPct = subs.reduce((acc, curr) => {
+                const pct =
+                  typeof curr.score_percentage === "number"
+                    ? curr.score_percentage
+                    : curr.max_points && curr.max_points > 0
+                    ? ((curr.total_points || 0) / curr.max_points) * 100
+                    : 0;
+                return acc + pct;
+              }, 0);
+              setAvgScore(Math.round(totalPct / subs.length));
+              const acCount = subs.filter(
+                (s) =>
+                  (s.score_percentage && s.score_percentage >= 70) ||
+                  (s.status || "").toLowerCase() === "accepted" ||
+                  (s.status || "").toLowerCase() === "graded"
+              ).length;
+              setAcRate(Math.round((acCount / subs.length) * 100));
+            }
+          } catch {
+            // ignore
+          }
+
+          // Lấy thống kê vi phạm thật
+          try {
+            const vios = await fetchWithAuth<any[]>(
+              `/api/v1/violations/student/${me.user_id}`
+            );
+            if (Array.isArray(vios)) {
+              setViolationsCount(vios.length);
+            }
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // fallback localStorage nếu có
+        try {
+          const stored = localStorage.getItem("oculide_user");
+          if (stored && isMounted) {
+            const parsed = JSON.parse(stored);
+            if (parsed.full_name || parsed.name) setFullName(parsed.full_name || parsed.name);
+            if (parsed.student_code || parsed.studentId) {
+              setMssv(parsed.student_code || parsed.studentId);
+            }
+            if (parsed.email) setEmail(parsed.email);
+          }
+        } catch {
+          // ignore
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    loadProfile();
+
     try {
       const savedPrefs = localStorage.getItem("oculide_student_preferences");
       if (savedPrefs) {
@@ -130,17 +227,34 @@ export default function StudentProfilePage() {
     } catch {
       // Ignored
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // Xử lý lưu thông tin liên lạc cá nhân
-  const handleSaveInfo = (e: React.FormEvent) => {
+  // Xử lý lưu thông tin liên lạc cá nhân qua API
+  const handleSaveInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingInfo(true);
-    setTimeout(() => {
-      setIsSavingInfo(false);
+    setInfoSaveError("");
+    setInfoSaveSuccess(false);
+
+    try {
+      await fetchWithAuth("/api/v1/auth/profile", {
+        method: "PUT",
+        body: JSON.stringify({
+          phone_number: phone,
+          department: className,
+        }),
+      });
       setInfoSaveSuccess(true);
       setTimeout(() => setInfoSaveSuccess(false), 3000);
-    }, 700);
+    } catch (err: any) {
+      setInfoSaveError(err?.message || "Không thể lưu thông tin. Vui lòng thử lại.");
+    } finally {
+      setIsSavingInfo(false);
+    }
   };
 
   // Tính toán độ mạnh mật khẩu (Password Strength)
@@ -154,8 +268,8 @@ export default function StudentProfilePage() {
     return score;
   }, [newPassword]);
 
-  // Xử lý đổi mật khẩu
-  const handleChangePassword = (e: React.FormEvent) => {
+  // Xử lý đổi mật khẩu qua API
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPassError("");
     setPassSuccess(false);
@@ -174,14 +288,24 @@ export default function StudentProfilePage() {
     }
 
     setIsSavingPass(true);
-    setTimeout(() => {
-      setIsSavingPass(false);
+    try {
+      await fetchWithAuth("/api/v1/auth/change-password", {
+        method: "PUT",
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
       setPassSuccess(true);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       setTimeout(() => setPassSuccess(false), 4000);
-    }, 800);
+    } catch (err: any) {
+      setPassError(err?.message || "Đổi mật khẩu thất bại. Mật khẩu hiện tại không đúng.");
+    } finally {
+      setIsSavingPass(false);
+    }
   };
 
   // Bật/tắt webcam giả lập hoặc thực tế
@@ -238,145 +362,158 @@ export default function StudentProfilePage() {
     }
   };
 
-  // Xóa các phiên đăng nhập khác
+  // Đăng xuất các phiên khác
   const handleTerminateOtherSessions = () => {
     setSessions((prev) => prev.filter((s) => s.isCurrent));
   };
 
+  const initials = useMemo(() => {
+    return (
+      fullName
+        .split(" ")
+        .filter(Boolean)
+        .slice(-2)
+        .map((w) => w[0]?.toUpperCase())
+        .join("") || "SV"
+    );
+  }, [fullName]);
+
   return (
-    <div className="space-y-6 pb-16">
-      {/* ─── 1. PROFILE HEADER CARD (Đồng bộ Dark & Light Mode) ─────────── */}
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm transition">
-        {/* Họa tiết trang trí nền */}
-        <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-blue-50/80 dark:bg-blue-500/10 blur-2xl pointer-events-none" />
+    <main className="min-h-screen bg-slate-50/80 dark:bg-[#090d16] p-4 sm:p-6 lg:p-8 text-slate-800 dark:text-slate-100 transition-colors">
+      <div className="mx-auto max-w-[1500px] space-y-6">
+        {/* ─── Breadcrumb ──────────────────────────────────────────────── */}
+        <nav className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+          <Link href="/student" className="hover:text-blue-600 dark:hover:text-blue-400 transition">
+            Sinh viên
+          </Link>
+          <span>/</span>
+          <span className="text-blue-600 dark:text-blue-400 font-semibold">Hồ sơ cá nhân &amp; Cài đặt</span>
+        </nav>
 
-        <div className="relative flex flex-col sm:flex-row items-center sm:items-start gap-5">
-          {/* Avatar Container với Badge Sinh Trắc Học */}
-          <div className="relative shrink-0">
-            <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-2xl sm:text-3xl shadow-md shadow-blue-500/20">
-              SV
+        {/* ─── Card Header Hồ sơ Cá nhân ─────────────────────────────────── */}
+        <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-6 sm:p-8 shadow-sm transition-colors">
+          <div className="relative flex flex-col sm:flex-row items-center sm:items-start gap-5">
+            {/* Avatar Container với Badge Sinh Trắc Học */}
+            <div className="relative shrink-0">
+              <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-2xl sm:text-3xl shadow-md shadow-blue-500/20">
+                {initials}
+              </div>
+              <span
+                title="Đã xác thực định danh SSO & Sinh trắc học AI"
+                className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 ring-4 ring-white dark:ring-[#121824] text-white shadow-sm"
+              >
+                <CheckCircle2 size={16} />
+              </span>
             </div>
-            <span
-              title="Đã xác thực định danh SSO & Sinh trắc học AI"
-              className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 ring-4 ring-white dark:ring-[#121824] text-white shadow-sm"
+
+            {/* Thông tin Cốt lõi của Sinh viên */}
+            <div className="flex-1 text-center sm:text-left space-y-2">
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                  {fullName}
+                </h1>
+                <span className="font-mono text-xs font-bold rounded-lg bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-500/30 px-2.5 py-0.5">
+                  {mssv}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-500/15 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-500/30">
+                  <ShieldCheck size={13} /> SSO Verified
+                </span>
+              </div>
+
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
+                Chuyên ngành:{" "}
+                <strong className="text-slate-700 dark:text-slate-200">{major}</strong>{" "}
+                · Lớp:{" "}
+                <strong className="text-slate-700 dark:text-slate-200">{className}</strong>
+              </p>
+
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 sm:gap-5 pt-1 text-xs text-slate-500 dark:text-slate-400">
+                <span className="flex items-center gap-1.5">
+                  <Mail size={14} className="text-slate-400" /> {email}
+                </span>
+                <span className="flex items-center gap-1.5 font-mono">
+                  <Globe size={14} className="text-emerald-500" /> Campus LAN
+                </span>
+                <span className="flex items-center gap-1.5 font-mono">
+                  <Fingerprint size={14} className="text-blue-500" /> FP-OCULIDE-VERIFIED
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Tabs Bar */}
+          <div className="mt-6 flex overflow-x-auto border-b border-slate-100 dark:border-white/5 gap-2 sm:gap-6 text-xs sm:text-[13px] font-semibold scrollbar-none">
+            <button
+              type="button"
+              onClick={() => setActiveTab("info")}
+              className={`pb-3.5 transition shrink-0 relative cursor-pointer flex items-center gap-1.5 ${
+                activeTab === "info"
+                  ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+              }`}
             >
-              <CheckCircle2 size={16} />
-            </span>
-          </div>
+              <User size={15} />
+              <span>Thông tin định danh</span>
+            </button>
 
-          {/* Thông tin Cốt lõi của Sinh viên */}
-          <div className="flex-1 text-center sm:text-left space-y-2">
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                {currentStudent.fullName}
-              </h1>
-              <span className="font-mono text-xs font-bold rounded-lg bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-500/30 px-2.5 py-0.5">
-                {currentStudent.mssv}
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-500/15 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-500/30">
-                <ShieldCheck size={13} /> SSO Verified
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab("biometrics")}
+              className={`pb-3.5 transition shrink-0 relative cursor-pointer flex items-center gap-1.5 ${
+                activeTab === "biometrics"
+                  ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+              }`}
+            >
+              <Camera size={15} />
+              <span>Sinh trắc học AI</span>
+            </button>
 
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
-              Chuyên ngành:{" "}
-              <strong className="text-slate-700 dark:text-slate-200">
-                {currentStudent.major}
-              </strong>{" "}
-              · Lớp:{" "}
-              <strong className="text-slate-700 dark:text-slate-200">
-                {currentStudent.className}
-              </strong>
-            </p>
+            <button
+              type="button"
+              onClick={() => setActiveTab("security")}
+              className={`pb-3.5 transition shrink-0 relative cursor-pointer flex items-center gap-1.5 ${
+                activeTab === "security"
+                  ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+              }`}
+            >
+              <Lock size={15} />
+              <span>Bảo mật &amp; Mật khẩu</span>
+            </button>
 
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 sm:gap-5 pt-1 text-xs text-slate-500 dark:text-slate-400">
-              <span className="flex items-center gap-1.5">
-                <Mail size={14} className="text-slate-400" /> {currentStudent.email}
-              </span>
-              <span className="flex items-center gap-1.5 font-mono">
-                <Globe size={14} className="text-emerald-500" /> {currentStudent.ipAddress}
-              </span>
-              <span className="flex items-center gap-1.5 font-mono">
-                <Fingerprint size={14} className="text-blue-500" /> {currentStudent.deviceFingerprint}
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab("stats")}
+              className={`pb-3.5 transition shrink-0 relative cursor-pointer flex items-center gap-1.5 ${
+                activeTab === "stats"
+                  ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+              }`}
+            >
+              <Award size={15} />
+              <span>Thống kê học thuật</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("preferences")}
+              className={`pb-3.5 transition shrink-0 relative cursor-pointer flex items-center gap-1.5 ${
+                activeTab === "preferences"
+                  ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+              }`}
+            >
+              <Code2 size={15} />
+              <span>Môi trường lập trình</span>
+            </button>
           </div>
         </div>
 
-        {/* ─── Navigation Tabs Bar (Chuẩn h-10/h-11, không White-on-White) ─ */}
-        <div className="mt-6 flex overflow-x-auto border-b border-slate-100 dark:border-white/5 gap-2 sm:gap-6 text-xs sm:text-[13px] font-semibold scrollbar-none">
-          <button
-            type="button"
-            onClick={() => setActiveTab("info")}
-            className={`pb-3.5 transition shrink-0 relative cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "info"
-                ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <User size={15} />
-            <span>Thông tin định danh</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("biometrics")}
-            className={`pb-3.5 transition shrink-0 relative cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "biometrics"
-                ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <Camera size={15} />
-            <span>Sinh trắc học AI & Thiết bị</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("security")}
-            className={`pb-3.5 transition shrink-0 relative cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "security"
-                ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <KeyRound size={15} />
-            <span>Bảo mật & Đổi mật khẩu</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("stats")}
-            className={`pb-3.5 transition shrink-0 relative cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "stats"
-                ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <Award size={15} />
-            <span>Năng lực lập trình & Thi cử</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("preferences")}
-            className={`pb-3.5 transition shrink-0 relative cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "preferences"
-                ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 font-bold"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <SlidersHorizontal size={15} />
-            <span>Cá nhân hóa môi trường thi</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ─── TAB 1: THÔNG TIN ĐỊNH DANH (SSO READ-ONLY + EDITABLE) ────────── */}
-      {activeTab === "info" && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          {/* Cột Trái: Hồ sơ trường cấp (Khóa SSO) */}
-          <div className="xl:col-span-2 space-y-6">
+        {/* ─── TAB 1: THÔNG TIN ĐỊNH DANH & LIÊN LẠC ──────────────────────── */}
+        {activeTab === "info" && (
+          <div className="space-y-6">
+            {/* Khối Thông tin SSO Bất Biến */}
             <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-5">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
                 <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -397,7 +534,7 @@ export default function StudentProfilePage() {
                   <div className="relative">
                     <input
                       readOnly
-                      value={currentStudent.mssv}
+                      value={mssv}
                       className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-white/[0.04] px-3 font-mono font-bold text-slate-800 dark:text-slate-200 cursor-not-allowed select-all"
                     />
                     <Lock size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -411,7 +548,7 @@ export default function StudentProfilePage() {
                   <div className="relative">
                     <input
                       readOnly
-                      value={currentStudent.fullName}
+                      value={fullName}
                       className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-white/[0.04] px-3 font-bold text-slate-800 dark:text-slate-200 cursor-not-allowed select-all"
                     />
                     <Lock size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -425,7 +562,7 @@ export default function StudentProfilePage() {
                   <div className="relative">
                     <input
                       readOnly
-                      value={currentStudent.email}
+                      value={email}
                       className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-white/[0.04] px-3 font-mono text-slate-700 dark:text-slate-300 cursor-not-allowed select-all"
                     />
                     <Lock size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -434,26 +571,12 @@ export default function StudentProfilePage() {
 
                 <div>
                   <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1 uppercase text-[10px] tracking-wider">
-                    Lớp sinh hoạt
+                    Lớp sinh hoạt / Khoa
                   </label>
                   <div className="relative">
                     <input
                       readOnly
-                      value={currentStudent.className}
-                      className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-white/[0.04] px-3 font-semibold text-slate-800 dark:text-slate-200 cursor-not-allowed"
-                    />
-                    <Lock size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  </div>
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="block text-slate-500 dark:text-slate-400 font-bold mb-1 uppercase text-[10px] tracking-wider">
-                    Khoa / Ngành đào tạo
-                  </label>
-                  <div className="relative">
-                    <input
-                      readOnly
-                      value={currentStudent.major}
+                      value={className}
                       className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-white/[0.04] px-3 font-semibold text-slate-800 dark:text-slate-200 cursor-not-allowed"
                     />
                     <Lock size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -470,723 +593,457 @@ export default function StudentProfilePage() {
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
                 <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Phone size={17} className="text-emerald-600 dark:text-emerald-400" />
-                  <span>Thông tin liên lạc & Hồ sơ cá nhân</span>
+                  <span>Thông tin liên lạc &amp; Hồ sơ cá nhân</span>
                 </h2>
                 <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                   Cho phép chỉnh sửa
                 </span>
               </div>
 
+              {infoSaveSuccess && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-500/10 dark:border-emerald-500/30 p-3 text-xs text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-2">
+                  <CheckCircle2 size={16} />
+                  <span>Cập nhật thông tin hồ sơ thành công!</span>
+                </div>
+              )}
+
+              {infoSaveError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-500/10 dark:border-rose-500/30 p-3 text-xs text-rose-700 dark:text-rose-300 font-semibold flex items-center gap-2">
+                  <AlertCircle size={16} />
+                  <span>{infoSaveError}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1 text-xs">
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
                     Số điện thoại liên hệ khẩn cấp
                   </label>
                   <input
                     type="tel"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="0912 345 678"
-                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
+                    placeholder="Ví dụ: 0912 345 678"
+                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
                   />
-                  <p className="mt-1 text-[11px] text-slate-400">Dùng khi Giám thị cần liên hệ khẩn cấp do sự cố mất kết nối thi.</p>
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1 text-xs">
-                    Email phụ nhận thông báo
-                  </label>
-                  <input
-                    type="email"
-                    value={secondaryEmail}
-                    onChange={(e) => setSecondaryEmail(e.target.value)}
-                    placeholder="email.phu@gmail.com"
-                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
-                  />
-                  <p className="mt-1 text-[11px] text-slate-400">Nhận bản sao kết quả bài thi và phúc khảo.</p>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1 text-xs">
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
                     Ngôn ngữ lập trình sở trường
                   </label>
-                  <select
+                  <input
+                    type="text"
                     value={preferredLang}
                     onChange={(e) => setPreferredLang(e.target.value)}
-                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
-                  >
-                    <option value="C++20">C++20 (GCC 13.2)</option>
-                    <option value="Python 3.11">Python 3.11</option>
-                    <option value="Java 17">Java 17 LTS</option>
-                    <option value="C11">C11 Standard</option>
-                  </select>
+                    placeholder="Ví dụ: C++20, Python 3.11, Java"
+                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
+                  />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1 text-xs">
-                    Ghi chú cá nhân / Tiểu sử ngắn
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Giới thiệu ngắn (Bio)
                   </label>
                   <textarea
                     rows={2}
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
+                    placeholder="Mô tả định hướng học tập của bạn..."
                     className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] p-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
                   />
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2">
-                {infoSaveSuccess && (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 size={15} /> Đã cập nhật thông tin thành công!
-                  </span>
-                )}
-                {!infoSaveSuccess && <span />}
-
+              <div className="pt-2 flex justify-end">
                 <button
                   type="submit"
                   disabled={isSavingInfo}
-                  className="h-10 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition active:scale-95 disabled:opacity-50"
+                  className="h-10 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition active:scale-95 disabled:opacity-50 cursor-pointer"
                 >
-                  {isSavingInfo ? (
-                    <RefreshCw size={14} className="animate-spin" />
-                  ) : (
-                    <Save size={14} />
-                  )}
+                  {isSavingInfo ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
                   <span>{isSavingInfo ? "Đang lưu..." : "Lưu thay đổi"}</span>
                 </button>
               </div>
             </form>
           </div>
+        )}
 
-          {/* Cột Phải: Thẻ quy chế & Chú thích học thuật */}
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-blue-100 dark:border-blue-500/20 bg-blue-50/50 dark:bg-blue-500/10 p-5 space-y-3">
-              <div className="flex items-center gap-2 text-blue-900 dark:text-blue-300 font-bold text-xs">
-                <ShieldCheck size={18} className="text-blue-600 dark:text-blue-400" />
-                <span>Quy chuẩn Định danh Kỳ thi 2026</span>
+        {/* ─── TAB 2: SINH TRẮC HỌC AI & WEBCAM ──────────────────────────── */}
+        {activeTab === "biometrics" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Camera size={17} className="text-blue-600 dark:text-blue-400" />
+                  <span>Khuôn mặt chuẩn AI Face ID</span>
+                </h2>
+                <span className="rounded-full bg-emerald-50 dark:bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200/60">
+                  {biometricStatus === "updated" ? "Đã cập nhật ảnh mẫu" : "Đã kích hoạt AI Face"}
+                </span>
               </div>
-              <p className="text-xs text-blue-900/80 dark:text-blue-300/80 leading-relaxed">
-                Hồ sơ sinh viên được xác thực duy nhất qua cổng Single Sign-On (SSO) của trường. Mọi hành vi thi hộ hoặc mượn tài khoản sẽ bị hệ thống AI đối soát khuôn mặt phát hiện tự động.
-              </p>
-            </div>
 
-            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-sm space-y-3 text-xs">
-              <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                <Building2 size={16} className="text-slate-500" />
-                <span>Đơn vị Đào tạo & Quản lý</span>
-              </h3>
-              <ul className="space-y-2 text-slate-600 dark:text-slate-400">
-                <li className="flex justify-between">
-                  <span>Khoa:</span>
-                  <strong className="text-slate-900 dark:text-slate-100">Công nghệ Thông tin</strong>
-                </li>
-                <li className="flex justify-between">
-                  <span>Cố vấn học tập:</span>
-                  <strong className="text-slate-900 dark:text-slate-100">TS. Nguyễn Văn An</strong>
-                </li>
-                <li className="flex justify-between">
-                  <span>Niên khóa:</span>
-                  <strong className="text-slate-900 dark:text-slate-100">2023 - 2027 (K27)</strong>
-                </li>
-                <li className="flex justify-between">
-                  <span>Trạng thái học vụ:</span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400">Đang học (Bình thường)</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── TAB 2: SINH TRẮC HỌC AI & THIẾT BỊ (BIOMETRICS & DEVICE SENTINEL) */}
-      {activeTab === "biometrics" && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          {/* Box 1: Đăng ký & Đối soát Khuôn mặt AI */}
-          <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Camera size={17} className="text-blue-600 dark:text-blue-400" />
-                <span>Dữ liệu Sinh trắc học Khuôn mặt (AI Face Vector)</span>
-              </h2>
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-500/30 px-2.5 py-0.5 text-[11px] font-bold">
-                <CheckCircle2 size={12} /> Đã đăng ký
-              </span>
-            </div>
-
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Mô hình thị giác máy tính YOLOv8 & MediaPipe sử dụng vector 128 chiều trích xuất từ ảnh khuôn mặt này để liên tục xác thực bạn trong suốt thời gian làm bài thi.
-            </p>
-
-            {/* Khung Webcam xem trước hoặc ảnh mẫu hiện tại */}
-            <div className="relative rounded-xl overflow-hidden bg-slate-950 aspect-video flex items-center justify-center border border-slate-800">
-              {isWebcamActive ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover mirror"
-                />
-              ) : (
-                <div className="text-center p-6 space-y-2">
-                  <div className="w-16 h-16 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center mx-auto border border-blue-500/40">
-                    <Camera size={28} />
+              <div className="aspect-video w-full rounded-2xl bg-black overflow-hidden relative border border-slate-200 dark:border-white/10 flex items-center justify-center">
+                {isWebcamActive ? (
+                  <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                ) : capturedFacePreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={capturedFacePreview} alt="Mẫu khuôn mặt" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-center p-6 space-y-2">
+                    <Camera className="mx-auto h-12 w-12 text-slate-500" />
+                    <p className="text-xs text-slate-400">Webcam hiện đang tắt. Nhấn nút bên dưới để kiểm tra hình ảnh.</p>
                   </div>
-                  <p className="font-bold text-slate-200 text-xs">Ảnh khuôn mặt mẫu đối soát AI</p>
-                  <p className="text-[11px] text-slate-400">Đã cập nhật ngày 28/10/2026</p>
-                </div>
-              )}
+                )}
+              </div>
 
-              {/* Lưới định vị khuôn mặt AR Overlay */}
-              {isWebcamActive && (
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                  <div className="w-44 h-56 rounded-full border-2 border-dashed border-emerald-400/80 animate-pulse flex items-center justify-center">
-                    <span className="text-[10px] text-emerald-300 font-bold uppercase bg-black/60 px-2 py-0.5 rounded">
-                      Căn giữa khuôn mặt
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Các nút thao tác Webcam */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-              <button
-                type="button"
-                onClick={handleToggleWebcam}
-                className="h-10 inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 px-4 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition"
-              >
-                <Camera size={14} />
-                <span>{isWebcamActive ? "Tắt Webcam" : "Bật Webcam kiểm tra"}</span>
-              </button>
-
-              {isWebcamActive && (
+              <div className="flex items-center gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={handleCaptureFace}
-                  className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-bold text-white hover:bg-emerald-700 transition"
+                  onClick={handleToggleWebcam}
+                  className="h-10 flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.04] text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition cursor-pointer"
                 >
-                  <Check size={14} />
-                  <span>Chụp ảnh làm mẫu AI</span>
+                  <Camera size={14} />
+                  <span>{isWebcamActive ? "Tắt Webcam" : "Bật Webcam kiểm tra"}</span>
                 </button>
-              )}
-            </div>
-          </div>
 
-          {/* Box 2: Thông số Máy trạm & Vân tay thiết bị */}
-          <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-4">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-white/5 pb-3 flex items-center gap-2">
-                <Laptop size={17} className="text-blue-600 dark:text-blue-400" />
-                <span>Dấu vân tay Máy trạm & Mạng thi</span>
-              </h2>
-
-              <div className="space-y-2.5 text-xs">
-                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/5">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">Device Fingerprint:</span>
-                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{currentStudent.deviceFingerprint}</span>
-                </div>
-
-                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/5">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">Địa chỉ IP Campus:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{currentStudent.ipAddress}</span>
-                </div>
-
-                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/5">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">Trình duyệt & Hệ điều hành:</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">Chrome 130 / Windows 11 64-bit</span>
-                </div>
-
-                <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-500/10 border border-emerald-200/60 dark:border-emerald-500/20">
-                  <span className="text-slate-700 dark:text-slate-300 font-semibold">Tỷ lệ tuân thủ quy chế AI:</span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono text-sm">100% (An toàn tuyệt đối)</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Box 3: Phiên đăng nhập hoạt động */}
-            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <Fingerprint size={16} className="text-purple-600 dark:text-purple-400" />
-                  <span>Phiên đăng nhập đang hoạt động</span>
-                </h3>
-
-                {sessions.length > 1 && (
+                {isWebcamActive && (
                   <button
                     type="button"
-                    onClick={handleTerminateOtherSessions}
-                    className="text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline"
+                    onClick={handleCaptureFace}
+                    className="h-10 flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 text-xs font-bold text-white hover:bg-blue-700 transition cursor-pointer"
                   >
-                    Đăng xuất các phiên khác
+                    <Check size={14} />
+                    <span>Chụp ảnh làm mẫu AI</span>
                   </button>
                 )}
               </div>
+            </div>
 
-              <div className="space-y-2.5 text-xs">
-                {sessions.map((sess) => (
-                  <div
-                    key={sess.id}
-                    className="p-3 rounded-xl border border-slate-200/60 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02] flex items-center justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <strong className="text-slate-800 dark:text-slate-200">{sess.device}</strong>
-                        {sess.isCurrent && (
-                          <span className="rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-bold">
-                            Thiết bị này
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
-                        {sess.browser} • {sess.ip} ({sess.location})
-                      </p>
-                    </div>
-                    <span className="text-[11px] font-mono text-slate-500">{sess.lastActive}</span>
+            {/* Dấu vân tay thiết bị & Quy chuẩn */}
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-4">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-white/5 pb-3 flex items-center gap-2">
+                  <Laptop size={17} className="text-blue-600 dark:text-blue-400" />
+                  <span>Dấu vân tay Máy trạm &amp; Mạng thi</span>
+                </h2>
+
+                <div className="space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/5">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Device Fingerprint:</span>
+                    <span className="font-mono font-bold text-blue-600 dark:text-blue-400">FP-OCULIDE-VERIFIED</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ─── TAB 3: BẢO MẬT & ĐỔI MẬT KHẨU (SECURITY & PASSCODE) ──────────── */}
-      {activeTab === "security" && (
-        <div className="max-w-2xl mx-auto space-y-6">
-          <form
-            onSubmit={handleChangePassword}
-            className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-7 shadow-sm space-y-5"
-          >
-            <div className="border-b border-slate-100 dark:border-white/5 pb-3">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <KeyRound size={18} className="text-blue-600 dark:text-blue-400" />
-                <span>Đổi mật khẩu tài khoản & Mã PIN ca thi</span>
-              </h2>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Mật khẩu này được sử dụng để đăng nhập hệ thống và xác nhận tham gia ca thi trực tuyến.
-              </p>
-            </div>
-
-            {passError && (
-              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-xs font-bold text-rose-700 dark:text-rose-400 flex items-center gap-2">
-                <AlertCircle size={15} />
-                <span>{passError}</span>
-              </div>
-            )}
-
-            {passSuccess && (
-              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-                <CheckCircle2 size={15} />
-                <span>Đổi mật khẩu thành công! Vui lòng ghi nhớ mật khẩu mới của bạn.</span>
-              </div>
-            )}
-
-            <div className="space-y-4 text-xs">
-              {/* Mật khẩu hiện tại */}
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1 text-xs">
-                  Mật khẩu hiện tại
-                </label>
-                <div className="relative">
-                  <input
-                    type={showCurrentPass ? "text" : "password"}
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    placeholder="Nhập mật khẩu đang dùng"
-                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 pr-10 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowCurrentPass(!showCurrentPass)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                  >
-                    {showCurrentPass ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Mật khẩu mới */}
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1 text-xs">
-                  Mật khẩu mới (Tối thiểu 8 ký tự)
-                </label>
-                <div className="relative">
-                  <input
-                    type={showNewPass ? "text" : "password"}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Tối thiểu 8 ký tự gồm chữ hoa, thường và số"
-                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 pr-10 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowNewPass(!showNewPass)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                  >
-                    {showNewPass ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-
-                {/* Thanh đo độ mạnh mật khẩu (Password Strength Meter) */}
-                {newPassword && (
-                  <div className="mt-2 space-y-1">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-slate-500">Độ mạnh mật khẩu:</span>
-                      <strong
-                        className={`font-bold ${
-                          passwordStrength <= 25
-                            ? "text-rose-500"
-                            : passwordStrength <= 50
-                            ? "text-amber-500"
-                            : passwordStrength <= 75
-                            ? "text-blue-500"
-                            : "text-emerald-500"
-                        }`}
-                      >
-                        {passwordStrength <= 25
-                          ? "Yếu"
-                          : passwordStrength <= 50
-                          ? "Trung bình"
-                          : passwordStrength <= 75
-                          ? "Khá mạnh"
-                          : "Rất mạnh"}
-                      </strong>
-                    </div>
-                    <div className="h-1.5 w-full bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full transition-all duration-300 ${
-                          passwordStrength <= 25
-                            ? "bg-rose-500"
-                            : passwordStrength <= 50
-                            ? "bg-amber-500"
-                            : passwordStrength <= 75
-                            ? "bg-blue-500"
-                            : "bg-emerald-500"
-                        }`}
-                        style={{ width: `${passwordStrength}%` }}
-                      />
-                    </div>
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/5">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Địa chỉ IP Campus:</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">Campus LAN</span>
                   </div>
-                )}
-              </div>
 
-              {/* Xác nhận mật khẩu mới */}
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1 text-xs">
-                  Xác nhận lại mật khẩu mới
-                </label>
-                <div className="relative">
-                  <input
-                    type={showConfirmPass ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Nhập lại mật khẩu mới"
-                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 pr-10 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPass(!showConfirmPass)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                  >
-                    {showConfirmPass ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                type="submit"
-                disabled={isSavingPass}
-                className="h-11 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition active:scale-95 disabled:opacity-50"
-              >
-                {isSavingPass ? (
-                  <RefreshCw size={14} className="animate-spin" />
-                ) : (
-                  <KeyRound size={14} />
-                )}
-                <span>{isSavingPass ? "Đang cập nhật..." : "Cập nhật mật khẩu"}</span>
-              </button>
-            </div>
-          </form>
-
-          {/* Hộp quy chuẩn bảo mật tài khoản thi */}
-          <div className="rounded-2xl border border-amber-200/80 dark:border-amber-500/20 bg-amber-50/50 dark:bg-amber-500/10 p-5 space-y-2 text-xs text-amber-900 dark:text-amber-300">
-            <h3 className="font-bold flex items-center gap-2">
-              <AlertTriangle size={15} className="text-amber-600" />
-              <span>Chính sách phòng vệ tài khoản thi trực tuyến</span>
-            </h3>
-            <p className="leading-relaxed text-amber-900/80 dark:text-amber-300/80">
-              Nhằm ngăn chặn hành vi brute-force mật khẩu phòng thi, tài khoản sẽ tự động khóa tạm thời 15 phút nếu nhập sai mật khẩu quá 5 lần liên tiếp.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* ─── TAB 4: NĂNG LỰC LẬP TRÌNH & THỐNG KÊ (CODING STATS & ACADEMICS) ─ */}
-      {activeTab === "stats" && (
-        <div className="space-y-6">
-          {/* Lưới 4 Thẻ KPI Học Thuật */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-sm space-y-2">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Số ca thi đã tham gia</span>
-              <p className="text-2xl sm:text-3xl font-black font-mono text-slate-900 dark:text-white tabular-nums">
-                12 <span className="text-xs font-normal text-slate-400">buổi</span>
-              </p>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 size={12} /> Hoàn thành 100%
-              </span>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-sm space-y-2">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Tỷ lệ bài nộp Đạt (AC)</span>
-              <p className="text-2xl sm:text-3xl font-black font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">
-                92.5%
-              </p>
-              <span className="text-[11px] text-slate-400">37 / 40 Test cases đúng</span>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-sm space-y-2">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Điểm trung bình tích lũy (GPA)</span>
-              <p className="text-2xl sm:text-3xl font-black font-mono text-blue-600 dark:text-blue-400 tabular-nums">
-                8.8 <span className="text-xs font-normal text-slate-400">/ 10</span>
-              </p>
-              <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">Xếp loại: Giỏi</span>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-sm space-y-2">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Chỉ số vi phạm quy chế thi</span>
-              <p className="text-2xl sm:text-3xl font-black font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">
-                0.0%
-              </p>
-              <span className="text-[11px] text-slate-400">Không có cờ cảnh báo AI</span>
-            </div>
-          </div>
-
-          {/* Phân bổ Ngôn ngữ lập trình & Danh sách bài làm gần nhất */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Cột 1: Phân bổ ngôn ngữ */}
-            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Code2 size={16} className="text-blue-600 dark:text-blue-400" />
-                <span>Ngôn ngữ sử dụng thi đấu</span>
-              </h3>
-
-              <div className="space-y-3 text-xs">
-                <div>
-                  <div className="flex justify-between font-semibold mb-1">
-                    <span className="text-slate-700 dark:text-slate-300">C++20 (Chính)</span>
-                    <span className="font-mono text-blue-600 dark:text-blue-400">70%</span>
-                  </div>
-                  <div className="h-2 w-full bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full" style={{ width: "70%" }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between font-semibold mb-1">
-                    <span className="text-slate-700 dark:text-slate-300">Python 3.11</span>
-                    <span className="font-mono text-emerald-600 dark:text-emerald-400">20%</span>
-                  </div>
-                  <div className="h-2 w-full bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: "20%" }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between font-semibold mb-1">
-                    <span className="text-slate-700 dark:text-slate-300">Java 17 LTS</span>
-                    <span className="font-mono text-purple-600 dark:text-purple-400">10%</span>
-                  </div>
-                  <div className="h-2 w-full bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-purple-500 rounded-full" style={{ width: "10%" }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Cột 2-3: Bài làm gần nhất với liên kết xem mã nguồn */}
-            <div className="lg:col-span-2 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <FileCode2 size={16} className="text-blue-600 dark:text-blue-400" />
-                  <span>Bài nộp gần nhất (Có thể xem lại code)</span>
-                </h3>
-                <Link
-                  href="/student/submissions"
-                  className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                >
-                  <span>Xem tất cả</span>
-                  <ArrowRight size={13} />
-                </Link>
-              </div>
-
-              {/* Card Bài nộp cb_111 mẫu */}
-              <div className="p-4 rounded-xl border border-slate-200/80 dark:border-white/5 bg-slate-50/70 dark:bg-white/[0.02] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <strong className="text-sm text-slate-900 dark:text-white">
-                      cb_111: Tính tổng các số trong chuỗi
-                    </strong>
-                    <span className="rounded bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 font-mono text-[10px] font-bold px-1.5 py-0.5">
-                      4/5 AC (WA)
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-500/10 border border-emerald-200/60 dark:border-emerald-500/20">
+                    <span className="text-slate-700 dark:text-slate-300 font-semibold">Tỷ lệ tuân thủ quy chế AI:</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono text-sm">
+                      {violationsCount === 0 ? "100% (An toàn tuyệt đối)" : `${violationsCount} cảnh báo`}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                    C++20 • 31, Tháng 10, 2026, 20:51 • Tài nguyên: 0,004s, 1.82 MB
-                  </p>
+                </div>
+              </div>
+
+              {/* Phiên đăng nhập hoạt động */}
+              <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Fingerprint size={16} className="text-purple-600 dark:text-purple-400" />
+                    <span>Phiên đăng nhập đang hoạt động</span>
+                  </h3>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <Link
-                    href="/student/submissions/cb_111?tab=result"
-                    className="h-9 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 px-3 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
-                  >
-                    <span>Xem kết quả</span>
-                  </Link>
-
-                  <Link
-                    href="/student/submissions/cb_111?tab=code"
-                    className="h-9 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-bold text-white hover:bg-blue-700 transition shadow-xs"
-                  >
-                    <Code2 size={13} />
-                    <span>Xem code</span>
-                  </Link>
+                <div className="space-y-2.5 text-xs">
+                  {sessions.map((sess) => (
+                    <div
+                      key={sess.id}
+                      className="p-3 rounded-xl border border-slate-200/60 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02] flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <strong className="text-slate-800 dark:text-slate-200">{sess.device}</strong>
+                          {sess.isCurrent && (
+                            <span className="rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-bold">
+                              Thiết bị này
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                          {sess.browser} • {sess.ip} ({sess.location})
+                        </p>
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-500">{sess.lastActive}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ─── TAB 5: CÁ NHÂN HÓA MÔI TRƯỜNG THI (IDE PREFERENCES) ─────────── */}
-      {activeTab === "preferences" && (
-        <div className="max-w-2xl mx-auto space-y-6">
-          <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-7 shadow-sm space-y-5">
-            <div className="border-b border-slate-100 dark:border-white/5 pb-3">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Sliders size={18} className="text-blue-600 dark:text-blue-400" />
-                <span>Cấu hình Trình soạn thảo Monaco Editor khi làm bài thi</span>
+        {/* ─── TAB 3: BẢO MẬT & ĐỔI MẬT KHẨU ─────────────────────────────── */}
+        {activeTab === "security" && (
+          <div className="max-w-2xl space-y-6">
+            <form
+              onSubmit={handleChangePassword}
+              className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-4"
+            >
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-white/5 pb-3 flex items-center gap-2">
+                <KeyRound size={17} className="text-blue-600 dark:text-blue-400" />
+                <span>Đổi mật khẩu tài khoản</span>
               </h2>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Các tùy chọn này được lưu tự động trên thiết bị của bạn để tối ưu trải nghiệm gõ code khi thi.
-              </p>
-            </div>
 
-            {prefSaveSuccess && (
-              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-                <CheckCircle2 size={15} />
-                <span>Đã lưu tùy biến môi trường thành công!</span>
-              </div>
-            )}
-
-            <div className="space-y-4 text-xs">
-              {/* Theme của Code Editor */}
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5 text-xs">
-                  Giao diện màu Monaco Editor
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setEditorTheme("vs-dark")}
-                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition ${
-                      editorTheme === "vs-dark"
-                        ? "border-blue-600 bg-blue-50/40 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 font-bold"
-                        : "border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300"
-                    }`}
-                  >
-                    <div>
-                      <p className="font-bold">Dark Theme (vs-dark)</p>
-                      <p className="text-[11px] text-slate-400">Giảm mỏi mắt khi thi ban đêm</p>
-                    </div>
-                    {editorTheme === "vs-dark" && <CheckCircle2 size={16} className="text-blue-600" />}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setEditorTheme("vs-light")}
-                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition ${
-                      editorTheme === "vs-light"
-                        ? "border-blue-600 bg-blue-50/40 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 font-bold"
-                        : "border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300"
-                    }`}
-                  >
-                    <div>
-                      <p className="font-bold">Light Theme (vs-light)</p>
-                      <p className="text-[11px] text-slate-400">Giao diện sáng tiêu chuẩn</p>
-                    </div>
-                    {editorTheme === "vs-light" && <CheckCircle2 size={16} className="text-blue-600" />}
-                  </button>
+              {passSuccess && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-2">
+                  <CheckCircle2 size={16} />
+                  <span>Đổi mật khẩu thành công! Hãy lưu lại mật khẩu mới.</span>
                 </div>
-              </div>
+              )}
 
-              {/* Cỡ chữ & Tab size */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {passError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-500/10 p-3 text-xs text-rose-700 dark:text-rose-300 font-semibold flex items-center gap-2">
+                  <AlertCircle size={16} />
+                  <span>{passError}</span>
+                </div>
+              )}
+
+              <div className="space-y-4 text-xs">
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1 text-xs">
-                    Cỡ chữ mã nguồn (Font size)
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Mật khẩu hiện tại
                   </label>
-                  <select
-                    value={fontSize}
-                    onChange={(e) => setFontSize(Number(e.target.value))}
-                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                  >
-                    <option value={12}>12 px (Nhỏ gọn)</option>
-                    <option value={13}>13 px</option>
-                    <option value={14}>14 px (Khuyến nghị)</option>
-                    <option value={16}>16 px (Dễ nhìn)</option>
-                    <option value={18}>18 px (Lớn)</option>
-                  </select>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPass ? "text" : "password"}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Nhập mật khẩu hiện tại..."
+                      className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 pr-10 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPass(!showCurrentPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showCurrentPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1 text-xs">
-                    Độ rộng thụt dòng (Tab Spacing)
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Mật khẩu mới (Tối thiểu 8 ký tự)
                   </label>
-                  <select
-                    value={tabSize}
-                    onChange={(e) => setTabSize(Number(e.target.value))}
-                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                  >
-                    <option value={2}>2 spaces (Google C++ / Web style)</option>
-                    <option value={4}>4 spaces (Standard style)</option>
-                  </select>
-                </div>
-              </div>
+                  <div className="relative">
+                    <input
+                      type={showNewPass ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Tối thiểu 8 ký tự..."
+                      className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 pr-10 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPass(!showNewPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showNewPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
 
-              {/* Tự động lưu bản nháp CodeDrafts */}
-              <div className="p-3.5 rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] flex items-center justify-between">
+                  {newPassword && (
+                    <div className="mt-2 space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500">Độ mạnh mật khẩu:</span>
+                        <strong className="font-bold text-blue-500">
+                          {passwordStrength >= 75 ? "Rất mạnh" : passwordStrength >= 50 ? "Khá" : "Trung bình"}
+                        </strong>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 transition-all duration-300"
+                          style={{ width: `${passwordStrength}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div>
-                  <p className="font-bold text-slate-800 dark:text-slate-200">Tự động lưu bài nháp (Auto-Save CodeDrafts)</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Tự động đồng bộ mã nguồn lên cụm lưu trữ mỗi 30 giây để chống mất bài khi sập nguồn hoặc mất mạng.
-                  </p>
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Xác nhận lại mật khẩu mới
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPass ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Nhập lại mật khẩu mới..."
+                      className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 pr-10 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPass(!showConfirmPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showConfirmPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={autoSaveDrafts}
-                  onChange={(e) => setAutoSaveDrafts(e.target.checked)}
-                  className="h-5 w-5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-                />
               </div>
-            </div>
 
-            <div className="pt-2 flex justify-end">
-              <button
-                type="button"
-                onClick={handleSavePreferences}
-                className="h-10 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition active:scale-95"
-              >
-                <Save size={14} />
-                <span>Lưu cấu hình IDE</span>
-              </button>
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isSavingPass}
+                  className="h-10 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingPass ? <RefreshCw size={14} className="animate-spin" /> : <KeyRound size={14} />}
+                  <span>{isSavingPass ? "Đang cập nhật..." : "Cập nhật mật khẩu"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* ─── TAB 4: THỐNG KÊ HỌC THUẬT THỰC TẾ ─────────────────────────── */}
+        {activeTab === "stats" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-sm space-y-2">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Số bài nộp đã ghi nhận</span>
+                <p className="text-2xl sm:text-3xl font-black font-mono text-slate-900 dark:text-white tabular-nums">
+                  {submissionsCount} <span className="text-xs font-normal text-slate-400">bài</span>
+                </p>
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                  <CheckCircle2 size={12} /> Dữ liệu chấm tự động
+                </span>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-sm space-y-2">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Tỷ lệ bài nộp Đạt</span>
+                <p className="text-2xl sm:text-3xl font-black font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">
+                  {submissionsCount > 0 ? `${acRate}%` : "--"}
+                </p>
+                <span className="text-[11px] text-slate-400">Dựa trên kết quả chấm điểm</span>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-sm space-y-2">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Điểm trung bình (ĐTB)</span>
+                <p className="text-2xl sm:text-3xl font-black font-mono text-blue-600 dark:text-blue-400 tabular-nums">
+                  {submissionsCount > 0 ? `${avgScore}/100` : "--"}
+                </p>
+                <span className="text-[11px] text-slate-400">Thang điểm 100</span>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-sm space-y-2">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Cảnh báo quy chế</span>
+                <p className="text-2xl sm:text-3xl font-black font-mono text-amber-600 dark:text-amber-400 tabular-nums">
+                  {violationsCount}
+                </p>
+                <span className="text-[11px] text-slate-400">Sự kiện AI giám sát</span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+        {/* ─── TAB 5: MÔI TRƯỜNG LẬP TRÌNH (PREFERENCES) ──────────────────── */}
+        {activeTab === "preferences" && (
+          <div className="max-w-2xl space-y-6">
+            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm space-y-5">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-white/5 pb-3 flex items-center gap-2">
+                <Sliders size={17} className="text-blue-600 dark:text-blue-400" />
+                <span>Cấu hình Trình soạn thảo Monaco Editor</span>
+              </h2>
+
+              {prefSaveSuccess && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-2">
+                  <CheckCircle2 size={16} />
+                  <span>Đã lưu cài đặt môi trường thi!</span>
+                </div>
+              )}
+
+              <div className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Giao diện Code Editor (Theme)
+                  </label>
+                  <select
+                    value={editorTheme}
+                    onChange={(e) => setEditorTheme(e.target.value as any)}
+                    className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 text-slate-800 dark:text-slate-200"
+                  >
+                    <option value="vs-dark">Visual Studio Dark (Khuyên dùng)</option>
+                    <option value="vs-light">Visual Studio Light</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                      Cỡ chữ (Font size)
+                    </label>
+                    <input
+                      type="number"
+                      min={12}
+                      max={20}
+                      value={fontSize}
+                      onChange={(e) => setFontSize(Number(e.target.value))}
+                      className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 text-slate-800 dark:text-slate-200"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                      Kích thước Tab (Tab size)
+                    </label>
+                    <input
+                      type="number"
+                      min={2}
+                      max={8}
+                      value={tabSize}
+                      onChange={(e) => setTabSize(Number(e.target.value))}
+                      className="w-full h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0b0f17] px-3 text-slate-800 dark:text-slate-200"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <input
+                    type="checkbox"
+                    id="autoSave"
+                    checked={autoSaveDrafts}
+                    onChange={(e) => setAutoSaveDrafts(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                  />
+                  <label htmlFor="autoSave" className="text-xs text-slate-700 dark:text-slate-300 font-medium cursor-pointer">
+                    Tự động lưu bản nháp code mỗi 30 giây vào trình duyệt
+                  </label>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSavePreferences}
+                  className="h-10 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition active:scale-95 cursor-pointer"
+                >
+                  <Save size={14} />
+                  <span>Lưu cài đặt</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <footer className="pt-4 text-center text-xs text-slate-400">
+          Oculide · Hệ thống thi lập trình trực tuyến
+        </footer>
+      </div>
+    </main>
   );
 }

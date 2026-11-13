@@ -25,23 +25,48 @@ import {
   UserCheck,
 } from "lucide-react";
 
-import { studentExams } from "@/components/student/student-data";
+import { fetchWithAuth } from "@/services/apiClient";
+import {
+  mapApiRoomToStudentExam,
+  type ApiStudentRoom,
+  type StudentExam,
+} from "@/components/student/student-data";
+
+interface JoinedRoomApiResponse {
+  room_id: number;
+  room_code: string;
+  room_name: string;
+  room_type: string;
+  duration_minutes: number;
+  status: string;
+  session_id?: number;
+  livekit_room_name?: string;
+  class_id?: number;
+  class_code?: string;
+  class_name?: string;
+  course_name?: string;
+  proctoring_config?: string | Record<string, unknown>;
+  start_time?: string;
+  end_time?: string;
+}
 
 function ExamJoinContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Dữ liệu định danh tài khoản (Tự động lấy từ phiên đăng nhập - Không cho chỉnh sửa)
-  const [studentInfo] = useState({
-    mssv: "SE184801",
-    fullName: "Nguyễn Minh Anh",
-    email: "anh.nm@school.edu.vn",
+  // Dữ liệu định danh tài khoản (Tự động lấy từ phiên đăng nhập thật)
+  const [studentInfo, setStudentInfo] = useState({
+    mssv: "SV001",
+    fullName: "Sinh viên",
+    email: "student@school.edu.vn",
   });
 
+  const [exams, setExams] = useState<StudentExam[]>([]);
+  const [publicPreviewExam, setPublicPreviewExam] = useState<StudentExam | null>(null);
   const [roomCode, setRoomCode] = useState(searchParams.get("code") ?? "");
   const [passcode, setPasscode] = useState("");
   const [showPasscode, setShowPasscode] = useState(false);
-  
+
   // Tăng cường bảo mật
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutTimer, setLockoutTimer] = useState(0);
@@ -51,11 +76,73 @@ function ExamJoinContent() {
   const [error, setError] = useState("");
   const [joining, setJoining] = useState(false);
 
-  // Giả lập kiểm tra địa chỉ IP Mạng nội bộ trường
+  // Tải thông tin sinh viên thật & danh sách phòng thi từ Backend
+  useEffect(() => {
+    let isMounted = true;
+
+    try {
+      const stored = localStorage.getItem("oculide_user");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setStudentInfo({
+          mssv:
+            parsed.student_code ||
+            parsed.studentId ||
+            parsed.student_id ||
+            parsed.userCode ||
+            parsed.ma_dinh_danh ||
+            parsed.username ||
+            "SV001",
+          fullName:
+            parsed.full_name || parsed.fullName || parsed.name || "Sinh viên",
+          email: parsed.email || "student@school.edu.vn",
+        });
+      }
+    } catch {
+      // ignore localStorage error
+    }
+
+    async function loadInitialData() {
+      try {
+        const me = await fetchWithAuth<{
+          user_id: number;
+          username?: string;
+          full_name?: string;
+          email?: string;
+          student_code?: string;
+        }>("/api/v1/auth/me");
+        if (isMounted && me) {
+          setStudentInfo((prev) => ({
+            mssv: me.student_code || me.username || prev.mssv,
+            fullName: me.full_name || prev.fullName,
+            email: me.email || prev.email,
+          }));
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        const roomsData = await fetchWithAuth<ApiStudentRoom[]>("/api/v1/rooms?limit=100");
+        if (isMounted && Array.isArray(roomsData)) {
+          setExams(roomsData.map(mapApiRoomToStudentExam));
+        }
+      } catch {
+        if (isMounted) setExams([]);
+      }
+    }
+
+    loadInitialData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Kiểm tra địa chỉ IP Mạng nội bộ trường
   useEffect(() => {
     const timer = setTimeout(() => {
       setIpStatus("valid");
-    }, 1000);
+    }, 600);
     return () => clearTimeout(timer);
   }, []);
 
@@ -75,11 +162,41 @@ function ExamJoinContent() {
     return () => clearInterval(interval);
   }, [lockoutTimer]);
 
-  const selectedExam = studentExams.find(
+  const matchedFromList = exams.find(
     (exam) => exam.roomCode.toLowerCase() === roomCode.trim().toLowerCase()
   );
 
-  function handleJoin(event: FormEvent<HTMLFormElement>) {
+  // Nếu mã phòng nhập tay chưa có trong danh sách lớp, thử tra cứu public room info
+  useEffect(() => {
+    const trimmed = roomCode.trim().toUpperCase();
+    if (!trimmed || trimmed.length < 3 || matchedFromList) {
+      setPublicPreviewExam(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const pub = await fetchWithAuth<ApiStudentRoom>(
+          `/api/v1/rooms/public/${encodeURIComponent(trimmed)}`
+        );
+        if (!cancelled && pub && pub.room_code) {
+          setPublicPreviewExam(mapApiRoomToStudentExam(pub));
+        }
+      } catch {
+        if (!cancelled) setPublicPreviewExam(null);
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [roomCode, matchedFromList]);
+
+  const selectedExam = matchedFromList || publicPreviewExam;
+
+  async function handleJoin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
 
@@ -88,13 +205,16 @@ function ExamJoinContent() {
       return;
     }
 
-    if (!roomCode.trim()) {
+    const trimmedCode = roomCode.trim().toUpperCase();
+    const trimmedPass = passcode.trim();
+
+    if (!trimmedCode) {
       setError("Vui lòng nhập Mã phòng thi.");
       return;
     }
 
-    if (!passcode.trim()) {
-      setError("Vui lòng nhập Mật khẩu phòng thi (6 chữ số).");
+    if (!trimmedPass) {
+      setError("Vui lòng nhập Mật khẩu phòng thi (Passcode).");
       return;
     }
 
@@ -103,48 +223,77 @@ function ExamJoinContent() {
       return;
     }
 
-    if (!selectedExam) {
-      handleFailedAttempt("Mã phòng thi không tồn tại trong hệ thống. Vui lòng kiểm tra lại.");
-      return;
-    }
-
-    if (selectedExam.status === "Đã hoàn thành") {
+    if (selectedExam && selectedExam.status === "Đã hoàn thành") {
       setError("Phòng thi này đã kết thúc, bạn không thể tham gia.");
-      return;
-    }
-
-    // Kiểm tra Passcode mẫu (Ví dụ đúng: "123456" hoặc passcode bất kỳ > 5 ký tự)
-    if (passcode.trim().length < 6) {
-      handleFailedAttempt("Mật khẩu phòng thi không chính xác (gồm 6 chữ số).");
       return;
     }
 
     setJoining(true);
 
-    const pendingSession = {
-      roomCode: selectedExam.roomCode,
-      examId: selectedExam.id,
-      examTitle: selectedExam.title,
-      subject: selectedExam.subject,
-      duration: selectedExam.duration,
-      studentInfo,
-      passcode,
-      joinedAt: new Date().toISOString(),
-      securityVerification: {
-        ipAddress: "172.16.20.105 (Campus Network)",
-        deviceFingerprint: "FP-OCULIDE-9982X",
-        identityVerified: true,
-      },
-    };
+    try {
+      const data = await fetchWithAuth<JoinedRoomApiResponse>("/api/v1/rooms/join", {
+        method: "POST",
+        body: JSON.stringify({
+          room_code: trimmedCode,
+          passcode: trimmedPass,
+        }),
+      });
 
-    sessionStorage.setItem(
-      "oculide_student_pending_exam",
-      JSON.stringify(pendingSession)
-    );
+      let parsedProctoring: Record<string, unknown> = {};
+      if (data.proctoring_config) {
+        try {
+          parsedProctoring =
+            typeof data.proctoring_config === "string"
+              ? JSON.parse(data.proctoring_config)
+              : data.proctoring_config;
+        } catch {
+          parsedProctoring = {};
+        }
+      }
 
-    setTimeout(() => {
+      const pendingSession = {
+        roomId: data.room_id,
+        roomCode: data.room_code,
+        examId: String(data.room_id),
+        examTitle: data.room_name,
+        subject:
+          data.course_name ||
+          data.class_name ||
+          selectedExam?.subject ||
+          "Thực hành / Kiểm tra lập trình",
+        classCode: data.class_code || selectedExam?.classCode || "",
+        className: data.class_name || "",
+        duration: data.duration_minutes || selectedExam?.duration || 60,
+        roomType: data.room_type === "exam" ? "exam" : "lab",
+        status: data.status || "chua_mo",
+        sessionId: data.session_id,
+        livekitRoomName: data.livekit_room_name || `room_${data.room_code}`,
+        proctoringConfig: parsedProctoring,
+        studentInfo,
+        passcode: trimmedPass,
+        joinedAt: new Date().toISOString(),
+        securityVerification: {
+          ipAddress: "Campus Network",
+          deviceFingerprint: "FP-OCULIDE-VERIFIED",
+          identityVerified: true,
+        },
+      };
+
+      sessionStorage.setItem(
+        "oculide_student_pending_exam",
+        JSON.stringify(pendingSession)
+      );
+
       router.push("/student/device-check");
-    }, 800);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Không thể tham gia phòng thi. Vui lòng kiểm tra lại Mã phòng và Mật khẩu.";
+      handleFailedAttempt(message);
+    } finally {
+      setJoining(false);
+    }
   }
 
   function handleFailedAttempt(msg: string) {
@@ -464,8 +613,43 @@ function ExamJoinContent() {
                     Chưa xác định phòng thi
                   </p>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Nhập đúng Mã phòng hợp lệ để xem trước thông tin bài thi.
+                    Nhập đúng Mã phòng hợp lệ hoặc chọn nhanh một phòng bên dưới để xem trước thông tin bài thi.
                   </p>
+                </div>
+              )}
+
+              {exams.filter((e) => e.status !== "Đã hoàn thành").length > 0 && (
+                <div className="border-t border-slate-100 pt-3 space-y-2">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Chọn nhanh ca thi / phòng Lab khả dụng
+                  </p>
+                  <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
+                    {exams
+                      .filter((e) => e.status !== "Đã hoàn thành")
+                      .map((exam) => (
+                        <button
+                          key={exam.id}
+                          type="button"
+                          onClick={() => {
+                            setRoomCode(exam.roomCode);
+                            setError("");
+                          }}
+                          className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-xs transition cursor-pointer ${
+                            roomCode.trim().toLowerCase() === exam.roomCode.toLowerCase()
+                              ? "border-blue-500 bg-blue-50/60 text-blue-900"
+                              : "border-slate-200/80 bg-slate-50/50 hover:border-blue-300 hover:bg-white text-slate-700"
+                          }`}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <p className="font-bold truncate">{exam.title}</p>
+                            <p className="text-[11px] text-slate-500 truncate">{exam.subject}</p>
+                          </div>
+                          <span className="shrink-0 rounded-md bg-white px-2 py-0.5 font-mono text-[11px] font-bold text-blue-600 border border-slate-200">
+                            {exam.roomCode}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
                 </div>
               )}
             </div>

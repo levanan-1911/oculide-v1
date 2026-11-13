@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -9,13 +9,20 @@ import {
   Clock3,
   Code2,
   GraduationCap,
+  LoaderCircle,
   RotateCcw,
   Search,
   SlidersHorizontal,
   X,
 } from "lucide-react";
 
-import { studentExams, type ExamStatus, type StudentExam } from "@/components/student/student-data";
+import { fetchWithAuth } from "@/services/apiClient";
+import {
+  mapApiRoomToStudentExam,
+  type ApiStudentRoom,
+  type ExamStatus,
+  type StudentExam,
+} from "@/components/student/student-data";
 
 type FilterStatus = "Tất cả" | ExamStatus;
 
@@ -35,33 +42,56 @@ const statusStyles: Record<ExamStatus, string> = {
 export default function StudentSchedulePage() {
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState<FilterStatus>("Tất cả");
+  const [exams, setExams] = useState<StudentExam[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  const loadSchedule = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchWithAuth<ApiStudentRoom[]>("/api/v1/rooms?limit=100");
+      if (Array.isArray(data)) {
+        setExams(data.map(mapApiRoomToStudentExam));
+      } else {
+        setExams([]);
+      }
+    } catch {
+      setExams([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSchedule();
+  }, [loadSchedule]);
 
   const filteredExams = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
 
-    return studentExams.filter((exam) => {
+    return exams.filter((exam) => {
       const matchesKeyword =
         !normalizedKeyword ||
         exam.title.toLowerCase().includes(normalizedKeyword) ||
         exam.subject.toLowerCase().includes(normalizedKeyword) ||
         exam.instructor.toLowerCase().includes(normalizedKeyword) ||
-        exam.roomCode.toLowerCase().includes(normalizedKeyword);
+        exam.roomCode.toLowerCase().includes(normalizedKeyword) ||
+        (exam.classCode || "").toLowerCase().includes(normalizedKeyword);
 
       const matchesStatus =
         status === "Tất cả" || exam.status === status;
 
       return matchesKeyword && matchesStatus;
     });
-  }, [keyword, status]);
+  }, [keyword, status, exams]);
 
   const upcomingCount = useMemo(
-    () => studentExams.filter((exam) => exam.status === "Sắp diễn ra").length,
-    []
+    () => exams.filter((exam) => exam.status === "Sắp diễn ra").length,
+    [exams]
   );
 
   const ongoingCount = useMemo(
-    () => studentExams.filter((exam) => exam.status === "Đang diễn ra").length,
-    []
+    () => exams.filter((exam) => exam.status === "Đang diễn ra").length,
+    [exams]
   );
 
   return (
@@ -111,7 +141,7 @@ export default function StudentSchedulePage() {
           >
             <div>
               <p className="text-xs font-medium text-slate-500">Tổng số kỳ thi</p>
-              <p className="mt-2 text-3xl font-bold text-slate-900">{studentExams.length}</p>
+              <p className="mt-2 text-3xl font-bold text-slate-900">{exams.length}</p>
               <p className="mt-1 text-[11px] text-slate-400">Danh sách bài thi cá nhân</p>
             </div>
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
@@ -210,8 +240,8 @@ export default function StudentSchedulePage() {
                 {filters.map((f) => {
                   const count =
                     f === "Tất cả"
-                      ? studentExams.length
-                      : studentExams.filter((e) => e.status === f).length;
+                      ? exams.length
+                      : exams.filter((e) => e.status === f).length;
 
                   return (
                     <button
@@ -256,7 +286,13 @@ export default function StudentSchedulePage() {
 
           {/* List Items */}
           <div className="divide-y divide-slate-100">
-            {filteredExams.map((exam: StudentExam) => (
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 px-5 py-16 text-xs text-slate-500">
+                <LoaderCircle size={18} className="animate-spin text-blue-600" />
+                Đang tải lịch thi và thực hành từ hệ thống...
+              </div>
+            ) : (
+              filteredExams.map((exam: StudentExam) => (
               <article
                 key={exam.id}
                 className="flex flex-col justify-between gap-4 p-5 transition hover:bg-slate-50/70 sm:flex-row sm:items-center sm:p-6"
@@ -325,9 +361,10 @@ export default function StudentSchedulePage() {
                   )}
                 </div>
               </article>
-            ))}
+            ))
+            )}
 
-            {filteredExams.length === 0 && (
+            {!loading && filteredExams.length === 0 && (
               <div className="px-5 py-16 text-center">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                   <Search size={22} />
@@ -354,7 +391,7 @@ export default function StudentSchedulePage() {
           </div>
 
           <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-3 text-xs text-slate-500 flex items-center justify-between">
-            <span>Hiển thị {filteredExams.length} / {studentExams.length} kỳ thi</span>
+            <span>Hiển thị {filteredExams.length} / {exams.length} kỳ thi</span>
             <span className="text-[11px] text-slate-400">Dữ liệu được cập nhật tự động</span>
           </div>
         </section>

@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { useMonitoring } from './monitoring/MonitoringContext';
 import { INSTRUCTOR_ROOMS_STORAGE_KEY, RoomSession } from '@/components/instructor/classes/types';
+import { fetchWithAuth } from '@/services/apiClient';
+import { INSTRUCTOR_PROFILE_UPDATED_EVENT } from '@/utils/instructorProfile';
 
 interface InstructorTopbarProps {
   title?: string;
@@ -78,30 +80,52 @@ export default function InstructorTopbar({
   };
 
   useEffect(() => {
-    function checkActiveRoom() {
+    let isCancelled = false;
+
+    async function checkActiveRoom() {
       try {
-        const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-        if (raw) {
-          const rooms: RoomSession[] = JSON.parse(raw);
-          const running = rooms.find((r) => r.status === 'in_progress');
+        const rooms = await fetchWithAuth<any[]>('/api/v1/rooms');
+        if (!isCancelled && Array.isArray(rooms)) {
+          const running = rooms.find(
+            (r) => r.status === 'dang_dien_ra' || r.status === 'in_progress'
+          );
           if (running) {
             setActiveRunningRoom({
-              roomCode: running.id,
-              remainingMinutes: running.durationMinutes || 60,
+              roomCode: running.room_code || String(running.room_id),
+              remainingMinutes: running.duration_minutes || 60,
             });
             return;
           }
+          setActiveRunningRoom(null);
+          return;
         }
       } catch {
-        // ignore
+        // Fallback localStorage nếu mất mạng
+        try {
+          const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+          if (raw) {
+            const rooms: RoomSession[] = JSON.parse(raw);
+            const running = rooms.find((r) => r.status === 'in_progress');
+            if (running && !isCancelled) {
+              setActiveRunningRoom({
+                roomCode: running.id,
+                remainingMinutes: running.durationMinutes || 60,
+              });
+              return;
+            }
+          }
+        } catch {
+          // ignore
+        }
       }
-      setActiveRunningRoom(null);
+      if (!isCancelled) setActiveRunningRoom(null);
     }
 
     checkActiveRoom();
     window.addEventListener('storage', checkActiveRoom);
-    const interval = setInterval(checkActiveRoom, 2500);
+    const interval = setInterval(checkActiveRoom, 15000);
     return () => {
+      isCancelled = true;
       window.removeEventListener('storage', checkActiveRoom);
       clearInterval(interval);
     };
@@ -110,28 +134,35 @@ export default function InstructorTopbar({
   const pendingViolations = violations.filter((v) => v.status === 'pending');
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('oculide_user');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const name = parsed.full_name || parsed.name || parsed.username || 'Thầy Nguyễn Văn Nam';
-        const email = parsed.email || 'nam.nv@school.edu.vn';
-        setUserProfile({
-          name,
-          email,
-          role: 'Giảng viên',
-        });
-        const init = name
-          .split(' ')
-          .filter(Boolean)
-          .slice(-2)
-          .map((w: string) => w[0]?.toUpperCase())
-          .join('') || 'GV';
-        setInitials(init);
+    function syncUserProfile() {
+      try {
+        const stored = localStorage.getItem('oculide_user');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const name = parsed.full_name || parsed.name || parsed.username || 'Thầy Nguyễn Văn Nam';
+          const email = parsed.email || 'nam.nv@school.edu.vn';
+          setUserProfile({
+            name,
+            email,
+            role: 'Giảng viên',
+          });
+          const init =
+            name
+              .split(' ')
+              .filter(Boolean)
+              .slice(-2)
+              .map((w: string) => w[0]?.toUpperCase())
+              .join('') || 'GV';
+          setInitials(init);
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
+
+    syncUserProfile();
+    window.addEventListener('storage', syncUserProfile);
+    window.addEventListener(INSTRUCTOR_PROFILE_UPDATED_EVENT, syncUserProfile);
 
     function handleClickOutside(event: MouseEvent) {
       if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
@@ -142,7 +173,11 @@ export default function InstructorTopbar({
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('storage', syncUserProfile);
+      window.removeEventListener(INSTRUCTOR_PROFILE_UPDATED_EVENT, syncUserProfile);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   const handleLogout = () => {

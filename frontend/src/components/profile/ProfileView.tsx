@@ -31,6 +31,8 @@ import {
   Server,
   AlertTriangle,
 } from 'lucide-react';
+import { fetchWithAuth } from '@/services/apiClient';
+import { INSTRUCTOR_PROFILE_UPDATED_EVENT } from '@/utils/instructorProfile';
 
 export interface ProfileViewProps {
   role: 'admin' | 'instructor' | 'student';
@@ -216,19 +218,39 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
   const [infoMsg, setInfoMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSavingInfo, setIsSavingInfo] = useState(false);
 
+  // Thống kê hoạt động thực tế của Giảng viên từ CSDL
+  const [instructorActivity, setInstructorActivity] = useState<{
+    classesCount: number;
+    templatesCount: number;
+    roomsCount: number;
+    totalStudentsCount: number;
+    classesList: { code: string; name: string; students: number; status: string; room: string }[];
+  }>({
+    classesCount: 0,
+    templatesCount: 0,
+    roomsCount: 0,
+    totalStudentsCount: 0,
+    classesList: [],
+  });
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Đọc thông tin từ localStorage khi tải component
+  // Đọc thông tin từ Backend API /api/v1/auth/me (fallback localStorage)
   useEffect(() => {
+    let isCancelled = false;
+
     try {
       const stored = localStorage.getItem('oculide_user');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed.name) setName(parsed.name);
+        if (parsed.full_name || parsed.name) setName(parsed.full_name || parsed.name);
         if (parsed.email) setEmail(parsed.email);
-        if (parsed.phone) setPhone(parsed.phone);
-        if (parsed.username) setIdentifier(parsed.username);
+        if (parsed.phone_number || parsed.phone) setPhone(parsed.phone_number || parsed.phone);
+        if (parsed.user_code || parsed.student_id || parsed.username) {
+          setIdentifier(parsed.user_code || parsed.student_id || parsed.username);
+        }
         if (parsed.department) setDepartment(parsed.department);
+        if (parsed.academic_rank) setAcademicDegree(parsed.academic_rank);
       }
 
       const storedAvatar = localStorage.getItem('oculide_avatar');
@@ -238,50 +260,139 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
     } catch {
       // ignore
     }
-  }, []);
 
-  // Khôi phục số lần nhập sai và thời gian khóa.
-useEffect(() => {
-  if (role !== 'instructor') return;
-
-  const record = readInstructorPasswordAttemptRecord();
-
-  setFailedCurrentPasswordAttempts(record.failedAttempts);
-  setPasswordLockoutUntil(record.lockedUntil);
-  setLockoutClock(Date.now());
-}, [role]);
-
-// Cập nhật đồng hồ đếm ngược mỗi giây.
-useEffect(() => {
-  if (role !== 'instructor' || passwordLockoutUntil === null) {
-    return;
-  }
-
-  const updateCountdown = () => {
-    const now = Date.now();
-    setLockoutClock(now);
-
-    if (now >= passwordLockoutUntil) {
+    async function fetchRealProfileAndActivity() {
       try {
-        localStorage.removeItem(
-          getInstructorPasswordAttemptStorageKey()
-        );
+        const me = await fetchWithAuth<any>('/api/v1/auth/me');
+        if (!isCancelled && me) {
+          const fullName = me.full_name || me.username || name;
+          setName(fullName);
+          if (me.email) setEmail(me.email);
+          if (me.phone_number) setPhone(me.phone_number);
+          if (me.user_code || me.student_id || me.username) {
+            setIdentifier(me.user_code || me.student_id || me.username);
+          }
+          if (me.department) setDepartment(me.department);
+          if (me.academic_rank) setAcademicDegree(me.academic_rank);
+          if (me.avatar_url) setAvatar(me.avatar_url);
+
+          try {
+            const stored = localStorage.getItem('oculide_user');
+            const prev = stored ? JSON.parse(stored) : {};
+            localStorage.setItem(
+              'oculide_user',
+              JSON.stringify({
+                ...prev,
+                ...me,
+                name: fullName,
+                full_name: fullName,
+              })
+            );
+          } catch {
+            // ignore
+          }
+        }
       } catch {
-        // Vẫn cho phép mở khóa theo state trong component.
+        // Fallback giữ nguyên dữ liệu localStorage
       }
 
-      setFailedCurrentPasswordAttempts(0);
-      setPasswordLockoutUntil(null);
-      setPasswordMsg(null);
+      if (role === 'instructor') {
+        try {
+          const [classesRes, templatesRes, roomsRes] = await Promise.all([
+            fetchWithAuth<any[]>('/api/v1/classes').catch(() => []),
+            fetchWithAuth<any[]>('/api/v1/templates').catch(() => []),
+            fetchWithAuth<any[]>('/api/v1/rooms').catch(() => []),
+          ]);
+          if (isCancelled) return;
+
+          const classesArr = Array.isArray(classesRes) ? classesRes : [];
+          const templatesArr = Array.isArray(templatesRes) ? templatesRes : [];
+          const roomsArr = Array.isArray(roomsRes) ? roomsRes : [];
+
+          const totalStudents = classesArr.reduce(
+            (sum, cls) => sum + Number(cls.student_count ?? cls.enrolled_count ?? cls.students?.length ?? 0),
+            0
+          );
+
+          const mappedClasses = classesArr.map((cls) => {
+            const classRooms = roomsArr.filter(
+              (r) =>
+                r.class_code === (cls.class_code || cls.code) ||
+                String(r.class_id) === String(cls.class_id || cls.id)
+            );
+            const activeRoom = classRooms.find(
+              (r) => r.status === 'dang_dien_ra' || r.status === 'in_progress'
+            );
+            return {
+              code: cls.class_code || cls.code || String(cls.id),
+              name: cls.class_name || cls.name || 'Lớp học phần',
+              students: Number(cls.student_count ?? cls.enrolled_count ?? cls.students?.length ?? 0),
+              status: activeRoom ? 'Đang có ca thi' : 'Đang giảng dạy',
+              room: activeRoom
+                ? activeRoom.room_code
+                : cls.semester || `${classRooms.length} phòng thi/lab`,
+            };
+          });
+
+          setInstructorActivity({
+            classesCount: classesArr.length,
+            templatesCount: templatesArr.length,
+            roomsCount: roomsArr.length,
+            totalStudentsCount: totalStudents,
+            classesList: mappedClasses,
+          });
+        } catch {
+          // ignore
+        }
+      }
     }
-  };
 
-  updateCountdown();
+    fetchRealProfileAndActivity();
+    return () => {
+      isCancelled = true;
+    };
+  }, [role]);
 
-  const intervalId = window.setInterval(updateCountdown, 1000);
+  // Khôi phục số lần nhập sai và thời gian khóa.
+  useEffect(() => {
+    if (role !== 'instructor') return;
 
-  return () => window.clearInterval(intervalId);
-}, [passwordLockoutUntil, role]);
+    const record = readInstructorPasswordAttemptRecord();
+
+    setFailedCurrentPasswordAttempts(record.failedAttempts);
+    setPasswordLockoutUntil(record.lockedUntil);
+    setLockoutClock(Date.now());
+  }, [role]);
+
+  // Cập nhật đồng hồ đếm ngược mỗi giây.
+  useEffect(() => {
+    if (role !== 'instructor' || passwordLockoutUntil === null) {
+      return;
+    }
+
+    const updateCountdown = () => {
+      const now = Date.now();
+      setLockoutClock(now);
+
+      if (now >= passwordLockoutUntil) {
+        try {
+          localStorage.removeItem(getInstructorPasswordAttemptStorageKey());
+        } catch {
+          // Vẫn cho phép mở khóa theo state trong component.
+        }
+
+        setFailedCurrentPasswordAttempts(0);
+        setPasswordLockoutUntil(null);
+        setPasswordMsg(null);
+      }
+    };
+
+    updateCountdown();
+
+    const intervalId = window.setInterval(updateCountdown, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [passwordLockoutUntil, role]);
 
   // Xử lý upload ảnh đại diện (Preview & lưu local)
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -312,130 +423,180 @@ useEffect(() => {
     setTimeout(() => setInfoMsg(null), 3000);
   };
 
-  // Lưu thông tin cá nhân
-  const handleSaveInfo = (e: React.FormEvent) => {
+  // Lưu thông tin cá nhân lên Backend API thật (/api/v1/auth/profile)
+  const handleSaveInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingInfo(true);
     setInfoMsg(null);
 
-    setTimeout(() => {
-      setIsSavingInfo(false);
+    try {
+      const updatedUser = await fetchWithAuth<any>('/api/v1/auth/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          full_name: name.trim(),
+          email: email.trim(),
+          student_id: identifier.trim(),
+          department: department.trim(),
+          academic_rank: role === 'instructor' ? academicDegree.trim() : undefined,
+          phone_number: phone.trim(),
+          avatar_url: avatar && !avatar.startsWith('data:') ? avatar : undefined,
+        }),
+      });
+
       try {
         const stored = localStorage.getItem('oculide_user');
         const userObj = stored ? JSON.parse(stored) : {};
-        const updated = {
+        const merged = {
           ...userObj,
-          name,
-          email,
-          phone,
-          department,
+          ...(updatedUser || {}),
+          name: updatedUser?.full_name || name.trim(),
+          full_name: updatedUser?.full_name || name.trim(),
+          email: updatedUser?.email || email.trim(),
+          phone: updatedUser?.phone_number || phone.trim(),
+          phone_number: updatedUser?.phone_number || phone.trim(),
+          department: updatedUser?.department || department.trim(),
+          academic_rank: updatedUser?.academic_rank || academicDegree.trim(),
         };
-        localStorage.setItem('oculide_user', JSON.stringify(updated));
+        localStorage.setItem('oculide_user', JSON.stringify(merged));
+        window.dispatchEvent(new Event(INSTRUCTOR_PROFILE_UPDATED_EVENT));
+        window.dispatchEvent(new Event('storage'));
       } catch {
         // ignore
       }
-      setInfoMsg({ type: 'success', text: 'Thông tin hồ sơ đã được lưu thành công!' });
-      setTimeout(() => setInfoMsg(null), 3000);
-    }, 500);
+
+      setInfoMsg({ type: 'success', text: 'Thông tin hồ sơ đã được lưu vào hệ thống thành công!' });
+      setTimeout(() => setInfoMsg(null), 3500);
+    } catch (err: any) {
+      const detail = err?.detail || err?.message || 'Không thể lưu thông tin hồ sơ lên máy chủ.';
+      setInfoMsg({ type: 'error', text: typeof detail === 'string' ? detail : 'Lỗi cập nhật hồ sơ.' });
+    } finally {
+      setIsSavingInfo(false);
+    }
   };
 
-  // Đổi mật khẩu
-  const handlePasswordChange = (e: React.FormEvent) => {
-  e.preventDefault();
-  setPasswordMsg(null);
+  // Đổi mật khẩu thật qua Backend API (/api/v1/auth/change-password)
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordMsg(null);
 
-  // Kiểm tra trạng thái khóa của Instructor.
-  if (role === 'instructor') {
-    const savedRecord = readInstructorPasswordAttemptRecord();
+    // Kiểm tra trạng thái khóa của Instructor.
+    if (role === 'instructor') {
+      const savedRecord = readInstructorPasswordAttemptRecord();
 
-    if (
-      savedRecord.lockedUntil !== null &&
-      savedRecord.lockedUntil > Date.now()
-    ) {
-      setFailedCurrentPasswordAttempts(savedRecord.failedAttempts);
-      setPasswordLockoutUntil(savedRecord.lockedUntil);
-      setLockoutClock(Date.now());
+      if (
+        savedRecord.lockedUntil !== null &&
+        savedRecord.lockedUntil > Date.now()
+      ) {
+        setFailedCurrentPasswordAttempts(savedRecord.failedAttempts);
+        setPasswordLockoutUntil(savedRecord.lockedUntil);
+        setLockoutClock(Date.now());
 
+        setPasswordMsg({
+          type: 'error',
+          text: 'Thao tác đổi mật khẩu đang bị khóa. Vui lòng thử lại sau.',
+        });
+
+        return;
+      }
+    }
+
+    if (!currentPassword) {
       setPasswordMsg({
         type: 'error',
-        text: 'Thao tác đổi mật khẩu đang bị khóa. Vui lòng thử lại sau.',
+        text: 'Vui lòng nhập mật khẩu hiện tại.',
       });
-
       return;
     }
-  }
 
-  if (!currentPassword) {
-    setPasswordMsg({
-      type: 'error',
-      text: 'Vui lòng nhập mật khẩu hiện tại.',
-    });
-    return;
-  }
+    // Tất cả role phải đáp ứng đầy đủ chính sách mật khẩu mới.
+    const unmetRequirement = passwordRequirements.find((item) => !item.met);
 
-  // Tất cả role phải đáp ứng đầy đủ chính sách mật khẩu mới.
-  const unmetRequirement = passwordRequirements.find(
-    (item) => !item.met
-  );
-
-  if (unmetRequirement) {
-    setPasswordMsg({
-      type: 'error',
-      text: `Mật khẩu mới chưa đáp ứng yêu cầu: ${unmetRequirement.label}.`,
-    });
-    return;
-  }
-
-  if (newPassword === currentPassword) {
-    setPasswordMsg({
-      type: 'error',
-      text: 'Mật khẩu mới phải khác mật khẩu hiện tại.',
-    });
-    return;
-  }
-
-  if (newPassword !== confirmPassword) {
-    setPasswordMsg({
-      type: 'error',
-      text: 'Xác nhận mật khẩu mới không khớp.',
-    });
-    return;
-  }
-
-  // CHẾ ĐỘ GIẢ LẬP TẠM THỜI: tất cả role dùng cùng luồng như Admin/Student.
-  // Không gọi API và không thay đổi mật khẩu thật trong backend/database.
-  setIsChangingPassword(true);
-
-  window.setTimeout(() => {
-    setIsChangingPassword(false);
-
-    // Mô phỏng trạng thái thành công cho Instructor, đồng thời xóa bộ đếm cũ.
-    if (role === 'instructor') {
-      try {
-        localStorage.removeItem(getInstructorPasswordAttemptStorageKey());
-      } catch {
-        // Bỏ qua nếu không thể truy cập localStorage.
-      }
-      setFailedCurrentPasswordAttempts(0);
-      setPasswordLockoutUntil(null);
-      setLockoutClock(Date.now());
+    if (unmetRequirement) {
+      setPasswordMsg({
+        type: 'error',
+        text: `Mật khẩu mới chưa đáp ứng yêu cầu: ${unmetRequirement.label}.`,
+      });
+      return;
     }
 
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setShowCurrentPassword(false);
-    setShowNewPassword(false);
-    setShowConfirmPassword(false);
+    if (newPassword === currentPassword) {
+      setPasswordMsg({
+        type: 'error',
+        text: 'Mật khẩu mới phải khác mật khẩu hiện tại.',
+      });
+      return;
+    }
 
-    setPasswordMsg({
-      type: 'success',
-      text: 'Đổi mật khẩu thành công! ',
-    });
+    if (newPassword !== confirmPassword) {
+      setPasswordMsg({
+        type: 'error',
+        text: 'Xác nhận mật khẩu mới không khớp.',
+      });
+      return;
+    }
 
-    window.setTimeout(() => setPasswordMsg(null), 5000);
-  }, 600);
-};
+    setIsChangingPassword(true);
+    try {
+      await fetchWithAuth('/api/v1/auth/change-password', {
+        method: 'PUT',
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+
+      if (role === 'instructor') {
+        try {
+          localStorage.removeItem(getInstructorPasswordAttemptStorageKey());
+        } catch {
+          // ignore
+        }
+        setFailedCurrentPasswordAttempts(0);
+        setPasswordLockoutUntil(null);
+        setLockoutClock(Date.now());
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
+
+      setPasswordMsg({
+        type: 'success',
+        text: 'Đổi mật khẩu thành công!',
+      });
+      window.setTimeout(() => setPasswordMsg(null), 5000);
+    } catch (err: any) {
+      if (role === 'instructor') {
+        const currentRec = readInstructorPasswordAttemptRecord();
+        const nextAttempts = currentRec.failedAttempts + 1;
+        const shouldLock = nextAttempts >= INSTRUCTOR_PASSWORD_MAX_ATTEMPTS;
+        const nextLockUntil = shouldLock ? Date.now() + INSTRUCTOR_PASSWORD_LOCKOUT_MS : null;
+        try {
+          localStorage.setItem(
+            getInstructorPasswordAttemptStorageKey(),
+            JSON.stringify({ failedAttempts: nextAttempts, lockedUntil: nextLockUntil })
+          );
+        } catch {
+          // ignore
+        }
+        setFailedCurrentPasswordAttempts(nextAttempts);
+        setPasswordLockoutUntil(nextLockUntil);
+        setLockoutClock(Date.now());
+      }
+
+      const detail =
+        err?.detail || err?.message || 'Mật khẩu hiện tại không chính xác hoặc không thể đổi mật khẩu.';
+      setPasswordMsg({
+        type: 'error',
+        text: typeof detail === 'string' ? detail : 'Đổi mật khẩu thất bại.',
+      });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
 
   const initials =
     name
@@ -1054,8 +1215,8 @@ useEffect(() => {
                       <Table2 className="h-5 w-5" />
                     </div>
                   </div>
-                  <p className="mt-3 text-2xl font-black text-slate-900">4 lớp</p>
-                  <p className="mt-1 text-[11px] text-slate-400">Học kỳ 1 (2026–2027)</p>
+                  <p className="mt-3 text-2xl font-black text-slate-900">{instructorActivity.classesCount} lớp</p>
+                  <p className="mt-1 text-[11px] text-slate-400">Học kỳ hiện tại</p>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
@@ -1065,7 +1226,7 @@ useEffect(() => {
                       <BookOpen className="h-5 w-5" />
                     </div>
                   </div>
-                  <p className="mt-3 text-2xl font-black text-slate-900">12 bộ đề</p>
+                  <p className="mt-3 text-2xl font-black text-slate-900">{instructorActivity.templatesCount} bộ đề</p>
                   <p className="mt-1 text-[11px] text-slate-400">Trong ngân hàng câu hỏi</p>
                 </div>
 
@@ -1076,7 +1237,7 @@ useEffect(() => {
                       <Clock className="h-5 w-5" />
                     </div>
                   </div>
-                  <p className="mt-3 text-2xl font-black text-slate-900">18 ca</p>
+                  <p className="mt-3 text-2xl font-black text-slate-900">{instructorActivity.roomsCount} ca</p>
                   <p className="mt-1 text-[11px] text-emerald-600 font-semibold">LiveKit SFU kích hoạt</p>
                 </div>
 
@@ -1087,8 +1248,8 @@ useEffect(() => {
                       <User className="h-5 w-5" />
                     </div>
                   </div>
-                  <p className="mt-3 text-2xl font-black text-slate-900">195 SV</p>
-                  <p className="mt-1 text-[11px] text-slate-400">Tổng 4 lớp</p>
+                  <p className="mt-3 text-2xl font-black text-slate-900">{instructorActivity.totalStudentsCount} SV</p>
+                  <p className="mt-1 text-[11px] text-slate-400">Tổng {instructorActivity.classesCount} lớp</p>
                 </div>
               </div>
 
@@ -1107,42 +1268,44 @@ useEffect(() => {
                   </Link>
                 </div>
 
-                <div className="space-y-3">
-                  {[
-                    { code: 'CS101', name: 'Nhập môn Lập trình C/C++', students: 48, status: 'Đang diễn ra', room: 'LAB-A101' },
-                    { code: 'SE304', name: 'Đảm bảo Chất lượng & Kiểm thử', students: 52, status: 'Đang diễn ra', room: 'LAB-B204' },
-                    { code: 'PRO192', name: 'Lập trình Hướng đối tượng Java', students: 45, status: 'Đang diễn ra', room: 'LAB-C302' },
-                  ].map((cls) => (
-                    <div
-                      key={cls.code}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 transition hover:bg-slate-50"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-200 font-mono text-xs font-bold text-blue-700">
-                          {cls.code}
+                {instructorActivity.classesList.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-8 text-center text-xs text-slate-500">
+                    Chưa có lớp học phần nào được phân công hoặc tạo mới.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {instructorActivity.classesList.map((cls) => (
+                      <div
+                        key={cls.code}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 transition hover:bg-slate-50"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 px-2.5 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-200 font-mono text-xs font-bold text-blue-700">
+                            {cls.code}
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-slate-900">{cls.name}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {cls.students} sinh viên • <span className="font-semibold text-slate-700">{cls.room}</span>
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs font-bold text-slate-900">{cls.name}</p>
-                          <p className="text-[11px] text-slate-500">
-                            {cls.students} sinh viên • Phòng: <span className="font-semibold text-slate-700">{cls.room}</span>
-                          </p>
-                        </div>
-                      </div>
 
-                      <div className="flex items-center gap-2.5">
-                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
-                          {cls.status}
-                        </span>
-                        <Link
-                          href="/instructor/classes"
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition"
-                        >
-                          Chi tiết
-                        </Link>
+                        <div className="flex items-center gap-2.5">
+                          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                            {cls.status}
+                          </span>
+                          <Link
+                            href={`/instructor/classes?class=${encodeURIComponent(cls.code)}`}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition"
+                          >
+                            Chi tiết
+                          </Link>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}

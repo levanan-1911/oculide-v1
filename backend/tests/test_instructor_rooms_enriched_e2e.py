@@ -10,15 +10,48 @@ from datetime import datetime, timedelta
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, backend_dir)
 
-from core.config import get_db_connection
-from database.room_db import create_room, get_rooms_by_instructor, get_room_by_id, get_room_by_code
-from database.session_db import create_session
-from database.violation_db import create_violation
+from schemas.room import RoomResponse
 
-def test_enriched_rooms():
+
+def test_room_response_enriched_schema():
+    """Unit test cho pytest trên CI: xác nhận RoomResponse hỗ trợ đầy đủ các trường làm giàu."""
+    now = datetime.now()
+    room = RoomResponse(
+        room_id=101,
+        room_code="ROOM-CI-01",
+        room_name="Kiểm tra giữa kỳ",
+        room_type="exam",
+        instructor_id=12,
+        start_time=now,
+        end_time=now + timedelta(hours=1),
+        duration_minutes=60,
+        max_attempts=3,
+        is_active=True,
+        passcode="123456",
+        class_code="CMU-CS213",
+        class_name="Nhập môn C++",
+        total_students=45,
+        attended_students=42,
+        pending_violations=2,
+        created_at=now,
+        updated_at=now,
+    )
+    assert room.class_code == "CMU-CS213"
+    assert room.class_name == "Nhập môn C++"
+    assert room.total_students == 45
+    assert room.attended_students == 42
+    assert room.pending_violations == 2
+
+
+def run_enriched_rooms_e2e():
+    from core.config import get_db_connection
+    from database.room_db import create_room, get_rooms_by_instructor, get_room_by_id
+    from database.session_db import create_session
+    from database.violation_db import create_violation
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     # 1. Tìm hoặc lấy một lớp học và giảng viên có sẵn
     cursor.execute("SELECT TOP 1 ma_lop, ma_lop_hoc, ten_lop, ma_giang_vien FROM LopHoc ORDER BY ma_lop ASC")
     class_row = cursor.fetchone()
@@ -54,7 +87,7 @@ def test_enriched_rooms():
     room_id = created_room["room_id"]
     print(f"✅ 2. Đã tạo phòng thi: id={room_id}, code='{test_room_code}'")
 
-    # 3. Lấy thông tin phòng qua get_room_by_id và get_room_by_code
+    # 3. Lấy thông tin phòng qua get_room_by_id
     r_id_data = get_room_by_id(room_id)
     assert r_id_data is not None
     assert r_id_data["class_code"] == class_code
@@ -64,7 +97,6 @@ def test_enriched_rooms():
     print(f"✅ 3. get_room_by_id trả về đầy đủ: class_code='{r_id_data['class_code']}', total_students={r_id_data['total_students']}")
 
     # 4. Tạo 1 phiên làm bài (PhienLamBai) và 1 vi phạm (ViPhamGiamSat)
-    # Lấy 1 sinh viên trong lớp nếu có, hoặc tạo session cho user_id = 1
     session = create_session(
         room_id=room_id,
         student_id=1,
@@ -94,5 +126,6 @@ def test_enriched_rooms():
 
     print("\n🎉 TẤT CẢ 5 BƯỚC TEST ENRICHED ROOMS ĐỀU PASS THÀNH CÔNG!")
 
+
 if __name__ == "__main__":
-    test_enriched_rooms()
+    run_enriched_rooms_e2e()

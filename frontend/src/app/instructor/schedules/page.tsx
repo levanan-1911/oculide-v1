@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -21,9 +21,11 @@ import {
 } from 'lucide-react';
 import ExtendSessionModal from '@/components/instructor/monitoring/ExtendSessionModal';
 import { INSTRUCTOR_SCHEDULES_STORAGE_KEY } from '@/components/instructor/classes/types';
+import { fetchWithAuth } from '@/services/apiClient';
 
 interface InstructorSession {
   id: string;
+  roomId?: number;
   classCode: string;
   className: string;
   title: string;
@@ -205,82 +207,80 @@ const getAttendanceSummary = (session: InstructorSession) => {
   };
 };
 
-const INITIAL_SESSIONS: InstructorSession[] = [
-  {
-    id: 'SES-01',
-    classCode: 'CS101-A',
-    className: 'Nhập môn Lập trình C/C++',
-    title: 'Lab 03: Vòng lặp For/While & Mảng 1 chiều',
-    type: 'LAB',
-    language: 'C++',
-    startTime: '07:30',
-    endTime: '09:50',
-    date: 'Hôm nay',
-    dateKey: getLocalDateKey(),
-    roomCode: 'CS101-LAB3',
-    passcode: '883921',
-    status: 'Đang diễn ra',
-    enrolledStudents: 48,
-    attendedStudents: 46,
-    isAiProctored: true,
-    demoProgress: 68,
-    demoRemainingMinutes: 42,
-  },
-  {
-    id: 'SES-02',
-    classCode: 'PRJ301',
-    className: 'Lập trình ứng dụng Java Web',
-    title: 'Kiểm tra quá trình: Servlet & MVC Pattern',
-    type: 'EXAM',
-    language: 'Java',
-    startTime: '13:30',
-    endTime: '15:00',
-    date: 'Hôm nay',
-    dateKey: getLocalDateKey(),
-    roomCode: 'PRJ-KT01',
-    passcode: '901244',
-    status: 'Sắp diễn ra',
-    enrolledStudents: 45,
-    attendedStudents: 0,
-    isAiProctored: true,
-  },
-  {
-    id: 'SES-03',
-    classCode: 'CSD201',
-    className: 'Cấu trúc dữ liệu & Giải thuật',
-    title: 'Lab 04: Cây nhị phân tìm kiếm (BST)',
-    type: 'LAB',
-    language: 'Python',
-    startTime: '15:15',
-    endTime: '17:35',
-    date: 'Hôm nay',
-    dateKey: getLocalDateKey(),
-    roomCode: 'CSD-BST4',
-    passcode: '128472',
-    status: 'Sắp diễn ra',
-    enrolledStudents: 42,
-    attendedStudents: 0,
-    isAiProctored: false,
-  },
-  {
-    id: 'SES-04',
-    classCode: 'CS102',
-    className: 'Kỹ thuật Lập trình nâng cao',
-    title: 'Lab 02: Con trỏ & Quản lý bộ nhớ động',
-    type: 'LAB',
-    language: 'C++',
-    startTime: '08:00',
-    endTime: '10:20',
-    date: 'Hôm qua',
-    dateKey: shiftDateKey(-1),
-    roomCode: 'CS102-PTR',
-    passcode: '451092',
-    status: 'Đã kết thúc',
-    enrolledStudents: 50,
-    attendedStudents: 49,
-    isAiProctored: true,
-  },
-];
+function mapBackendRoomToScheduleSession(room: any): InstructorSession {
+  const startD = room.start_time ? new Date(room.start_time) : new Date();
+  const endD = room.end_time
+    ? new Date(room.end_time)
+    : new Date(startD.getTime() + (room.duration_minutes || 60) * 60000);
+
+  const startHours = String(startD.getHours()).padStart(2, '0');
+  const startMins = String(startD.getMinutes()).padStart(2, '0');
+  const endHours = String(endD.getHours()).padStart(2, '0');
+  const endMins = String(endD.getMinutes()).padStart(2, '0');
+
+  const startTime = `${startHours}:${startMins}`;
+  const endTime = `${endHours}:${endMins}`;
+
+  const dateKey = getLocalDateKey(startD);
+  const todayKey = getLocalDateKey();
+  const tomorrowKey = shiftDateKey(1);
+  const yesterdayKey = shiftDateKey(-1);
+
+  let dateLabel = `${String(startD.getDate()).padStart(2, '0')}/${String(startD.getMonth() + 1).padStart(2, '0')}/${startD.getFullYear()}`;
+  if (dateKey === todayKey) dateLabel = 'Hôm nay';
+  else if (dateKey === tomorrowKey) dateLabel = 'Ngày mai';
+  else if (dateKey === yesterdayKey) dateLabel = 'Hôm qua';
+
+  let status: InstructorSession['status'] = 'Sắp diễn ra';
+  const rawStatus = (room.status || '').toLowerCase();
+  if (rawStatus === 'dang_dien_ra' || rawStatus === 'in_progress') {
+    status = 'Đang diễn ra';
+  } else if (rawStatus === 'da_dong' || rawStatus === 'ended' || rawStatus === 'completed') {
+    status = 'Đã kết thúc';
+  } else {
+    const now = new Date();
+    if (endD < now && rawStatus !== 'dang_dien_ra') {
+      status = 'Đã kết thúc';
+    } else {
+      status = 'Sắp diễn ra';
+    }
+  }
+
+  let proctoringCfg: any = null;
+  if (room.proctoring_config) {
+    try {
+      proctoringCfg =
+        typeof room.proctoring_config === 'string'
+          ? JSON.parse(room.proctoring_config)
+          : room.proctoring_config;
+    } catch {
+      // ignore
+    }
+  }
+  const isAiProctored = Boolean(
+    proctoringCfg?.aiFaceDetection || proctoringCfg?.aiObjectDetection
+  );
+
+  return {
+    id: String(room.room_id || room.room_code),
+    roomId: room.room_id,
+    classCode: room.class_code || 'Lớp HP',
+    className: room.class_name || room.room_name || 'Phòng học',
+    title: room.room_name,
+    type: room.room_type === 'exam' ? 'EXAM' : 'LAB',
+    language: 'C++ / Python / Java',
+    startTime,
+    endTime,
+    date: dateLabel,
+    dateKey,
+    roomCode: room.room_code,
+    passcode: room.passcode || '------',
+    status,
+    enrolledStudents: room.total_students || 0,
+    attendedStudents: room.attended_students || 0,
+    isAiProctored,
+  };
+}
 
 function SessionDetailModal({
   session,
@@ -497,7 +497,8 @@ function SessionDetailModal({
 }
 
 export default function InstructorSchedulesPage() {
-  const [sessions, setSessions] = useState<InstructorSession[]>(INITIAL_SESSIONS);
+  const [sessions, setSessions] = useState<InstructorSession[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<'ALL' | 'LAB' | 'EXAM' | 'active' | 'upcoming'>('ALL');
   const [dateFilter, setDateFilter] = useState<DateFilter>('ALL');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -509,35 +510,40 @@ export default function InstructorSchedulesPage() {
   const [sessionToExtend, setSessionToExtend] = useState<InstructorSession | null>(null);
   const [now, setNow] = useState(() => new Date());
 
-  useEffect(() => {
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const loadSessions = useCallback(async () => {
     try {
-      const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-      if (raw) {
-        const storedSchedules: InstructorSession[] = JSON.parse(raw);
-
-        if (Array.isArray(storedSchedules) && storedSchedules.length > 0) {
-          setSessions((prev) => {
-            const storedCodes = new Set(
-              storedSchedules.map((s) => s.roomCode.toLowerCase())
-            );
-
-            const normalizedStored = storedSchedules.map((session) => ({
-              ...session,
-              dateKey: session.dateKey || parseDateLabel(session.date),
-            }));
-
-            const remaining = prev.filter(
-              (p) => !storedCodes.has(p.roomCode.toLowerCase())
-            );
-
-            return [...normalizedStored, ...remaining];
-          });
-        }
+      setLoading(true);
+      const data = await fetchWithAuth<any[]>('/api/v1/rooms');
+      if (Array.isArray(data)) {
+        const mapped = data.map(mapBackendRoomToScheduleSession);
+        setSessions(mapped);
       }
     } catch {
-      // Fallback về dữ liệu demo.
+      // Fallback localStorage nếu mất mạng
+      try {
+        const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
+        if (raw) {
+          const parsed: unknown = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSessions(parsed.map(mapBackendRoomToScheduleSession));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    } finally {
+      setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
 
   // Đồng hồ UI để countdown/progress tự cập nhật.
   useEffect(() => {
@@ -547,11 +553,6 @@ export default function InstructorSchedulesPage() {
 
     return () => window.clearInterval(intervalId);
   }, []);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
 
   const copyToClipboard = async (text: string, id: string) => {
     try {
@@ -564,7 +565,7 @@ export default function InstructorSchedulesPage() {
     }
   };
 
-  const handleOpenRoomEarly = (sessionId: string) => {
+  const handleOpenRoomEarly = async (sessionId: string) => {
     const targetSession = sessions.find((session) => session.id === sessionId);
 
     if (!targetSession) {
@@ -577,74 +578,53 @@ export default function InstructorSchedulesPage() {
       return;
     }
 
-    // Đọc lại dữ liệu mới nhất trước khi mở để tránh bỏ sót phiên ở tab khác.
-    let storedSessions: InstructorSession[] = [];
+    if (!targetSession.roomId) {
+      showToast('Không tìm thấy ID phòng hợp lệ.');
+      return;
+    }
 
     try {
-      const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-      if (raw) {
-        const parsed: unknown = JSON.parse(raw);
-        if (!Array.isArray(parsed)) {
-          showToast('Không thể xác minh trạng thái các phiên. Vui lòng tải lại trang.');
-          return;
-        }
-        storedSessions = parsed as InstructorSession[];
-      }
-    } catch {
-      showToast('Không thể đọc trạng thái phiên hiện tại. Vui lòng thử lại.');
-      return;
-    }
+      await fetchWithAuth(`/api/v1/rooms/${targetSession.roomId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'dang_dien_ra' }),
+      });
 
-    // Kiểm tra cả phiên lưu trong localStorage lẫn trạng thái đang hiển thị.
-    const activeSession =
-      storedSessions.find((session) => session.status === 'Đang diễn ra') ??
-      sessions.find((session) => session.status === 'Đang diễn ra');
-
-    if (activeSession) {
-      const message =
-        activeSession.id === sessionId
-          ? `Phòng ${activeSession.roomCode} đã được mở và đang giám sát.`
-          : `Không thể mở phòng ${targetSession.roomCode}. Phòng ${activeSession.roomCode} đang được giám sát. Vui lòng kết thúc phiên hiện tại trước.`;
-      showToast(message);
-      return;
-    }
-
-    // Ghi trạng thái vào storage trước để lần bấm tiếp theo luôn thấy phiên đang chạy.
-    try {
-      const sourceSessions = storedSessions.length > 0 ? storedSessions : sessions;
-      const targetExists = sourceSessions.some((session) => session.id === sessionId);
-      const updated = sourceSessions.map((session) =>
-        session.id === sessionId
-          ? { ...session, status: 'Đang diễn ra' as const }
-          : session
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId
+            ? { ...session, status: 'Đang diễn ra', demoProgress: 10, demoRemainingMinutes: 60 }
+            : session
+        )
       );
 
-      if (!targetExists) {
-        updated.push({ ...targetSession, status: 'Đang diễn ra' });
-      }
-
-      localStorage.setItem(
-        INSTRUCTOR_SCHEDULES_STORAGE_KEY,
-        JSON.stringify(updated)
-      );
-    } catch {
-      showToast('Không thể lưu trạng thái mở phòng. Vui lòng thử lại.');
-      return;
+      showToast(`Đã mở phòng ${targetSession.roomCode}. Sinh viên có thể tham gia!`);
+    } catch (err: any) {
+      const detailMsg =
+        err?.detail?.message ||
+        (typeof err?.detail === 'string' ? err?.detail : null) ||
+        err?.message ||
+        'Không thể mở phòng.';
+      showToast(detailMsg);
     }
-
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId
-          ? { ...session, status: 'Đang diễn ra', demoProgress: 10, demoRemainingMinutes: 60 }
-          : session
-      )
-    );
-
-    showToast(`Đã mở phòng ${targetSession.roomCode}. Sinh viên có thể tham gia!`);
   };
 
-  const handleConfirmExtend = (minutes: number, reason: string, notify: boolean) => {
+  const handleConfirmExtend = async (minutes: number, reason: string, notify: boolean) => {
     if (!sessionToExtend) return;
+
+    if (sessionToExtend.roomId) {
+      try {
+        await fetchWithAuth(`/api/v1/rooms/${sessionToExtend.roomId}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            duration_minutes: (sessionToExtend as any).durationMinutes
+              ? (sessionToExtend as any).durationMinutes + minutes
+              : undefined,
+          }),
+        }).catch(() => null);
+      } catch {
+        // ignore
+      }
+    }
 
     setSessions((prev) =>
       prev.map((s) => {
@@ -1012,7 +992,11 @@ export default function InstructorSchedulesPage() {
         </div>
       </div>
 
-      {groupedSessions.length === 0 ? (
+      {loading ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-xs font-semibold text-slate-400">
+          Đang tải lịch thi và lịch thực hành từ máy chủ...
+        </div>
+      ) : groupedSessions.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center">
           <CalendarDays className="mx-auto h-9 w-9 text-slate-300" />
           <p className="mt-3 text-sm font-bold text-slate-700">

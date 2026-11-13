@@ -26,27 +26,47 @@ def get_room_by_id(room_id: int) -> Optional[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_phong AS room_id, 
-                   ma_phong_code AS room_code, 
-                   tieu_de AS room_name, 
-                   loai_phong AS room_type, 
-                   nguoi_tao AS instructor_id, 
-                   mo_ta AS description,
-                   gio_bat_dau AS start_time, 
-                   gio_ket_thuc AS end_time, 
-                   thoi_luong_phut AS duration_minutes, 
-                   so_lan_nop_toi_da AS max_attempts,
-                   dang_hoat_dong AS is_active, 
-                   mat_ma_phong AS passcode, 
-                   ma_dinh_danh_livekit AS livekit_room_name,
-                   ma_lop AS class_id,
-                   ma_de_mau AS template_id,
-                   cau_hinh_giam_sat AS proctoring_config,
-                   trang_thai AS status,
-                   ngay_tao AS created_at, 
-                   ngay_cap_nhat AS updated_at
-            FROM Phong 
-            WHERE ma_phong = ?
+            SELECT p.ma_phong AS room_id, 
+                   p.ma_phong_code AS room_code, 
+                   p.tieu_de AS room_name, 
+                   p.loai_phong AS room_type, 
+                   p.nguoi_tao AS instructor_id, 
+                   p.mo_ta AS description,
+                   p.gio_bat_dau AS start_time, 
+                   p.gio_ket_thuc AS end_time, 
+                   p.thoi_luong_phut AS duration_minutes, 
+                   p.so_lan_nop_toi_da AS max_attempts,
+                   p.dang_hoat_dong AS is_active, 
+                   p.mat_ma_phong AS passcode, 
+                   p.ma_dinh_danh_livekit AS livekit_room_name,
+                   p.ma_lop AS class_id,
+                   lh.ma_lop_hoc AS class_code,
+                   lh.ten_lop AS class_name,
+                   p.ma_de_mau AS template_id,
+                   p.cau_hinh_giam_sat AS proctoring_config,
+                   p.trang_thai AS status,
+                   COALESCE((
+                       SELECT COUNT(*) 
+                       FROM SinhVienLopHoc svl 
+                       WHERE svl.ma_lop = p.ma_lop
+                   ), 0) AS total_students,
+                   COALESCE((
+                       SELECT COUNT(DISTINCT pl.ma_sinh_vien) 
+                       FROM PhienLamBai pl 
+                       WHERE pl.ma_phong = p.ma_phong 
+                         AND pl.trang_thai IN ('dang_lam', 'active', 'da_nop', 'completed')
+                   ), 0) AS attended_students,
+                   COALESCE((
+                       SELECT COUNT(*) 
+                       FROM ViPhamGiamSat vp 
+                       WHERE vp.ma_phong = p.ma_phong 
+                         AND (vp.trang_thai_duyet = 'pending' OR vp.trang_thai_duyet IS NULL)
+                   ), 0) AS pending_violations,
+                   p.ngay_tao AS created_at, 
+                   p.ngay_cap_nhat AS updated_at
+            FROM Phong p
+            LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
+            WHERE p.ma_phong = ?
         """, (room_id,))
         row = cursor.fetchone()
         if row:
@@ -64,27 +84,47 @@ def get_room_by_code(room_code: str) -> Optional[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_phong AS room_id, 
-                   ma_phong_code AS room_code, 
-                   tieu_de AS room_name, 
-                   loai_phong AS room_type, 
-                   nguoi_tao AS instructor_id, 
-                   mo_ta AS description,
-                   gio_bat_dau AS start_time, 
-                   gio_ket_thuc AS end_time, 
-                   thoi_luong_phut AS duration_minutes, 
-                   so_lan_nop_toi_da AS max_attempts,
-                   dang_hoat_dong AS is_active, 
-                   mat_ma_phong AS passcode, 
-                   ma_dinh_danh_livekit AS livekit_room_name,
-                   ma_lop AS class_id,
-                   ma_de_mau AS template_id,
-                   cau_hinh_giam_sat AS proctoring_config,
-                   trang_thai AS status,
-                   ngay_tao AS created_at, 
-                   ngay_cap_nhat AS updated_at
-            FROM Phong 
-            WHERE ma_phong_code = ?
+            SELECT p.ma_phong AS room_id, 
+                   p.ma_phong_code AS room_code, 
+                   p.tieu_de AS room_name, 
+                   p.loai_phong AS room_type, 
+                   p.nguoi_tao AS instructor_id, 
+                   p.mo_ta AS description,
+                   p.gio_bat_dau AS start_time, 
+                   p.gio_ket_thuc AS end_time, 
+                   p.thoi_luong_phut AS duration_minutes, 
+                   p.so_lan_nop_toi_da AS max_attempts,
+                   p.dang_hoat_dong AS is_active, 
+                   p.mat_ma_phong AS passcode, 
+                   p.ma_dinh_danh_livekit AS livekit_room_name,
+                   p.ma_lop AS class_id,
+                   lh.ma_lop_hoc AS class_code,
+                   lh.ten_lop AS class_name,
+                   p.ma_de_mau AS template_id,
+                   p.cau_hinh_giam_sat AS proctoring_config,
+                   p.trang_thai AS status,
+                   COALESCE((
+                       SELECT COUNT(*) 
+                       FROM SinhVienLopHoc svl 
+                       WHERE svl.ma_lop = p.ma_lop
+                   ), 0) AS total_students,
+                   COALESCE((
+                       SELECT COUNT(DISTINCT pl.ma_sinh_vien) 
+                       FROM PhienLamBai pl 
+                       WHERE pl.ma_phong = p.ma_phong 
+                         AND pl.trang_thai IN ('dang_lam', 'active', 'da_nop', 'completed')
+                   ), 0) AS attended_students,
+                   COALESCE((
+                       SELECT COUNT(*) 
+                       FROM ViPhamGiamSat vp 
+                       WHERE vp.ma_phong = p.ma_phong 
+                         AND (vp.trang_thai_duyet = 'pending' OR vp.trang_thai_duyet IS NULL)
+                   ), 0) AS pending_violations,
+                   p.ngay_tao AS created_at, 
+                   p.ngay_cap_nhat AS updated_at
+            FROM Phong p
+            LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
+            WHERE p.ma_phong_code = ?
         """, (room_code,))
         row = cursor.fetchone()
         if row:
@@ -101,36 +141,56 @@ def get_rooms_by_instructor(instructor_id: int, skip: int = 0, limit: int = 100,
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        where = ["nguoi_tao = ?"]
+        where = ["p.nguoi_tao = ?"]
         params = [instructor_id]
         if room_type:
-            where.append("loai_phong = ?")
+            where.append("p.loai_phong = ?")
             params.append(room_type)
         where_sql = f"WHERE {' AND '.join(where)}"
         
         cursor.execute(f"""
-            SELECT ma_phong AS room_id, 
-                   ma_phong_code AS room_code, 
-                   tieu_de AS room_name, 
-                   loai_phong AS room_type, 
-                   nguoi_tao AS instructor_id, 
-                   mo_ta AS description,
-                   gio_bat_dau AS start_time, 
-                   gio_ket_thuc AS end_time, 
-                   thoi_luong_phut AS duration_minutes, 
-                   so_lan_nop_toi_da AS max_attempts,
-                   dang_hoat_dong AS is_active, 
-                   mat_ma_phong AS passcode, 
-                   ma_dinh_danh_livekit AS livekit_room_name,
-                   ma_lop AS class_id,
-                   ma_de_mau AS template_id,
-                   cau_hinh_giam_sat AS proctoring_config,
-                   trang_thai AS status,
-                   ngay_tao AS created_at, 
-                   ngay_cap_nhat AS updated_at
-            FROM Phong 
+            SELECT p.ma_phong AS room_id, 
+                   p.ma_phong_code AS room_code, 
+                   p.tieu_de AS room_name, 
+                   p.loai_phong AS room_type, 
+                   p.nguoi_tao AS instructor_id, 
+                   p.mo_ta AS description,
+                   p.gio_bat_dau AS start_time, 
+                   p.gio_ket_thuc AS end_time, 
+                   p.thoi_luong_phut AS duration_minutes, 
+                   p.so_lan_nop_toi_da AS max_attempts,
+                   p.dang_hoat_dong AS is_active, 
+                   p.mat_ma_phong AS passcode, 
+                   p.ma_dinh_danh_livekit AS livekit_room_name,
+                   p.ma_lop AS class_id,
+                   lh.ma_lop_hoc AS class_code,
+                   lh.ten_lop AS class_name,
+                   p.ma_de_mau AS template_id,
+                   p.cau_hinh_giam_sat AS proctoring_config,
+                   p.trang_thai AS status,
+                   COALESCE((
+                       SELECT COUNT(*) 
+                       FROM SinhVienLopHoc svl 
+                       WHERE svl.ma_lop = p.ma_lop
+                   ), 0) AS total_students,
+                   COALESCE((
+                       SELECT COUNT(DISTINCT pl.ma_sinh_vien) 
+                       FROM PhienLamBai pl 
+                       WHERE pl.ma_phong = p.ma_phong 
+                         AND pl.trang_thai IN ('dang_lam', 'active', 'da_nop', 'completed')
+                   ), 0) AS attended_students,
+                   COALESCE((
+                       SELECT COUNT(*) 
+                       FROM ViPhamGiamSat vp 
+                       WHERE vp.ma_phong = p.ma_phong 
+                         AND (vp.trang_thai_duyet = 'pending' OR vp.trang_thai_duyet IS NULL)
+                   ), 0) AS pending_violations,
+                   p.ngay_tao AS created_at, 
+                   p.ngay_cap_nhat AS updated_at
+            FROM Phong p
+            LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
             {where_sql}
-            ORDER BY ngay_tao DESC
+            ORDER BY p.ngay_tao DESC
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         """, tuple(params + [skip, limit]))
         rows = cursor.fetchall()
@@ -149,31 +209,51 @@ def get_all_rooms(skip: int = 0, limit: int = 100, room_type: Optional[str] = No
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        where_sql = "WHERE loai_phong = ?" if room_type else ""
+        where_sql = "WHERE p.loai_phong = ?" if room_type else ""
         params = [room_type] if room_type else []
         cursor.execute(f"""
-            SELECT ma_phong AS room_id, 
-                   ma_phong_code AS room_code, 
-                   tieu_de AS room_name, 
-                   loai_phong AS room_type, 
-                   nguoi_tao AS instructor_id, 
-                   mo_ta AS description,
-                   gio_bat_dau AS start_time, 
-                   gio_ket_thuc AS end_time, 
-                   thoi_luong_phut AS duration_minutes, 
-                   so_lan_nop_toi_da AS max_attempts,
-                   dang_hoat_dong AS is_active, 
-                   mat_ma_phong AS passcode, 
-                   ma_dinh_danh_livekit AS livekit_room_name,
-                   ma_lop AS class_id,
-                   ma_de_mau AS template_id,
-                   cau_hinh_giam_sat AS proctoring_config,
-                   trang_thai AS status,
-                   ngay_tao AS created_at, 
-                   ngay_cap_nhat AS updated_at
-            FROM Phong 
+            SELECT p.ma_phong AS room_id, 
+                   p.ma_phong_code AS room_code, 
+                   p.tieu_de AS room_name, 
+                   p.loai_phong AS room_type, 
+                   p.nguoi_tao AS instructor_id, 
+                   p.mo_ta AS description,
+                   p.gio_bat_dau AS start_time, 
+                   p.gio_ket_thuc AS end_time, 
+                   p.thoi_luong_phut AS duration_minutes, 
+                   p.so_lan_nop_toi_da AS max_attempts,
+                   p.dang_hoat_dong AS is_active, 
+                   p.mat_ma_phong AS passcode, 
+                   p.ma_dinh_danh_livekit AS livekit_room_name,
+                   p.ma_lop AS class_id,
+                   lh.ma_lop_hoc AS class_code,
+                   lh.ten_lop AS class_name,
+                   p.ma_de_mau AS template_id,
+                   p.cau_hinh_giam_sat AS proctoring_config,
+                   p.trang_thai AS status,
+                   COALESCE((
+                       SELECT COUNT(*) 
+                       FROM SinhVienLopHoc svl 
+                       WHERE svl.ma_lop = p.ma_lop
+                   ), 0) AS total_students,
+                   COALESCE((
+                       SELECT COUNT(DISTINCT pl.ma_sinh_vien) 
+                       FROM PhienLamBai pl 
+                       WHERE pl.ma_phong = p.ma_phong 
+                         AND pl.trang_thai IN ('dang_lam', 'active', 'da_nop', 'completed')
+                   ), 0) AS attended_students,
+                   COALESCE((
+                       SELECT COUNT(*) 
+                       FROM ViPhamGiamSat vp 
+                       WHERE vp.ma_phong = p.ma_phong 
+                         AND (vp.trang_thai_duyet = 'pending' OR vp.trang_thai_duyet IS NULL)
+                   ), 0) AS pending_violations,
+                   p.ngay_tao AS created_at, 
+                   p.ngay_cap_nhat AS updated_at
+            FROM Phong p
+            LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
             {where_sql}
-            ORDER BY ngay_tao DESC
+            ORDER BY p.ngay_tao DESC
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         """, tuple(params + [skip, limit]))
         rows = cursor.fetchall()
@@ -232,27 +312,8 @@ def create_room(
         row = cursor.fetchone()
         conn.commit()
         if row:
-            return {
-                "room_id": row[0],
-                "room_code": row[1],
-                "room_name": row[2],
-                "room_type": row[3],
-                "instructor_id": row[4],
-                "description": row[5],
-                "start_time": row[6],
-                "end_time": row[7],
-                "duration_minutes": row[8],
-                "max_attempts": row[9],
-                "is_active": bool(row[10]),
-                "passcode": row[11],
-                "livekit_room_name": row[12],
-                "class_id": row[13],
-                "template_id": row[14],
-                "proctoring_config": row[15],
-                "status": row[16],
-                "created_at": row[17],
-                "updated_at": row[18]
-            }
+            created_room_id = row[0]
+            return get_room_by_id(created_room_id)
         raise Exception("Không thể tạo phòng mới")
     finally:
         cursor.close()

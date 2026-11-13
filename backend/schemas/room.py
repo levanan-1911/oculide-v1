@@ -50,6 +50,11 @@ class RoomResponse(BaseModel):
     template_id: Optional[int] = None
     proctoring_config: Optional[str] = None
     status: Optional[str] = "chua_mo"
+    class_code: Optional[str] = None
+    class_name: Optional[str] = None
+    total_students: Optional[int] = 0
+    attended_students: Optional[int] = 0
+    pending_violations: Optional[int] = 0
     created_at: datetime
     updated_at: datetime
 

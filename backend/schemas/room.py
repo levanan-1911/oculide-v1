@@ -50,11 +50,15 @@ class RoomResponse(BaseModel):
     template_id: Optional[int] = None
     proctoring_config: Optional[str] = None
     status: Optional[str] = "chua_mo"
+    instructor_name: Optional[str] = None
     class_code: Optional[str] = None
     class_name: Optional[str] = None
+    course_name: Optional[str] = None
     total_students: Optional[int] = 0
     attended_students: Optional[int] = 0
     pending_violations: Optional[int] = 0
+    student_session_status: Optional[str] = None
+    student_submissions_count: Optional[int] = 0
     created_at: datetime
     updated_at: datetime
 
@@ -67,6 +71,12 @@ class PublicRoomResponse(BaseModel):
     end_time: datetime
     duration_minutes: int
     requires_passcode: bool
+    instructor_name: Optional[str] = None
+    class_code: Optional[str] = None
+    class_name: Optional[str] = None
+    course_name: Optional[str] = None
+    status: Optional[str] = "chua_mo"
+    is_active: Optional[bool] = True
 
 class RoomDashboardStudentItem(BaseModel):
     student_id: int

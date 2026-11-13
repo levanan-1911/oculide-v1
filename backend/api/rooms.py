@@ -12,7 +12,7 @@ from schemas.auth import JoinRoomRequest
 from core.permissions import get_current_user, instructor_or_admin_required
 from database.room_db import (
     create_room, get_room_by_id, get_room_by_code, get_rooms_by_instructor,
-    get_all_rooms, update_room, delete_room, get_room_dashboard_data,
+    get_all_rooms, get_rooms_for_student, update_room, delete_room, get_room_dashboard_data,
     get_exam_templates, get_room_lobby_details, check_instructor_active_room,
     update_room_status, toggle_manual_attendance,
     is_student_in_class, get_class_metadata, upsert_student_lobby_session,
@@ -256,13 +256,13 @@ async def list_rooms(
     elif current_user["role"] == "instructor":
         return get_rooms_by_instructor(current_user["user_id"], skip=skip, limit=limit, room_type=room_type)
     else:
-        # Sinh viên: Lấy danh sách phòng công khai
-        return get_all_rooms(skip=skip, limit=limit, room_type=room_type)
+        # Sinh viên: Lấy danh sách phòng theo lớp học phần / phiên thi của sinh viên
+        return get_rooms_for_student(current_user["user_id"], skip=skip, limit=limit, room_type=room_type)
 
 @router.get("/public/{room_code}", response_model=PublicRoomResponse)
 async def get_public_room_info(room_code: str):
     """Lấy thông tin công khai của phòng thi trước khi đăng nhập hoặc nhập passcode"""
-    room = get_room_by_code(room_code)
+    room = get_room_by_code(room_code.strip().upper())
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
     return {
@@ -273,7 +273,13 @@ async def get_public_room_info(room_code: str):
         "start_time": room["start_time"],
         "end_time": room["end_time"],
         "duration_minutes": room["duration_minutes"],
-        "requires_passcode": bool(room.get("passcode"))
+        "requires_passcode": bool(room.get("passcode")),
+        "instructor_name": room.get("instructor_name"),
+        "class_code": room.get("class_code"),
+        "class_name": room.get("class_name"),
+        "course_name": room.get("course_name"),
+        "status": room.get("status") or "chua_mo",
+        "is_active": bool(room.get("is_active", True)),
     }
 
 @router.get("/{room_id}", response_model=RoomResponse)

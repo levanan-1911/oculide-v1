@@ -42,6 +42,8 @@ def get_room_by_id(room_id: int) -> Optional[Dict]:
                    p.ma_lop AS class_id,
                    lh.ma_lop_hoc AS class_code,
                    lh.ten_lop AS class_name,
+                   lh.ma_mon_hoc AS course_name,
+                   gv.ho_va_ten AS instructor_name,
                    p.ma_de_mau AS template_id,
                    p.cau_hinh_giam_sat AS proctoring_config,
                    p.trang_thai AS status,
@@ -66,6 +68,7 @@ def get_room_by_id(room_id: int) -> Optional[Dict]:
                    p.ngay_cap_nhat AS updated_at
             FROM Phong p
             LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
+            LEFT JOIN NguoiDung gv ON p.nguoi_tao = gv.ma_nguoi_dung
             WHERE p.ma_phong = ?
         """, (room_id,))
         row = cursor.fetchone()
@@ -100,6 +103,8 @@ def get_room_by_code(room_code: str) -> Optional[Dict]:
                    p.ma_lop AS class_id,
                    lh.ma_lop_hoc AS class_code,
                    lh.ten_lop AS class_name,
+                   lh.ma_mon_hoc AS course_name,
+                   gv.ho_va_ten AS instructor_name,
                    p.ma_de_mau AS template_id,
                    p.cau_hinh_giam_sat AS proctoring_config,
                    p.trang_thai AS status,
@@ -124,6 +129,7 @@ def get_room_by_code(room_code: str) -> Optional[Dict]:
                    p.ngay_cap_nhat AS updated_at
             FROM Phong p
             LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
+            LEFT JOIN NguoiDung gv ON p.nguoi_tao = gv.ma_nguoi_dung
             WHERE p.ma_phong_code = ?
         """, (room_code,))
         row = cursor.fetchone()
@@ -165,6 +171,8 @@ def get_rooms_by_instructor(instructor_id: int, skip: int = 0, limit: int = 100,
                    p.ma_lop AS class_id,
                    lh.ma_lop_hoc AS class_code,
                    lh.ten_lop AS class_name,
+                   lh.ma_mon_hoc AS course_name,
+                   gv.ho_va_ten AS instructor_name,
                    p.ma_de_mau AS template_id,
                    p.cau_hinh_giam_sat AS proctoring_config,
                    p.trang_thai AS status,
@@ -189,6 +197,7 @@ def get_rooms_by_instructor(instructor_id: int, skip: int = 0, limit: int = 100,
                    p.ngay_cap_nhat AS updated_at
             FROM Phong p
             LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
+            LEFT JOIN NguoiDung gv ON p.nguoi_tao = gv.ma_nguoi_dung
             {where_sql}
             ORDER BY p.ngay_tao DESC
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
@@ -228,6 +237,8 @@ def get_all_rooms(skip: int = 0, limit: int = 100, room_type: Optional[str] = No
                    p.ma_lop AS class_id,
                    lh.ma_lop_hoc AS class_code,
                    lh.ten_lop AS class_name,
+                   lh.ma_mon_hoc AS course_name,
+                   gv.ho_va_ten AS instructor_name,
                    p.ma_de_mau AS template_id,
                    p.cau_hinh_giam_sat AS proctoring_config,
                    p.trang_thai AS status,
@@ -252,8 +263,99 @@ def get_all_rooms(skip: int = 0, limit: int = 100, room_type: Optional[str] = No
                    p.ngay_cap_nhat AS updated_at
             FROM Phong p
             LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
+            LEFT JOIN NguoiDung gv ON p.nguoi_tao = gv.ma_nguoi_dung
             {where_sql}
             ORDER BY p.ngay_tao DESC
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        """, tuple(params + [skip, limit]))
+        rows = cursor.fetchall()
+        columns = [column[0] for column in cursor.description]
+        results = []
+        for row in rows:
+            r = dict(zip(columns, row))
+            r["is_active"] = bool(r["is_active"])
+            results.append(r)
+        return results
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_rooms_for_student(student_id: int, skip: int = 0, limit: int = 100, room_type: Optional[str] = None) -> List[Dict]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        where_clauses = [
+            """(
+                p.ma_lop IS NULL
+                OR EXISTS (SELECT 1 FROM SinhVienLopHoc svl WHERE svl.ma_lop = p.ma_lop AND svl.ma_sinh_vien = ?)
+                OR EXISTS (SELECT 1 FROM PhienLamBai pl WHERE pl.ma_phong = p.ma_phong AND pl.ma_sinh_vien = ?)
+                OR EXISTS (SELECT 1 FROM BaiNop bn WHERE bn.ma_phong = p.ma_phong AND bn.ma_sinh_vien = ?)
+                OR NOT EXISTS (SELECT 1 FROM SinhVienLopHoc svl_any WHERE svl_any.ma_sinh_vien = ?)
+            )"""
+        ]
+        params: List[Any] = [student_id, student_id, student_id, student_id, student_id, student_id]
+        if room_type:
+            where_clauses.append("p.loai_phong = ?")
+            params.append(room_type)
+        where_sql = f"WHERE {' AND '.join(where_clauses)}"
+
+        cursor.execute(f"""
+            SELECT p.ma_phong AS room_id, 
+                   p.ma_phong_code AS room_code, 
+                   p.tieu_de AS room_name, 
+                   p.loai_phong AS room_type, 
+                   p.nguoi_tao AS instructor_id, 
+                   p.mo_ta AS description,
+                   p.gio_bat_dau AS start_time, 
+                   p.gio_ket_thuc AS end_time, 
+                   p.thoi_luong_phut AS duration_minutes, 
+                   p.so_lan_nop_toi_da AS max_attempts,
+                   p.dang_hoat_dong AS is_active, 
+                   p.mat_ma_phong AS passcode, 
+                   p.ma_dinh_danh_livekit AS livekit_room_name,
+                   p.ma_lop AS class_id,
+                   lh.ma_lop_hoc AS class_code,
+                   lh.ten_lop AS class_name,
+                   lh.ma_mon_hoc AS course_name,
+                   gv.ho_va_ten AS instructor_name,
+                   p.ma_de_mau AS template_id,
+                   p.cau_hinh_giam_sat AS proctoring_config,
+                   p.trang_thai AS status,
+                   COALESCE((
+                       SELECT COUNT(*) 
+                       FROM SinhVienLopHoc svl 
+                       WHERE svl.ma_lop = p.ma_lop
+                   ), 0) AS total_students,
+                   COALESCE((
+                       SELECT COUNT(DISTINCT pl.ma_sinh_vien) 
+                       FROM PhienLamBai pl 
+                       WHERE pl.ma_phong = p.ma_phong 
+                         AND pl.trang_thai IN ('dang_lam', 'active', 'da_nop', 'completed')
+                   ), 0) AS attended_students,
+                   COALESCE((
+                       SELECT COUNT(*) 
+                       FROM ViPhamGiamSat vp 
+                       WHERE vp.ma_phong = p.ma_phong 
+                         AND (vp.trang_thai_duyet = 'pending' OR vp.trang_thai_duyet IS NULL)
+                   ), 0) AS pending_violations,
+                   (
+                       SELECT TOP 1 pl_sv.trang_thai
+                       FROM PhienLamBai pl_sv
+                       WHERE pl_sv.ma_phong = p.ma_phong AND pl_sv.ma_sinh_vien = ?
+                       ORDER BY pl_sv.ma_phien DESC
+                   ) AS student_session_status,
+                   COALESCE((
+                       SELECT COUNT(*)
+                       FROM BaiNop bn_sv
+                       WHERE bn_sv.ma_phong = p.ma_phong AND bn_sv.ma_sinh_vien = ?
+                   ), 0) AS student_submissions_count,
+                   p.ngay_tao AS created_at, 
+                   p.ngay_cap_nhat AS updated_at
+            FROM Phong p
+            LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
+            LEFT JOIN NguoiDung gv ON p.nguoi_tao = gv.ma_nguoi_dung
+            {where_sql}
+            ORDER BY p.gio_bat_dau DESC, p.ngay_tao DESC
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         """, tuple(params + [skip, limit]))
         rows = cursor.fetchall()

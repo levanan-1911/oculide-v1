@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { fetchWithAuth } from '@/services/apiClient';
 
 export interface ViolationAlert {
   id: string;
@@ -138,58 +139,89 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
     setSession((prev) => ({ ...prev, requireCamera: req }));
   }, []);
 
-  const [violations, setViolations] = useState<ViolationAlert[]>([
-    {
-      id: 'VIO-01',
-      studentId: 'SE184802',
-      studentName: 'Trần Thị Bình',
-      classCode: 'CS101-A',
-      roomCode: 'CS101-LAB3',
-      type: 'Quay mặt khỏi camera > 10s',
-      severity: 'medium',
-      timestamp: '08:03:40',
-      description: 'Không phát hiện khuôn mặt chính diện quá 10 giây.',
-      status: 'pending',
-    },
-    {
-      id: 'VIO-02',
-      studentId: 'SE184805',
-      studentName: 'Đặng Tuấn Dương',
-      classCode: 'CS101-A',
-      roomCode: 'CS101-LAB3',
-      type: 'Phát hiện thiết bị di động (Smartphone)',
-      severity: 'critical',
-      timestamp: '08:12:15',
-      description: 'AI phát hiện điện thoại thông minh đặt dưới góc bàn làm bài.',
-      status: 'pending',
-    },
-    {
-      id: 'VIO-03',
-      studentId: 'SE184806',
-      studentName: 'Vũ Hải Yến',
-      classCode: 'CS101-A',
-      roomCode: 'CS101-LAB3',
-      type: 'Phát hiện khuôn mặt lạ / Người thứ 2',
-      severity: 'critical',
-      timestamp: '08:18:20',
-      description: 'AI phát hiện thêm khuôn mặt thứ hai xuất hiện trong webcam.',
-      status: 'pending',
-    },
-  ]);
-
-  const [announcements, setAnnouncements] = useState<SentAnnouncement[]>([
-    {
-      id: 'ANN-01',
-      targetType: 'all',
-      targetLabel: 'Toàn bộ phòng thi (46 SV)',
-      message: 'Các em chú ý đọc kỹ yêu cầu test case 3 và kiểm tra định dạng output trước khi submit.',
-      type: 'info',
-      timestamp: '08:00:10',
-    },
-  ]);
+  const [violations, setViolations] = useState<ViolationAlert[]>([]);
+  const [announcements, setAnnouncements] = useState<SentAnnouncement[]>([]);
 
   const [activeToast, setActiveToast] = useState<ViolationAlert | null>(null);
   const [toastNotice, setToastNotice] = useState<string | null>(null);
+
+  // Nạp phòng đang diễn ra và danh sách cảnh báo vi phạm thật từ Backend API
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function syncActiveRoomAndViolations() {
+      try {
+        const rooms = await fetchWithAuth<any[]>('/api/v1/rooms');
+        if (isCancelled || !Array.isArray(rooms)) return;
+
+        const running =
+          rooms.find((r) => r.status === 'dang_dien_ra' || r.status === 'in_progress') || rooms[0];
+        if (!running) {
+          setViolations([]);
+          return;
+        }
+
+        setSession((prev) => ({
+          ...prev,
+          id: String(running.room_id),
+          roomCode: running.room_code || prev.roomCode,
+          classCode: running.class_code || prev.classCode,
+          className: running.class_name || running.room_name || prev.className,
+          title: running.room_name || prev.title,
+          type: running.room_type === 'exam' ? 'EXAM' : 'LAB',
+          remainingMinutes: running.duration_minutes || prev.remainingMinutes,
+          totalStudents: running.total_students ?? prev.totalStudents,
+          attendedStudents: running.attended_students ?? prev.attendedStudents,
+        }));
+
+        if (running.room_id) {
+          const roomViolations = await fetchWithAuth<any[]>(
+            `/api/v1/violations/room/${running.room_id}`
+          ).catch(() => []);
+          if (!isCancelled && Array.isArray(roomViolations)) {
+            const mapped: ViolationAlert[] = roomViolations.map((v: any) => ({
+              id: String(v.violation_id),
+              studentId: String(v.student_code || v.student_id),
+              studentName: v.student_name || `Sinh viên #${v.student_id}`,
+              classCode: running.class_code || 'Lớp HP',
+              roomCode: running.room_code,
+              type: v.violation_type || 'Vi phạm quy chế',
+              severity:
+                v.severity === 'critical'
+                  ? 'critical'
+                  : v.severity === 'high'
+                  ? 'high'
+                  : 'medium',
+              timestamp: v.detected_at
+                ? new Date(v.detected_at).toLocaleTimeString('vi-VN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })
+                : '--:--',
+              description: v.description || 'Phát hiện hành vi bất thường trong phòng thi.',
+              status:
+                v.review_status === 'confirmed'
+                  ? 'recorded'
+                  : v.review_status === 'warned'
+                  ? 'warned'
+                  : v.review_status === 'dismissed' || v.review_status === 'rejected'
+                  ? 'dismissed'
+                  : 'pending',
+            }));
+            setViolations(mapped);
+          }
+        }
+      } catch {
+        // Offline / chưa đăng nhập
+      }
+    }
+
+    syncActiveRoomAndViolations();
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   // Đếm ngược mỗi phút
   useEffect(() => {
@@ -222,7 +254,7 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
         const newAnn: SentAnnouncement = {
           id: `ANN-${Date.now().toString().slice(-4)}`,
           targetType: 'all',
-          targetLabel: 'Toàn bộ phòng thi (46 SV)',
+          targetLabel: `Toàn bộ phòng thi (${session.attendedStudents} SV)`,
           message: annMsg,
           type: 'time',
           timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -230,7 +262,7 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
         setAnnouncements((prev) => [newAnn, ...prev]);
       }
     },
-    [session.roomCode]
+    [session.roomCode, session.attendedStudents]
   );
 
   // Gửi thông báo đến sinh viên (Toàn bộ / Nhóm / Cá nhân)
@@ -265,7 +297,7 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
     setToastNotice(null);
   }, []);
 
-  // Xử lý vi phạm
+  // Xử lý vi phạm (đồng bộ lên Backend nếu là ID thật trong CSDL)
   const reviewViolation = useCallback(
     (id: string, action: 'warn' | 'record' | 'dismiss') => {
       setViolations((prev) =>
@@ -279,6 +311,15 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
           return v;
         })
       );
+
+      if (/^\d+$/.test(id)) {
+        const reviewStatus =
+          action === 'record' ? 'confirmed' : action === 'warn' ? 'warned' : 'dismissed';
+        fetchWithAuth(`/api/v1/violations/${id}/review`, {
+          method: 'PATCH',
+          body: JSON.stringify({ review_status: reviewStatus }),
+        }).catch(() => null);
+      }
 
       if (action === 'warn') {
         setToastNotice('Đã gửi cảnh báo nhắc nhở đến thí sinh.');

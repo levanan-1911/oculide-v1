@@ -37,6 +37,20 @@ export async function fetchWithAuth<T = any>(
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
+    if (res.status === 401) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('oculide_token');
+        localStorage.removeItem('oculide_user');
+        localStorage.removeItem('oculide_refresh_token');
+        document.cookie = 'oculide_token=; path=/; max-age=0';
+        document.cookie = 'oculide_role=; path=/; max-age=0';
+
+        const currentPath = window.location.pathname;
+        if (!currentPath.includes('/login')) {
+          window.location.replace(`/login?redirect=${encodeURIComponent(currentPath)}`);
+        }
+      }
+    }
     const errorMsg = data.detail || res.statusText || 'Lỗi khi gọi API hệ thống';
     throw new Error(errorMsg);
   }

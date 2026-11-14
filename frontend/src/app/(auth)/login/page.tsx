@@ -65,6 +65,31 @@ export default function LoginPage() {
 
     // Tiền phân giải IP Public ngầm để sẵn sàng khi bấm Đăng nhập
     getClientPublicIp().catch(() => {});
+
+    // Nếu đã có token hợp lệ còn hạn trong localStorage -> Chuyển hướng về Dashboard
+    try {
+      const token = localStorage.getItem('oculide_token');
+      const rawUser = localStorage.getItem('oculide_user');
+      if (token && rawUser) {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+          if (payload.exp && Date.now() < payload.exp * 1000) {
+            const user = JSON.parse(rawUser);
+            const role = (user.role || '').toLowerCase();
+            const target =
+              role === 'admin'
+                ? '/admin/dashboard'
+                : role === 'instructor'
+                ? '/instructor/dashboard'
+                : '/student/dashboard';
+            window.location.replace(target);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
   }, []);
 
   const applyTheme = (t: 'dark' | 'light') => {

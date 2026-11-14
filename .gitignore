@@ -44,8 +44,12 @@ frontend/.next/
 *.tsbuildinfo
 
 # ==============================
-# OS / IDE / Logs
+# Database Backups
 # ==============================
+*.bak
+backend/backups/*.bak
+!backend/backups/.gitkeep
+
 .DS_Store
 .idea/
 .vscode/

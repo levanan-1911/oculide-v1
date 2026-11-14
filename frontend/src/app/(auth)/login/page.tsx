@@ -33,26 +33,39 @@ export default function LoginPage() {
     message: string;
   }>({ isActive: false, message: '' });
 
-  // Kiểm tra cờ bảo trì hệ thống
+  // Kiểm tra cờ bảo trì hệ thống trực tiếp từ API công khai của Backend
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem('oculide_admin_system_settings');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed.maintenanceMode) {
-            setMaintenanceInfo({
-              isActive: true,
-              message:
-                parsed.maintenanceMessage ||
-                'Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.',
-            });
-          }
+    fetch('/api/v1/system/public-config')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.maintenance_mode) {
+          setMaintenanceInfo({
+            isActive: true,
+            message:
+              data.maintenance_message ||
+              'Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.',
+          });
         }
-      } catch {
-        // ignore
-      }
-    }
+      })
+      .catch(() => {
+        // Fallback đọc từ localStorage nếu mất mạng
+        try {
+          const raw = localStorage.getItem('oculide_admin_system_settings');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.maintenanceMode) {
+              setMaintenanceInfo({
+                isActive: true,
+                message:
+                  parsed.maintenanceMessage ||
+                  'Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.',
+              });
+            }
+          }
+        } catch {
+          // ignore
+        }
+      });
   }, []);
 
   // Khởi tạo Theme & tiền xử lý IP Public ngầm

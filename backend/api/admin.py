@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Request
+from fastapi.responses import FileResponse
 from typing import Optional, List, Dict, Any
 import asyncio
 import secrets
@@ -8,6 +9,9 @@ from schemas.admin import (
     AdminUserCreateRequest, AdminUserStatusUpdate, AdminUserRoleUpdate,
     AdminUserUpdateRequest, PaginatedUsersResponse, BatchImportRequest, BatchImportResult
 )
+from schemas.system_management import (
+    SystemSettingsModel, BackupListResponse, BackupCreateResponse, StorageStatsResponse
+)
 from schemas.auth import UserResponse
 from core.permissions import admin_required
 from database.user_db import (
@@ -16,8 +20,11 @@ from database.user_db import (
     update_user_role, update_user_profile, delete_user, change_user_password
 )
 from database.room_db import get_system_overview_stats
-from database.system_log_db import get_system_logs
+from database.system_log_db import get_system_logs, create_system_log
 from services.email_service import EmailService
+from services.system_settings_manager import SystemSettingsManager
+from services.backup_service import BackupService
+from services.host_metrics import get_real_host_metrics
 
 router = APIRouter(dependencies=[Depends(admin_required)])
 
@@ -328,27 +335,31 @@ async def system_health():
         {"label": "Kênh PubSub", "value": "Active" if redis_status == "healthy" else "Standby"}
     ]
 
+    # Đọc thông số tài nguyên máy chủ thực tế (RAM, Disk, Uptime)
+    host = get_real_host_metrics()
+    sys_settings = SystemSettingsManager.get_settings()
+
     # 3. LiveKit Media
     livekit_configured = bool(settings.LIVEKIT_API_KEY and settings.LIVEKIT_API_SECRET)
     livekit_status = "healthy" if livekit_configured else "degraded"
     livekit_metrics = [
         {"label": "LiveKit Cloud", "value": "Connected" if livekit_configured else "Dev Mode"},
         {"label": "WebRTC Video", "value": "Screen + Cam"},
-        {"label": "Bitrate Cap", "value": "350 kbps"}
+        {"label": "Bitrate Cap", "value": f"{sys_settings.max_livekit_bitrate_kbps} kbps"}
     ]
 
     # 4. Code Sandbox (Docker / Judge)
     sandbox_metrics = [
-        {"label": "Worker sẵn sàng", "value": "4/4"},
-        {"label": "Hàng đợi", "value": "0 jobs"},
-        {"label": "Thời gian chấm TB", "value": "0.85s"}
+        {"label": "Worker tối đa", "value": f"{sys_settings.max_sandbox_workers} workers"},
+        {"label": "Dung lượng code trần", "value": f"{sys_settings.max_code_file_size_mb} MB"},
+        {"label": "Trạng thái", "value": "Sẵn sàng"}
     ]
 
     # 5. Core API Server
     api_metrics = [
-        {"label": "Môi trường", "value": "Development" if settings.DEBUG else "Production"},
-        {"label": "Phiên bản", "value": f"v{settings.APP_VERSION}"},
-        {"label": "CORS", "value": "Enabled"}
+        {"label": "RAM Đang Dùng", "value": f"{host['ram_used_mb']} / {host['ram_total_mb']} MB ({host['ram_percent']}%)"},
+        {"label": "Uptime Máy Chủ", "value": host["uptime"]},
+        {"label": "Chế độ Bảo trì", "value": "ĐANG BẬT" if sys_settings.maintenance_mode else "Bình thường"}
     ]
 
     services = [
@@ -357,8 +368,8 @@ async def system_health():
             "name": "Core Backend API (FastAPI)",
             "category": "Application Server",
             "status": "healthy",
-            "latencyMs": 15,
-            "uptimePercent": 99.95,
+            "latencyMs": 2,
+            "uptimePercent": 99.99,
             "lastChecked": "Vừa xong",
             "metrics": api_metrics,
             "description": "Xử lý xác thực người dùng, điều hướng phòng thi và quản lý API dữ liệu."
@@ -411,32 +422,137 @@ async def system_health():
 
     return {
         "overall_status": "healthy" if db_status == "healthy" and redis_status == "healthy" else "degraded",
+        "host_metrics": host,
         "services": services
     }
 
-@router.get("/system/storage")
+@router.get("/system/storage", response_model=StorageStatsResponse)
 async def system_storage():
-    """Lấy số liệu phân bổ dung lượng lưu trữ thực tế từ CSDL"""
-    from core.database import get_db_cursor
-    with get_db_cursor(commit=False) as cursor:
-        cursor.execute("SELECT COUNT(*) FROM BaiNop")
-        submissions_count = cursor.fetchone()[0]
+    """Lấy số liệu phân bổ dung lượng lưu trữ CSDL và dung lượng ổ cứng máy chủ thực tế"""
+    return BackupService.get_storage_statistics()
 
-        cursor.execute("SELECT COUNT(*) FROM ViPhamGiamSat")
-        violations_count = cursor.fetchone()[0]
+# ── CẤU HÌNH HẠ TẦNG HỆ THỐNG (SYSTEM SETTINGS - 0 DB TABLES) ───────────────────
+@router.get("/system/settings", response_model=SystemSettingsModel)
+async def get_system_settings():
+    """Lấy toàn bộ các tham số cấu hình hạ tầng hiện tại"""
+    return SystemSettingsManager.get_settings()
 
-        cursor.execute("SELECT COUNT(*) FROM NhatKyHeThong")
-        logs_count = cursor.fetchone()[0]
+@router.put("/system/settings", response_model=SystemSettingsModel)
+async def update_system_settings(
+    settings_data: SystemSettingsModel,
+    request: Request,
+    current_user: Dict[str, Any] = Depends(admin_required)
+):
+    """Admin cập nhật các tham số cấu hình hạ tầng hệ thống"""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    admin_name = current_user.get("username", "admin")
+    updated = SystemSettingsManager.update_settings(settings_data.model_dump(), updated_by=admin_name)
 
-        cursor.execute("SELECT COUNT(*) FROM NguoiDung")
-        users_count = cursor.fetchone()[0]
+    try:
+        create_system_log(
+            log_level="info",
+            module="SYSTEM_SETTINGS",
+            message=f"Admin {admin_name} cập nhật cấu hình hạ tầng (Bảo trì: {'BẬT' if updated.maintenance_mode else 'TẮT'})",
+            user_id=current_user.get("user_id"),
+            ip_address=client_ip,
+            extra_data=updated.model_dump()
+        )
+    except Exception:
+        pass
 
-    return {
-        "submissions_count": submissions_count,
-        "violations_count": violations_count,
-        "logs_count": logs_count,
-        "users_count": users_count,
-    }
+    return updated
+
+@router.post("/system/settings/reset", response_model=SystemSettingsModel)
+async def reset_system_settings(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(admin_required)
+):
+    """Khôi phục toàn bộ cấu hình hạ tầng về mặc định an toàn"""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    admin_name = current_user.get("username", "admin")
+    reset = SystemSettingsManager.reset_settings(updated_by=admin_name)
+
+    try:
+        create_system_log(
+            log_level="warning",
+            module="SYSTEM_SETTINGS",
+            message=f"Admin {admin_name} khôi phục toàn bộ cấu hình hạ tầng về mặc định",
+            user_id=current_user.get("user_id"),
+            ip_address=client_ip,
+            extra_data={"action": "RESET_DEFAULT"}
+        )
+    except Exception:
+        pass
+
+    return reset
+
+# ── SAO LƯU CƠ SỞ DỮ LIỆU THỰC TẾ (DATABASE BACKUPS) ───────────────────────────
+@router.get("/system/backups", response_model=BackupListResponse)
+async def list_database_backups():
+    """Lấy danh sách các tệp sao lưu .bak thực tế trên đĩa cứng máy chủ"""
+    backups = BackupService.list_backups()
+    return {"total": len(backups), "backups": backups}
+
+@router.post("/system/backups", response_model=BackupCreateResponse, status_code=status.HTTP_201_CREATED)
+async def create_database_backup(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(admin_required)
+):
+    """Kích hoạt sao lưu toàn bộ CSDL SQL Server ra tệp .bak thực tế"""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    try:
+        bk_info = BackupService.create_database_backup(
+            backup_type="manual",
+            actor_id=current_user.get("user_id"),
+            ip_address=client_ip
+        )
+        return {
+            "message": f"Sao lưu cơ sở dữ liệu thành công ({bk_info['filename']})",
+            "backup": bk_info
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi thực hiện sao lưu: {str(e)}"
+        )
+
+@router.get("/system/backups/{filename}/download")
+async def download_database_backup(
+    filename: str,
+    current_user: Dict[str, Any] = Depends(admin_required)
+):
+    """Tải tệp .bak thực tế về máy tính của Quản trị viên"""
+    filepath = BackupService.get_backup_path(filename)
+    if not filepath:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy tệp sao lưu '{filename}' trên máy chủ"
+        )
+    return FileResponse(
+        path=str(filepath),
+        filename=filename,
+        media_type="application/octet-stream"
+    )
+
+@router.delete("/system/backups/{filename}")
+async def delete_database_backup(
+    filename: str,
+    request: Request,
+    current_user: Dict[str, Any] = Depends(admin_required)
+):
+    """Xóa tệp sao lưu trên đĩa cứng máy chủ để giải phóng dung lượng"""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    deleted = BackupService.delete_backup(
+        filename=filename,
+        actor_id=current_user.get("user_id"),
+        ip_address=client_ip
+    )
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy tệp sao lưu '{filename}' hoặc tệp không hợp lệ"
+        )
+    return {"message": f"Đã xóa bản sao lưu {filename} thành công"}
 
 @router.get("/logs")
 async def list_system_logs(

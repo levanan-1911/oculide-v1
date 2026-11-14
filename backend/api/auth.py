@@ -134,6 +134,16 @@ async def login(credentials: LoginRequest, request: Request):
             detail="Tài khoản của bạn hiện đang bị khóa. Vui lòng liên hệ quản trị viên."
         )
         
+    # Kiểm tra chế độ bảo trì hệ thống (Maintenance Mode)
+    from services.system_settings_manager import SystemSettingsManager
+    sys_settings = SystemSettingsManager.get_settings()
+    user_role = (user.get("role") or "").lower()
+    if sys_settings.maintenance_mode and user_role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=sys_settings.maintenance_message or "Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút."
+        )
+        
     client_ip = extract_client_ip(request)
     update_last_login(user["user_id"], client_ip=client_ip)
     user["last_login_ip"] = client_ip

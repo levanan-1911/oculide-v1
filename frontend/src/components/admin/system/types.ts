@@ -28,21 +28,12 @@ export interface ServiceHealthItem {
 }
 
 export interface SystemSettings {
-  // 1. Giới hạn Hạ tầng & Bảo vệ Máy chủ (Server & Sandbox Protection)
   maxCodeFileSizeMb: number;
   maxSandboxWorkers: number;
   maxLiveKitBitrateKbps: number;
   autoCleanupDraftsDays: number;
   auditLogRetentionDays: number;
-
-  // 2. Tích hợp Dịch vụ & Kết nối (Integrations & Endpoints)
-  livekitServerUrl: string;
-  smtpHost: string;
-  smtpPort: number;
-  smtpSenderEmail: string;
   allowedEmailDomain: string;
-
-  // 3. Chính sách An ninh & Vận hành (Security & Maintenance)
   maxLoginAttempts: number;
   jwtTokenExpiryMinutes: number;
   maintenanceMode: boolean;
@@ -57,6 +48,25 @@ export interface BackupItem {
   type: 'auto' | 'manual';
   status: 'completed' | 'in_progress' | 'failed';
   checksum: string;
+}
+
+export interface StorageStats {
+  submissions_count: number;
+  violations_count: number;
+  logs_count: number;
+  users_count: number;
+  counts: {
+    submissions_count: number;
+    violations_count: number;
+    logs_count: number;
+    users_count: number;
+  };
+  disk: {
+    total_gb: number;
+    used_gb: number;
+    free_gb: number;
+    used_percent: number;
+  };
 }
 
 export const SYSTEM_STORAGE_SETTINGS_KEY = 'oculide_admin_system_settings';

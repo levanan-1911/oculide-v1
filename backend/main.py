@@ -157,6 +157,14 @@ async def health_readiness():
         )
     return {"status": "ready"}
 
+@app.get(f"{settings.API_V1_PREFIX}/system/public-config", tags=["System Public"])
+@app.get("/api/system/public-config", tags=["System Public (Legacy)"], include_in_schema=False)
+async def get_system_public_config():
+    """Endpoint công khai cho trang Login đọc cờ bảo trì hệ thống và domain email cho phép"""
+    from services.system_settings_manager import SystemSettingsManager
+    return SystemSettingsManager.get_public_config().model_dump()
+
+
 
 # Include all routers under /api/v1
 app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["Authentication"])

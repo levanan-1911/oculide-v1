@@ -66,7 +66,8 @@ def extract_client_ip(request: Request) -> str:
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     user_data: UserRegisterRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    request: Request
 ):
     """Đăng ký tài khoản người dùng mới (Instructor / Student) và tự động gửi email thông báo"""
     clean_email = user_data.email.strip().lower()
@@ -79,6 +80,22 @@ async def register(
     if raw_domain:
         allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
         if not clean_email.endswith(allowed_domain):
+            try:
+                from database.system_log_db import create_system_log
+                client_ip = extract_client_ip(request)
+                create_system_log(
+                    log_level="warning",
+                    module="AUTH_REGISTER",
+                    message=f"Từ chối đăng ký tài khoản với email '{clean_email}': Tên miền không thuộc cấu hình hệ thống cho phép ({allowed_domain})",
+                    ip_address=client_ip,
+                    extra_data={
+                        "attempted_email": clean_email,
+                        "username": username,
+                        "allowed_domain": allowed_domain
+                    }
+                )
+            except Exception:
+                pass
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Hệ thống chỉ chấp nhận đăng ký tài khoản bằng email thuộc tên miền trường '{sys_settings.allowed_email_domain}'"

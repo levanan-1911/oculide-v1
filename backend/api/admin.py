@@ -50,7 +50,8 @@ async def list_users(
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user_by_admin(
     user_data: AdminUserCreateRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    request: Request
 ):
     """Admin tạo tài khoản người dùng mới và tự động gửi thông tin đăng nhập về email"""
     # 1. Xác định username: Tên đăng nhập luôn là phần trước dấu @ của email (VD: phamvanlong@dtu.edu.vn -> phamvanlong)
@@ -62,6 +63,17 @@ async def create_user_by_admin(
     if raw_domain:
         allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
         if not clean_email.endswith(allowed_domain):
+            try:
+                client_ip = request.client.host if request.client else "127.0.0.1"
+                create_system_log(
+                    log_level="warning",
+                    module="ADMIN_USER",
+                    message=f"Tạo người dùng thất bại với email '{clean_email}': Tên miền không thuộc cấu hình hệ thống cho phép ({allowed_domain})",
+                    ip_address=client_ip,
+                    extra_data={"attempted_email": clean_email, "allowed_domain": allowed_domain}
+                )
+            except Exception:
+                pass
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Email '{clean_email}' không hợp lệ. Hệ thống chỉ cho phép tạo tài khoản có email thuộc tên miền '{sys_settings.allowed_email_domain}'"
@@ -224,7 +236,11 @@ async def remove_user(
     return {"message": f"Đã xóa thành công người dùng ID {user_id}"}
 
 @router.post("/users/batch-import", response_model=BatchImportResult)
-async def batch_import_users(data: BatchImportRequest, background_tasks: BackgroundTasks):
+async def batch_import_users(
+    data: BatchImportRequest,
+    background_tasks: BackgroundTasks,
+    request: Request
+):
     """Nhập danh sách tài khoản theo lô và tự động gửi thông tin đăng nhập về email từng người"""
     imported = 0
     failed = 0
@@ -296,6 +312,18 @@ async def batch_import_users(data: BatchImportRequest, background_tasks: Backgro
             failed += 1
             errors.append(f"Lỗi thêm {u.student_id or u.email}: {str(e)}")
             
+    try:
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        create_system_log(
+            log_level="warning" if failed > 0 else "info",
+            module="ADMIN_IMPORT",
+            message=f"Nhập người dùng hàng loạt: Thành công {imported}, Thất bại {failed}. Tên miền áp dụng: '{allowed_domain}'",
+            ip_address=client_ip,
+            extra_data={"imported": imported, "failed": failed, "allowed_domain": allowed_domain, "errors": errors[:10]}
+        )
+    except Exception:
+        pass
+
     return {"total_imported": imported, "failed_count": failed, "errors": errors}
 
 @router.get("/system/overview")

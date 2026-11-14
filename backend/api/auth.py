@@ -72,6 +72,18 @@ async def register(
     clean_email = user_data.email.strip().lower()
     username = (user_data.username or clean_email.split("@")[0]).strip().lower()
 
+    # Kiểm tra ràng buộc tên miền trường theo Cấu hình Hệ thống & Nhật ký
+    from services.system_settings_manager import SystemSettingsManager
+    sys_settings = SystemSettingsManager.get_settings()
+    raw_domain = (sys_settings.allowed_email_domain or "").strip().lower()
+    if raw_domain:
+        allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
+        if not clean_email.endswith(allowed_domain):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Hệ thống chỉ chấp nhận đăng ký tài khoản bằng email thuộc tên miền trường '{sys_settings.allowed_email_domain}'"
+            )
+
     if get_user_by_username(username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

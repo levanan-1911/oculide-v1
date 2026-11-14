@@ -55,6 +55,18 @@ async def create_user_by_admin(
     """Admin tạo tài khoản người dùng mới và tự động gửi thông tin đăng nhập về email"""
     # 1. Xác định username: Tên đăng nhập luôn là phần trước dấu @ của email (VD: phamvanlong@dtu.edu.vn -> phamvanlong)
     clean_email = user_data.email.strip().lower()
+
+    # Kiểm tra ràng buộc tên miền trường theo Cấu hình Hệ thống & Nhật ký
+    sys_settings = SystemSettingsManager.get_settings()
+    raw_domain = (sys_settings.allowed_email_domain or "").strip().lower()
+    if raw_domain:
+        allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
+        if not clean_email.endswith(allowed_domain):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Email '{clean_email}' không hợp lệ. Hệ thống chỉ cho phép tạo tài khoản có email thuộc tên miền '{sys_settings.allowed_email_domain}'"
+            )
+
     final_username = clean_email.split("@")[0].strip().lower()
 
     if get_user_by_username(final_username):
@@ -217,6 +229,11 @@ async def batch_import_users(data: BatchImportRequest, background_tasks: Backgro
     imported = 0
     failed = 0
     errors = []
+
+    # Đọc cấu hình tên miền email từ Cấu hình Hệ thống & Nhật ký
+    sys_settings = SystemSettingsManager.get_settings()
+    raw_domain = (sys_settings.allowed_email_domain or "@school.edu.vn").strip().lower()
+    allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
     
     for u in data.users:
         try:
@@ -224,13 +241,17 @@ async def batch_import_users(data: BatchImportRequest, background_tasks: Backgro
             u_email = (u.email or "").strip().lower()
             if not u_email or "@" not in u_email:
                 if u.student_id:
-                    u_email = f"{u.student_id.strip().lower()}@dtu.edu.vn"
+                    u_email = f"{u.student_id.strip().lower()}{allowed_domain}"
                 elif u.username:
-                    u_email = f"{u.username.strip().lower()}@dtu.edu.vn"
+                    u_email = f"{u.username.strip().lower()}{allowed_domain}"
                 else:
                     errors.append(f"Bỏ qua sinh viên '{u.full_name}': Không có thông tin email hợp lệ.")
                     failed += 1
                     continue
+            elif not u_email.endswith(allowed_domain):
+                errors.append(f"Bỏ qua '{u.full_name}': Email '{u_email}' không thuộc tên miền cho phép ({sys_settings.allowed_email_domain}).")
+                failed += 1
+                continue
 
             username = u_email.split("@")[0].strip().lower() if u_email else (u.username or u.student_id or "").strip().lower()
             

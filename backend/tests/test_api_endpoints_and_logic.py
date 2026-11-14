@@ -149,3 +149,62 @@ def test_admin_update_user_endpoint(monkeypatch):
     assert updated_storage["student_id"] == "SV202699"
     assert updated_storage["lop_sinh_hoat"] == "SE1801"
 
+def test_admin_system_health_and_storage_endpoints():
+    admin_token = create_access_token({"user_id": 1, "role": "admin"})
+    
+    # 1. Test /api/v1/admin/system/health
+    res_health = client.get(
+        "/api/v1/admin/system/health",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res_health.status_code == 200
+    data_health = res_health.json()
+    assert "overall_status" in data_health
+    assert "services" in data_health
+    assert len(data_health["services"]) >= 5
+
+    # 2. Test /api/v1/admin/system/storage
+    res_storage = client.get(
+        "/api/v1/admin/system/storage",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res_storage.status_code == 200
+    data_storage = res_storage.json()
+    assert "submissions_count" in data_storage
+    assert "violations_count" in data_storage
+    assert "logs_count" in data_storage
+    assert "users_count" in data_storage
+
+def test_system_logs_api_and_audit_trail(monkeypatch):
+    admin_token = create_access_token({"user_id": 1, "role": "admin"})
+
+    # 1. Test list logs
+    res_list = client.get(
+        "/api/v1/system-logs?limit=5",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res_list.status_code == 200
+    data_list = res_list.json()
+    assert "total" in data_list
+    assert "items" in data_list
+
+    # 2. Test create log via POST
+    log_payload = {
+        "log_level": "info",
+        "module": "ADMIN_TEST_LOG",
+        "message": "Kiểm thử tạo nhật ký kiểm toán hệ thống qua API",
+        "ip_address": "10.0.0.1",
+        "extra_data": {"action": "TEST", "value": 123}
+    }
+    res_create = client.post(
+        "/api/v1/system-logs",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=log_payload
+    )
+    assert res_create.status_code == 201
+    created_data = res_create.json()
+    assert created_data["module"] == "ADMIN_TEST_LOG"
+    assert created_data["ip_address"] == "10.0.0.1"
+    assert created_data["extra_data"] == {"action": "TEST", "value": 123}
+
+

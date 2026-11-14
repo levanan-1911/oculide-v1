@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { LocalVideoTrack, RemoteVideoTrack } from 'livekit-client';
+import type { LocalVideoTrack, RemoteVideoTrack } from 'livekit-client';
 
 interface LiveKitVideoFeedProps {
   track: LocalVideoTrack | RemoteVideoTrack | null | undefined;

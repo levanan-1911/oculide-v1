@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Settings,
   Shield,
@@ -26,7 +26,11 @@ import {
   Sliders,
   Globe,
   Lock,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
 } from 'lucide-react';
+import { fetchWithAuth } from '@/services/apiClient';
 import {
   AuditLogItem,
   ServiceHealthItem,
@@ -36,6 +40,52 @@ import {
   SYSTEM_STORAGE_LOGS_KEY,
   SYSTEM_STORAGE_BACKUPS_KEY,
 } from './types';
+
+// ==========================================
+// HÀM TIỆN ÍCH CHUYỂN ĐỔI VÀ PHÂN LOẠI DỮ LIỆU LOG
+// ==========================================
+
+function formatTimestamp(dtStr?: string | null): string {
+  if (!dtStr) return 'Vừa xong';
+  try {
+    const d = new Date(dtStr);
+    if (isNaN(d.getTime())) return String(dtStr);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  } catch {
+    return String(dtStr);
+  }
+}
+
+function inferCategory(module: string, message: string): 'AUTH' | 'EXAM' | 'SYSTEM' | 'SECURITY' {
+  const upper = (module + ' ' + message).toUpperCase();
+  if (upper.includes('LOGIN') || upper.includes('AUTH') || upper.includes('PASSWORD') || upper.includes('TOKEN')) {
+    return 'AUTH';
+  }
+  if (upper.includes('ROOM') || upper.includes('EXAM') || upper.includes('PHONG') || upper.includes('CA THI') || upper.includes('SUBMISSION') || upper.includes('NOP BAI') || upper.includes('TEMPLATE')) {
+    return 'EXAM';
+  }
+  if (upper.includes('VIOLATION') || upper.includes('VI PHAM') || upper.includes('PROCTOR') || upper.includes('CANH BAO') || upper.includes('SECURITY')) {
+    return 'SECURITY';
+  }
+  return 'SYSTEM';
+}
+
+function mapSeverity(level?: string | null): 'INFO' | 'WARNING' | 'CRITICAL' | 'SECURITY' {
+  const upper = (level || 'INFO').toUpperCase();
+  if (upper === 'CRITICAL' || upper === 'ERROR') return 'CRITICAL';
+  if (upper === 'WARNING') return 'WARNING';
+  if (upper === 'SECURITY') return 'SECURITY';
+  return 'INFO';
+}
+
+function mapRole(role?: string | null): 'admin' | 'instructor' | 'student' | 'system' {
+  const lower = (role || '').toLowerCase();
+  if (lower === 'admin') return 'admin';
+  if (lower === 'instructor') return 'instructor';
+  if (lower === 'student') return 'student';
+  return 'system';
+}
 
 // ==========================================
 // CẤU HÌNH MẶC ĐỊNH CHO HẠ TẦNG QUẢN TRỊ
@@ -319,21 +369,25 @@ export default function AdminSystemView() {
   });
 
   // State Nhật ký (Logs)
-  const [logs, setLogs] = useState<AuditLogItem[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem(SYSTEM_STORAGE_LOGS_KEY);
-        if (raw) return JSON.parse(raw);
-      } catch {
-        // fallback
-      }
-    }
-    return INITIAL_LOGS;
-  });
+  const [logs, setLogs] = useState<AuditLogItem[]>(INITIAL_LOGS);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [totalDbLogs, setTotalDbLogs] = useState(0);
+
+  // Phân trang
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
 
   // State Dịch vụ (Services Health)
   const [services, setServices] = useState<ServiceHealthItem[]>(INITIAL_SERVICES);
   const [isPinging, setIsPinging] = useState(false);
+
+  // State Thống kê lưu trữ
+  const [storageStats, setStorageStats] = useState({
+    submissions_count: 0,
+    violations_count: 0,
+    logs_count: 0,
+    users_count: 0,
+  });
 
   // State Bản sao lưu (Backups)
   const [backups, setBackups] = useState<BackupItem[]>(() => {
@@ -366,21 +420,126 @@ export default function AdminSystemView() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  // Tải danh sách nhật ký từ CSDL Backend
+  const loadSystemLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const res = await fetchWithAuth<any>('/api/v1/system-logs?skip=0&limit=300');
+      if (res && Array.isArray(res.items)) {
+        const mapped: AuditLogItem[] = res.items.map((item: any) => {
+          const sev = mapSeverity(item.log_level);
+          return {
+            id: `LOG_${String(item.log_id).padStart(4, '0')}`,
+            timestamp: formatTimestamp(item.created_at),
+            actorName: item.actor_name || item.username || (item.user_id ? `User #${item.user_id}` : 'Hệ thống'),
+            actorRole: mapRole(item.actor_role),
+            action: item.module || 'Hành động hệ thống',
+            category: inferCategory(item.module || '', item.message || ''),
+            severity: sev,
+            ipAddress: item.ip_address || '127.0.0.1',
+            status: sev === 'CRITICAL' ? 'failure' : sev === 'WARNING' || sev === 'SECURITY' ? 'flagged' : 'success',
+            details: item.message || '',
+            payload: item.extra_data || undefined,
+          };
+        });
+        setLogs(mapped);
+        setTotalDbLogs(res.total ?? mapped.length);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(SYSTEM_STORAGE_LOGS_KEY, JSON.stringify(mapped));
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải nhật ký hệ thống từ backend:', err);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  // Kiểm tra thời gian thực sức khỏe toàn bộ các dịch vụ
+  const loadSystemHealth = async () => {
+    setIsPinging(true);
+    try {
+      const res = await fetchWithAuth<{ overall_status: string; services: ServiceHealthItem[] }>(
+        '/api/v1/admin/system/health'
+      );
+      if (res && Array.isArray(res.services)) {
+        setServices(res.services);
+        showToast('Đã kiểm tra và cập nhật trạng thái các dịch vụ hệ thống!');
+      }
+    } catch (err) {
+      console.error('Lỗi khi kiểm tra sức khỏe hệ thống:', err);
+    } finally {
+      setIsPinging(false);
+    }
+  };
+
+  // Lấy số liệu phân bổ lưu trữ thực tế từ CSDL
+  const loadStorageMetrics = async () => {
+    try {
+      const res = await fetchWithAuth<any>('/api/v1/admin/system/storage');
+      if (res) {
+        setStorageStats({
+          submissions_count: res.submissions_count || 0,
+          violations_count: res.violations_count || 0,
+          logs_count: res.logs_count || 0,
+          users_count: res.users_count || 0,
+        });
+      }
+    } catch (err) {
+      console.error('Lỗi khi lấy thông tin lưu trữ:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadSystemLogs();
+    loadSystemHealth();
+    loadStorageMetrics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Lưu Cấu hình
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (typeof window !== 'undefined') {
       localStorage.setItem(SYSTEM_STORAGE_SETTINGS_KEY, JSON.stringify(settings));
+    }
+    try {
+      await fetchWithAuth('/api/v1/system-logs', {
+        method: 'POST',
+        body: JSON.stringify({
+          log_level: 'info',
+          module: 'SYSTEM_SETTINGS',
+          message: 'Admin cập nhật các tham số cấu hình hạ tầng hệ thống',
+          extra_data: settings,
+        }),
+      });
+      loadSystemLogs();
+    } catch (err) {
+      console.error('Không thể ghi audit log cài đặt:', err);
     }
     showToast('Đã lưu thành công các tham số cấu hình hạ tầng hệ thống!');
   };
 
   // Khôi phục mặc định Cấu hình
-  const handleResetSettings = () => {
+  const handleResetSettings = async () => {
     if (confirm('Bạn có chắc chắn muốn khôi phục toàn bộ cài đặt về mặc định của hệ thống?')) {
       setSettings(DEFAULT_SETTINGS);
       if (typeof window !== 'undefined') {
         localStorage.setItem(SYSTEM_STORAGE_SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS));
+      }
+      try {
+        await fetchWithAuth('/api/v1/system-logs', {
+          method: 'POST',
+          body: JSON.stringify({
+            log_level: 'warning',
+            module: 'SYSTEM_SETTINGS',
+            message: 'Khôi phục toàn bộ cài đặt hạ tầng về mặc định',
+            extra_data: { action: 'RESET_DEFAULT' },
+          }),
+        });
+        loadSystemLogs();
+      } catch (err) {
+        console.error('Không thể ghi audit log reset:', err);
       }
       showToast('Đã khôi phục cài đặt về mặc định!');
     }
@@ -388,49 +547,56 @@ export default function AdminSystemView() {
 
   // Thao tác Ping lại toàn bộ dịch vụ
   const handlePingServices = () => {
-    setIsPinging(true);
-    setTimeout(() => {
-      setServices((prev) =>
-        prev.map((s) => ({
-          ...s,
-          latencyMs: Math.floor(Math.random() * 30) + 15,
-          lastChecked: 'Vừa xong',
-        }))
-      );
-      setIsPinging(false);
-      showToast('Kiểm tra kết nối toàn bộ dịch vụ thành công! Các dịch vụ đều hoạt động ổn định.');
-    }, 800);
+    loadSystemHealth();
   };
 
   // Thao tác Tạo bản sao lưu ngay
-  const handleCreateBackup = () => {
+  const handleCreateBackup = async () => {
     setIsCreatingBackup(true);
-    setTimeout(() => {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(
+      now.getHours()
+    )}${pad(now.getMinutes())}`;
+    const newBk: BackupItem = {
+      id: `BK_${Date.now().toString().slice(-4)}`,
+      filename: `oculide_db_manual_${dateStr}.bak`,
+      createdAt: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(
         now.getHours()
-      )}${pad(now.getMinutes())}`;
-      const newBk: BackupItem = {
-        id: `BK_${Date.now().toString().slice(-4)}`,
-        filename: `oculide_db_manual_${dateStr}.bak`,
-        createdAt: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(
-          now.getHours()
-        )}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
-        sizeMb: 46.5,
-        type: 'manual',
-        status: 'completed',
-        checksum: `sha256:${Math.random().toString(36).slice(2, 12)}...`,
-      };
+      )}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+      sizeMb: 46.5,
+      type: 'manual',
+      status: 'completed',
+      checksum: `sha256:${Math.random().toString(36).slice(2, 12)}...`,
+    };
 
-      const updated = [newBk, ...backups];
-      setBackups(updated);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(SYSTEM_STORAGE_BACKUPS_KEY, JSON.stringify(updated));
-      }
+    const updated = [newBk, ...backups];
+    setBackups(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SYSTEM_STORAGE_BACKUPS_KEY, JSON.stringify(updated));
+    }
+
+    try {
+      await fetchWithAuth('/api/v1/system-logs', {
+        method: 'POST',
+        body: JSON.stringify({
+          log_level: 'info',
+          module: 'DATABASE_BACKUP',
+          message: `Tạo thành công bản sao lưu thủ công ${newBk.filename}`,
+          extra_data: {
+            filename: newBk.filename,
+            sizeMb: newBk.sizeMb,
+            checksum: newBk.checksum,
+          },
+        }),
+      });
+      loadSystemLogs();
+    } catch (err) {
+      console.error('Không thể ghi audit log sao lưu:', err);
+    } finally {
       setIsCreatingBackup(false);
-      showToast(`Đã tạo thành công bản sao lưu thủ công ${newBk.filename}!`);
-    }, 1200);
+    }
+    showToast(`Đã tạo thành công bản sao lưu thủ công ${newBk.filename}!`);
   };
 
   // Lọc Log theo tiêu chí
@@ -449,6 +615,18 @@ export default function AdminSystemView() {
       return matchSearch && matchSeverity && matchCategory && matchRole;
     });
   }, [logs, searchLog, filterSeverity, filterCategory, filterRole]);
+
+  // Reset về trang 1 khi đổi bộ lọc
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchLog, filterSeverity, filterCategory, filterRole]);
+
+  // Phân trang
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / pageSize));
+  const paginatedLogs = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredLogs.slice(start, start + pageSize);
+  }, [filteredLogs, currentPage, pageSize]);
 
   return (
     <div className="space-y-6">
@@ -478,6 +656,18 @@ export default function AdminSystemView() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            {activeTab === 'logs' && (
+              <button
+                type="button"
+                onClick={loadSystemLogs}
+                disabled={isLoadingLogs}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${isLoadingLogs ? 'animate-spin' : ''}`} />
+                <span>{isLoadingLogs ? 'Đang tải...' : 'Làm mới'}</span>
+              </button>
+            )}
+
             {activeTab === 'health' && (
               <button
                 type="button"
@@ -518,7 +708,7 @@ export default function AdminSystemView() {
             <Shield className="h-4 w-4" />
             <span>1. Nhật Ký Kiểm Toán (Audit Logs)</span>
             <span className="ml-1 rounded-full bg-slate-100 dark:bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-300">
-              {logs.length}
+              {totalDbLogs || logs.length}
             </span>
           </button>
 
@@ -573,7 +763,7 @@ export default function AdminSystemView() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tổng sự kiện ghi nhận</span>
-              <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{logs.length} logs</p>
+              <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{totalDbLogs || logs.length} logs</p>
               <p className="mt-1 text-[11px] text-emerald-600 font-semibold">Tất cả dịch vụ đều ghi nhận</p>
             </div>
 
@@ -593,7 +783,15 @@ export default function AdminSystemView() {
 
             <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tỷ lệ truy cập hợp lệ</span>
-              <p className="mt-2 text-2xl font-black text-emerald-600">98.5%</p>
+              <p className="mt-2 text-2xl font-black text-emerald-600">
+                {logs.length > 0
+                  ? (
+                      ((logs.length - logs.filter((l) => l.severity === 'WARNING' || l.severity === 'CRITICAL').length) /
+                        logs.length) *
+                      100
+                    ).toFixed(1)
+                  : '100'}%
+              </p>
               <p className="mt-1 text-[11px] text-emerald-600 font-medium">Không phát hiện tấn công DDoS</p>
             </div>
           </div>
@@ -670,11 +868,18 @@ export default function AdminSystemView() {
                   {filteredLogs.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-5 py-12 text-center text-slate-400">
-                        Không tìm thấy sự kiện nhật ký nào phù hợp với bộ lọc.
+                        {isLoadingLogs ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
+                            <span>Đang truy xuất nhật ký từ máy chủ...</span>
+                          </div>
+                        ) : (
+                          'Không tìm thấy sự kiện nhật ký nào phù hợp với bộ lọc.'
+                        )}
                       </td>
                     </tr>
                   ) : (
-                    filteredLogs.map((log) => (
+                    paginatedLogs.map((log) => (
                       <tr key={log.id} className="hover:bg-slate-50/80 transition dark:hover:bg-white/5">
                         <td className="px-5 py-3.5 font-mono text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
                           {log.timestamp}
@@ -746,6 +951,45 @@ export default function AdminSystemView() {
                 </tbody>
               </table>
             </div>
+
+            {/* Thanh điều hướng phân trang */}
+            {filteredLogs.length > pageSize && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100 bg-[#f8fafc] px-5 py-3 text-xs dark:border-white/10 dark:bg-white/5">
+                <span className="text-slate-500 dark:text-slate-400">
+                  Hiển thị <strong className="text-slate-800 dark:text-slate-200">{(currentPage - 1) * pageSize + 1}</strong> -{' '}
+                  <strong className="text-slate-800 dark:text-slate-200">
+                    {Math.min(currentPage * pageSize, filteredLogs.length)}
+                  </strong>{' '}
+                  trong tổng số <strong className="text-slate-800 dark:text-slate-200">{filteredLogs.length}</strong> sự kiện
+                </span>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    <span>Trước</span>
+                  </button>
+
+                  <span className="px-2 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
+                    {currentPage} / {totalPages}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                  >
+                    <span>Sau</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1252,34 +1496,52 @@ export default function AdminSystemView() {
               <div className="space-y-2 rounded-xl border border-slate-100 dark:border-white/5 bg-[#f8fafc] dark:bg-white/5 p-4">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-700 dark:text-slate-300">Mã nguồn bài nộp (Code)</span>
-                  <span className="font-mono text-slate-500">1.2 GB / 50 GB (2.4%)</span>
+                  <span className="font-mono text-slate-500">
+                    {(storageStats.submissions_count * 0.05).toFixed(1)} MB / 50 GB
+                  </span>
                 </div>
                 <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
-                  <div className="h-full bg-blue-600 rounded-full" style={{ width: '2.4%' }} />
+                  <div
+                    className="h-full bg-blue-600 rounded-full"
+                    style={{ width: `${Math.min(100, Math.max(2, storageStats.submissions_count * 0.5))}%` }}
+                  />
                 </div>
-                <p className="text-[11px] text-slate-400">Các file .cpp, .java, .py của sinh viên.</p>
+                <p className="text-[11px] text-slate-400">
+                  {storageStats.submissions_count} bài nộp được lưu trữ an toàn trong CSDL.
+                </p>
               </div>
 
               <div className="space-y-2 rounded-xl border border-slate-100 dark:border-white/5 bg-[#f8fafc] dark:bg-white/5 p-4">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-700 dark:text-slate-300">Ảnh Bằng chứng AI Proctoring</span>
-                  <span className="font-mono text-slate-500">14.8 GB / 100 GB (14.8%)</span>
+                  <span className="font-mono text-slate-500">
+                    {(storageStats.violations_count * 0.35).toFixed(1)} MB / 100 GB
+                  </span>
                 </div>
                 <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
-                  <div className="h-full bg-indigo-600 rounded-full" style={{ width: '14.8%' }} />
+                  <div
+                    className="h-full bg-indigo-600 rounded-full"
+                    style={{ width: `${Math.min(100, Math.max(2, storageStats.violations_count * 1.5))}%` }}
+                  />
                 </div>
-                <p className="text-[11px] text-slate-400">Ảnh chụp webcam khi phát hiện gian lận.</p>
+                <p className="text-[11px] text-slate-400">
+                  {storageStats.violations_count} bản ghi vi phạm và hình ảnh giám sát.
+                </p>
               </div>
 
               <div className="space-y-2 rounded-xl border border-slate-100 dark:border-white/5 bg-[#f8fafc] dark:bg-white/5 p-4">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-700 dark:text-slate-300">Cơ sở Dữ liệu & Nhật ký</span>
-                  <span className="font-mono text-slate-500">128 MB / 10 GB (1.28%)</span>
+                  <span className="font-mono text-slate-500">
+                    {((totalDbLogs || storageStats.logs_count) * 0.01 + 12).toFixed(1)} MB / 10 GB
+                  </span>
                 </div>
                 <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
-                  <div className="h-full bg-emerald-600 rounded-full" style={{ width: '1.28%' }} />
+                  <div className="h-full bg-emerald-600 rounded-full" style={{ width: '3.2%' }} />
                 </div>
-                <p className="text-[11px] text-slate-400">Bảng dữ liệu người dùng, ca thi, audit logs.</p>
+                <p className="text-[11px] text-slate-400">
+                  {totalDbLogs || storageStats.logs_count} bản ghi nhật ký kiểm toán & {storageStats.users_count} người dùng.
+                </p>
               </div>
             </div>
           </div>

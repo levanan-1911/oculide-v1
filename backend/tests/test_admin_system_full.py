@@ -4,6 +4,9 @@ from main import app
 from core.security import create_access_token
 from services.system_settings_manager import SystemSettingsManager
 from services.backup_service import BackupService
+from tests.conftest import is_db_available
+
+db_required = pytest.mark.skipif(not is_db_available(), reason="Requires live SQL Server instance")
 
 client = TestClient(app)
 
@@ -68,6 +71,7 @@ def test_admin_settings_flow():
     assert res_reset.json()["maintenance_mode"] is False
     assert res_reset.json()["max_code_file_size_mb"] == 2
 
+@db_required
 def test_database_backup_flow():
     admin_token = create_access_token({"user_id": 1, "role": "admin", "username": "admin"})
 
@@ -114,6 +118,7 @@ def test_database_backup_flow():
     )
     assert res_down_after.status_code == 404
 
+@db_required
 def test_admin_system_health_and_storage_full():
     admin_token = create_access_token({"user_id": 1, "role": "admin", "username": "admin"})
 
@@ -141,6 +146,7 @@ def test_admin_system_health_and_storage_full():
     assert "disk" in s_data
     assert s_data["disk"]["total_gb"] > 0
 
+@db_required
 def test_system_audit_logging_and_areas():
     admin_token = create_access_token({"user_id": 1, "role": "admin", "username": "admin"})
 
@@ -161,7 +167,7 @@ def test_system_audit_logging_and_areas():
     # Phải có log đăng nhập thất bại vừa tạo
     assert any("nonexistent_user_xyz" in (item.get("message") or "") for item in items)
 
-def test_backup_schedule_and_cleanup_flow():
+def test_backup_schedule_and_cleanup_settings_flow():
     admin_token = create_access_token({"user_id": 1, "role": "admin", "username": "admin"})
 
     # 1. Kiểm tra các trường cấu hình thời gian & chính sách sao lưu
@@ -202,7 +208,18 @@ def test_backup_schedule_and_cleanup_flow():
     assert "freed_mb" in cleanup_data
     assert "remaining_count" in cleanup_data
 
-    # 4. Kiểm tra tự động tạo bản sao lưu khi bật chế độ bảo trì
+@db_required
+def test_backup_maintenance_auto_snapshot_flow():
+    admin_token = create_access_token({"user_id": 1, "role": "admin", "username": "admin"})
+
+    res_get = client.get(
+        "/api/v1/admin/system/settings",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res_get.status_code == 200
+    data = res_get.json()
+
+    # Kiểm tra tự động tạo bản sao lưu khi bật chế độ bảo trì
     data["maintenance_mode"] = True
     data["backup_on_maintenance"] = True
     res_maint = client.put(

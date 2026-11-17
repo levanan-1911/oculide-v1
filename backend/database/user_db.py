@@ -397,7 +397,13 @@ def change_user_password(user_id: int, new_password: str) -> bool:
         cursor.close()
         conn.close()
 
-def get_all_users_paginated(skip: int = 0, limit: int = 20, role: Optional[str] = None, search: Optional[str] = None) -> Tuple[List[Dict], int]:
+def get_all_users_paginated(
+    skip: int = 0, 
+    limit: int = 20, 
+    role: Optional[str] = None, 
+    search: Optional[str] = None,
+    is_active: Optional[bool] = None
+) -> Tuple[List[Dict], int]:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -406,6 +412,9 @@ def get_all_users_paginated(skip: int = 0, limit: int = 20, role: Optional[str] 
         if role:
             where_clauses.append("v.role_name = ?")
             params.append(role)
+        if is_active is not None:
+            where_clauses.append("u.is_active = ?")
+            params.append(1 if is_active else 0)
         if search:
             where_clauses.append("(u.username LIKE ? OR u.full_name LIKE ? OR u.email LIKE ? OR u.identifier_code LIKE ? OR u.homeroom_class LIKE ? OR u.department LIKE ?)")
             s = f"%{search}%"

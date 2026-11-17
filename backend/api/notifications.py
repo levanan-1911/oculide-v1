@@ -55,16 +55,16 @@ async def get_user_notifications(
             cursor.execute("""
                 SELECT TOP 5 
                     s.request_id, 
-                    s.issue_category, 
-                    s.message, 
-                    s.created_at,
-                    COALESCE(p.title, N'Phòng thi') AS ten_phong,
+                    s.issue_type, 
+                    s.sos_message, 
+                    s.sent_at,
+                    COALESCE(p.room_name, N'Phòng thi') AS ten_phong,
                     COALESCE(u.full_name, u.username, N'Sinh viên') AS ten_sinh_vien
                 FROM SupportRequests s
                 LEFT JOIN Rooms p ON s.room_id = p.room_id
                 LEFT JOIN Users u ON s.student_id = u.user_id
-                WHERE s.status IN ('pending', 'cho_xu_ly')
-                ORDER BY s.created_at DESC
+                WHERE s.status IN ('pending', 'cho_xu_ly', 'open')
+                ORDER BY s.sent_at DESC
             """)
             for row in cursor.fetchall():
                 nid = f"sos-{row[0]}"
@@ -86,7 +86,7 @@ async def get_user_notifications(
                     v.violation_type, 
                     v.description, 
                     v.detected_at,
-                    COALESCE(p.title, N'Phòng thi') AS ten_phong,
+                    COALESCE(p.room_name, N'Phòng thi') AS ten_phong,
                     COALESCE(u.full_name, u.username, N'Sinh viên') AS ten_sinh_vien
                 FROM Violations v
                 LEFT JOIN Rooms p ON v.room_id = p.room_id
@@ -112,7 +112,7 @@ async def get_user_notifications(
                 SELECT TOP 5 
                     log_id, 
                     log_level, 
-                    module, 
+                    action, 
                     message, 
                     created_at
                 FROM SystemAuditLogs
@@ -147,7 +147,7 @@ async def get_user_notifications(
                 FROM Violations v
                 INNER JOIN Rooms p ON v.room_id = p.room_id
                 LEFT JOIN Users u ON v.student_id = u.user_id
-                WHERE p.instructor_id = ? AND v.review_status = 'pending'
+                WHERE p.creator_id = ? AND v.review_status = 'pending'
                 ORDER BY v.detected_at DESC
             """, (user_id,))
             for row in cursor.fetchall():
@@ -166,16 +166,16 @@ async def get_user_notifications(
             cursor.execute("""
                 SELECT TOP 5 
                     s.request_id, 
-                    s.issue_category, 
-                    s.message, 
-                    s.created_at,
+                    s.issue_type, 
+                    s.sos_message, 
+                    s.sent_at,
                     p.room_code,
                     COALESCE(u.full_name, u.username, N'Sinh viên') AS ten_sinh_vien
                 FROM SupportRequests s
                 INNER JOIN Rooms p ON s.room_id = p.room_id
                 LEFT JOIN Users u ON s.student_id = u.user_id
-                WHERE p.instructor_id = ? AND s.status IN ('pending', 'cho_xu_ly')
-                ORDER BY s.created_at DESC
+                WHERE p.creator_id = ? AND s.status IN ('pending', 'cho_xu_ly', 'open')
+                ORDER BY s.sent_at DESC
             """, (user_id,))
             for row in cursor.fetchall():
                 nid = f"ins-sos-{row[0]}"
@@ -195,7 +195,7 @@ async def get_user_notifications(
                 SELECT TOP 5 
                     p.room_id, 
                     p.room_code, 
-                    p.title, 
+                    p.room_name, 
                     p.status, 
                     p.start_time
                 FROM Rooms p

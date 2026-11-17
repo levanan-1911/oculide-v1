@@ -72,7 +72,7 @@ def run_student_phase1_rooms_e2e():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT TOP 1 ma_nguoi_dung FROM NguoiDung WHERE vai_tro = 'student' ORDER BY ma_nguoi_dung ASC")
+    cursor.execute("SELECT TOP 1 user_id FROM Users WHERE role_id = 3 ORDER BY user_id ASC")
     row = cursor.fetchone()
     student_id = row[0] if row else 1
     cursor.close()

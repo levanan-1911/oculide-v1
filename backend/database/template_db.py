@@ -4,39 +4,39 @@ from core.config import get_db_connection
 
 
 def _resolve_template_pk(cursor, identifier: Union[int, str]) -> Optional[int]:
-    """Giải mã template_id (int) hoặc ma_de (str) thành ma_de_thi (int)"""
+    """Giải mã template_id (int) hoặc template_code (str) thành template_id (int)"""
     try:
         val_int = int(identifier)
-        cursor.execute("SELECT ma_de_thi FROM BoDeMau WHERE ma_de_thi = ?", (val_int,))
+        cursor.execute("SELECT template_id FROM ExamTemplates WHERE template_id = ?", (val_int,))
         row = cursor.fetchone()
         if row:
             return row[0]
     except (ValueError, TypeError):
         pass
 
-    cursor.execute("SELECT ma_de_thi FROM BoDeMau WHERE ma_de = ?", (str(identifier),))
+    cursor.execute("SELECT template_id FROM ExamTemplates WHERE template_code = ?", (str(identifier),))
     row = cursor.fetchone()
     return row[0] if row else None
 
 
 def _fetch_questions_and_testcases(cursor, question_ids: List[int], include_hidden_tests: bool = True) -> Dict[int, List[Dict]]:
-    """Nạp toàn bộ test cases (BoKiemThu) cho danh sách câu hỏi (Zero N+1)"""
+    """Nạp toàn bộ test cases (TestCases) cho danh sách câu hỏi (Zero N+1)"""
     if not question_ids:
         return {}
     placeholders = ",".join("?" for _ in question_ids)
-    hidden_filter = "" if include_hidden_tests else "AND la_test_an = 0"
+    hidden_filter = "" if include_hidden_tests else "AND is_hidden = 0"
     cursor.execute(
         f"""
-        SELECT ma_test_case,
-               ma_cau_hoi,
-               du_lieu_dau_vao,
-               ket_qua_mong_doi,
-               la_test_vi_du,
-               la_test_an,
-               diem_test
-        FROM BoKiemThu
-        WHERE ma_cau_hoi IN ({placeholders}) {hidden_filter}
-        ORDER BY ma_test_case ASC
+        SELECT test_case_id,
+               question_id,
+               input_data,
+               expected_output,
+               is_sample,
+               is_hidden,
+               points
+        FROM TestCases
+        WHERE question_id IN ({placeholders}) {hidden_filter}
+        ORDER BY test_case_id ASC
         """,
         tuple(question_ids),
     )
@@ -69,18 +69,18 @@ def get_template_detail(identifier: Union[int, str], include_hidden_tests: bool 
 
         cursor.execute(
             """
-            SELECT b.ma_de_thi,
-                   b.ma_de,
-                   b.tieu_de,
-                   b.loai_de,
-                   b.tong_thoi_gian_phut,
-                   b.tong_diem,
-                   b.nguoi_tao,
-                   b.ngay_tao,
-                   u.ho_va_ten AS lecturer_name
-            FROM BoDeMau b
-            LEFT JOIN NguoiDung u ON b.nguoi_tao = u.ma_nguoi_dung
-            WHERE b.ma_de_thi = ?
+            SELECT b.template_id,
+                   b.template_code,
+                   b.title,
+                   b.template_type,
+                   b.duration_minutes,
+                   b.total_points,
+                   b.created_by,
+                   b.created_at,
+                   u.full_name AS lecturer_name
+            FROM ExamTemplates b
+            LEFT JOIN Users u ON b.created_by = u.user_id
+            WHERE b.template_id = ?
             """,
             (pk,),
         )
@@ -90,20 +90,20 @@ def get_template_detail(identifier: Union[int, str], include_hidden_tests: bool 
 
         cursor.execute(
             """
-            SELECT ch.ma_cau_hoi,
-                   ch.ma_bai_toan,
-                   ch.tieu_de,
-                   ch.noi_dung_de,
-                   ch.do_kho,
-                   ch.ngon_ngu_cho_phep,
-                   ch.gioi_han_thoi_gian_ms,
-                   ch.gioi_han_bo_nho_mb,
-                   COALESCE(ct.so_diem, ch.diem_toi_da) AS diem_cau,
-                   ct.thu_tu_cau
-            FROM CauHoiTrongDe ct
-            JOIN CauHoi ch ON ct.ma_cau_hoi = ch.ma_cau_hoi
-            WHERE ct.ma_de_thi = ?
-            ORDER BY ct.thu_tu_cau ASC, ch.ma_cau_hoi ASC
+            SELECT ch.question_id,
+                   ch.problem_code,
+                   ch.title,
+                   ch.content,
+                   ch.difficulty,
+                   ch.allowed_languages,
+                   ch.time_limit_ms,
+                   ch.memory_limit_mb,
+                   COALESCE(ct.points, ch.max_points) AS diem_cau,
+                   ct.question_order
+            FROM TemplateQuestions ct
+            JOIN Questions ch ON ct.question_id = ch.question_id
+            WHERE ct.template_id = ?
+            ORDER BY ct.question_order ASC, ch.question_id ASC
             """,
             (pk,),
         )
@@ -171,15 +171,15 @@ def list_templates_full(instructor_id: Optional[int] = None, room_type: Optional
         conditions = []
         params: List[Any] = []
         if instructor_id is not None:
-            conditions.append("nguoi_tao = ?")
+            conditions.append("created_by = ?")
             params.append(instructor_id)
         if room_type in ("lab", "exam"):
-            conditions.append("loai_de = ?")
+            conditions.append("template_type = ?")
             params.append(room_type)
 
         where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         cursor.execute(
-            f"SELECT ma_de_thi FROM BoDeMau {where_sql} ORDER BY ngay_tao DESC, ma_de_thi DESC",
+            f"SELECT template_id FROM ExamTemplates {where_sql} ORDER BY created_at DESC, template_id DESC",
             tuple(params),
         )
         pks = [r[0] for r in cursor.fetchall()]
@@ -202,7 +202,7 @@ def _insert_questions_for_template(
     default_language: str,
     questions: List[Dict[str, Any]],
 ) -> float:
-    """Chèn danh sách câu hỏi và test cases gắn với BoDeMau, trả về tổng điểm"""
+    """Chèn danh sách câu hỏi và test cases gắn với ExamTemplates, trả về tổng điểm"""
     total_points = 0.0
     for idx, q in enumerate(questions, start=1):
         tcs = q.get("test_cases") or []
@@ -213,21 +213,21 @@ def _insert_questions_for_template(
         q_lang = q.get("programming_language") or default_language or "C++ / Python"
         cursor.execute(
             """
-            INSERT INTO CauHoi (
-                ma_bai_toan, ma_phong, thu_tu_cau, tieu_de, noi_dung_de,
-                loai_cau_hoi, do_kho, gioi_han_thoi_gian_ms, gioi_han_bo_nho_mb,
-                ngon_ngu_cho_phep, diem_toi_da, nguoi_soan, dang_hoat_dong,
-                ngay_tao, ngay_cap_nhat
+            INSERT INTO Questions (
+                problem_code, room_id, question_order, title, content,
+                question_type, difficulty, time_limit_ms, memory_limit_mb,
+                allowed_languages, max_points, author_id, is_active,
+                created_at, updated_at
             )
-            OUTPUT INSERTED.ma_cau_hoi
-            VALUES (?, NULL, ?, ?, ?, 'code', ?, 2000, 256, ?, ?, ?, 1, GETDATE(), GETDATE())
+            OUTPUT INSERTED.question_id
+            VALUES (?, NULL, ?, ?, ?, 'coding', ?, 2000, 256, ?, ?, ?, 1, GETDATE(), GETDATE())
             """,
             (
                 q_code,
                 idx,
                 q.get("title") or f"Câu {idx}",
                 q.get("description") or "",
-                q.get("difficulty") or "Trung bình",
+                q.get("difficulty") or "medium",
                 q_lang,
                 q_points,
                 instructor_id,
@@ -237,7 +237,7 @@ def _insert_questions_for_template(
 
         cursor.execute(
             """
-            INSERT INTO CauHoiTrongDe (ma_de_thi, ma_cau_hoi, thu_tu_cau, so_diem)
+            INSERT INTO TemplateQuestions (template_id, question_id, question_order, points)
             VALUES (?, ?, ?, ?)
             """,
             (template_pk, question_id, idx, q_points),
@@ -262,9 +262,9 @@ def _insert_questions_for_template(
             out_val = tc.get("expected_output") if tc.get("expected_output") is not None else (tc.get("expectedOutput") or "")
             cursor.execute(
                 """
-                INSERT INTO BoKiemThu (
-                    ma_cau_hoi, du_lieu_dau_vao, ket_qua_mong_doi,
-                    la_test_vi_du, la_test_an, diem_test, ngay_tao
+                INSERT INTO TestCases (
+                    question_id, input_data, expected_output,
+                    is_sample, is_hidden, points, created_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, GETDATE())
                 """,
@@ -290,16 +290,16 @@ def create_template_full(instructor_id: int, data: Dict[str, Any]) -> Dict:
         prefix = "EXAM" if tpl_type == "exam" else "LAB"
         tpl_code = (data.get("code") or f"TPL-{prefix}-{uuid.uuid4().hex[:6].upper()}").strip().upper()
 
-        cursor.execute("SELECT ma_de_thi FROM BoDeMau WHERE ma_de = ?", (tpl_code,))
+        cursor.execute("SELECT template_id FROM ExamTemplates WHERE template_code = ?", (tpl_code,))
         if cursor.fetchone():
             tpl_code = f"{tpl_code}-{uuid.uuid4().hex[:3].upper()}"
 
         cursor.execute(
             """
-            INSERT INTO BoDeMau (
-                ma_de, tieu_de, loai_de, tong_thoi_gian_phut, tong_diem, nguoi_tao, ngay_tao
+            INSERT INTO ExamTemplates (
+                template_code, title, template_type, duration_minutes, total_points, created_by, created_at
             )
-            OUTPUT INSERTED.ma_de_thi
+            OUTPUT INSERTED.template_id
             VALUES (?, ?, ?, ?, 10.0, ?, GETDATE())
             """,
             (
@@ -320,7 +320,7 @@ def create_template_full(instructor_id: int, data: Dict[str, Any]) -> Dict:
             default_language=data.get("language") or "C++ / Python",
             questions=questions,
         )
-        cursor.execute("UPDATE BoDeMau SET tong_diem = ? WHERE ma_de_thi = ?", (total_points, template_pk))
+        cursor.execute("UPDATE ExamTemplates SET total_points = ? WHERE template_id = ?", (total_points, template_pk))
         conn.commit()
     finally:
         cursor.close()
@@ -341,29 +341,29 @@ def update_template_full(identifier: Union[int, str], instructor_id: int, data: 
         updates = []
         params: List[Any] = []
         if data.get("title") is not None:
-            updates.append("tieu_de = ?")
+            updates.append("title = ?")
             params.append(data["title"])
         if data.get("type") in ("lab", "exam"):
-            updates.append("loai_de = ?")
+            updates.append("template_type = ?")
             params.append(data["type"])
         if data.get("duration_minutes") is not None:
-            updates.append("tong_thoi_gian_phut = ?")
+            updates.append("duration_minutes = ?")
             params.append(int(data["duration_minutes"]))
 
         if updates:
             params.append(template_pk)
-            cursor.execute(f"UPDATE BoDeMau SET {', '.join(updates)} WHERE ma_de_thi = ?", tuple(params))
+            cursor.execute(f"UPDATE ExamTemplates SET {', '.join(updates)} WHERE template_id = ?", tuple(params))
 
         if data.get("questions") is not None:
             # Xóa liên kết câu hỏi cũ không có bài nộp
-            cursor.execute("SELECT ma_cau_hoi FROM CauHoiTrongDe WHERE ma_de_thi = ?", (template_pk,))
+            cursor.execute("SELECT question_id FROM TemplateQuestions WHERE template_id = ?", (template_pk,))
             old_qids = [r[0] for r in cursor.fetchall()]
-            cursor.execute("DELETE FROM CauHoiTrongDe WHERE ma_de_thi = ?", (template_pk,))
+            cursor.execute("DELETE FROM TemplateQuestions WHERE template_id = ?", (template_pk,))
             for old_qid in old_qids:
-                cursor.execute("SELECT COUNT(1) FROM BaiNop WHERE ma_cau_hoi = ?", (old_qid,))
+                cursor.execute("SELECT COUNT(1) FROM Submissions WHERE question_id = ?", (old_qid,))
                 if cursor.fetchone()[0] == 0:
-                    cursor.execute("DELETE FROM BoKiemThu WHERE ma_cau_hoi = ?", (old_qid,))
-                    cursor.execute("DELETE FROM CauHoi WHERE ma_cau_hoi = ? AND ma_phong IS NULL", (old_qid,))
+                    cursor.execute("DELETE FROM TestCases WHERE question_id = ?", (old_qid,))
+                    cursor.execute("DELETE FROM Questions WHERE question_id = ? AND room_id IS NULL", (old_qid,))
 
             total_points = _insert_questions_for_template(
                 cursor,
@@ -372,7 +372,7 @@ def update_template_full(identifier: Union[int, str], instructor_id: int, data: 
                 default_language=data.get("language") or "C++ / Python",
                 questions=data["questions"],
             )
-            cursor.execute("UPDATE BoDeMau SET tong_diem = ? WHERE ma_de_thi = ?", (total_points, template_pk))
+            cursor.execute("UPDATE ExamTemplates SET total_points = ? WHERE template_id = ?", (total_points, template_pk))
 
         conn.commit()
     finally:
@@ -383,7 +383,7 @@ def update_template_full(identifier: Union[int, str], instructor_id: int, data: 
 
 
 def delete_template_full(identifier: Union[int, str]) -> bool:
-    """Xóa Bộ đề mẫu an toàn (gỡ tham chiếu Phong.ma_de_mau trước khi xóa)"""
+    """Xóa Bộ đề mẫu an toàn (gỡ tham chiếu Rooms.template_id trước khi xóa)"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -391,16 +391,16 @@ def delete_template_full(identifier: Union[int, str]) -> bool:
         if not template_pk:
             return False
 
-        cursor.execute("UPDATE Phong SET ma_de_mau = NULL WHERE ma_de_mau = ?", (template_pk,))
-        cursor.execute("SELECT ma_cau_hoi FROM CauHoiTrongDe WHERE ma_de_thi = ?", (template_pk,))
+        cursor.execute("UPDATE Rooms SET template_id = NULL WHERE template_id = ?", (template_pk,))
+        cursor.execute("SELECT question_id FROM TemplateQuestions WHERE template_id = ?", (template_pk,))
         old_qids = [r[0] for r in cursor.fetchall()]
-        cursor.execute("DELETE FROM CauHoiTrongDe WHERE ma_de_thi = ?", (template_pk,))
+        cursor.execute("DELETE FROM TemplateQuestions WHERE template_id = ?", (template_pk,))
         for old_qid in old_qids:
-            cursor.execute("SELECT COUNT(1) FROM BaiNop WHERE ma_cau_hoi = ?", (old_qid,))
+            cursor.execute("SELECT COUNT(1) FROM Submissions WHERE question_id = ?", (old_qid,))
             if cursor.fetchone()[0] == 0:
-                cursor.execute("DELETE FROM BoKiemThu WHERE ma_cau_hoi = ?", (old_qid,))
-                cursor.execute("DELETE FROM CauHoi WHERE ma_cau_hoi = ? AND ma_phong IS NULL", (old_qid,))
-        cursor.execute("DELETE FROM BoDeMau WHERE ma_de_thi = ?", (template_pk,))
+                cursor.execute("DELETE FROM TestCases WHERE question_id = ?", (old_qid,))
+                cursor.execute("DELETE FROM Questions WHERE question_id = ? AND room_id IS NULL", (old_qid,))
+        cursor.execute("DELETE FROM ExamTemplates WHERE template_id = ?", (template_pk,))
         conn.commit()
         return True
     finally:
@@ -413,7 +413,7 @@ def is_question_valid_for_room(room_id: int, template_id: Optional[int], questio
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT ma_phong FROM CauHoi WHERE ma_cau_hoi = ?", (question_id,))
+        cursor.execute("SELECT room_id FROM Questions WHERE question_id = ?", (question_id,))
         row = cursor.fetchone()
         if not row:
             return False
@@ -421,7 +421,7 @@ def is_question_valid_for_room(room_id: int, template_id: Optional[int], questio
             return True
         if template_id:
             cursor.execute(
-                "SELECT 1 FROM CauHoiTrongDe WHERE ma_de_thi = ? AND ma_cau_hoi = ?",
+                "SELECT 1 FROM TemplateQuestions WHERE template_id = ? AND question_id = ?",
                 (template_id, question_id),
             )
             if cursor.fetchone():
@@ -435,20 +435,20 @@ def is_question_valid_for_room(room_id: int, template_id: Optional[int], questio
 def get_exam_content_for_room(room_id: int, include_hidden_tests: bool = False) -> Dict[str, Any]:
     """
     Lấy đề thi thật cho Phòng thi (/student/exam-room):
-    - Ưu tiên câu hỏi gắn trực tiếp ma_phong = room_id.
-    - Nếu không có, lấy từ BoDeMau (Phong.ma_de_mau -> CauHoiTrongDe).
-    - Tự động ẩn test case bí mật (la_test_an = 1) nếu include_hidden_tests=False (dành cho Sinh viên).
+    - Ưu tiên câu hỏi gắn trực tiếp room_id = room_id.
+    - Nếu không có, lấy từ ExamTemplates (Rooms.template_id -> TemplateQuestions).
+    - Tự động ẩn test case bí mật (is_hidden = 1) nếu include_hidden_tests=False (dành cho Sinh viên).
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
             """
-            SELECT p.ma_phong, p.ma_phong_code, p.tieu_de, p.loai_phong, p.thoi_luong_phut,
-                   p.ma_de_mau, bd.tieu_de AS template_title
-            FROM Phong p
-            LEFT JOIN BoDeMau bd ON p.ma_de_mau = bd.ma_de_thi
-            WHERE p.ma_phong = ?
+            SELECT p.room_id, p.room_code, p.room_name, p.room_type, p.duration_minutes,
+                   p.template_id, bd.title AS template_title
+            FROM Rooms p
+            LEFT JOIN ExamTemplates bd ON p.template_id = bd.template_id
+            WHERE p.room_id = ?
             """,
             (room_id,),
         )
@@ -461,28 +461,28 @@ def get_exam_content_for_room(room_id: int, include_hidden_tests: bool = False) 
         # 1. Kiểm tra câu hỏi riêng của phòng
         cursor.execute(
             """
-            SELECT ma_cau_hoi, ma_bai_toan, tieu_de, noi_dung_de, do_kho,
-                   ngon_ngu_cho_phep, gioi_han_thoi_gian_ms, gioi_han_bo_nho_mb,
-                   diem_toi_da, thu_tu_cau
-            FROM CauHoi
-            WHERE ma_phong = ? AND dang_hoat_dong = 1
-            ORDER BY thu_tu_cau ASC, ma_cau_hoi ASC
+            SELECT question_id, problem_code, title, content, difficulty,
+                   allowed_languages, time_limit_ms, memory_limit_mb,
+                   max_points, question_order
+            FROM Questions
+            WHERE room_id = ? AND is_active = 1
+            ORDER BY question_order ASC, question_id ASC
             """,
             (room_id,),
         )
         q_rows = cursor.fetchall()
 
-        # 2. Nếu phòng chưa có câu hỏi riêng -> nạp từ BoDeMau
+        # 2. Nếu phòng chưa có câu hỏi riêng -> nạp từ ExamTemplates
         if not q_rows and template_id:
             cursor.execute(
                 """
-                SELECT ch.ma_cau_hoi, ch.ma_bai_toan, ch.tieu_de, ch.noi_dung_de, ch.do_kho,
-                       ch.ngon_ngu_cho_phep, ch.gioi_han_thoi_gian_ms, ch.gioi_han_bo_nho_mb,
-                       COALESCE(ct.so_diem, ch.diem_toi_da) AS diem_cau, ct.thu_tu_cau
-                FROM CauHoiTrongDe ct
-                JOIN CauHoi ch ON ct.ma_cau_hoi = ch.ma_cau_hoi
-                WHERE ct.ma_de_thi = ? AND ch.dang_hoat_dong = 1
-                ORDER BY ct.thu_tu_cau ASC, ch.ma_cau_hoi ASC
+                SELECT ch.question_id, ch.problem_code, ch.title, ch.content, ch.difficulty,
+                       ch.allowed_languages, ch.time_limit_ms, ch.memory_limit_mb,
+                       COALESCE(ct.points, ch.max_points) AS diem_cau, ct.question_order
+                FROM TemplateQuestions ct
+                JOIN Questions ch ON ct.question_id = ch.question_id
+                WHERE ct.template_id = ? AND ch.is_active = 1
+                ORDER BY ct.question_order ASC, ch.question_id ASC
                 """,
                 (template_id,),
             )
@@ -502,7 +502,7 @@ def get_exam_content_for_room(room_id: int, include_hidden_tests: bool = False) 
                     "code": qr[1] or f"P{idx}",
                     "title": qr[2],
                     "description": qr[3] or "",
-                    "difficulty": qr[4] or "Trung bình",
+                    "difficulty": qr[4] or "medium",
                     "programming_language": qr[5] or "C++ / Python",
                     "time_limit_ms": qr[6] or 2000,
                     "memory_limit_mb": qr[7] or 256,

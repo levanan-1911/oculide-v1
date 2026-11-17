@@ -412,45 +412,45 @@ async def get_admin_dashboard_overview():
     cursor = conn.cursor()
     try:
         # 1. KPI Cards
-        cursor.execute("SELECT COUNT(*) FROM LopHoc WHERE trang_thai = N'dang_mo' OR trang_thai = 'Hoạt động' OR trang_thai IS NULL")
+        cursor.execute("SELECT COUNT(*) FROM Classes WHERE status IN ('open', 'active', 'dang_mo', 'Hoạt động') OR status IS NULL")
         active_classes_count = cursor.fetchone()[0] or 0
 
-        cursor.execute("SELECT COUNT(*) FROM LopHoc")
+        cursor.execute("SELECT COUNT(*) FROM Classes")
         total_classes_count = cursor.fetchone()[0] or 0
 
         cursor.execute("""
-            SELECT COUNT(*) FROM Phong 
-            WHERE dang_hoat_dong = 1 AND (trang_thai = 'chua_mo' OR gio_bat_dau >= GETDATE())
+            SELECT COUNT(*) FROM Rooms 
+            WHERE is_active = 1 AND (status IN ('chua_mo', 'scheduled', 'draft') OR start_time >= GETDATE())
         """)
         upcoming_schedules_count = cursor.fetchone()[0] or 0
 
         cursor.execute("""
-            SELECT COUNT(*) FROM Phong 
-            WHERE dang_hoat_dong = 1 AND CAST(gio_bat_dau AS DATE) = CAST(GETDATE() AS DATE)
+            SELECT COUNT(*) FROM Rooms 
+            WHERE is_active = 1 AND CAST(start_time AS DATE) = CAST(GETDATE() AS DATE)
         """)
         today_schedules_count = cursor.fetchone()[0] or 0
 
         cursor.execute("""
-            SELECT COUNT(*) FROM Phong 
-            WHERE dang_hoat_dong = 1 AND trang_thai IN ('dang_dien_ra', 'in_progress')
+            SELECT COUNT(*) FROM Rooms 
+            WHERE is_active = 1 AND status IN ('dang_dien_ra', 'in_progress', 'ongoing')
         """)
         ongoing_sessions_count = cursor.fetchone()[0] or 0
 
         cursor.execute("""
-            SELECT COUNT(DISTINCT ma_sinh_vien) FROM PhienLamBai 
-            WHERE trang_thai IN ('active', 'dang_lam')
+            SELECT COUNT(DISTINCT student_id) FROM ExamSessions 
+            WHERE status IN ('active', 'dang_lam')
         """)
         active_students_count = cursor.fetchone()[0] or 0
 
         cursor.execute("""
-            SELECT COUNT(*) FROM ViPhamGiamSat 
-            WHERE trang_thai_duyet = 'pending' OR trang_thai_duyet IS NULL
+            SELECT COUNT(*) FROM Violations 
+            WHERE review_status = 'pending' OR review_status IS NULL
         """)
         pending_violations_count = cursor.fetchone()[0] or 0
 
         cursor.execute("""
-            SELECT COUNT(*) FROM YeuCauTroGiup 
-            WHERE trang_thai = 'pending' OR trang_thai IS NULL
+            SELECT COUNT(*) FROM SupportRequests 
+            WHERE status = 'pending' OR status IS NULL
         """)
         pending_issues_count = cursor.fetchone()[0] or 0
 
@@ -466,10 +466,10 @@ async def get_admin_dashboard_overview():
 
             cursor.execute("""
                 SELECT 
-                    COUNT(DISTINCT pl.ma_phien) AS sessions_count,
-                    COUNT(DISTINCT pl.ma_sinh_vien) AS students_count
-                FROM PhienLamBai pl
-                WHERE CAST(pl.thoi_gian_bat_dau AS DATE) = ?
+                    COUNT(DISTINCT pl.session_id) AS sessions_count,
+                    COUNT(DISTINCT pl.student_id) AS students_count
+                FROM ExamSessions pl
+                WHERE CAST(pl.start_time AS DATE) = ?
             """, (d,))
             r = cursor.fetchone()
             s_count = (r[0] or 0) if r else 0
@@ -478,7 +478,7 @@ async def get_admin_dashboard_overview():
             # Nếu chưa có phiên nhưng có nộp bài
             if s_count == 0:
                 cursor.execute("""
-                    SELECT COUNT(*), COUNT(DISTINCT ma_sinh_vien) FROM BaiNop WHERE CAST(thoi_gian_nop AS DATE) = ?
+                    SELECT COUNT(*), COUNT(DISTINCT student_id) FROM Submissions WHERE CAST(submitted_at AS DATE) = ?
                 """, (d,))
                 rb = cursor.fetchone()
                 if rb and (rb[0] or 0) > 0:
@@ -495,9 +495,9 @@ async def get_admin_dashboard_overview():
 
         # 3. Cảnh báo theo mức độ (Donut segments)
         cursor.execute("""
-            SELECT muc_do_nghiem_trong, COUNT(*) 
-            FROM ViPhamGiamSat 
-            GROUP BY muc_do_nghiem_trong
+            SELECT severity, COUNT(*) 
+            FROM Violations 
+            GROUP BY severity
         """)
         severity_rows = cursor.fetchall()
         sev_dict = {row[0].lower() if row[0] else 'low': row[1] for row in severity_rows}
@@ -526,13 +526,13 @@ async def get_admin_dashboard_overview():
         pending_issues = []
         cursor.execute("""
             SELECT TOP 5 
-                yc.ma_yeu_cau, yc.danh_muc_su_co, yc.tin_nhan_sos, yc.thoi_gian_gui, yc.trang_thai,
-                p.ma_phong_code, u.ho_va_ten, u.ma_dinh_danh
-            FROM YeuCauTroGiup yc
-            LEFT JOIN Phong p ON yc.ma_phong = p.ma_phong
-            LEFT JOIN NguoiDung u ON yc.ma_sinh_vien = u.ma_nguoi_dung
-            WHERE yc.trang_thai = 'pending' OR yc.trang_thai IS NULL
-            ORDER BY yc.thoi_gian_gui DESC
+                yc.request_id, yc.issue_type, yc.sos_message, yc.sent_at, yc.status,
+                p.room_code, u.full_name, u.identifier_code
+            FROM SupportRequests yc
+            LEFT JOIN Rooms p ON yc.room_id = p.room_id
+            LEFT JOIN Users u ON yc.student_id = u.user_id
+            WHERE yc.status IN ('open', 'pending', 'cho_xu_ly') OR yc.status IS NULL
+            ORDER BY yc.sent_at DESC
         """)
         for r in cursor.fetchall():
             pending_issues.append({
@@ -546,13 +546,13 @@ async def get_admin_dashboard_overview():
 
         cursor.execute("""
             SELECT TOP 5 
-                vp.ma_vi_pham, vp.loai_vi_pham, vp.muc_do_nghiem_trong, vp.mo_ta, vp.thoi_gian_phat_hien,
-                p.ma_phong_code, u.ho_va_ten, u.ma_dinh_danh
-            FROM ViPhamGiamSat vp
-            LEFT JOIN Phong p ON vp.ma_phong = p.ma_phong
-            LEFT JOIN NguoiDung u ON vp.ma_sinh_vien = u.ma_nguoi_dung
-            WHERE vp.trang_thai_duyet = 'pending' OR vp.trang_thai_duyet IS NULL
-            ORDER BY vp.thoi_gian_phat_hien DESC
+                vp.violation_id, vp.violation_type, vp.severity, vp.description, vp.detected_at,
+                p.room_code, u.full_name, u.identifier_code
+            FROM Violations vp
+            LEFT JOIN Rooms p ON vp.room_id = p.room_id
+            LEFT JOIN Users u ON vp.student_id = u.user_id
+            WHERE vp.review_status = 'pending' OR vp.review_status IS NULL
+            ORDER BY vp.detected_at DESC
         """)
         for r in cursor.fetchall():
             sev = (r[2] or 'medium').lower()
@@ -581,20 +581,20 @@ async def get_admin_dashboard_overview():
         # 5. Phiên kiểm tra hôm nay (Today sessions)
         cursor.execute("""
             SELECT TOP 8
-                p.ma_phong, p.ma_phong_code, p.tieu_de, p.loai_phong, p.gio_bat_dau, p.gio_ket_thuc, p.trang_thai,
-                l.ma_lop_hoc, l.ten_lop,
-                (SELECT COUNT(*) FROM SinhVienLopHoc svlh WHERE svlh.ma_phong = p.ma_phong) AS sv_count
-            FROM Phong p
-            LEFT JOIN LopHoc l ON p.ma_lop = l.ma_lop
-            WHERE p.dang_hoat_dong = 1
+                p.room_id, p.room_code, p.room_name AS title, p.room_type, p.start_time, p.end_time, p.status,
+                l.class_code, l.class_name,
+                (SELECT COUNT(*) FROM ClassEnrollments svlh WHERE svlh.class_id = p.class_id) AS sv_count
+            FROM Rooms p
+            LEFT JOIN Classes l ON p.class_id = l.class_id
+            WHERE p.is_active = 1
             ORDER BY 
                 CASE 
-                    WHEN p.trang_thai IN ('dang_dien_ra', 'in_progress') THEN 1
-                    WHEN p.trang_thai = 'chua_mo' AND CAST(p.gio_bat_dau AS DATE) = CAST(GETDATE() AS DATE) THEN 2
-                    WHEN p.trang_thai = 'chua_mo' THEN 3
+                    WHEN p.status IN ('dang_dien_ra', 'in_progress', 'ongoing') THEN 1
+                    WHEN p.status IN ('chua_mo', 'scheduled', 'draft') AND CAST(p.start_time AS DATE) = CAST(GETDATE() AS DATE) THEN 2
+                    WHEN p.status IN ('chua_mo', 'scheduled', 'draft') THEN 3
                     ELSE 4
                 END,
-                p.gio_bat_dau ASC
+                p.start_time ASC
         """)
         today_sessions = []
         for r in cursor.fetchall():
@@ -1015,19 +1015,19 @@ async def get_admin_schedules_overview():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT COUNT(*) FROM Phong")
+        cursor.execute("SELECT COUNT(*) FROM Rooms")
         total = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM Phong WHERE trang_thai IN ('dang_dien_ra', 'in_progress', 'ongoing')")
+        cursor.execute("SELECT COUNT(*) FROM Rooms WHERE status IN ('dang_dien_ra', 'in_progress', 'ongoing')")
         ongoing = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM Phong WHERE trang_thai IN ('chua_mo', 'scheduled', 'draft')")
+        cursor.execute("SELECT COUNT(*) FROM Rooms WHERE status IN ('chua_mo', 'scheduled', 'draft')")
         scheduled = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM Phong WHERE trang_thai IN ('da_dong', 'completed', 'finished')")
+        cursor.execute("SELECT COUNT(*) FROM Rooms WHERE status IN ('da_dong', 'completed', 'finished')")
         completed = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(DISTINCT ma_sinh_vien) FROM SinhVienLopHoc")
+        cursor.execute("SELECT COUNT(DISTINCT student_id) FROM ClassEnrollments")
         total_students = cursor.fetchone()[0]
 
         return {
@@ -1061,38 +1061,38 @@ async def list_admin_schedules(
         params = []
 
         if room_type and room_type.lower() != "all":
-            conditions.append("p.loai_phong = ?")
+            conditions.append("p.room_type = ?")
             params.append(room_type.lower())
 
         if status and status.lower() != "all":
             st = status.lower()
             if st == "ongoing":
-                conditions.append("p.trang_thai IN ('dang_dien_ra', 'in_progress', 'ongoing')")
+                conditions.append("p.status IN ('dang_dien_ra', 'in_progress', 'ongoing')")
             elif st == "completed":
-                conditions.append("p.trang_thai IN ('da_dong', 'completed', 'finished')")
+                conditions.append("p.status IN ('da_dong', 'completed', 'finished')")
             elif st == "scheduled":
-                conditions.append("p.trang_thai IN ('chua_mo', 'scheduled', 'draft')")
+                conditions.append("p.status IN ('chua_mo', 'scheduled', 'draft')")
             elif st == "cancelled":
-                conditions.append("p.trang_thai IN ('huy', 'cancelled')")
+                conditions.append("p.status IN ('huy', 'cancelled')")
 
         if class_id and class_id != "all":
             try:
                 cid = int(class_id)
-                conditions.append("p.ma_lop = ?")
+                conditions.append("p.class_id = ?")
                 params.append(cid)
             except ValueError:
-                conditions.append("(lh.ma_lop_hoc = ? OR lh.ma_mon_hoc = ?)")
+                conditions.append("(lh.class_code = ? OR lh.course_code = ?)")
                 params.extend([class_id, class_id])
 
         if search and search.strip():
             term = f"%{search.strip()}%"
             conditions.append("""(
-                p.tieu_de LIKE ? OR 
-                p.ma_phong_code LIKE ? OR 
-                lh.ten_lop LIKE ? OR 
-                lh.ma_lop_hoc LIKE ? OR 
-                gv.ho_va_ten LIKE ? OR
-                bdm.tieu_de LIKE ?
+                p.room_name LIKE ? OR 
+                p.room_code LIKE ? OR 
+                lh.class_name LIKE ? OR 
+                lh.class_code LIKE ? OR 
+                gv.full_name LIKE ? OR
+                bdm.title LIKE ?
             )""")
             params.extend([term, term, term, term, term, term])
 
@@ -1100,10 +1100,10 @@ async def list_admin_schedules(
 
         count_sql = f"""
             SELECT COUNT(*) 
-            FROM Phong p
-            LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
-            LEFT JOIN NguoiDung gv ON p.nguoi_tao = gv.ma_nguoi_dung
-            LEFT JOIN BoDeMau bdm ON p.ma_de_mau = bdm.ma_de_thi
+            FROM Rooms p
+            LEFT JOIN Classes lh ON p.class_id = lh.class_id
+            LEFT JOIN Users gv ON p.creator_id = gv.user_id
+            LEFT JOIN ExamTemplates bdm ON p.template_id = bdm.template_id
             {where_clause}
         """
         cursor.execute(count_sql, tuple(params))
@@ -1111,36 +1111,36 @@ async def list_admin_schedules(
 
         offset = (page - 1) * page_size
         query_sql = f"""
-            SELECT p.ma_phong AS room_id,
-                   p.ma_phong_code AS room_code,
-                   p.tieu_de AS title,
-                   p.loai_phong AS room_type,
-                   p.nguoi_tao AS lecturer_id,
-                   gv.ho_va_ten AS lecturer,
-                   p.ma_lop AS class_id,
-                   lh.ma_lop_hoc AS class_code,
-                   lh.ten_lop AS class_name,
-                   p.ma_de_mau AS template_id,
-                   bdm.ma_de AS template_code,
-                   bdm.tieu_de AS template_title,
-                   p.gio_bat_dau AS start_time,
-                   p.gio_ket_thuc AS end_time,
-                   p.thoi_luong_phut AS duration_minutes,
-                   p.so_lan_nop_toi_da AS max_attempts,
-                   p.mat_ma_phong AS passcode,
-                   p.cau_hinh_giam_sat AS proctoring_config,
-                   p.trang_thai AS status,
-                   p.dang_hoat_dong AS is_active,
-                   p.ngay_tao AS created_at,
-                   COALESCE((SELECT COUNT(DISTINCT ma_sinh_vien) FROM SinhVienLopHoc svl WHERE svl.ma_lop = p.ma_lop), 0) AS student_count,
-                   COALESCE((SELECT COUNT(DISTINCT ma_sinh_vien) FROM PhienLamBai pl WHERE pl.ma_phong = p.ma_phong AND pl.trang_thai IN ('dang_lam', 'active', 'da_nop', 'completed')), 0) AS attended_students,
-                   COALESCE((SELECT COUNT(*) FROM ViPhamGiamSat vp WHERE vp.ma_phong = p.ma_phong), 0) AS pending_violations
-            FROM Phong p
-            LEFT JOIN LopHoc lh ON p.ma_lop = lh.ma_lop
-            LEFT JOIN NguoiDung gv ON p.nguoi_tao = gv.ma_nguoi_dung
-            LEFT JOIN BoDeMau bdm ON p.ma_de_mau = bdm.ma_de_thi
+            SELECT p.room_id AS room_id,
+                   p.room_code AS room_code,
+                   p.room_name AS title,
+                   p.room_type AS room_type,
+                   p.creator_id AS lecturer_id,
+                   gv.full_name AS lecturer,
+                   p.class_id AS class_id,
+                   lh.class_code AS class_code,
+                   lh.class_name AS class_name,
+                   p.template_id AS template_id,
+                   bdm.template_code AS template_code,
+                   bdm.title AS template_title,
+                   p.start_time AS start_time,
+                   p.end_time AS end_time,
+                   p.duration_minutes AS duration_minutes,
+                   p.max_attempts AS max_attempts,
+                   p.passcode AS passcode,
+                   p.proctoring_config AS proctoring_config,
+                   p.status AS status,
+                   p.is_active AS is_active,
+                   p.created_at AS created_at,
+                   COALESCE((SELECT COUNT(DISTINCT student_id) FROM ClassEnrollments svl WHERE svl.class_id = p.class_id), 0) AS student_count,
+                   COALESCE((SELECT COUNT(DISTINCT student_id) FROM ExamSessions pl WHERE pl.room_id = p.room_id AND pl.status IN ('dang_lam', 'active', 'da_nop', 'completed')), 0) AS attended_students,
+                   COALESCE((SELECT COUNT(*) FROM Violations vp WHERE vp.room_id = p.room_id), 0) AS pending_violations
+            FROM Rooms p
+            LEFT JOIN Classes lh ON p.class_id = lh.class_id
+            LEFT JOIN Users gv ON p.creator_id = gv.user_id
+            LEFT JOIN ExamTemplates bdm ON p.template_id = bdm.template_id
             {where_clause}
-            ORDER BY p.ngay_tao DESC
+            ORDER BY p.created_at DESC
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         """
         cursor.execute(query_sql, tuple(params + [offset, page_size]))
@@ -1231,24 +1231,24 @@ async def get_admin_schedule_detail(room_id: int):
     try:
         # Lấy danh sách sinh viên của lớp học phần kèm trạng thái tham gia
         students_sql = """
-            SELECT sv.ma_nguoi_dung AS student_id,
-                   sv.ten_dang_nhap AS username,
-                   sv.ho_va_ten AS full_name,
-                   sv.ma_dinh_danh AS student_code,
-                   pl.ma_phien AS session_id,
-                   pl.trang_thai AS session_status,
-                   pl.thoi_gian_bat_dau AS joined_at,
-                   kt.trang_thai_camera,
-                   kt.trang_thai_micro,
-                   (SELECT COUNT(*) FROM BaiNop bn WHERE bn.ma_phong = ? AND bn.ma_sinh_vien = sv.ma_nguoi_dung) AS submissions_count,
-                   (SELECT MAX(bn.tong_diem) FROM BaiNop bn WHERE bn.ma_phong = ? AND bn.ma_sinh_vien = sv.ma_nguoi_dung) AS max_score,
-                   (SELECT COUNT(*) FROM ViPhamGiamSat vp WHERE vp.ma_phong = ? AND vp.ma_sinh_vien = sv.ma_nguoi_dung) AS violations_count
-            FROM SinhVienLopHoc svl
-            JOIN NguoiDung sv ON svl.ma_sinh_vien = sv.ma_nguoi_dung
-            LEFT JOIN PhienLamBai pl ON pl.ma_phong = ? AND pl.ma_sinh_vien = sv.ma_nguoi_dung
-            LEFT JOIN KiemTraThietBi kt ON kt.ma_phien = pl.ma_phien
-            WHERE svl.ma_lop = ?
-            ORDER BY sv.ho_va_ten ASC
+            SELECT sv.user_id AS student_id,
+                   sv.username AS username,
+                   sv.full_name AS full_name,
+                   sv.identifier_code AS student_code,
+                   pl.session_id AS session_id,
+                   pl.status AS session_status,
+                   pl.start_time AS joined_at,
+                   kt.camera_status,
+                   kt.mic_status,
+                   (SELECT COUNT(*) FROM Submissions bn WHERE bn.room_id = ? AND bn.student_id = sv.user_id) AS submissions_count,
+                   (SELECT MAX(bn.total_score) FROM Submissions bn WHERE bn.room_id = ? AND bn.student_id = sv.user_id) AS max_score,
+                   (SELECT COUNT(*) FROM Violations vp WHERE vp.room_id = ? AND vp.student_id = sv.user_id) AS violations_count
+            FROM ClassEnrollments svl
+            JOIN Users sv ON svl.student_id = sv.user_id
+            LEFT JOIN ExamSessions pl ON pl.room_id = ? AND pl.student_id = sv.user_id
+            LEFT JOIN DeviceChecks kt ON kt.session_id = pl.session_id
+            WHERE svl.class_id = ?
+            ORDER BY sv.full_name ASC
         """
         cursor.execute(students_sql, (room_id, room_id, room_id, room_id, room.get("class_id")))
         rows = cursor.fetchall()
@@ -1365,13 +1365,13 @@ async def search_admin_resources(
     results = []
 
     try:
-        # 1. Tìm kiếm Tài khoản người dùng (NguoiDung)
+        # 1. Tìm kiếm Tài khoản người dùng (Users)
         cursor.execute("""
-            SELECT TOP 5 u.ma_nguoi_dung, u.ho_va_ten, u.ten_dang_nhap, u.email, u.ma_dinh_danh, v.ten_vai_tro
-            FROM NguoiDung u
-            JOIN VaiTro v ON u.ma_vai_tro = v.ma_vai_tro
-            WHERE u.ho_va_ten LIKE ? OR u.ten_dang_nhap LIKE ? OR u.email LIKE ? OR u.ma_dinh_danh LIKE ?
-            ORDER BY u.ma_nguoi_dung DESC
+            SELECT TOP 5 u.user_id, u.full_name, u.username, u.email, u.identifier_code, v.role_name
+            FROM Users u
+            JOIN Roles v ON u.role_id = v.role_id
+            WHERE u.full_name LIKE ? OR u.username LIKE ? OR u.email LIKE ? OR u.identifier_code LIKE ?
+            ORDER BY u.user_id DESC
         """, (query_str, query_str, query_str, query_str))
         user_rows = cursor.fetchall()
         for r in user_rows:
@@ -1392,13 +1392,13 @@ async def search_admin_resources(
                 "link": "/admin/users"
             })
 
-        # 2. Tìm kiếm Lớp học (LopHoc)
+        # 2. Tìm kiếm Lớp học (Classes)
         cursor.execute("""
-            SELECT TOP 5 lh.ma_lop, lh.ma_lop_hoc, lh.ten_lop, lh.ma_mon_hoc, lh.hoc_ky,
-                   (SELECT COUNT(1) FROM SinhVienLopHoc svl WHERE svl.ma_lop = lh.ma_lop) AS so_sv
-            FROM LopHoc lh
-            WHERE lh.ma_lop_hoc LIKE ? OR lh.ten_lop LIKE ? OR lh.ma_mon_hoc LIKE ?
-            ORDER BY lh.ngay_tao DESC
+            SELECT TOP 5 lh.class_id, lh.class_code, lh.class_name, lh.course_code, lh.semester_name,
+                   (SELECT COUNT(1) FROM ClassEnrollments svl WHERE svl.class_id = lh.class_id) AS so_sv
+            FROM Classes lh
+            WHERE lh.class_code LIKE ? OR lh.class_name LIKE ? OR lh.course_code LIKE ?
+            ORDER BY lh.created_at DESC
         """, (query_str, query_str, query_str))
         class_rows = cursor.fetchall()
         for r in class_rows:
@@ -1416,12 +1416,12 @@ async def search_admin_resources(
                 "link": "/admin/classes"
             })
 
-        # 3. Tìm kiếm Ca thi / Phòng thi (Phong)
+        # 3. Tìm kiếm Ca thi / Phòng thi (Rooms)
         cursor.execute("""
-            SELECT TOP 5 p.ma_phong, p.ma_phong_code, p.tieu_de, p.loai_phong, p.trang_thai
-            FROM Phong p
-            WHERE p.ma_phong_code LIKE ? OR p.tieu_de LIKE ?
-            ORDER BY p.ngay_tao DESC
+            SELECT TOP 5 p.room_id, p.room_code, p.room_name AS title, p.room_type, p.status
+            FROM Rooms p
+            WHERE p.room_code LIKE ? OR p.room_name LIKE ?
+            ORDER BY p.created_at DESC
         """, (query_str, query_str))
         room_rows = cursor.fetchall()
         status_map = {

@@ -10,18 +10,18 @@ def create_system_log(
     extra_data: Optional[Any] = None,
     ip_address: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Ghi nhận nhật ký kiểm toán hệ thống vào bảng NhatKyHeThong"""
+    """Ghi nhận nhật ký kiểm toán hệ thống vào bảng SystemAuditLogs"""
     extra_json = json.dumps(extra_data, ensure_ascii=False) if extra_data is not None else None
     sql = """
-        INSERT INTO NhatKyHeThong (muc_do, hanh_dong, thong_bao, ma_nguoi_dung, dia_chi_ip, du_lieu_chi_tiet)
-        OUTPUT inserted.ma_nhat_ky AS log_id, 
-               inserted.muc_do AS log_level, 
-               inserted.hanh_dong AS module,
-               inserted.thong_bao AS message, 
-               inserted.ma_nguoi_dung AS user_id, 
-               inserted.dia_chi_ip AS ip_address,
-               inserted.du_lieu_chi_tiet AS extra_data, 
-               inserted.thoi_gian AS created_at
+        INSERT INTO SystemAuditLogs (log_level, action, message, user_id, ip_address, details)
+        OUTPUT inserted.log_id, 
+               inserted.log_level, 
+               inserted.action AS module,
+               inserted.message, 
+               inserted.user_id, 
+               inserted.ip_address,
+               inserted.details AS extra_data, 
+               inserted.created_at
         VALUES (?, ?, ?, ?, ?, ?)
     """
     with get_db_cursor(commit=True) as cursor:
@@ -51,25 +51,25 @@ def get_system_logs(
     params: List[Any] = []
     
     if log_level and log_level.strip() and log_level.lower() != 'all':
-        where_clauses.append("LOWER(n.muc_do) = ?")
+        where_clauses.append("LOWER(n.log_level) = ?")
         params.append(log_level.lower().strip())
     if module and module.strip() and module.lower() != 'all':
-        where_clauses.append("n.hanh_dong = ?")
+        where_clauses.append("n.action = ?")
         params.append(module.strip())
     if user_id:
-        where_clauses.append("n.ma_nguoi_dung = ?")
+        where_clauses.append("n.user_id = ?")
         params.append(user_id)
     if role and role.strip() and role.lower() != 'all':
         clean_role = role.lower().strip()
         if clean_role == 'system':
-            where_clauses.append("(n.ma_nguoi_dung IS NULL OR LOWER(vt.ten_vai_tro) = 'system')")
+            where_clauses.append("(n.user_id IS NULL OR LOWER(vt.role_name) = 'system')")
         else:
-            where_clauses.append("LOWER(vt.ten_vai_tro) = ?")
+            where_clauses.append("LOWER(vt.role_name) = ?")
             params.append(clean_role)
     if search and search.strip():
         term = f"%{search.strip()}%"
         where_clauses.append(
-            "(n.thong_bao LIKE ? OR n.hanh_dong LIKE ? OR n.dia_chi_ip LIKE ? OR u.ho_va_ten LIKE ? OR u.ten_dang_nhap LIKE ?)"
+            "(n.message LIKE ? OR n.action LIKE ? OR n.ip_address LIKE ? OR u.full_name LIKE ? OR u.username LIKE ?)"
         )
         params.extend([term, term, term, term, term])
         
@@ -77,28 +77,28 @@ def get_system_logs(
     
     count_sql = f"""
         SELECT COUNT(*)
-        FROM NhatKyHeThong n
-        LEFT JOIN NguoiDung u ON n.ma_nguoi_dung = u.ma_nguoi_dung
-        LEFT JOIN VaiTro vt ON u.ma_vai_tro = vt.ma_vai_tro
+        FROM SystemAuditLogs n
+        LEFT JOIN Users u ON n.user_id = u.user_id
+        LEFT JOIN Roles vt ON u.role_id = vt.role_id
         {where_sql}
     """
     query_sql = f"""
-        SELECT n.ma_nhat_ky AS log_id, 
-               n.muc_do AS log_level, 
-               n.hanh_dong AS module, 
-               n.thong_bao AS message, 
-               n.ma_nguoi_dung AS user_id, 
-               n.dia_chi_ip AS ip_address,
-               COALESCE(u.ho_va_ten, N'Hệ thống') AS actor_name,
-               u.ten_dang_nhap AS username,
-               COALESCE(vt.ten_vai_tro, 'system') AS actor_role,
-               n.du_lieu_chi_tiet AS extra_data, 
-               n.thoi_gian AS created_at
-        FROM NhatKyHeThong n
-        LEFT JOIN NguoiDung u ON n.ma_nguoi_dung = u.ma_nguoi_dung
-        LEFT JOIN VaiTro vt ON u.ma_vai_tro = vt.ma_vai_tro
+        SELECT n.log_id, 
+               n.log_level, 
+               n.action AS module, 
+               n.message, 
+               n.user_id, 
+               n.ip_address,
+               COALESCE(u.full_name, N'Hệ thống') AS actor_name,
+               u.username,
+               COALESCE(vt.role_name, 'system') AS actor_role,
+               n.details AS extra_data, 
+               n.created_at
+        FROM SystemAuditLogs n
+        LEFT JOIN Users u ON n.user_id = u.user_id
+        LEFT JOIN Roles vt ON u.role_id = vt.role_id
         {where_sql}
-        ORDER BY n.thoi_gian DESC
+        ORDER BY n.created_at DESC
         OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
     """
     

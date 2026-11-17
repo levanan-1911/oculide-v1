@@ -13,18 +13,18 @@ def create_snapshot(
     """Lưu bản ghi ảnh chụp webcam định kỳ từ sinh viên vào bảng Snapshots"""
     sql = """
         INSERT INTO Snapshots (
-            ma_phien, ma_sinh_vien, link_anh, 
-            co_khuon_mat, so_luong_mat, nhin_man_hinh, diem_tin_cay
+            session_id, student_id, image_url, 
+            has_face, face_count, looking_at_screen, confidence_score
         )
-        OUTPUT inserted.ma_snapshot AS snapshot_id, 
-               inserted.ma_phien AS session_id, 
-               inserted.ma_sinh_vien AS student_id,
-               inserted.link_anh AS image_url, 
-               inserted.co_khuon_mat AS face_detected, 
-               inserted.so_luong_mat AS face_count,
-               inserted.nhin_man_hinh AS looking_at_screen, 
-               inserted.diem_tin_cay AS confidence_score, 
-               inserted.thoi_gian_chup AS captured_at
+        OUTPUT inserted.snapshot_id, 
+               inserted.session_id, 
+               inserted.student_id,
+               inserted.image_url, 
+               inserted.has_face AS face_detected, 
+               inserted.face_count,
+               inserted.looking_at_screen, 
+               inserted.confidence_score, 
+               inserted.captured_at
         VALUES (?, ?, ?, ?, ?, ?, ?)
     """
     with get_db_cursor(commit=True) as cursor:
@@ -46,18 +46,18 @@ def get_snapshots_by_session(session_id: int, limit: int = 50) -> List[Dict[str,
     """Lấy danh sách snapshot của một phiên thi, sắp xếp mới nhất trước"""
     sql = """
         SELECT TOP (?) 
-            ma_snapshot AS snapshot_id, 
-            ma_phien AS session_id, 
-            ma_sinh_vien AS student_id, 
-            link_anh AS image_url,
-            co_khuon_mat AS face_detected, 
-            so_luong_mat AS face_count, 
-            nhin_man_hinh AS looking_at_screen, 
-            diem_tin_cay AS confidence_score, 
-            thoi_gian_chup AS captured_at
+            snapshot_id, 
+            session_id, 
+            student_id, 
+            image_url,
+            has_face AS face_detected, 
+            face_count, 
+            looking_at_screen, 
+            confidence_score, 
+            captured_at
         FROM Snapshots
-        WHERE ma_phien = ?
-        ORDER BY thoi_gian_chup DESC
+        WHERE session_id = ?
+        ORDER BY captured_at DESC
     """
     with get_db_cursor(commit=False) as cursor:
         cursor.execute(sql, (limit, session_id))
@@ -73,18 +73,18 @@ def get_latest_snapshot_by_student(session_id: int, student_id: int) -> Optional
     """Lấy ảnh snapshot gần nhất của sinh viên trong phiên thi"""
     sql = """
         SELECT TOP 1
-            ma_snapshot AS snapshot_id, 
-            ma_phien AS session_id, 
-            ma_sinh_vien AS student_id, 
-            link_anh AS image_url,
-            co_khuon_mat AS face_detected, 
-            so_luong_mat AS face_count, 
-            nhin_man_hinh AS looking_at_screen, 
-            diem_tin_cay AS confidence_score, 
-            thoi_gian_chup AS captured_at
+            snapshot_id, 
+            session_id, 
+            student_id, 
+            image_url,
+            has_face AS face_detected, 
+            face_count, 
+            looking_at_screen, 
+            confidence_score, 
+            captured_at
         FROM Snapshots
-        WHERE ma_phien = ? AND ma_sinh_vien = ?
-        ORDER BY thoi_gian_chup DESC
+        WHERE session_id = ? AND student_id = ?
+        ORDER BY captured_at DESC
     """
     with get_db_cursor(commit=False) as cursor:
         cursor.execute(sql, (session_id, student_id))
@@ -100,7 +100,7 @@ def cleanup_old_snapshots(days: int = 30) -> int:
     """Dọn dẹp các snapshot cũ hơn số ngày chỉ định để tiết kiệm dung lượng CSDL"""
     sql = """
         DELETE FROM Snapshots
-        WHERE thoi_gian_chup < DATEADD(day, -?, GETDATE())
+        WHERE captured_at < DATEADD(day, -?, GETDATE())
     """
     with get_db_cursor(commit=True) as cursor:
         cursor.execute(sql, (days,))
@@ -109,17 +109,17 @@ def cleanup_old_snapshots(days: int = 30) -> int:
 def get_snapshot_by_id(snapshot_id: int) -> Optional[Dict[str, Any]]:
     """Lấy thông tin chi tiết một bản ghi snapshot theo snapshot_id"""
     sql = """
-        SELECT ma_snapshot AS snapshot_id, 
-               ma_phien AS session_id, 
-               ma_sinh_vien AS student_id, 
-               link_anh AS image_url,
-               co_khuon_mat AS face_detected, 
-               so_luong_mat AS face_count, 
-               nhin_man_hinh AS looking_at_screen, 
-               diem_tin_cay AS confidence_score, 
-               thoi_gian_chup AS captured_at
+        SELECT snapshot_id, 
+               session_id, 
+               student_id, 
+               image_url,
+               has_face AS face_detected, 
+               face_count, 
+               looking_at_screen, 
+               confidence_score, 
+               captured_at
         FROM Snapshots
-        WHERE ma_snapshot = ?
+        WHERE snapshot_id = ?
     """
     with get_db_cursor(commit=False) as cursor:
         cursor.execute(sql, (snapshot_id,))

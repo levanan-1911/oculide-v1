@@ -38,18 +38,17 @@ async def run_proctoring_violations_e2e():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT TOP 1 ma_giang_vien FROM LopHoc WHERE ma_lop = 5")
+    cursor.execute("SELECT TOP 1 instructor_id FROM Classes")
     inst_row = cursor.fetchone()
-    instructor_id = inst_row[0] if inst_row else 1
+    instructor_id = inst_row[0] if inst_row else 2
 
     cursor.execute("""
-        SELECT TOP 1 u.ma_nguoi_dung
-        FROM SinhVienLopHoc svl
-        JOIN NguoiDung u ON svl.ma_sinh_vien = u.ma_nguoi_dung
-        WHERE svl.ma_lop = 5
+        SELECT TOP 1 u.user_id
+        FROM ClassEnrollments svl
+        JOIN Users u ON svl.student_id = u.user_id
     """)
     stu_row = cursor.fetchone()
-    assert stu_row is not None, "Cần có ít nhất 1 sinh viên trong lớp 5"
+    assert stu_row is not None, "Cần có ít nhất 1 sinh viên trong lớp"
     student_id = stu_row[0]
     conn.close()
 
@@ -138,8 +137,8 @@ async def run_proctoring_violations_e2e():
         if created_room_id:
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM ViPhamGiamSat WHERE ma_phong = ?", (created_room_id,))
-            cursor.execute("DELETE FROM PhienLamBai WHERE ma_phong = ?", (created_room_id,))
+            cursor.execute("DELETE FROM Violations WHERE room_id = ?", (created_room_id,))
+            cursor.execute("DELETE FROM ExamSessions WHERE room_id = ?", (created_room_id,))
             conn.commit()
             conn.close()
             try:

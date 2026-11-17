@@ -2,46 +2,46 @@ from core.config import get_db_connection
 from typing import Optional, List, Dict, Any, Union
 
 def _resolve_class_id(cursor, class_id_or_code: Any) -> Optional[int]:
-    """Phân giải ID số nguyên hoặc mã lớp học phần (VD: 'CS316-A') thành ma_lop (int)"""
+    """Phân giải ID số nguyên hoặc mã lớp học phần (VD: 'CS316-A') thành class_id (int)"""
     if class_id_or_code is None:
         return None
     val_str = str(class_id_or_code).strip()
     if val_str.isdigit():
         return int(val_str)
-    cursor.execute("SELECT ma_lop FROM LopHoc WHERE ma_lop_hoc = ?", (val_str,))
+    cursor.execute("SELECT class_id FROM Classes WHERE class_code = ?", (val_str,))
     r = cursor.fetchone()
     if r:
         return r[0]
     # Khớp bổ sung với khoảng trắng được chuẩn hóa (ví dụ 'CS 202  D' -> 'CS 202 D')
     normalized = " ".join(val_str.split())
     if normalized != val_str:
-        cursor.execute("SELECT ma_lop FROM LopHoc WHERE ma_lop_hoc = ?", (normalized,))
+        cursor.execute("SELECT class_id FROM Classes WHERE class_code = ?", (normalized,))
         r = cursor.fetchone()
         if r:
             return r[0]
     return None
 
 def _resolve_user_id(cursor, student_id_or_ident: Any) -> Optional[int]:
-    """Phân giải ID người dùng (int), MSSV (ma_dinh_danh), hoặc tên đăng nhập thành ma_nguoi_dung (int)"""
+    """Phân giải ID người dùng (int), MSSV (identifier_code), hoặc username thành user_id (int)"""
     if student_id_or_ident is None:
         return None
     val_str = str(student_id_or_ident).strip()
     if not val_str:
         return None
 
-    # Ưu tiên khớp chính xác theo mã định danh (MSSV) hoặc tên đăng nhập
+    # Ưu tiên khớp chính xác theo mã định danh (MSSV) hoặc username
     cursor.execute("""
-        SELECT TOP 1 ma_nguoi_dung FROM NguoiDung 
-        WHERE ma_dinh_danh = ? OR ten_dang_nhap = ?
+        SELECT TOP 1 user_id FROM Users 
+        WHERE identifier_code = ? OR username = ?
     """, (val_str, val_str))
     r = cursor.fetchone()
     if r:
         return r[0]
 
-    # Nếu chuỗi là số, kiểm tra theo khóa chính ma_nguoi_dung
+    # Nếu chuỗi là số, kiểm tra theo khóa chính user_id
     if val_str.isdigit():
         uid = int(val_str)
-        cursor.execute("SELECT ma_nguoi_dung FROM NguoiDung WHERE ma_nguoi_dung = ?", (uid,))
+        cursor.execute("SELECT user_id FROM Users WHERE user_id = ?", (uid,))
         r = cursor.fetchone()
         if r:
             return r[0]
@@ -57,7 +57,7 @@ def create_class(
     semester: Optional[str] = None,
     description: Optional[str] = None
 ) -> Dict:
-    """Giảng viên tạo một lớp học phần mới trong bảng LopHoc"""
+    """Giảng viên tạo một lớp học phần mới trong bảng Classes"""
     # Chuẩn hóa khoảng trắng và viết hoa mã lớp
     class_code = " ".join(class_code.strip().split()).upper()
     # Tự động suy luận mã môn và mã phân lớp nếu người dùng không truyền riêng
@@ -71,10 +71,10 @@ def create_class(
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO LopHoc (ma_lop_hoc, ten_lop, ma_mon_hoc, ma_phan_lop, hoc_ky, ma_giang_vien, mo_ta)
-            OUTPUT inserted.ma_lop, inserted.ma_lop_hoc, inserted.ten_lop, inserted.ma_mon_hoc,
-                   inserted.ma_phan_lop, inserted.hoc_ky, inserted.ma_giang_vien, inserted.mo_ta,
-                   inserted.ngay_tao, inserted.ngay_cap_nhat
+            INSERT INTO Classes (class_code, class_name, course_code, section_code, semester_name, instructor_id, description)
+            OUTPUT inserted.class_id, inserted.class_code, inserted.class_name, inserted.course_code,
+                   inserted.section_code, inserted.semester_name, inserted.instructor_id, inserted.description,
+                   inserted.created_at, inserted.updated_at
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (class_code, class_name, course_code, section_code, semester, instructor_id, description))
         row = cursor.fetchone()
@@ -92,7 +92,7 @@ def create_class(
                 "created_at": row[8],
                 "updated_at": row[9]
             }
-            cursor.execute("SELECT ho_va_ten FROM NguoiDung WHERE ma_nguoi_dung = ?", (instructor_id,))
+            cursor.execute("SELECT full_name FROM Users WHERE user_id = ?", (instructor_id,))
             inst_row = cursor.fetchone()
             created["instructor_name"] = inst_row[0] if inst_row else "Giảng viên"
             created["student_count"] = 0
@@ -111,22 +111,22 @@ def get_class_by_id(class_id: Any) -> Optional[Dict]:
         if not real_id:
             return None
         cursor.execute("""
-            SELECT c.ma_lop AS class_id, 
-                   c.ma_lop_hoc AS class_code, 
-                   c.ten_lop AS class_name, 
-                   c.ma_mon_hoc AS course_code,
-                   c.ma_phan_lop AS section_code,
-                   c.hoc_ky AS semester,
-                   c.ma_giang_vien AS instructor_id,
-                   c.mo_ta AS description, 
-                   c.trang_thai AS status,
-                   c.ngay_tao AS created_at, 
-                   c.ngay_cap_nhat AS updated_at, 
-                   COALESCE(u.ho_va_ten, N'Chưa phân công') AS instructor_name,
-                   (SELECT COUNT(1) FROM SinhVienLopHoc svl WHERE svl.ma_lop = c.ma_lop) AS student_count
-            FROM LopHoc c
-            LEFT JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
-            WHERE c.ma_lop = ?
+            SELECT c.class_id, 
+                   c.class_code, 
+                   c.class_name, 
+                   c.course_code,
+                   c.section_code,
+                   c.semester_name AS semester,
+                   c.instructor_id,
+                   c.description, 
+                   c.status,
+                   c.created_at, 
+                   c.updated_at, 
+                   COALESCE(u.full_name, N'Chưa phân công') AS instructor_name,
+                   (SELECT COUNT(1) FROM ClassEnrollments svl WHERE svl.class_id = c.class_id) AS student_count
+            FROM Classes c
+            LEFT JOIN Users u ON c.instructor_id = u.user_id
+            WHERE c.class_id = ?
         """, (real_id,))
         row = cursor.fetchone()
         if row:
@@ -144,42 +144,42 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
     try:
         if instructor_id:
             cursor.execute("""
-                SELECT c.ma_lop AS class_id, 
-                       c.ma_lop_hoc AS class_code, 
-                       c.ten_lop AS class_name, 
-                       c.ma_mon_hoc AS course_code,
-                       c.ma_phan_lop AS section_code,
-                       c.hoc_ky AS semester,
-                       c.ma_giang_vien AS instructor_id,
-                       c.mo_ta AS description, 
-                       c.trang_thai AS status,
-                       c.ngay_tao AS created_at, 
-                       c.ngay_cap_nhat AS updated_at, 
-                       COALESCE(u.ho_va_ten, N'Chưa phân công') AS instructor_name,
-                       (SELECT COUNT(1) FROM SinhVienLopHoc svl WHERE svl.ma_lop = c.ma_lop) AS student_count
-                FROM LopHoc c
-                LEFT JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
-                WHERE c.ma_giang_vien = ?
-                ORDER BY c.ngay_tao DESC
+                SELECT c.class_id, 
+                       c.class_code, 
+                       c.class_name, 
+                       c.course_code,
+                       c.section_code,
+                       c.semester_name AS semester,
+                       c.instructor_id,
+                       c.description, 
+                       c.status,
+                       c.created_at, 
+                       c.updated_at, 
+                       COALESCE(u.full_name, N'Chưa phân công') AS instructor_name,
+                       (SELECT COUNT(1) FROM ClassEnrollments svl WHERE svl.class_id = c.class_id) AS student_count
+                FROM Classes c
+                LEFT JOIN Users u ON c.instructor_id = u.user_id
+                WHERE c.instructor_id = ?
+                ORDER BY c.created_at DESC
             """, (instructor_id,))
         else:
             cursor.execute("""
-                SELECT c.ma_lop AS class_id, 
-                       c.ma_lop_hoc AS class_code, 
-                       c.ten_lop AS class_name, 
-                       c.ma_mon_hoc AS course_code,
-                       c.ma_phan_lop AS section_code,
-                       c.hoc_ky AS semester,
-                       c.ma_giang_vien AS instructor_id,
-                       c.mo_ta AS description, 
-                       c.trang_thai AS status,
-                       c.ngay_tao AS created_at, 
-                       c.ngay_cap_nhat AS updated_at, 
-                       COALESCE(u.ho_va_ten, N'Chưa phân công') AS instructor_name,
-                       (SELECT COUNT(1) FROM SinhVienLopHoc svl WHERE svl.ma_lop = c.ma_lop) AS student_count
-                FROM LopHoc c
-                LEFT JOIN NguoiDung u ON c.ma_giang_vien = u.ma_nguoi_dung
-                ORDER BY c.ngay_tao DESC
+                SELECT c.class_id, 
+                       c.class_code, 
+                       c.class_name, 
+                       c.course_code,
+                       c.section_code,
+                       c.semester_name AS semester,
+                       c.instructor_id,
+                       c.description, 
+                       c.status,
+                       c.created_at, 
+                       c.updated_at, 
+                       COALESCE(u.full_name, N'Chưa phân công') AS instructor_name,
+                       (SELECT COUNT(1) FROM ClassEnrollments svl WHERE svl.class_id = c.class_id) AS student_count
+                FROM Classes c
+                LEFT JOIN Users u ON c.instructor_id = u.user_id
+                ORDER BY c.created_at DESC
             """)
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -210,24 +210,24 @@ def update_class(
         if status:
             s_clean = status.strip().lower()
             if s_clean in ('da_dong', 'closed', 'da_ket_thuc', 'đã kết thúc', 'khoa'):
-                db_status = 'da_dong'
+                db_status = 'closed'
             elif s_clean in ('dang_mo', 'open', 'active', 'hoat_dong', 'hoạt động', 'chưa mở', 'chua_mo'):
-                db_status = 'dang_mo'
+                db_status = 'open'
             else:
-                db_status = 'dang_mo'
+                db_status = 'open'
 
         cursor.execute("""
-            UPDATE LopHoc
-            SET ma_lop_hoc = COALESCE(?, ma_lop_hoc),
-                ten_lop = COALESCE(?, ten_lop),
-                ma_mon_hoc = COALESCE(?, ma_mon_hoc),
-                ma_phan_lop = COALESCE(?, ma_phan_lop),
-                hoc_ky = COALESCE(?, hoc_ky),
-                mo_ta = COALESCE(?, mo_ta),
-                ma_giang_vien = COALESCE(?, ma_giang_vien),
-                trang_thai = COALESCE(?, trang_thai),
-                ngay_cap_nhat = GETDATE()
-            WHERE ma_lop = ?
+            UPDATE Classes
+            SET class_code = COALESCE(?, class_code),
+                class_name = COALESCE(?, class_name),
+                course_code = COALESCE(?, course_code),
+                section_code = COALESCE(?, section_code),
+                semester_name = COALESCE(?, semester_name),
+                description = COALESCE(?, description),
+                instructor_id = COALESCE(?, instructor_id),
+                status = COALESCE(?, status),
+                updated_at = GETDATE()
+            WHERE class_id = ?
         """, (class_code, class_name, course_code, section_code, semester, description, instructor_id, db_status, real_id))
         conn.commit()
         return get_class_by_id(real_id)
@@ -236,21 +236,26 @@ def update_class(
         conn.close()
 
 def get_all_semesters() -> List[Dict]:
-    """Lấy danh sách các học kỳ từ bảng HocKy trong CSDL SQL Server"""
+    """Lấy danh sách các học kỳ từ bảng Semesters trong CSDL SQL Server"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_hoc_ky, ten_hoc_ky, nam_hoc, ky_thu, 
-                   ngay_bat_dau, ngay_ket_thuc, la_hoc_ky_hien_tai, trang_thai
-            FROM HocKy
-            ORDER BY ngay_bat_dau DESC
+            SELECT semester_code, semester_name, academic_year, term_number, 
+                   start_date, end_date, is_current, status,
+                   semester_code AS ma_hoc_ky, semester_name AS ten_hoc_ky,
+                   academic_year AS nam_hoc, term_number AS ky_thu,
+                   start_date AS ngay_bat_dau, end_date AS ngay_ket_thuc,
+                   is_current AS la_hoc_ky_hien_tai, status AS trang_thai
+            FROM Semesters
+            ORDER BY start_date DESC
         """)
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
         results = []
         for r in rows:
             item = dict(zip(columns, r))
+            item["is_current"] = bool(item["is_current"])
             item["la_hoc_ky_hien_tai"] = bool(item["la_hoc_ky_hien_tai"])
             results.append(item)
         return results
@@ -269,17 +274,15 @@ def delete_class(class_id: Any) -> bool:
         real_id = _resolve_class_id(cursor, class_id)
         if not real_id:
             return False
-        # Gỡ liên kết phòng thi trước để tránh vi phạm khóa ngoại FK_Phong_LopHoc
-        cursor.execute("UPDATE Phong SET ma_lop = NULL WHERE ma_lop = ?", (real_id,))
-        cursor.execute("DELETE FROM SinhVienLopHoc WHERE ma_lop = ?", (real_id,))
-        cursor.execute("DELETE FROM LopHoc WHERE ma_lop = ?", (real_id,))
+        # Gỡ liên kết phòng thi trước để tránh vi phạm khóa ngoại FK_Rooms_Classes
+        cursor.execute("UPDATE Rooms SET class_id = NULL WHERE class_id = ?", (real_id,))
+        cursor.execute("DELETE FROM ClassEnrollments WHERE class_id = ?", (real_id,))
+        cursor.execute("DELETE FROM Classes WHERE class_id = ?", (real_id,))
         conn.commit()
         return True
     finally:
         cursor.close()
         conn.close()
-
-
 
 def search_students(
     query: str,
@@ -289,7 +292,7 @@ def search_students(
 ) -> List[Dict]:
     """
     Tìm kiếm nhanh danh sách sinh viên đang hoạt động trong hệ thống
-    Hỗ trợ tìm theo MSSV (ma_dinh_danh), Họ và tên, Email, Tên đăng nhập.
+    Hỗ trợ tìm theo MSSV (identifier_code), Họ và tên, Email, Username.
     Nếu có class_id hoặc class_code, tự động đánh dấu sinh viên đã ghi danh (is_enrolled) trong lớp đó.
     """
     conn = get_db_connection()
@@ -305,66 +308,68 @@ def search_students(
         if target_class_id:
             sql = f"""
                 SELECT TOP (?)
-                    u.ma_nguoi_dung AS user_id,
-                    u.ten_dang_nhap AS username,
-                    u.email AS email,
-                    u.ho_va_ten AS full_name,
-                    u.ma_dinh_danh AS student_id,
-                    u.lop_sinh_hoat AS lop_sinh_hoat,
-                    u.khoa_bo_mon AS department,
-                    u.so_dien_thoai AS phone_number,
-                    u.dang_hoat_dong AS is_active,
-                    CASE WHEN svl.ma_dong IS NOT NULL THEN 1 ELSE 0 END AS is_enrolled
-                FROM NguoiDung u
-                JOIN VaiTro v ON u.ma_vai_tro = v.ma_vai_tro
-                LEFT JOIN SinhVienLopHoc svl ON svl.ma_sinh_vien = u.ma_nguoi_dung AND svl.ma_lop = ?
-                WHERE v.ten_vai_tro = 'student'
-                  AND u.dang_hoat_dong = 1
+                    u.user_id,
+                    u.username,
+                    u.email,
+                    u.full_name,
+                    u.identifier_code AS student_id,
+                    u.homeroom_class AS lop_sinh_hoat,
+                    u.homeroom_class,
+                    u.department,
+                    u.phone_number,
+                    u.is_active,
+                    CASE WHEN svl.enrollment_id IS NOT NULL THEN 1 ELSE 0 END AS is_enrolled
+                FROM Users u
+                JOIN Roles v ON u.role_id = v.role_id
+                LEFT JOIN ClassEnrollments svl ON svl.student_id = u.user_id AND svl.class_id = ?
+                WHERE v.role_name = 'student'
+                  AND u.is_active = 1
                   AND (
-                      u.ma_dinh_danh LIKE ? 
-                      OR u.ho_va_ten LIKE ? 
+                      u.identifier_code LIKE ? 
+                      OR u.full_name LIKE ? 
                       OR u.email LIKE ? 
-                      OR u.ten_dang_nhap LIKE ?
+                      OR u.username LIKE ?
                   )
                 ORDER BY 
                     CASE 
-                        WHEN UPPER(u.ma_dinh_danh) = ? THEN 0
-                        WHEN UPPER(u.ma_dinh_danh) LIKE ? THEN 1
+                        WHEN UPPER(u.identifier_code) = ? THEN 0
+                        WHEN UPPER(u.identifier_code) LIKE ? THEN 1
                         ELSE 2 
                     END,
-                    u.ho_va_ten ASC
+                    u.full_name ASC
             """
             cursor.execute(sql, (limit, target_class_id, s, s, s, s, exact, f"{exact}%"))
         else:
             sql = f"""
                 SELECT TOP (?)
-                    u.ma_nguoi_dung AS user_id,
-                    u.ten_dang_nhap AS username,
-                    u.email AS email,
-                    u.ho_va_ten AS full_name,
-                    u.ma_dinh_danh AS student_id,
-                    u.lop_sinh_hoat AS lop_sinh_hoat,
-                    u.khoa_bo_mon AS department,
-                    u.so_dien_thoai AS phone_number,
-                    u.dang_hoat_dong AS is_active,
+                    u.user_id,
+                    u.username,
+                    u.email,
+                    u.full_name,
+                    u.identifier_code AS student_id,
+                    u.homeroom_class AS lop_sinh_hoat,
+                    u.homeroom_class,
+                    u.department,
+                    u.phone_number,
+                    u.is_active,
                     0 AS is_enrolled
-                FROM NguoiDung u
-                JOIN VaiTro v ON u.ma_vai_tro = v.ma_vai_tro
-                WHERE v.ten_vai_tro = 'student'
-                  AND u.dang_hoat_dong = 1
+                FROM Users u
+                JOIN Roles v ON u.role_id = v.role_id
+                WHERE v.role_name = 'student'
+                  AND u.is_active = 1
                   AND (
-                      u.ma_dinh_danh LIKE ? 
-                      OR u.ho_va_ten LIKE ? 
+                      u.identifier_code LIKE ? 
+                      OR u.full_name LIKE ? 
                       OR u.email LIKE ? 
-                      OR u.ten_dang_nhap LIKE ?
+                      OR u.username LIKE ?
                   )
                 ORDER BY 
                     CASE 
-                        WHEN UPPER(u.ma_dinh_danh) = ? THEN 0
-                        WHEN UPPER(u.ma_dinh_danh) LIKE ? THEN 1
+                        WHEN UPPER(u.identifier_code) = ? THEN 0
+                        WHEN UPPER(u.identifier_code) LIKE ? THEN 1
                         ELSE 2 
                     END,
-                    u.ho_va_ten ASC
+                    u.full_name ASC
             """
             cursor.execute(sql, (limit, s, s, s, s, exact, f"{exact}%"))
 
@@ -393,9 +398,9 @@ def enroll_student_to_class(
     student_name: Optional[str] = None,
     email: Optional[str] = None,
     added_by: Optional[int] = None,
-    status: str = 'dang_hoc'
+    status: str = 'enrolled'
 ) -> Dict:
-    """Ghi danh một sinh viên vào lớp học phần (SinhVienLopHoc)"""
+    """Ghi danh một sinh viên vào lớp học phần (ClassEnrollments)"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -411,8 +416,8 @@ def enroll_student_to_class(
                 from core.security import get_password_hash
                 default_pwd_hash = get_password_hash(f"{mssv}@123")
                 cursor.execute("""
-                    INSERT INTO NguoiDung (ten_dang_nhap, mat_khau_ma_hoa, email, ho_va_ten, ma_vai_tro, ma_dinh_danh, dang_hoat_dong)
-                    OUTPUT inserted.ma_nguoi_dung
+                    INSERT INTO Users (username, password_hash, email, full_name, role_id, identifier_code, is_active)
+                    OUTPUT inserted.user_id
                     VALUES (?, ?, ?, ?, 3, ?, 1)
                 """, (mssv, default_pwd_hash, student_email, student_name.strip(), mssv))
                 new_u = cursor.fetchone()
@@ -423,21 +428,22 @@ def enroll_student_to_class(
 
         # Kiểm tra đã có chưa
         cursor.execute("""
-            SELECT ma_dong, trang_thai FROM SinhVienLopHoc 
-            WHERE ma_lop = ? AND ma_sinh_vien = ?
+            SELECT enrollment_id, status FROM ClassEnrollments 
+            WHERE class_id = ? AND student_id = ?
         """, (real_class_id, real_student_id))
         existing = cursor.fetchone()
         if existing:
-            return {"ma_dong": existing[0], "status": existing[1], "already_enrolled": True}
+            return {"enrollment_id": existing[0], "ma_dong": existing[0], "status": existing[1], "already_enrolled": True}
 
         cursor.execute("""
-            INSERT INTO SinhVienLopHoc (ma_lop, ma_sinh_vien, nguoi_them, trang_thai, ngay_tham_gia)
-            OUTPUT inserted.ma_dong, inserted.ma_lop, inserted.ma_sinh_vien, inserted.trang_thai, inserted.ngay_tham_gia
+            INSERT INTO ClassEnrollments (class_id, student_id, enrolled_by, status, enrolled_at)
+            OUTPUT inserted.enrollment_id, inserted.class_id, inserted.student_id, inserted.status, inserted.enrolled_at
             VALUES (?, ?, ?, ?, GETDATE())
         """, (real_class_id, real_student_id, added_by, status))
         row = cursor.fetchone()
         conn.commit()
         return {
+            "enrollment_id": row[0],
             "ma_dong": row[0],
             "class_id": row[1],
             "student_id": row[2],
@@ -453,9 +459,9 @@ def enroll_students_batch(
     class_id: Any,
     student_identifiers: List[Any],
     added_by: Optional[int] = None,
-    status: str = 'dang_hoc'
+    status: str = 'enrolled'
 ) -> int:
-    """Ghi danh hàng loạt sinh viên vào lớp học phần (SinhVienLopHoc)"""
+    """Ghi danh hàng loạt sinh viên vào lớp học phần (ClassEnrollments)"""
     if not student_identifiers:
         return 0
     conn = get_db_connection()
@@ -471,11 +477,11 @@ def enroll_students_batch(
             if not real_student_id:
                 continue
             cursor.execute("""
-                SELECT 1 FROM SinhVienLopHoc WHERE ma_lop = ? AND ma_sinh_vien = ?
+                SELECT 1 FROM ClassEnrollments WHERE class_id = ? AND student_id = ?
             """, (real_class_id, real_student_id))
             if not cursor.fetchone():
                 cursor.execute("""
-                    INSERT INTO SinhVienLopHoc (ma_lop, ma_sinh_vien, nguoi_them, trang_thai, ngay_tham_gia)
+                    INSERT INTO ClassEnrollments (class_id, student_id, enrolled_by, status, enrolled_at)
                     VALUES (?, ?, ?, ?, GETDATE())
                 """, (real_class_id, real_student_id, added_by, status))
                 enrolled_count += 1
@@ -502,8 +508,8 @@ def remove_student_from_class(class_id: Any, student_user_id: Any) -> bool:
             return False
 
         cursor.execute("""
-            DELETE FROM SinhVienLopHoc 
-            WHERE ma_lop = ? AND ma_sinh_vien = ?
+            DELETE FROM ClassEnrollments 
+            WHERE class_id = ? AND student_id = ?
         """, (real_class_id, real_student_id))
         conn.commit()
         return cursor.rowcount > 0
@@ -512,7 +518,7 @@ def remove_student_from_class(class_id: Any, student_user_id: Any) -> bool:
         conn.close()
 
 def get_class_enrolled_students(class_id: Any) -> List[Dict]:
-    """Lấy danh sách sinh viên ghi danh trong lớp kèm thông tin cá nhân từ NguoiDung"""
+    """Lấy danh sách sinh viên ghi danh trong lớp kèm thông tin cá nhân từ Users"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -522,21 +528,23 @@ def get_class_enrolled_students(class_id: Any) -> List[Dict]:
 
         cursor.execute("""
             SELECT 
-                svl.ma_dong AS enrollment_id,
-                svl.trang_thai AS status,
-                svl.ngay_tham_gia AS enrolled_at,
-                u.ma_nguoi_dung AS user_id,
-                u.ten_dang_nhap AS username,
-                u.ho_va_ten AS full_name,
-                u.email AS email,
-                u.ma_dinh_danh AS student_id,
-                u.lop_sinh_hoat AS lop_sinh_hoat,
-                u.khoa_bo_mon AS department,
-                u.so_dien_thoai AS phone_number
-            FROM SinhVienLopHoc svl
-            JOIN NguoiDung u ON svl.ma_sinh_vien = u.ma_nguoi_dung
-            WHERE svl.ma_lop = ?
-            ORDER BY u.ho_va_ten ASC
+                svl.enrollment_id,
+                svl.enrollment_id AS ma_dong,
+                svl.status,
+                svl.enrolled_at,
+                u.user_id,
+                u.username,
+                u.full_name,
+                u.email,
+                u.identifier_code AS student_id,
+                u.homeroom_class AS lop_sinh_hoat,
+                u.homeroom_class,
+                u.department,
+                u.phone_number
+            FROM ClassEnrollments svl
+            JOIN Users u ON svl.student_id = u.user_id
+            WHERE svl.class_id = ?
+            ORDER BY u.full_name ASC
         """, (real_class_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -556,21 +564,21 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
 
         cursor.execute("""
             SELECT 
-                p.ma_phong AS room_id,
-                p.ma_phong_code AS room_code,
-                p.tieu_de AS title,
-                p.loai_phong AS room_type,
-                p.gio_bat_dau AS start_time,
-                p.gio_ket_thuc AS end_time,
-                p.thoi_luong_phut AS duration_minutes,
-                p.mat_ma_phong AS passcode,
-                p.cau_hinh_giam_sat AS proctor_config,
-                p.trang_thai AS status,
-                (SELECT COUNT(DISTINCT bn.ma_sinh_vien) FROM BaiNop bn WHERE bn.ma_phong = p.ma_phong) AS submission_count,
-                (SELECT COUNT(1) FROM CauHoi q WHERE q.ma_phong = p.ma_phong) AS question_count
-            FROM Phong p
-            WHERE p.ma_lop = ?
-            ORDER BY p.gio_bat_dau ASC, p.ngay_tao ASC
+                p.room_id,
+                p.room_code,
+                p.room_name AS title,
+                p.room_type,
+                p.start_time,
+                p.end_time,
+                p.duration_minutes,
+                p.passcode,
+                p.proctoring_config AS proctor_config,
+                p.status,
+                (SELECT COUNT(DISTINCT bn.student_id) FROM Submissions bn WHERE bn.room_id = p.room_id) AS submission_count,
+                (SELECT COUNT(1) FROM Questions q WHERE q.room_id = p.room_id) AS question_count
+            FROM Rooms p
+            WHERE p.class_id = ?
+            ORDER BY p.start_time ASC, p.created_at ASC
         """, (real_class_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -581,11 +589,11 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
         for r_raw in rows:
             r = dict(zip(columns, r_raw))
             r_type = (r.get("room_type") or "lab").lower()
-            status_db = r.get("status") or "chua_mo"
+            status_db = r.get("status") or "scheduled"
 
             # Xác định trạng thái thân thiện cho UI
             if r_type == "exam":
-                ui_status = "Đang diễn ra" if status_db == "dang_dien_ra" else ("Đã kết thúc" if status_db == "da_dong" else "Sắp diễn ra")
+                ui_status = "Đang diễn ra" if status_db in ("in_progress", "dang_dien_ra") else ("Đã kết thúc" if status_db in ("completed", "da_dong") else "Sắp diễn ra")
                 start_dt = r.get("start_time")
                 end_dt = r.get("end_time")
                 sched_str = ""
@@ -609,7 +617,7 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
                     "submissionCount": r.get("submission_count") or 0,
                 })
             else:
-                ui_status = "Đang mở" if status_db == "dang_dien_ra" else ("Đã kết thúc" if status_db == "da_dong" else "Chưa mở")
+                ui_status = "Đang mở" if status_db in ("in_progress", "dang_dien_ra") else ("Đã kết thúc" if status_db in ("completed", "da_dong") else "Chưa mở")
                 start_dt = r.get("start_time")
                 end_dt = r.get("end_time")
 

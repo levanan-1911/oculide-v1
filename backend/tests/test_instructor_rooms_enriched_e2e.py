@@ -53,14 +53,14 @@ def run_enriched_rooms_e2e():
     cursor = conn.cursor()
 
     # 1. Tìm hoặc lấy một lớp học và giảng viên có sẵn
-    cursor.execute("SELECT TOP 1 ma_lop, ma_lop_hoc, ten_lop, ma_giang_vien FROM LopHoc ORDER BY ma_lop ASC")
+    cursor.execute("SELECT TOP 1 class_id, class_code, class_name, instructor_id FROM Classes ORDER BY class_id ASC")
     class_row = cursor.fetchone()
     assert class_row is not None, "Cần có ít nhất 1 lớp học trong CSDL"
     class_id, class_code, class_name, instructor_id = class_row[0], class_row[1], class_row[2], class_row[3]
     print(f"✅ 1. Dùng lớp học mẫu: id={class_id}, code='{class_code}', instructor_id={instructor_id}")
 
     # Đếm số sinh viên trong lớp
-    cursor.execute("SELECT COUNT(*) FROM SinhVienLopHoc WHERE ma_lop = ?", (class_id,))
+    cursor.execute("SELECT COUNT(*) FROM ClassEnrollments WHERE class_id = ?", (class_id,))
     expected_total_sv = cursor.fetchone()[0]
     cursor.close()
     conn.close()

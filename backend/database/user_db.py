@@ -24,7 +24,8 @@ DEV_MOCK_USERS = [
         "updated_at": datetime.now(),
         "last_login": None,
         "last_login_ip": "127.0.0.1",
-        "lop_sinh_hoat": None
+        "lop_sinh_hoat": None,
+        "homeroom_class": None
     },
     {
         "user_id": 2,
@@ -45,7 +46,8 @@ DEV_MOCK_USERS = [
         "updated_at": datetime.now(),
         "last_login": None,
         "last_login_ip": None,
-        "lop_sinh_hoat": None
+        "lop_sinh_hoat": None,
+        "homeroom_class": None
     },
     {
         "user_id": 3,
@@ -56,8 +58,7 @@ DEV_MOCK_USERS = [
         "role": "student",
         "student_id": "SV2026001",
         "user_code": "SV2026001",
-        "department": "Khoa Công Nghệ Thông Tin",
-        "lop_sinh_hoat": "K28-KTPM1",
+        "department": "Kỹ Thuật Phần Mềm",
         "academic_rank": None,
         "phone_number": None,
         "avatar_url": None,
@@ -66,7 +67,31 @@ DEV_MOCK_USERS = [
         "created_at": datetime.now(),
         "updated_at": datetime.now(),
         "last_login": None,
-        "last_login_ip": None
+        "last_login_ip": None,
+        "lop_sinh_hoat": "SE1801",
+        "homeroom_class": "SE1801"
+    },
+    {
+        "user_id": 4,
+        "username": "pvlong",
+        "email": "pvlong@dtu.edu.vn",
+        "password_hash": "$2b$12$t/59jV7LxFjvjku/dRjkzO/NuiUXgNxE4rJnC8oboFt3wN1AxZcti",
+        "full_name": "Phạm Vũ Long",
+        "role": "instructor",
+        "student_id": "MSGV_PVL01",
+        "user_code": "MSGV_PVL01",
+        "department": "Khoa CNTT - Đại học Duy Tân",
+        "academic_rank": "Thạc sĩ",
+        "phone_number": None,
+        "avatar_url": None,
+        "is_active": True,
+        "must_change_password": False,
+        "created_at": datetime.now(),
+        "updated_at": datetime.now(),
+        "last_login": None,
+        "last_login_ip": None,
+        "lop_sinh_hoat": None,
+        "homeroom_class": None
     }
 ]
 
@@ -82,36 +107,36 @@ def _parse_user_row(cursor, row) -> Optional[Dict]:
     return res
 
 USER_SELECT_SQL = """
-    SELECT u.ma_nguoi_dung AS user_id, 
-           u.ten_dang_nhap AS username, 
-           u.mat_khau_hash AS password_hash, 
+    SELECT u.user_id, 
+           u.username, 
+           u.password_hash, 
            u.email, 
-           u.ho_va_ten AS full_name, 
-           v.ten_vai_tro AS role, 
-           u.ma_dinh_danh AS student_id, 
-           u.ma_dinh_danh AS user_code,
-           u.khoa_bo_mon AS department,
-           u.lop_sinh_hoat,
-           u.lop_sinh_hoat AS homeroom_class,
-           u.hoc_vi AS academic_rank,
-           u.so_dien_thoai AS phone_number,
-           u.anh_dai_dien AS avatar_url,
-           u.dang_hoat_dong AS is_active, 
-           u.yeu_cau_doi_mat_khau AS must_change_password,
-           u.ngay_tao AS created_at, 
-           u.ngay_cap_nhat AS updated_at, 
-           u.dang_nhap_cuoi AS last_login,
+           u.full_name, 
+           v.role_name AS role, 
+           u.identifier_code AS student_id, 
+           u.identifier_code AS user_code,
+           u.department,
+           u.homeroom_class AS lop_sinh_hoat,
+           u.homeroom_class,
+           u.academic_degree AS academic_rank,
+           u.phone_number,
+           u.avatar_url,
+           u.is_active, 
+           u.must_change_password,
+           u.created_at, 
+           u.updated_at, 
+           u.last_login,
            (
-               SELECT TOP 1 dia_chi_ip 
-               FROM NhatKyHeThong 
-               WHERE ma_nguoi_dung = u.ma_nguoi_dung 
-                 AND hanh_dong = 'USER_LOGIN'
-                 AND dia_chi_ip IS NOT NULL 
-                 AND dia_chi_ip != '' 
-               ORDER BY thoi_gian DESC
+               SELECT TOP 1 ip_address 
+               FROM SystemAuditLogs 
+               WHERE user_id = u.user_id 
+                 AND action = 'USER_LOGIN'
+                 AND ip_address IS NOT NULL 
+                 AND ip_address != '' 
+               ORDER BY created_at DESC
            ) AS last_login_ip
-    FROM NguoiDung u
-    JOIN VaiTro v ON u.ma_vai_tro = v.ma_vai_tro
+    FROM Users u
+    JOIN Roles v ON u.role_id = v.role_id
 """
 
 def get_user_by_username(username: str) -> Optional[Dict]:
@@ -119,7 +144,7 @@ def get_user_by_username(username: str) -> Optional[Dict]:
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute(f"{USER_SELECT_SQL} WHERE u.ten_dang_nhap = ?", (username,))
+            cursor.execute(f"{USER_SELECT_SQL} WHERE u.username = ?", (username,))
             row = cursor.fetchone()
             return _parse_user_row(cursor, row)
         finally:
@@ -156,7 +181,7 @@ def get_user_by_student_id(student_id: str) -> Optional[Dict]:
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute(f"{USER_SELECT_SQL} WHERE u.ma_dinh_danh = ?", (clean_id,))
+            cursor.execute(f"{USER_SELECT_SQL} WHERE u.identifier_code = ?", (clean_id,))
             row = cursor.fetchone()
             return _parse_user_row(cursor, row)
         finally:
@@ -173,7 +198,7 @@ def get_user_by_id(user_id: int) -> Optional[Dict]:
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute(f"{USER_SELECT_SQL} WHERE u.ma_nguoi_dung = ?", (user_id,))
+            cursor.execute(f"{USER_SELECT_SQL} WHERE u.user_id = ?", (user_id,))
             row = cursor.fetchone()
             return _parse_user_row(cursor, row)
         finally:
@@ -203,20 +228,20 @@ def create_user(
     cursor = conn.cursor()
     try:
         password_hash = get_password_hash(password)
-        cursor.execute("SELECT ma_vai_tro FROM VaiTro WHERE ten_vai_tro = ?", (role,))
+        cursor.execute("SELECT role_id FROM Roles WHERE role_name = ?", (role,))
         role_row = cursor.fetchone()
         role_id = role_row[0] if role_row else 3
 
         cursor.execute("""
-            INSERT INTO NguoiDung (
-                ten_dang_nhap, mat_khau_hash, email, ho_va_ten, 
-                ma_vai_tro, ma_dinh_danh, dang_hoat_dong, yeu_cau_doi_mat_khau,
-                khoa_bo_mon, lop_sinh_hoat, hoc_vi, so_dien_thoai
+            INSERT INTO Users (
+                username, password_hash, email, full_name, 
+                role_id, identifier_code, is_active, must_change_password,
+                department, homeroom_class, academic_degree, phone_number
             )
-            OUTPUT inserted.ma_nguoi_dung, inserted.ten_dang_nhap, inserted.email, 
-                   inserted.ho_va_ten, inserted.ma_dinh_danh, inserted.dang_hoat_dong, 
-                   inserted.yeu_cau_doi_mat_khau, inserted.khoa_bo_mon, inserted.lop_sinh_hoat,
-                   inserted.hoc_vi, inserted.so_dien_thoai, inserted.ngay_tao
+            OUTPUT inserted.user_id, inserted.username, inserted.email, 
+                   inserted.full_name, inserted.identifier_code, inserted.is_active, 
+                   inserted.must_change_password, inserted.department, inserted.homeroom_class,
+                   inserted.academic_degree, inserted.phone_number, inserted.created_at
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             username, password_hash, email, full_name, role_id, student_id,
@@ -257,17 +282,17 @@ def update_last_login(user_id: int, client_ip: Optional[str] = None):
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            # 1. Cập nhật thời điểm đăng nhập gần nhất vào NguoiDung (không lưu IP ở bảng này)
+            # 1. Cập nhật thời điểm đăng nhập gần nhất vào Users
             cursor.execute("""
-                UPDATE NguoiDung 
-                SET dang_nhap_cuoi = GETDATE() 
-                WHERE ma_nguoi_dung = ?
+                UPDATE Users 
+                SET last_login = GETDATE() 
+                WHERE user_id = ?
             """, (user_id,))
             
-            # 2. Ghi nhận lịch sử và địa chỉ IP đăng nhập vào bảng nhật ký NhatKyHeThong
+            # 2. Ghi nhận lịch sử và địa chỉ IP đăng nhập vào bảng nhật ký SystemAuditLogs
             try:
                 cursor.execute("""
-                    INSERT INTO NhatKyHeThong (ma_nguoi_dung, muc_do, hanh_dong, thong_bao, dia_chi_ip)
+                    INSERT INTO SystemAuditLogs (user_id, log_level, action, message, ip_address)
                     VALUES (?, 'info', 'USER_LOGIN', N'Đăng nhập hệ thống thành công', ?)
                 """, (user_id, client_ip or '127.0.0.1'))
             except Exception as log_err:
@@ -304,36 +329,36 @@ def update_user_profile(
             updates = []
             params = []
             if full_name is not None:
-                updates.append("ho_va_ten = ?")
+                updates.append("full_name = ?")
                 params.append(full_name)
             if email is not None:
                 updates.append("email = ?")
                 params.append(email)
             if username is not None:
-                updates.append("ten_dang_nhap = ?")
+                updates.append("username = ?")
                 params.append(username)
             if student_id is not None:
-                updates.append("ma_dinh_danh = ?")
+                updates.append("identifier_code = ?")
                 params.append(student_id if student_id != "" else None)
             if department is not None:
-                updates.append("khoa_bo_mon = ?")
+                updates.append("department = ?")
                 params.append(department if department != "" else None)
             if lop_sinh_hoat is not None:
-                updates.append("lop_sinh_hoat = ?")
+                updates.append("homeroom_class = ?")
                 params.append(lop_sinh_hoat if lop_sinh_hoat != "" else None)
             if academic_rank is not None:
-                updates.append("hoc_vi = ?")
+                updates.append("academic_degree = ?")
                 params.append(academic_rank if academic_rank != "" else None)
             if phone_number is not None:
-                updates.append("so_dien_thoai = ?")
+                updates.append("phone_number = ?")
                 params.append(phone_number if phone_number != "" else None)
             if avatar_url is not None:
-                updates.append("anh_dai_dien = ?")
+                updates.append("avatar_url = ?")
                 params.append(avatar_url if avatar_url != "" else None)
             if not updates:
                 return get_user_by_id(user_id)
             params.append(user_id)
-            cursor.execute(f"UPDATE NguoiDung SET {', '.join(updates)}, ngay_cap_nhat = GETDATE() WHERE ma_nguoi_dung = ?", tuple(params))
+            cursor.execute(f"UPDATE Users SET {', '.join(updates)}, updated_at = GETDATE() WHERE user_id = ?", tuple(params))
             conn.commit()
             return get_user_by_id(user_id)
         finally:
@@ -360,11 +385,11 @@ def change_user_password(user_id: int, new_password: str) -> bool:
     try:
         new_hash = get_password_hash(new_password)
         cursor.execute("""
-            UPDATE NguoiDung 
-            SET mat_khau_hash = ?, 
-                yeu_cau_doi_mat_khau = 0, 
-                ngay_cap_nhat = GETDATE() 
-            WHERE ma_nguoi_dung = ?
+            UPDATE Users 
+            SET password_hash = ?, 
+                must_change_password = 0, 
+                updated_at = GETDATE() 
+            WHERE user_id = ?
         """, (new_hash, user_id))
         conn.commit()
         return cursor.rowcount > 0
@@ -379,10 +404,10 @@ def get_all_users_paginated(skip: int = 0, limit: int = 20, role: Optional[str] 
         where_clauses = []
         params = []
         if role:
-            where_clauses.append("v.ten_vai_tro = ?")
+            where_clauses.append("v.role_name = ?")
             params.append(role)
         if search:
-            where_clauses.append("(u.ten_dang_nhap LIKE ? OR u.ho_va_ten LIKE ? OR u.email LIKE ? OR u.ma_dinh_danh LIKE ? OR u.lop_sinh_hoat LIKE ? OR u.khoa_bo_mon LIKE ?)")
+            where_clauses.append("(u.username LIKE ? OR u.full_name LIKE ? OR u.email LIKE ? OR u.identifier_code LIKE ? OR u.homeroom_class LIKE ? OR u.department LIKE ?)")
             s = f"%{search}%"
             params.extend([s, s, s, s, s, s])
         
@@ -390,13 +415,13 @@ def get_all_users_paginated(skip: int = 0, limit: int = 20, role: Optional[str] 
         
         cursor.execute(f"""
             SELECT COUNT(*) 
-            FROM NguoiDung u
-            JOIN VaiTro v ON u.ma_vai_tro = v.ma_vai_tro
+            FROM Users u
+            JOIN Roles v ON u.role_id = v.role_id
             {where_sql}
         """, tuple(params))
         total = cursor.fetchone()[0]
         
-        order_sql = "ORDER BY u.ngay_tao DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY"
+        order_sql = "ORDER BY u.created_at DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY"
         cursor.execute(f"""
             {USER_SELECT_SQL}
             {where_sql} 
@@ -419,7 +444,7 @@ def update_user_status(user_id: int, is_active: bool) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE NguoiDung SET dang_hoat_dong = ?, ngay_cap_nhat = GETDATE() WHERE ma_nguoi_dung = ?", (1 if is_active else 0, user_id))
+        cursor.execute("UPDATE Users SET is_active = ?, updated_at = GETDATE() WHERE user_id = ?", (1 if is_active else 0, user_id))
         conn.commit()
         return cursor.rowcount > 0
     finally:
@@ -431,10 +456,10 @@ def update_user_role(user_id: int, role: str) -> bool:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            UPDATE NguoiDung 
-            SET ma_vai_tro = (SELECT ma_vai_tro FROM VaiTro WHERE ten_vai_tro = ?),
-                ngay_cap_nhat = GETDATE() 
-            WHERE ma_nguoi_dung = ?
+            UPDATE Users 
+            SET role_id = (SELECT role_id FROM Roles WHERE role_name = ?),
+                updated_at = GETDATE() 
+            WHERE user_id = ?
         """, (role, user_id))
         conn.commit()
         return cursor.rowcount > 0
@@ -447,15 +472,15 @@ def delete_user(user_id: int) -> bool:
     cursor = conn.cursor()
     try:
         # Xóa các liên kết phụ thuộc trước nếu có để tránh lỗi Foreign Key
-        cursor.execute("DELETE FROM TokenXacThuc WHERE ma_nguoi_dung = ?", (user_id,))
-        cursor.execute("DELETE FROM SinhVienLopHoc WHERE ma_sinh_vien = ? OR nguoi_them = ?", (user_id, user_id))
-        cursor.execute("DELETE FROM BanNhapCode WHERE ma_sinh_vien = ?", (user_id,))
-        cursor.execute("DELETE FROM KiemTraThietBi WHERE ma_sinh_vien = ?", (user_id,))
-        cursor.execute("DELETE FROM Snapshots WHERE ma_sinh_vien = ?", (user_id,))
-        cursor.execute("DELETE FROM TinNhanPhong WHERE nguoi_gui = ? OR nguoi_nhan = ?", (user_id, user_id))
-        cursor.execute("DELETE FROM YeuCauTroGiup WHERE ma_sinh_vien = ? OR nguoi_giai_quyet = ?", (user_id, user_id))
-        cursor.execute("DELETE FROM CanBoPhuTrachPhong WHERE ma_giang_vien = ?", (user_id,))
-        cursor.execute("DELETE FROM NguoiDung WHERE ma_nguoi_dung = ?", (user_id,))
+        cursor.execute("DELETE FROM AuthTokens WHERE user_id = ?", (user_id,))
+        cursor.execute("DELETE FROM ClassEnrollments WHERE student_id = ? OR enrolled_by = ?", (user_id, user_id))
+        cursor.execute("DELETE FROM CodeDrafts WHERE student_id = ?", (user_id,))
+        cursor.execute("DELETE FROM DeviceChecks WHERE student_id = ?", (user_id,))
+        cursor.execute("DELETE FROM Snapshots WHERE student_id = ?", (user_id,))
+        cursor.execute("DELETE FROM RoomMessages WHERE sender_id = ? OR receiver_id = ?", (user_id, user_id))
+        cursor.execute("DELETE FROM SupportRequests WHERE student_id = ? OR resolved_by = ?", (user_id, user_id))
+        cursor.execute("DELETE FROM RoomProctors WHERE instructor_id = ?", (user_id,))
+        cursor.execute("DELETE FROM Users WHERE user_id = ?", (user_id,))
         conn.commit()
         return cursor.rowcount > 0
     finally:
@@ -464,20 +489,20 @@ def delete_user(user_id: int) -> bool:
 
 # ─── PASSWORD RESET TOKEN FUNCTIONS (DÙNG CHO FORGOT/RESET PASSWORD) ──────────
 def create_password_reset_token(user_id: int, token: str, expires_minutes: int = 15) -> bool:
-    """Lưu token khôi phục mật khẩu vào bảng TokenXacThuc"""
+    """Lưu token khôi phục mật khẩu vào bảng AuthTokens"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         # Vô hiệu hóa các token reset cũ chưa dùng của user này
         cursor.execute("""
-            UPDATE TokenXacThuc 
-            SET da_thu_hoi = 1, ngay_thu_hoi = GETDATE()
-            WHERE ma_nguoi_dung = ? AND loai_token = 'reset_password' AND da_su_dung = 0
+            UPDATE AuthTokens 
+            SET is_revoked = 1, revoked_at = GETDATE()
+            WHERE user_id = ? AND token_type = 'reset_password' AND is_used = 0
         """, (user_id,))
         
         # Thêm token mới
         cursor.execute("""
-            INSERT INTO TokenXacThuc (ma_nguoi_dung, ma_token_hash, loai_token, ngay_het_han, da_su_dung, da_thu_hoi)
+            INSERT INTO AuthTokens (user_id, token_hash, token_type, expires_at, is_used, is_revoked)
             VALUES (?, ?, 'reset_password', DATEADD(minute, ?, GETDATE()), 0, 0)
         """, (user_id, token, expires_minutes))
         conn.commit()
@@ -492,13 +517,13 @@ def verify_password_reset_token(token: str) -> Optional[int]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_nguoi_dung 
-            FROM TokenXacThuc 
-            WHERE ma_token_hash = ? 
-              AND loai_token = 'reset_password' 
-              AND da_su_dung = 0 
-              AND da_thu_hoi = 0 
-              AND ngay_het_han > GETDATE()
+            SELECT user_id 
+            FROM AuthTokens 
+            WHERE token_hash = ? 
+              AND token_type = 'reset_password' 
+              AND is_used = 0 
+              AND is_revoked = 0 
+              AND expires_at > GETDATE()
         """, (token,))
         row = cursor.fetchone()
         if row:
@@ -514,9 +539,9 @@ def mark_password_reset_token_used(token: str) -> bool:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            UPDATE TokenXacThuc 
-            SET da_su_dung = 1, ngay_thu_hoi = GETDATE()
-            WHERE ma_token_hash = ?
+            UPDATE AuthTokens 
+            SET is_used = 1, revoked_at = GETDATE()
+            WHERE token_hash = ?
         """, (token,))
         conn.commit()
         return cursor.rowcount > 0

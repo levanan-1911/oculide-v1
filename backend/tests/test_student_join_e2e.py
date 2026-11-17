@@ -39,26 +39,27 @@ async def run_student_join_e2e():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT TOP 1 ma_giang_vien FROM LopHoc WHERE ma_lop = 5")
-    inst_row = cursor.fetchone()
-    instructor_id = inst_row[0] if inst_row else 1
+    cursor.execute("SELECT TOP 1 class_id, instructor_id FROM Classes ORDER BY class_id ASC")
+    cls_row = cursor.fetchone()
+    test_class_id = cls_row[0] if cls_row else 1
+    instructor_id = cls_row[1] if cls_row else 2
 
-    # Lấy 1 sinh viên thật thuộc lớp 5 (CMU-CS 316 AIS)
+    # Lấy 1 sinh viên thật thuộc lớp
     cursor.execute("""
-        SELECT TOP 1 u.ma_nguoi_dung, u.ho_va_ten, u.ma_dinh_danh
-        FROM SinhVienLopHoc svl
-        JOIN NguoiDung u ON svl.ma_sinh_vien = u.ma_nguoi_dung
-        WHERE svl.ma_lop = 5
-    """)
+        SELECT TOP 1 u.user_id, u.full_name, u.identifier_code
+        FROM ClassEnrollments svl
+        JOIN Users u ON svl.student_id = u.user_id
+        WHERE svl.class_id = ?
+    """, (test_class_id,))
     stu_row = cursor.fetchone()
-    assert stu_row is not None, "Cần có ít nhất 1 sinh viên trong lớp 5"
+    assert stu_row is not None, "Cần có ít nhất 1 sinh viên trong lớp"
     student_user = {"user_id": stu_row[0], "role": "student", "name": stu_row[1], "ma_dinh_danh": stu_row[2]}
 
-    # Lấy 1 user không thuộc lớp 5 để test chặn ngoài lớp
+    # Lấy 1 user không thuộc lớp để test chặn ngoài lớp
     cursor.execute("""
-        SELECT TOP 1 ma_nguoi_dung FROM NguoiDung
-        WHERE ma_vai_tro = 3 AND ma_nguoi_dung NOT IN (SELECT ma_sinh_vien FROM SinhVienLopHoc WHERE ma_lop = 5)
-    """)
+        SELECT TOP 1 user_id FROM Users
+        WHERE role_id = 3 AND user_id NOT IN (SELECT student_id FROM ClassEnrollments WHERE class_id = ?)
+    """, (test_class_id,))
     outsider_row = cursor.fetchone()
     conn.close()
 
@@ -82,7 +83,7 @@ async def run_student_join_e2e():
             end_time=now + timedelta(hours=2),
             duration_minutes=60,
             passcode="654321",
-            class_id=5,
+            class_id=test_class_id,
             status="chua_mo",
         ),
         instructor_user,

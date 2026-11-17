@@ -14,16 +14,16 @@ def create_message(
     try:
         is_private = 1 if recipient_id is not None else 0
         cursor.execute("""
-            INSERT INTO TinNhanPhong (ma_phong, nguoi_gui, nguoi_nhan, noi_dung, loai_tin_nhan, la_tin_rieng)
-            OUTPUT inserted.ma_tin_nhan, inserted.ma_phong, inserted.nguoi_gui, inserted.nguoi_nhan,
-                   inserted.noi_dung, inserted.loai_tin_nhan, inserted.la_tin_rieng, inserted.thoi_gian_gui
+            INSERT INTO RoomMessages (room_id, sender_id, receiver_id, content, message_type, is_private)
+            OUTPUT inserted.message_id, inserted.room_id, inserted.sender_id, inserted.receiver_id,
+                   inserted.content, inserted.message_type, inserted.is_private, inserted.sent_at
             VALUES (?, ?, ?, ?, ?, ?)
         """, (room_id, sender_id, recipient_id, message_content, message_type, is_private))
         row = cursor.fetchone()
         conn.commit()
         
         if row:
-            cursor.execute("SELECT ho_va_ten FROM NguoiDung WHERE ma_nguoi_dung = ?", (sender_id,))
+            cursor.execute("SELECT full_name FROM Users WHERE user_id = ?", (sender_id,))
             user_row = cursor.fetchone()
             return {
                 "message_id": row[0],
@@ -48,19 +48,19 @@ def get_messages_by_room(room_id: int, limit: int = 50) -> List[Dict]:
         cursor.execute("""
             SELECT message_id, room_id, sender_id, recipient_id, message_content, message_type, is_private, sent_at, sender_name
             FROM (
-                SELECT TOP (?) m.ma_tin_nhan AS message_id, 
-                               m.ma_phong AS room_id, 
-                               m.nguoi_gui AS sender_id, 
-                               m.nguoi_nhan AS recipient_id, 
-                               m.noi_dung AS message_content, 
-                               m.loai_tin_nhan AS message_type, 
-                               m.la_tin_rieng AS is_private, 
-                               m.thoi_gian_gui AS sent_at, 
-                               u.ho_va_ten AS sender_name
-                FROM TinNhanPhong m
-                LEFT JOIN NguoiDung u ON m.nguoi_gui = u.ma_nguoi_dung
-                WHERE m.ma_phong = ? AND m.la_tin_rieng = 0
-                ORDER BY m.thoi_gian_gui DESC
+                SELECT TOP (?) m.message_id, 
+                               m.room_id, 
+                               m.sender_id, 
+                               m.receiver_id AS recipient_id, 
+                               m.content AS message_content, 
+                               m.message_type, 
+                               m.is_private, 
+                               m.sent_at, 
+                               u.full_name AS sender_name
+                FROM RoomMessages m
+                LEFT JOIN Users u ON m.sender_id = u.user_id
+                WHERE m.room_id = ? AND m.is_private = 0
+                ORDER BY m.sent_at DESC
             ) sub
             ORDER BY sent_at ASC
         """, (limit, room_id))
@@ -81,31 +81,31 @@ def get_private_conversation(user_id_1: int, user_id_2: int, room_id: Optional[i
     cursor = conn.cursor()
     try:
         where = [
-            "((m.nguoi_gui = ? AND m.nguoi_nhan = ?) OR (m.nguoi_gui = ? AND m.nguoi_nhan = ?))",
-            "m.la_tin_rieng = 1"
+            "((m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?))",
+            "m.is_private = 1"
         ]
         params = [user_id_1, user_id_2, user_id_2, user_id_1]
         if room_id:
-            where.append("m.ma_phong = ?")
+            where.append("m.room_id = ?")
             params.append(room_id)
         where_sql = f"WHERE {' AND '.join(where)}"
         
         cursor.execute(f"""
             SELECT message_id, room_id, sender_id, recipient_id, message_content, message_type, is_private, sent_at, sender_name
             FROM (
-                SELECT TOP (?) m.ma_tin_nhan AS message_id, 
-                               m.ma_phong AS room_id, 
-                               m.nguoi_gui AS sender_id, 
-                               m.nguoi_nhan AS recipient_id, 
-                               m.noi_dung AS message_content,
-                               m.loai_tin_nhan AS message_type, 
-                               m.la_tin_rieng AS is_private, 
-                               m.thoi_gian_gui AS sent_at, 
-                               u.ho_va_ten AS sender_name
-                FROM TinNhanPhong m
-                LEFT JOIN NguoiDung u ON m.nguoi_gui = u.ma_nguoi_dung
+                SELECT TOP (?) m.message_id, 
+                               m.room_id, 
+                               m.sender_id, 
+                               m.receiver_id AS recipient_id, 
+                               m.content AS message_content,
+                               m.message_type, 
+                               m.is_private, 
+                               m.sent_at, 
+                               u.full_name AS sender_name
+                FROM RoomMessages m
+                LEFT JOIN Users u ON m.sender_id = u.user_id
                 {where_sql}
-                ORDER BY m.thoi_gian_gui DESC
+                ORDER BY m.sent_at DESC
             ) sub
             ORDER BY sent_at ASC
         """, tuple([limit] + params))

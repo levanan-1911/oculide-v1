@@ -7,17 +7,17 @@ def get_session_by_id(session_id: int) -> Optional[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_phien AS session_id, 
-                   ma_phong AS room_id, 
-                   ma_sinh_vien AS student_id, 
-                   thoi_gian_bat_dau AS started_at, 
-                   COALESCE(thoi_gian_ket_thuc, thoi_gian_nop_bai) AS ended_at,
-                   dia_chi_ip AS ip_address, 
-                   thong_tin_trinh_duyet AS user_agent, 
-                   ma_van_tay_trinh_duyet AS browser_fingerprint, 
-                   trang_thai AS status
-            FROM PhienLamBai 
-            WHERE ma_phien = ?
+            SELECT session_id, 
+                   room_id, 
+                   student_id, 
+                   start_time AS started_at, 
+                   COALESCE(end_time, submitted_at) AS ended_at,
+                   ip_address, 
+                   user_agent, 
+                   browser_fingerprint, 
+                   status
+            FROM ExamSessions 
+            WHERE session_id = ?
         """, (session_id,))
         row = cursor.fetchone()
         if row:
@@ -32,20 +32,20 @@ def get_sessions_by_room(room_id: int, active_only: bool = False) -> List[Dict]:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        where_sql = "WHERE ma_phong = ? AND trang_thai IN ('active', 'dang_lam')" if active_only else "WHERE ma_phong = ?"
+        where_sql = "WHERE room_id = ? AND status IN ('active', 'dang_lam')" if active_only else "WHERE room_id = ?"
         cursor.execute(f"""
-            SELECT ma_phien AS session_id, 
-                   ma_phong AS room_id, 
-                   ma_sinh_vien AS student_id, 
-                   thoi_gian_bat_dau AS started_at, 
-                   COALESCE(thoi_gian_ket_thuc, thoi_gian_nop_bai) AS ended_at,
-                   dia_chi_ip AS ip_address, 
-                   thong_tin_trinh_duyet AS user_agent, 
-                   ma_van_tay_trinh_duyet AS browser_fingerprint, 
-                   trang_thai AS status
-            FROM PhienLamBai 
+            SELECT session_id, 
+                   room_id, 
+                   student_id, 
+                   start_time AS started_at, 
+                   COALESCE(end_time, submitted_at) AS ended_at,
+                   ip_address, 
+                   user_agent, 
+                   browser_fingerprint, 
+                   status
+            FROM ExamSessions 
             {where_sql}
-            ORDER BY thoi_gian_bat_dau DESC
+            ORDER BY start_time DESC
         """, (room_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -58,28 +58,28 @@ def get_sessions_by_student(student_id: int, room_id: Optional[int] = None, acti
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        where = ["ma_sinh_vien = ?"]
+        where = ["student_id = ?"]
         params = [student_id]
         if room_id:
-            where.append("ma_phong = ?")
+            where.append("room_id = ?")
             params.append(room_id)
         if active_only:
-            where.append("trang_thai IN ('active', 'dang_lam')")
+            where.append("status IN ('active', 'dang_lam')")
         where_sql = f"WHERE {' AND '.join(where)}"
         
         cursor.execute(f"""
-            SELECT ma_phien AS session_id, 
-                   ma_phong AS room_id, 
-                   ma_sinh_vien AS student_id, 
-                   thoi_gian_bat_dau AS started_at, 
-                   COALESCE(thoi_gian_ket_thuc, thoi_gian_nop_bai) AS ended_at,
-                   dia_chi_ip AS ip_address, 
-                   thong_tin_trinh_duyet AS user_agent, 
-                   ma_van_tay_trinh_duyet AS browser_fingerprint, 
-                   trang_thai AS status
-            FROM PhienLamBai 
+            SELECT session_id, 
+                   room_id, 
+                   student_id, 
+                   start_time AS started_at, 
+                   COALESCE(end_time, submitted_at) AS ended_at,
+                   ip_address, 
+                   user_agent, 
+                   browser_fingerprint, 
+                   status
+            FROM ExamSessions 
             {where_sql}
-            ORDER BY thoi_gian_bat_dau DESC
+            ORDER BY start_time DESC
         """, tuple(params))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -99,10 +99,10 @@ def create_session(
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO PhienLamBai (ma_phong, ma_sinh_vien, dia_chi_ip, thong_tin_trinh_duyet, ma_van_tay_trinh_duyet, trang_thai)
-            OUTPUT inserted.ma_phien, inserted.ma_phong, inserted.ma_sinh_vien, 
-                   inserted.thoi_gian_bat_dau, inserted.thoi_gian_ket_thuc, inserted.dia_chi_ip, 
-                   inserted.thong_tin_trinh_duyet, inserted.ma_van_tay_trinh_duyet, inserted.trang_thai
+            INSERT INTO ExamSessions (room_id, student_id, ip_address, user_agent, browser_fingerprint, status)
+            OUTPUT inserted.session_id, inserted.room_id, inserted.student_id, 
+                   inserted.start_time, inserted.end_time, inserted.ip_address, 
+                   inserted.user_agent, inserted.browser_fingerprint, inserted.status
             VALUES (?, ?, ?, ?, ?, 'active')
         """, (room_id, student_id, ip_address, user_agent, browser_fingerprint))
         row = cursor.fetchone()
@@ -128,7 +128,7 @@ def update_session_status(session_id: int, status: str) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE PhienLamBai SET trang_thai = ? WHERE ma_phien = ?", (status, session_id))
+        cursor.execute("UPDATE ExamSessions SET status = ? WHERE session_id = ?", (status, session_id))
         conn.commit()
         return cursor.rowcount > 0
     finally:
@@ -140,11 +140,11 @@ def end_session(session_id: int) -> bool:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            UPDATE PhienLamBai 
-            SET thoi_gian_ket_thuc = GETDATE(), 
-                thoi_gian_nop_bai = GETDATE(), 
-                trang_thai = 'completed' 
-            WHERE ma_phien = ?
+            UPDATE ExamSessions 
+            SET end_time = GETDATE(), 
+                submitted_at = GETDATE(), 
+                status = 'completed' 
+            WHERE session_id = ?
         """, (session_id,))
         conn.commit()
         return cursor.rowcount > 0

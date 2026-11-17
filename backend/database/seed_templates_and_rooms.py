@@ -18,17 +18,17 @@ def seed():
     cursor = conn.cursor()
     try:
         # 1. Tìm giảng viên hợp lệ trong hệ thống
-        cursor.execute("SELECT TOP 1 ma_nguoi_dung FROM NguoiDung WHERE ma_vai_tro = 2")
+        cursor.execute("SELECT TOP 1 user_id FROM Users WHERE role_id = 2")
         row_gv = cursor.fetchone()
         instructor_id = row_gv[0] if row_gv else 1
 
         # 2. Tìm lớp học phần hợp lệ
-        cursor.execute("SELECT TOP 1 ma_lop FROM LopHoc")
+        cursor.execute("SELECT TOP 1 class_id FROM Classes")
         row_lop = cursor.fetchone()
         class_id = row_lop[0] if row_lop else None
 
         # 3. Tạo Bộ đề mẫu nếu chưa có
-        cursor.execute("SELECT COUNT(*) FROM BoDeMau")
+        cursor.execute("SELECT COUNT(*) FROM ExamTemplates")
         count_templates = cursor.fetchone()[0]
 
         tpl1 = None
@@ -109,19 +109,19 @@ def seed():
                     ]
                 }
             )
-            print("✅ Đã tạo 2 Bộ đề mẫu chuẩn vào BoDeMau.")
+            print("✅ Đã tạo 2 Bộ đề mẫu chuẩn vào ExamTemplates.")
         else:
             templates = list_templates_full()
             if templates:
                 tpl1 = templates[0]
                 tpl2 = templates[1] if len(templates) > 1 else templates[0]
 
-        # 4. Tạo Ca thi trong bảng Phong nếu chưa có
-        cursor.execute("SELECT COUNT(*) FROM Phong")
+        # 4. Tạo Ca thi trong bảng Rooms nếu chưa có
+        cursor.execute("SELECT COUNT(*) FROM Rooms")
         count_rooms = cursor.fetchone()[0]
 
         if count_rooms == 0:
-            print("🚀 Bắt đầu nạp Ca thi & Phòng máy vào bảng Phong...")
+            print("🚀 Bắt đầu nạp Ca thi & Phòng máy vào bảng Rooms...")
             now = datetime.now()
             
             # Ca 1: Đang diễn ra (Live)
@@ -180,9 +180,9 @@ def seed():
                 proctoring_config='{"webcam":"required","screenShare":"required","clipboard":"block","tabSwitchLimit":2}',
                 status="da_dong"
             )
-            print("✅ Đã tạo 3 ca thi thực tế (Đang diễn ra, Đã lên lịch, Đã kết thúc) vào Phong.")
+            print("✅ Đã tạo 3 ca thi thực tế (Đang diễn ra, Đã lên lịch, Đã kết thúc) vào Rooms.")
         else:
-            print(f"ℹ️ Đã có sẵn {count_rooms} phòng thi trong bảng Phong.")
+            print(f"ℹ️ Đã có sẵn {count_rooms} phòng thi trong bảng Rooms.")
 
     finally:
         cursor.close()

@@ -54,17 +54,17 @@ async def get_user_notifications(
             # 1. Cảnh báo SOS khẩn cấp chưa xử lý từ sinh viên
             cursor.execute("""
                 SELECT TOP 5 
-                    s.ma_yeu_cau, 
-                    s.danh_muc_su_co, 
-                    s.tin_nhan_sos, 
-                    s.thoi_gian_gui,
-                    COALESCE(p.tieu_de, N'Phòng thi') AS ten_phong,
-                    COALESCE(u.ho_va_ten, u.ten_dang_nhap, N'Sinh viên') AS ten_sinh_vien
-                FROM YeuCauTroGiup s
-                LEFT JOIN Phong p ON s.ma_phong = p.ma_phong
-                LEFT JOIN NguoiDung u ON s.ma_sinh_vien = u.ma_nguoi_dung
-                WHERE s.trang_thai = 'cho_xu_ly'
-                ORDER BY s.thoi_gian_gui DESC
+                    s.request_id, 
+                    s.issue_category, 
+                    s.message, 
+                    s.created_at,
+                    COALESCE(p.title, N'Phòng thi') AS ten_phong,
+                    COALESCE(u.full_name, u.username, N'Sinh viên') AS ten_sinh_vien
+                FROM SupportRequests s
+                LEFT JOIN Rooms p ON s.room_id = p.room_id
+                LEFT JOIN Users u ON s.student_id = u.user_id
+                WHERE s.status IN ('pending', 'cho_xu_ly')
+                ORDER BY s.created_at DESC
             """)
             for row in cursor.fetchall():
                 nid = f"sos-{row[0]}"
@@ -81,19 +81,19 @@ async def get_user_notifications(
             # 2. Cảnh báo vi phạm AI mức độ nghiêm trọng
             cursor.execute("""
                 SELECT TOP 5 
-                    v.ma_vi_pham, 
-                    v.muc_do_nghiem_trong, 
-                    v.loai_vi_pham, 
-                    v.mo_ta, 
-                    v.thoi_gian_phat_hien,
-                    COALESCE(p.tieu_de, N'Phòng thi') AS ten_phong,
-                    COALESCE(u.ho_va_ten, u.ten_dang_nhap, N'Sinh viên') AS ten_sinh_vien
-                FROM ViPhamGiamSat v
-                LEFT JOIN Phong p ON v.ma_phong = p.ma_phong
-                LEFT JOIN NguoiDung u ON v.ma_sinh_vien = u.ma_nguoi_dung
-                WHERE v.muc_do_nghiem_trong IN ('high', 'critical', 'nghiem_trong')
-                  AND v.trang_thai_duyet = 'pending'
-                ORDER BY v.thoi_gian_phat_hien DESC
+                    v.violation_id, 
+                    v.severity, 
+                    v.violation_type, 
+                    v.description, 
+                    v.detected_at,
+                    COALESCE(p.title, N'Phòng thi') AS ten_phong,
+                    COALESCE(u.full_name, u.username, N'Sinh viên') AS ten_sinh_vien
+                FROM Violations v
+                LEFT JOIN Rooms p ON v.room_id = p.room_id
+                LEFT JOIN Users u ON v.student_id = u.user_id
+                WHERE v.severity IN ('high', 'critical', 'nghiem_trong')
+                  AND v.review_status = 'pending'
+                ORDER BY v.detected_at DESC
             """)
             for row in cursor.fetchall():
                 nid = f"violation-{row[0]}"
@@ -110,14 +110,14 @@ async def get_user_notifications(
             # 3. Nhật ký hệ thống mức cảnh báo hoặc lỗi
             cursor.execute("""
                 SELECT TOP 5 
-                    ma_nhat_ky, 
-                    muc_do, 
-                    hanh_dong, 
-                    thong_bao, 
-                    thoi_gian
-                FROM NhatKyHeThong
-                WHERE muc_do IN ('warning', 'error', 'danger')
-                ORDER BY thoi_gian DESC
+                    log_id, 
+                    log_level, 
+                    module, 
+                    message, 
+                    created_at
+                FROM SystemAuditLogs
+                WHERE log_level IN ('warning', 'error', 'danger')
+                ORDER BY created_at DESC
             """)
             for row in cursor.fetchall():
                 nid = f"log-{row[0]}"
@@ -137,18 +137,18 @@ async def get_user_notifications(
             # Giảng viên nhận thông báo vi phạm và SOS thuộc các phòng do chính mình tạo
             cursor.execute("""
                 SELECT TOP 8 
-                    v.ma_vi_pham, 
-                    v.muc_do_nghiem_trong, 
-                    v.loai_vi_pham, 
-                    v.mo_ta, 
-                    v.thoi_gian_phat_hien,
-                    p.ma_phong_code,
-                    COALESCE(u.ho_va_ten, u.ten_dang_nhap, N'Sinh viên') AS ten_sinh_vien
-                FROM ViPhamGiamSat v
-                INNER JOIN Phong p ON v.ma_phong = p.ma_phong
-                LEFT JOIN NguoiDung u ON v.ma_sinh_vien = u.ma_nguoi_dung
-                WHERE p.nguoi_tao = ? AND v.trang_thai_duyet = 'pending'
-                ORDER BY v.thoi_gian_phat_hien DESC
+                    v.violation_id, 
+                    v.severity, 
+                    v.violation_type, 
+                    v.description, 
+                    v.detected_at,
+                    p.room_code,
+                    COALESCE(u.full_name, u.username, N'Sinh viên') AS ten_sinh_vien
+                FROM Violations v
+                INNER JOIN Rooms p ON v.room_id = p.room_id
+                LEFT JOIN Users u ON v.student_id = u.user_id
+                WHERE p.instructor_id = ? AND v.review_status = 'pending'
+                ORDER BY v.detected_at DESC
             """, (user_id,))
             for row in cursor.fetchall():
                 nid = f"ins-vio-{row[0]}"
@@ -165,17 +165,17 @@ async def get_user_notifications(
             # Yêu cầu SOS trong phòng của giảng viên
             cursor.execute("""
                 SELECT TOP 5 
-                    s.ma_yeu_cau, 
-                    s.danh_muc_su_co, 
-                    s.tin_nhan_sos, 
-                    s.thoi_gian_gui,
-                    p.ma_phong_code,
-                    COALESCE(u.ho_va_ten, u.ten_dang_nhap, N'Sinh viên') AS ten_sinh_vien
-                FROM YeuCauTroGiup s
-                INNER JOIN Phong p ON s.ma_phong = p.ma_phong
-                LEFT JOIN NguoiDung u ON s.ma_sinh_vien = u.ma_nguoi_dung
-                WHERE p.nguoi_tao = ? AND s.trang_thai = 'cho_xu_ly'
-                ORDER BY s.thoi_gian_gui DESC
+                    s.request_id, 
+                    s.issue_category, 
+                    s.message, 
+                    s.created_at,
+                    p.room_code,
+                    COALESCE(u.full_name, u.username, N'Sinh viên') AS ten_sinh_vien
+                FROM SupportRequests s
+                INNER JOIN Rooms p ON s.room_id = p.room_id
+                LEFT JOIN Users u ON s.student_id = u.user_id
+                WHERE p.instructor_id = ? AND s.status IN ('pending', 'cho_xu_ly')
+                ORDER BY s.created_at DESC
             """, (user_id,))
             for row in cursor.fetchall():
                 nid = f"ins-sos-{row[0]}"
@@ -193,20 +193,20 @@ async def get_user_notifications(
             # Sinh viên nhận thông báo ca thi đang diễn ra hoặc sắp tới
             cursor.execute("""
                 SELECT TOP 5 
-                    p.ma_phong, 
-                    p.ma_phong_code, 
-                    p.tieu_de, 
-                    p.trang_thai, 
-                    p.gio_bat_dau
-                FROM Phong p
-                INNER JOIN SinhVienLopHoc svl ON p.ma_lop = svl.ma_lop
-                WHERE svl.ma_sinh_vien = ?
-                  AND (p.trang_thai = 'dang_dien_ra' OR (p.trang_thai = 'chua_mo' AND p.gio_bat_dau > GETDATE()))
-                ORDER BY p.gio_bat_dau ASC
+                    p.room_id, 
+                    p.room_code, 
+                    p.title, 
+                    p.status, 
+                    p.start_time
+                FROM Rooms p
+                INNER JOIN ClassEnrollments svl ON p.class_id = svl.class_id
+                WHERE svl.student_id = ?
+                  AND (p.status IN ('dang_dien_ra', 'in_progress', 'ongoing') OR (p.status IN ('chua_mo', 'scheduled', 'draft') AND p.start_time > GETDATE()))
+                ORDER BY p.start_time ASC
             """, (user_id,))
             for row in cursor.fetchall():
                 nid = f"stu-room-{row[0]}"
-                is_running = row[3] == "dang_dien_ra"
+                is_running = row[3] in ("dang_dien_ra", "in_progress", "ongoing")
                 notifications.append(NotificationItem(
                     id=nid,
                     title="Ca thi đang diễn ra" if is_running else "Lịch thi sắp tới",

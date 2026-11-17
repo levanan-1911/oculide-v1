@@ -8,7 +8,7 @@ except ImportError:
     redis = None
 
 from schemas.livekit import LiveKitTokenRequest, LiveKitTokenResponse, LiveKitRoomResponse
-from core.permissions import get_current_user, instructor_or_admin_required
+from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
 from core.config import settings
 from database.room_db import get_room_by_id
 from database.livekit_token_db import (
@@ -84,13 +84,19 @@ async def generate_livekit_token(
 @router.post("/tokens/revoke", status_code=status.HTTP_200_OK)
 async def revoke_tokens_endpoint(
     data: Dict[str, Any],
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Thu hồi quyền truyền phát video của sinh viên khi bị giám thị đình chỉ/trục xuất"""
+    """Thu hồi quyền truyền phát video của sinh viên khi bị giám thị đình chỉ/trục xuất (Quyền độc quyền của Giảng viên)"""
     room_id = data.get("room_id")
     student_id = data.get("student_id")
     if not room_id or not student_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Yêu cầu cung cấp room_id và student_id")
+
+    room = get_room_by_id(int(room_id))
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    if room.get("instructor_id") != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền đình chỉ thí sinh trong phòng của giảng viên khác")
         
     revoked_count = revoke_user_tokens_in_room(int(room_id), int(student_id))
     

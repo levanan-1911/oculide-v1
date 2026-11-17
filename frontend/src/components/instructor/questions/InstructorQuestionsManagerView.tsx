@@ -27,7 +27,7 @@ import {
   getStoredClasses,
   syncClassesWithTemplate,
   ClassRow,
-} from '@/app/admin/classes/types';
+} from '@/components/instructor/classes/types';
 import { fetchWithAuth } from '@/services/apiClient';
 
 function createDefaultTestCase(

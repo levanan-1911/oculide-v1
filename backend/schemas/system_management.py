@@ -15,6 +15,12 @@ class SystemSettingsModel(BaseModel):
         "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",
         description="Thông báo hiển thị khi bảo trì"
     )
+    backup_schedule_enabled: bool = Field(True, description="Bật tự động sao lưu theo lịch")
+    backup_frequency: str = Field("daily", description="Tần suất sao lưu định kỳ: daily (hàng ngày), weekly (hàng tuần)")
+    backup_time: str = Field("02:00", description="Khung giờ thực hiện sao lưu định kỳ (HH:MM)")
+    backup_on_maintenance: bool = Field(True, description="Tự động sao lưu CSDL khi kích hoạt chế độ bảo trì")
+    backup_retention_days: int = Field(30, ge=3, le=365, description="Thời gian lưu trữ bản sao lưu trước khi xóa (ngày)")
+    backup_max_copies: int = Field(10, ge=2, le=50, description="Số lượng bản sao lưu tối đa được giữ lại")
     updated_at: Optional[str] = None
     updated_by: Optional[str] = None
 
@@ -38,6 +44,12 @@ class BackupListResponse(BaseModel):
 class BackupCreateResponse(BaseModel):
     message: str
     backup: BackupItemResponse
+
+class BackupCleanupResponse(BaseModel):
+    message: str
+    deleted_count: int
+    freed_mb: float
+    remaining_count: int
 
 class DiskStorageInfo(BaseModel):
     total_gb: float

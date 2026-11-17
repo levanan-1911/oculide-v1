@@ -76,13 +76,26 @@ class BackupService:
                 create_system_log(
                     log_level="info",
                     module="DATABASE_BACKUP",
-                    message=f"Tạo thành công bản sao lưu cơ sở dữ liệu {filename} ({size_mb} MB)",
+                    message=f"Tạo thành công bản sao lưu cơ sở dữ liệu {filename} ({size_mb} MB) [Loại: {backup_type}]",
                     user_id=actor_id,
                     ip_address=ip_address,
                     extra_data=backup_info
                 )
             except Exception as log_err:
                 logger.warning(f"Không thể ghi log sau khi backup: {log_err}")
+
+            # Tự động dọn dẹp các bản sao lưu cũ vượt quá thời hạn hoặc vượt số lượng tối đa
+            try:
+                from services.system_settings_manager import SystemSettingsManager
+                sys_settings = SystemSettingsManager.get_settings()
+                cls.cleanup_expired_backups(
+                    retention_days=sys_settings.backup_retention_days,
+                    max_copies=sys_settings.backup_max_copies,
+                    actor_id=actor_id,
+                    ip_address=ip_address
+                )
+            except Exception as cleanup_err:
+                logger.warning(f"Lỗi khi tự động dọn dẹp sao lưu: {cleanup_err}")
 
             logger.info(f"Sao lưu CSDL thành công: {filename} ({size_mb} MB)")
             return backup_info
@@ -101,7 +114,12 @@ class BackupService:
                 stat = file.stat()
                 size_mb = round(stat.st_size / (1024 * 1024), 2)
                 created_dt = datetime.fromtimestamp(stat.st_mtime)
-                b_type = "auto" if "auto" in file.name.lower() else "manual"
+                if "maintenance" in file.name.lower():
+                    b_type = "maintenance"
+                elif "auto" in file.name.lower():
+                    b_type = "auto"
+                else:
+                    b_type = "manual"
                 
                 # Để tốc độ phản hồi nhanh, tính mã checksum
                 checksum = cls._calculate_checksum(file)
@@ -150,6 +168,92 @@ class BackupService:
                 pass
             return True
         return False
+
+    @classmethod
+    def cleanup_expired_backups(
+        cls,
+        retention_days: int = 30,
+        max_copies: int = 10,
+        actor_id: Optional[int] = None,
+        ip_address: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Tự động dọn dẹp các bản sao lưu cũ vượt quá số ngày lưu trữ quy định
+        hoặc vượt quá số lượng bản sao lưu tối đa để bảo vệ dung lượng ổ cứng.
+        """
+        cls._ensure_dir()
+        now = datetime.now()
+        deleted_files = []
+        freed_bytes = 0
+
+        files = []
+        for f in BACKUPS_DIR.glob("*.bak"):
+            try:
+                stat = f.stat()
+                files.append({
+                    "path": f,
+                    "name": f.name,
+                    "mtime": stat.st_mtime,
+                    "size": stat.st_size,
+                    "created_dt": datetime.fromtimestamp(stat.st_mtime)
+                })
+            except Exception:
+                pass
+
+        # Sắp xếp từ cũ nhất đến mới nhất theo thời gian tạo
+        files.sort(key=lambda x: x["mtime"])
+
+        # 1. Xóa các tệp vượt quá thời gian lưu trữ (retention_days)
+        for file_info in list(files):
+            age_days = (now - file_info["created_dt"]).total_seconds() / 86400
+            if age_days > retention_days:
+                try:
+                    size = file_info["size"]
+                    file_info["path"].unlink(missing_ok=True)
+                    deleted_files.append(file_info["name"])
+                    freed_bytes += size
+                    files.remove(file_info)
+                except Exception as err:
+                    logger.warning(f"Không thể xóa bản sao lưu hết hạn {file_info['name']}: {err}")
+
+        # 2. Nếu số lượng còn lại vẫn vượt quá max_copies, xóa thêm các bản cũ nhất
+        while len(files) > max_copies:
+            oldest = files.pop(0)
+            try:
+                size = oldest["size"]
+                oldest["path"].unlink(missing_ok=True)
+                deleted_files.append(oldest["name"])
+                freed_bytes += size
+            except Exception as err:
+                logger.warning(f"Không thể xóa bản sao lưu vượt số lượng {oldest['name']}: {err}")
+
+        freed_mb = round(freed_bytes / (1024 * 1024), 2)
+
+        if deleted_files:
+            try:
+                create_system_log(
+                    log_level="info",
+                    module="DATABASE_BACKUP",
+                    message=f"Dọn dẹp {len(deleted_files)} bản sao lưu CSDL quá hạn/vượt định mức (Giải phóng {freed_mb} MB)",
+                    user_id=actor_id,
+                    ip_address=ip_address,
+                    extra_data={
+                        "deleted_files": deleted_files,
+                        "freed_mb": freed_mb,
+                        "retention_days": retention_days,
+                        "max_copies": max_copies,
+                        "remaining_count": len(files)
+                    }
+                )
+            except Exception:
+                pass
+
+        return {
+            "deleted_count": len(deleted_files),
+            "deleted_files": deleted_files,
+            "freed_mb": freed_mb,
+            "remaining_count": len(files)
+        }
 
     @classmethod
     def get_storage_statistics(cls) -> Dict[str, Any]:

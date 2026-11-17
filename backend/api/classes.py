@@ -25,6 +25,7 @@ from database.classes_db import (
     get_class_enrolled_students,
     get_class_rooms
 )
+from database.system_log_db import create_system_log
 
 router = APIRouter()
 
@@ -48,6 +49,16 @@ async def add_class(
             semester=data.semester,
             description=data.description
         )
+        try:
+            create_system_log(
+                log_level="info",
+                module="CLASS_MGMT",
+                message=f"Tạo lớp học phần mới: {new_cls.get('class_code')} - {new_cls.get('class_name')}",
+                user_id=current_user["user_id"],
+                extra_data={"class_code": new_cls.get("class_code"), "semester": new_cls.get("semester")}
+            )
+        except Exception:
+            pass
         return new_cls
     except Exception as e:
         if "UNIQUE" in str(e).upper() or "UQ" in str(e).upper():
@@ -97,10 +108,10 @@ async def list_semesters():
 
 @router.get("/{class_id}", response_model=ClassResponse)
 async def get_class_details(
-    class_id: int,
+    class_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    """Lấy thông tin chi tiết một lớp học"""
+    """Lấy thông tin chi tiết một lớp học (hỗ trợ cả int ID hoặc mã lớp như 'CS101')"""
     cls = get_class_by_id(class_id)
     if not cls:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy lớp học")
@@ -108,11 +119,11 @@ async def get_class_details(
 
 @router.put("/{class_id}", response_model=ClassResponse)
 async def edit_class(
-    class_id: int,
+    class_id: str,
     data: ClassUpdateRequest,
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
-    """Giảng viên cập nhật thông tin lớp học"""
+    """Giảng viên hoặc Admin cập nhật thông tin lớp học"""
     cls = get_class_by_id(class_id)
     if not cls:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy lớp học")
@@ -120,13 +131,32 @@ async def edit_class(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa lớp của giảng viên khác")
         
     try:
+        assigned_instructor = data.instructor_id if (current_user["role"] == "admin" and data.instructor_id is not None) else None
         updated = update_class(
             class_id,
             class_code=data.class_code,
             class_name=data.class_name,
-            description=data.description
+            course_code=data.course_code,
+            section_code=data.section_code,
+            semester=data.semester,
+            description=data.description,
+            instructor_id=assigned_instructor,
+            status=data.status
         )
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy lớp học")
+        try:
+            create_system_log(
+                log_level="info",
+                module="CLASS_MGMT",
+                message=f"Cập nhật thông tin lớp học phần: {cls.get('class_code')}",
+                user_id=current_user["user_id"]
+            )
+        except Exception:
+            pass
         return updated
+    except HTTPException:
+        raise
     except Exception as e:
         if "UNIQUE" in str(e).upper() or "UQ" in str(e).upper():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mã lớp học đã tồn tại")
@@ -145,6 +175,15 @@ async def remove_class(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xóa lớp của giảng viên khác")
         
     delete_class(class_id)
+    try:
+        create_system_log(
+            log_level="warning",
+            module="CLASS_MGMT",
+            message=f"Xóa lớp học phần: {cls.get('class_code')} - {cls.get('class_name')}",
+            user_id=current_user["user_id"]
+        )
+    except Exception:
+        pass
     return {"status": "success", "message": "Đã xóa lớp học"}
 
 @router.get("/{class_id}/students")
@@ -190,6 +229,16 @@ async def enroll_student(
         added_by=current_user["user_id"],
         status=data.status
     )
+    try:
+        create_system_log(
+            log_level="info",
+            module="CLASS_MGMT",
+            message=f"Ghi danh sinh viên ({data.student_name or data.student_user_id}) vào lớp {cls.get('class_code')}",
+            user_id=current_user["user_id"],
+            extra_data={"class_code": cls.get("class_code"), "student_id": data.student_user_id}
+        )
+    except Exception:
+        pass
     return result
 
 @router.post("/{class_id}/students/batch", response_model=ClassBatchEnrollResponse)
@@ -211,6 +260,16 @@ async def enroll_students_batch_endpoint(
         added_by=current_user["user_id"],
         status=data.status or "dang_hoc"
     )
+    try:
+        create_system_log(
+            log_level="info",
+            module="CLASS_MGMT",
+            message=f"Ghi danh {enrolled} sinh viên vào lớp {cls.get('class_code')}",
+            user_id=current_user["user_id"],
+            extra_data={"class_code": cls.get("class_code"), "enrolled_count": enrolled}
+        )
+    except Exception:
+        pass
     return {
         "status": "success",
         "enrolled_count": enrolled,
@@ -233,4 +292,14 @@ async def unenroll_student(
     success = remove_student_from_class(class_id, student_user_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sinh viên không có trong lớp này")
+    try:
+        create_system_log(
+            log_level="warning",
+            module="CLASS_MGMT",
+            message=f"Xóa sinh viên ({student_user_id}) khỏi lớp {cls.get('class_code')}",
+            user_id=current_user["user_id"],
+            extra_data={"class_code": cls.get("class_code"), "student_user_id": student_user_id}
+        )
+    except Exception:
+        pass
     return {"status": "success", "message": "Đã xóa sinh viên khỏi lớp học"}

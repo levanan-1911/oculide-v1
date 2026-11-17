@@ -16,7 +16,7 @@ from core.security import decode_access_token
 from api import (
     auth, admin, rooms, questions, submissions, sessions, violations, chat, livekit,
     drafts, device_checks, support, classes, snapshots, test_cases, enrollments,
-    grading_results, system_logs, users, templates
+    grading_results, system_logs, users, templates, notifications
 )
 from websocket.connection_manager import manager
 from database.chat_db import create_message
@@ -43,10 +43,12 @@ async def lifespan(app: FastAPI):
             )
             
             async def redis_listener():
+                retry_interval = 15
                 while True:
                     try:
                         pubsub = redis_client.pubsub()
                         await pubsub.subscribe("ws_updates")
+                        retry_interval = 15
                         async for message in pubsub.listen():
                             if message["type"] == "message":
                                 try:
@@ -62,8 +64,9 @@ async def lifespan(app: FastAPI):
                     except asyncio.CancelledError:
                         break
                     except Exception as e:
-                        print(f"Redis listener warning ({e}), thử kết nối lại sau 3 giây...")
-                        await asyncio.sleep(3)
+                        print(f"Lưu ý: Redis chưa khởi động trên cổng 6379 ({e}). Hệ thống đang chạy chế độ bộ nhớ cục bộ (sẽ thử lại sau {retry_interval}s)...")
+                        await asyncio.sleep(retry_interval)
+                        retry_interval = min(retry_interval * 2, 60)
                     
             listener_task = asyncio.create_task(redis_listener())
         except Exception as e:
@@ -187,6 +190,7 @@ app.include_router(grading_results.router, prefix=f"{settings.API_V1_PREFIX}/gra
 app.include_router(system_logs.router, prefix=f"{settings.API_V1_PREFIX}/system-logs", tags=["System Logs"])
 app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["Users"])
 app.include_router(templates.router, prefix=f"{settings.API_V1_PREFIX}/templates", tags=["Question Templates"])
+app.include_router(notifications.router, prefix=f"{settings.API_V1_PREFIX}/notifications", tags=["Notifications"])
 
 # Tương thích ngược với tiền tố cũ /api/...
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication (Legacy)"], include_in_schema=False)
@@ -209,6 +213,7 @@ app.include_router(grading_results.router, prefix="/api/grading-results", tags=[
 app.include_router(system_logs.router, prefix="/api/system-logs", tags=["System Logs (Legacy)"], include_in_schema=False)
 app.include_router(users.router, prefix="/api/users", tags=["Users (Legacy)"], include_in_schema=False)
 app.include_router(templates.router, prefix="/api/templates", tags=["Question Templates (Legacy)"], include_in_schema=False)
+app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications (Legacy)"], include_in_schema=False)
 
 # Cấu hình Mount phục vụ ảnh tĩnh Webcam Snapshots
 uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")

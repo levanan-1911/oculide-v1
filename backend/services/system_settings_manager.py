@@ -23,6 +23,12 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "jwt_token_expiry_minutes": 60,
     "maintenance_mode": False,
     "maintenance_message": "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",
+    "backup_schedule_enabled": True,
+    "backup_frequency": "daily",
+    "backup_time": "02:00",
+    "backup_on_maintenance": True,
+    "backup_retention_days": 30,
+    "backup_max_copies": 10,
     "updated_at": None,
     "updated_by": None
 }

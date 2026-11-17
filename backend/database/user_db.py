@@ -148,6 +148,26 @@ def get_user_by_email(email: str) -> Optional[Dict]:
                 return u
     return None
 
+def get_user_by_student_id(student_id: str) -> Optional[Dict]:
+    if not student_id or not str(student_id).strip():
+        return None
+    clean_id = str(student_id).strip()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(f"{USER_SELECT_SQL} WHERE u.ma_dinh_danh = ?", (clean_id,))
+            row = cursor.fetchone()
+            return _parse_user_row(cursor, row)
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception:
+        for u in DEV_MOCK_USERS:
+            if (u.get("student_id") or "").strip().lower() == clean_id.lower():
+                return u
+    return None
+
 def get_user_by_id(user_id: int) -> Optional[Dict]:
     try:
         conn = get_db_connection()

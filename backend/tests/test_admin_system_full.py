@@ -141,3 +141,87 @@ def test_admin_system_health_and_storage_full():
     assert "disk" in s_data
     assert s_data["disk"]["total_gb"] > 0
 
+def test_system_audit_logging_and_areas():
+    admin_token = create_access_token({"user_id": 1, "role": "admin", "username": "admin"})
+
+    # 1. Thử đăng nhập thất bại
+    res_fail = client.post("/api/v1/auth/login", json={"username": "nonexistent_user_xyz", "password": "wrongpassword"})
+    assert res_fail.status_code == 401
+
+    # 2. Truy vấn nhật ký hệ thống qua endpoint /api/v1/system-logs
+    res_logs = client.get(
+        "/api/v1/system-logs?limit=20",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res_logs.status_code == 200
+    logs_data = res_logs.json()
+    assert "items" in logs_data
+    items = logs_data["items"]
+    assert len(items) > 0
+    # Phải có log đăng nhập thất bại vừa tạo
+    assert any("nonexistent_user_xyz" in (item.get("message") or "") for item in items)
+
+def test_backup_schedule_and_cleanup_flow():
+    admin_token = create_access_token({"user_id": 1, "role": "admin", "username": "admin"})
+
+    # 1. Kiểm tra các trường cấu hình thời gian & chính sách sao lưu
+    res_get = client.get(
+        "/api/v1/admin/system/settings",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res_get.status_code == 200
+    data = res_get.json()
+    assert "backup_schedule_enabled" in data
+    assert "backup_frequency" in data
+    assert "backup_time" in data
+    assert "backup_on_maintenance" in data
+    assert "backup_retention_days" in data
+    assert "backup_max_copies" in data
+
+    # 2. Cập nhật chính sách sao lưu
+    data["backup_time"] = "03:00"
+    data["backup_retention_days"] = 14
+    data["backup_max_copies"] = 5
+    res_put = client.put(
+        "/api/v1/admin/system/settings",
+        json=data,
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res_put.status_code == 200
+    assert res_put.json()["backup_time"] == "03:00"
+    assert res_put.json()["backup_retention_days"] == 14
+
+    # 3. Kích hoạt dọn dẹp sao lưu thủ công qua API
+    res_cleanup = client.post(
+        "/api/v1/admin/system/backups/cleanup",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res_cleanup.status_code == 200
+    cleanup_data = res_cleanup.json()
+    assert "deleted_count" in cleanup_data
+    assert "freed_mb" in cleanup_data
+    assert "remaining_count" in cleanup_data
+
+    # 4. Kiểm tra tự động tạo bản sao lưu khi bật chế độ bảo trì
+    data["maintenance_mode"] = True
+    data["backup_on_maintenance"] = True
+    res_maint = client.put(
+        "/api/v1/admin/system/settings",
+        json=data,
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res_maint.status_code == 200
+
+    # Kiểm tra danh sách bản sao lưu có chứa bản sao lưu 'maintenance'
+    res_list = client.get(
+        "/api/v1/admin/system/backups",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res_list.status_code == 200
+    backups = res_list.json()["backups"]
+    maint_backups = [b for b in backups if b.get("type") == "maintenance"]
+    assert len(maint_backups) > 0
+    # Dọn dẹp file test vừa tạo
+    for mb in maint_backups:
+        client.delete(f"/api/v1/admin/system/backups/{mb['filename']}", headers={"Authorization": f"Bearer {admin_token}"})
+

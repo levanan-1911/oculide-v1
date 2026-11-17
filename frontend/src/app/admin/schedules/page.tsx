@@ -13,10 +13,10 @@ import {
   Video,
   Monitor,
   ShieldCheck,
+  ShieldAlert,
   Check,
   MapPin,
   FileCode2,
-  Radio,
   BookOpen,
   User,
   GraduationCap,
@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
+import { fetchWithAuth } from '@/services/apiClient';
 import {
   ExamScheduleItem,
   getStoredSchedules,
@@ -37,14 +38,58 @@ export default function ScheduleManagerPage() {
   const [typeTab, setTypeTab] = useState<'all' | 'ongoing' | 'scheduled' | 'completed'>('all');
   const [selectedSchedule, setSelectedSchedule] = useState<ExamScheduleItem | null>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [overview, setOverview] = useState<{
+    total_schedules: number;
+    ongoing_count: number;
+    scheduled_count: number;
+    completed_count: number;
+  } | null>(null);
+  const [modalStudents, setModalStudents] = useState<any[]>([]);
+  const [isLoadingModalStudents, setIsLoadingModalStudents] = useState(false);
 
-  // Load schedules & listen to instructor storage changes
+  // Load real schedules from FastAPI Backend
+  const loadSchedulesFromApi = async () => {
+    setIsLoading(true);
+    try {
+      const [resSchedules, resOverview] = await Promise.all([
+        fetchWithAuth<{ total: number; schedules: ExamScheduleItem[] }>('/api/v1/admin/schedules'),
+        fetchWithAuth<{ total_schedules: number; ongoing_count: number; scheduled_count: number; completed_count: number }>('/api/v1/admin/schedules/overview')
+      ]);
+      if (resSchedules?.schedules) {
+        setSchedules(resSchedules.schedules);
+      }
+      if (resOverview) {
+        setOverview(resOverview);
+      }
+    } catch (err: any) {
+      console.warn('API error, falling back to local storage cache:', err.message);
+      setSchedules(getStoredSchedules());
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const refresh = () => setSchedules(getStoredSchedules());
-    refresh();
-    window.addEventListener('storage', refresh);
-    return () => window.removeEventListener('storage', refresh);
+    loadSchedulesFromApi();
   }, []);
+
+  // Fetch real student status when a schedule is selected
+  useEffect(() => {
+    if (!selectedSchedule) {
+      setModalStudents([]);
+      return;
+    }
+    const roomId = selectedSchedule.room_id || Number(selectedSchedule.id);
+    if (!roomId || isNaN(roomId)) return;
+    setIsLoadingModalStudents(true);
+    fetchWithAuth<{ room_info: any; students: any[] }>(`/api/v1/admin/schedules/${roomId}`)
+      .then((res) => {
+        if (res?.students) setModalStudents(res.students);
+      })
+      .catch(() => setModalStudents([]))
+      .finally(() => setIsLoadingModalStudents(false));
+  }, [selectedSchedule]);
 
   // Hide notification
   useEffect(() => {
@@ -92,10 +137,10 @@ export default function ScheduleManagerPage() {
   }, [schedules, typeTab, statusFilter, classFilter, searchTerm]);
 
   // Counts for KPIs
-  const totalCount = schedules.length;
-  const ongoingCount = schedules.filter((s) => s.status === 'ongoing').length;
-  const scheduledCount = schedules.filter((s) => s.status === 'scheduled').length;
-  const completedCount = schedules.filter((s) => s.status === 'completed').length;
+  const totalCount = overview?.total_schedules ?? schedules.length;
+  const ongoingCount = overview?.ongoing_count ?? schedules.filter((s) => s.status === 'ongoing').length;
+  const scheduledCount = overview?.scheduled_count ?? schedules.filter((s) => s.status === 'scheduled').length;
+  const completedCount = overview?.completed_count ?? schedules.filter((s) => s.status === 'completed').length;
 
   // Export to Excel / CSV
   function handleExportExcel() {
@@ -256,7 +301,7 @@ export default function ScheduleManagerPage() {
                   </span>
                 </div>
                 <p className="mt-1 text-2xl font-black text-red-600 dark:text-red-400">{ongoingCount}</p>
-                <p className="mt-0.5 text-[11px] text-red-500/90 dark:text-red-300/70">Có thể vào giám sát Live</p>
+                <p className="mt-0.5 text-[11px] text-red-500/90 dark:text-red-300/70">Giảng viên đang điều hành</p>
               </div>
 
               <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 shadow-sm dark:border-blue-500/25 dark:bg-blue-500/10 transition-colors">
@@ -519,37 +564,16 @@ export default function ScheduleManagerPage() {
                               )}
                             </td>
 
-                            {/* Cột 6: Thao tác (Admin chỉ xem & giám sát) */}
+                            {/* Cột 6: Thao tác (Admin xem thông tin thanh tra) */}
                             <td className="px-5 py-4 text-right whitespace-nowrap">
-                              <div className="inline-flex items-center gap-2">
-                                {/* Nếu ca thi đang diễn ra -> Nút Giám sát Live (Đợi phòng live từ Giảng viên) */}
-                                {item.status === 'ongoing' && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setNotification({
-                                        message: `Ca thi ${item.title} (${item.roomCode || 'Phòng thi'}): Đang đợi giảng viên mở phòng thi trực tiếp.`,
-                                        type: 'info',
-                                      })
-                                    }
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-red-600 px-3.5 text-xs font-semibold text-white shadow-sm shadow-red-500/20 hover:bg-red-700 transition cursor-pointer"
-                                    title="Xem phòng thi trực tiếp (Khởi tạo bởi Giảng viên)"
-                                  >
-                                    <Radio className="h-3.5 w-3.5 animate-pulse" />
-                                    <span>Giám sát Live</span>
-                                  </button>
-                                )}
-
-                                {/* Nút xem chi tiết ca thi (áp dụng cho mọi trạng thái) */}
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedSchedule(item)}
-                                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 transition cursor-pointer"
-                                >
-                                  <Eye className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
-                                  <span>Xem chi tiết</span>
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedSchedule(item)}
+                                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 transition cursor-pointer"
+                              >
+                                <Eye className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+                                <span>Xem thanh tra</span>
+                              </button>
                             </td>
                           </tr>
                         );
@@ -566,7 +590,7 @@ export default function ScheduleManagerPage() {
                 <ShieldCheck className="h-5 w-5 text-blue-600 shrink-0" />
                 <p className="leading-relaxed">
                   Chỉ hiển thị dữ liệu trong phạm vi được phân công theo học kỳ{' '}
-                  <strong className="font-semibold">HK1 2026–2027</strong>. Lịch kiểm tra &amp; phòng thi do Giảng viên bộ môn tạo và quản trị; Quản trị viên theo dõi trạng thái, giám sát phiên Live và thống kê kết quả.
+                  <strong className="font-semibold">HK1 2026–2027</strong>. Lịch kiểm tra &amp; phòng thi do Giảng viên bộ môn tạo và điều hành; Quản trị viên theo dõi thông tin thanh tra và hỗ trợ hạ tầng kỹ thuật.
                 </p>
               </div>
               <span className="text-[11px] font-bold text-blue-600 shrink-0">
@@ -682,11 +706,63 @@ export default function ScheduleManagerPage() {
                   </div>
                 </div>
               )}
+
+              {/* Box 4: Chính sách phân quyền & Thông tin điều hành */}
+              <div className="rounded-xl border border-blue-200/80 bg-blue-50/70 p-3.5 space-y-1.5 dark:border-blue-500/20 dark:bg-blue-500/10">
+                <div className="flex items-center gap-1.5">
+                  <ShieldAlert className="h-4 w-4 text-blue-700 dark:text-blue-400 shrink-0" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">
+                    Quy chế khảo thí &amp; Trách nhiệm giám sát
+                  </span>
+                </div>
+                <p className="text-xs text-blue-900 dark:text-blue-200 leading-relaxed">
+                  Toàn quyền điều hành phòng thi, điểm danh, theo dõi camera/màn hình thí sinh và xử lý vi phạm thuộc về Giảng viên coi thi phụ trách (<strong>{selectedSchedule.lecturer}</strong>). Quản trị viên chỉ đối soát thông tin thanh tra và hỗ trợ hạ tầng kỹ thuật máy chủ.
+                </p>
+              </div>
+
+              {/* Box 5: Danh sách thí sinh dự thi thực tế từ CSDL */}
+              <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 space-y-2 dark:border-white/10 dark:bg-[#141824]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Danh sách thí sinh đăng ký ({modalStudents.length > 0 ? modalStudents.length : selectedSchedule.studentCount} sinh viên)
+                  </span>
+                  {isLoadingModalStudents && (
+                    <span className="text-[11px] text-blue-500 animate-pulse">Đang tải danh sách thí sinh...</span>
+                  )}
+                </div>
+
+                {modalStudents.length > 0 ? (
+                  <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-100 dark:border-white/5 divide-y divide-slate-100 dark:divide-white/5">
+                    {modalStudents.map((st) => (
+                      <div key={st.student_id} className="flex items-center justify-between px-3 py-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-slate-500">{st.student_code}</span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">{st.full_name}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            st.attendance_status === 'present'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                              : 'bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-400'
+                          }`}>
+                            {st.attendance_status === 'present' ? 'Có mặt' : 'Chưa vào'}
+                          </span>
+                          {st.current_score !== null && (
+                            <span className="font-bold text-blue-600 dark:text-blue-400">{st.current_score} đ</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">Chưa có sinh viên nào ghi danh hoặc đang đồng bộ danh sách lớp.</p>
+                )}
+              </div>
             </div>
 
-            {/* Footer Modal */}
-            <div className="mt-5 flex items-center justify-between gap-2.5 pt-3.5 border-t border-slate-100 dark:border-white/10">
-              <div>
+            {/* Footer Modal: Read-only giám sát và điều hướng cho Admin */}
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-2.5 pt-3.5 border-t border-slate-100 dark:border-white/10">
+              <div className="flex items-center gap-2">
                 {selectedSchedule.status === 'ongoing' ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
                     <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
@@ -705,11 +781,18 @@ export default function ScheduleManagerPage() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
+                <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>
+                    Giám thị: <strong className="text-slate-800 dark:text-slate-200">{selectedSchedule.lecturer}</strong>
+                  </span>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => setSelectedSchedule(null)}
-                  className="h-10 rounded-xl border border-slate-200 px-5 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 transition cursor-pointer"
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-5 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 transition cursor-pointer"
                 >
                   Đóng
                 </button>

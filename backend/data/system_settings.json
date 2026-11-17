@@ -9,6 +9,12 @@
   "jwt_token_expiry_minutes": 60,
   "maintenance_mode": false,
   "maintenance_message": "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",
-  "updated_at": "2026-11-15T02:41:35.509139",
+  "backup_schedule_enabled": true,
+  "backup_frequency": "daily",
+  "backup_time": "02:00",
+  "backup_on_maintenance": true,
+  "backup_retention_days": 30,
+  "backup_max_copies": 10,
+  "updated_at": "2026-11-17T14:47:46.994149",
   "updated_by": "test_teardown"
 }

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional, Dict, Any
 
-from core.permissions import get_current_user, instructor_or_admin_required
+from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
 from schemas.template import TemplateCreateRequest, TemplateUpdateRequest
 from database.template_db import (
     list_templates_full,
@@ -40,9 +40,9 @@ async def get_exam_template_detail(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_exam_template(
     payload: TemplateCreateRequest,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required),
+    current_user: Dict[str, Any] = Depends(instructor_required),
 ):
-    """Tạo mới Bộ đề mẫu kèm Câu hỏi và Bộ kiểm thử (Test cases) vào SQL Server"""
+    """Tạo mới Bộ đề mẫu kèm Câu hỏi và Bộ kiểm thử (Quyền độc quyền của Giảng viên)"""
     return create_template_full(
         instructor_id=current_user["user_id"],
         data=payload.model_dump(),
@@ -53,13 +53,13 @@ async def create_exam_template(
 async def update_exam_template(
     template_identifier: str,
     payload: TemplateUpdateRequest,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required),
+    current_user: Dict[str, Any] = Depends(instructor_required),
 ):
-    """Cập nhật Bộ đề mẫu và danh sách câu hỏi/test cases"""
+    """Cập nhật Bộ đề mẫu và danh sách câu hỏi/test cases (Quyền độc quyền của Giảng viên)"""
     existing = get_template_detail(template_identifier)
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bộ đề mẫu")
-    if current_user.get("role") != "admin" and existing.get("instructor_id") != current_user["user_id"]:
+    if existing.get("instructor_id") != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền sửa bộ đề của giảng viên khác")
 
     updated = update_template_full(
@@ -73,13 +73,13 @@ async def update_exam_template(
 @router.delete("/{template_identifier}", status_code=status.HTTP_200_OK)
 async def delete_exam_template(
     template_identifier: str,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required),
+    current_user: Dict[str, Any] = Depends(instructor_required),
 ):
-    """Xóa Bộ đề mẫu an toàn khỏi SQL Server"""
+    """Xóa Bộ đề mẫu an toàn khỏi SQL Server (Quyền độc quyền của Giảng viên)"""
     existing = get_template_detail(template_identifier)
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bộ đề mẫu")
-    if current_user.get("role") != "admin" and existing.get("instructor_id") != current_user["user_id"]:
+    if existing.get("instructor_id") != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xóa bộ đề của giảng viên khác")
 
     delete_template_full(template_identifier)

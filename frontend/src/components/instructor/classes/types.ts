@@ -62,6 +62,19 @@ export interface ClassRow {
   exams?: ClassExam[];
 }
 
+export interface TestCaseItem {
+  id: string;
+  input?: string;
+  inputData?: string;
+  expectedOutput: string;
+  isHidden: boolean;
+  points?: number;
+}
+
+export type TemplateTestCaseItem = TestCaseItem & {
+  points: number;
+};
+
 export interface TemplateQuestionItem {
   id: string;
   title: string;
@@ -69,6 +82,7 @@ export interface TemplateQuestionItem {
   description: string;
   sampleInput?: string;
   sampleOutput?: string;
+  testCases?: (TestCaseItem | TemplateTestCaseItem)[];
   testCasesCount: number;
 }
 
@@ -79,9 +93,11 @@ export interface QuestionTemplate {
   category: string;
   language: string;
   questionCount: number;
-  durationMinutes: number;
-  description: string;
+  durationMinutes?: number;
+  description?: string;
   questions?: TemplateQuestionItem[];
+  updatedAt?: string;
+  lecturer?: string;
 }
 
 export interface RoomAttendee {
@@ -484,6 +500,55 @@ export function saveStoredInstructorSchedules(items: ScheduleSessionItem[]): voi
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY, JSON.stringify(items));
+    window.dispatchEvent(new Event('storage'));
+  } catch {
+    // ignore
+  }
+}
+
+export const TEMPLATES_STORAGE_KEY = 'oculide_instructor_templates_v2';
+
+export function getStoredClasses(): ClassRow[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(INSTRUCTOR_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+export function getStoredQuestionTemplates(): QuestionTemplate[] {
+  if (typeof window === 'undefined') return SAMPLE_QUESTION_TEMPLATES;
+  try {
+    const raw = localStorage.getItem(TEMPLATES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return SAMPLE_QUESTION_TEMPLATES;
+}
+
+export function saveStoredQuestionTemplates(templates: QuestionTemplate[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
+    window.dispatchEvent(new Event('storage'));
+  } catch {
+    // ignore
+  }
+}
+
+export function syncClassesWithTemplate(updatedTemplate: QuestionTemplate): void {
+  if (typeof window === 'undefined') return;
+  try {
     window.dispatchEvent(new Event('storage'));
   } catch {
     // ignore

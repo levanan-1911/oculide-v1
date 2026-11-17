@@ -5,7 +5,7 @@ from schemas.question import (
     QuestionCreateRequest, QuestionUpdateRequest, QuestionResponse,
     TestCaseCreateRequest, TestCaseResponse
 )
-from core.permissions import get_current_user, instructor_or_admin_required
+from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
 from database.question_db import (
     create_question, get_question_by_id, get_questions_by_room,
     update_question, delete_question, get_test_cases_by_question,
@@ -18,14 +18,14 @@ router = APIRouter()
 @router.post("", response_model=QuestionResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_question(
     question_data: QuestionCreateRequest,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Tạo mới câu hỏi/đề bài lập trình cho phòng thi"""
+    """Tạo mới câu hỏi/đề bài lập trình cho phòng thi (Quyền độc quyền của Giảng viên)"""
     room = get_room_by_id(question_data.room_id)
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
-    if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền thêm câu hỏi vào phòng này")
+    if room.get("instructor_id") != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền thêm câu hỏi vào phòng của giảng viên khác")
         
     created_q = create_question(
         room_id=question_data.room_id,
@@ -85,15 +85,15 @@ async def get_question_details(
 async def update_question_details(
     question_id: int,
     question_data: QuestionUpdateRequest,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Chỉnh sửa câu hỏi"""
+    """Chỉnh sửa câu hỏi (Quyền độc quyền của Giảng viên)"""
     q = get_question_by_id(question_id)
     if not q:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
     room = get_room_by_id(q["room_id"])
-    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa câu hỏi trong phòng này")
+    if room and room.get("instructor_id") != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa câu hỏi của phòng thi khác")
     
     updated = update_question(question_id, **question_data.model_dump(exclude_unset=True))
     return updated
@@ -101,15 +101,15 @@ async def update_question_details(
 @router.delete("/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_question(
     question_id: int,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Xóa câu hỏi khỏi đề thi"""
+    """Xóa câu hỏi khỏi đề thi (Quyền độc quyền của Giảng viên)"""
     q = get_question_by_id(question_id)
     if not q:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
     room = get_room_by_id(q["room_id"])
-    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xóa câu hỏi của phòng này")
+    if room and room.get("instructor_id") != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xóa câu hỏi của phòng thi khác")
     delete_question(question_id)
     return None
 
@@ -132,15 +132,15 @@ async def list_test_cases(
 async def add_test_case(
     question_id: int,
     tc_data: TestCaseCreateRequest,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Thêm test case mới cho câu hỏi"""
+    """Thêm test case mới cho câu hỏi (Quyền độc quyền của Giảng viên)"""
     q = get_question_by_id(question_id)
     if not q:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
     room = get_room_by_id(q["room_id"])
-    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền thêm test case cho phòng này")
+    if room and room.get("instructor_id") != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền thêm test case cho phòng thi khác")
     return create_test_case(
         question_id=question_id,
         input_data=tc_data.input_data,
@@ -154,9 +154,9 @@ async def update_test_case_endpoint(
     question_id: int,
     test_case_id: int,
     tc_data: TestCaseCreateRequest,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Chỉnh sửa thông tin test case (input, output, ẩn/hiện, điểm)"""
+    """Chỉnh sửa thông tin test case (Quyền độc quyền của Giảng viên)"""
     tc = get_test_case_by_id(test_case_id)
     if not tc or tc["question_id"] != question_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy test case")
@@ -164,8 +164,8 @@ async def update_test_case_endpoint(
     if not q:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
     room = get_room_by_id(q["room_id"])
-    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa test case của phòng này")
+    if room and room.get("instructor_id") != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa test case của phòng thi khác")
         
     updated = update_test_case(
         test_case_id=test_case_id,
@@ -180,9 +180,9 @@ async def update_test_case_endpoint(
 async def remove_test_case(
     question_id: int,
     test_case_id: int,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Xóa test case"""
+    """Xóa test case (Quyền độc quyền của Giảng viên)"""
     tc = get_test_case_by_id(test_case_id)
     if not tc or tc["question_id"] != question_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy test case")
@@ -190,8 +190,8 @@ async def remove_test_case(
     if not q:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy câu hỏi")
     room = get_room_by_id(q["room_id"])
-    if current_user["role"] != "admin" and room and room["instructor_id"] != current_user["user_id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xóa test case của phòng này")
+    if room and room.get("instructor_id") != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xóa test case của phòng thi khác")
     delete_test_case(test_case_id)
     return None
 

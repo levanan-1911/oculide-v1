@@ -30,10 +30,18 @@ import {
   ChevronRight,
   Loader2,
   Trash2,
+  LogIn,
+  KeyRound,
+  GraduationCap,
+  Layers,
+  Clock,
+  Calendar,
+  AlertTriangle,
 } from 'lucide-react';
 import { fetchWithAuth } from '@/services/apiClient';
 import {
   AuditLogItem,
+  AuditLogCategory,
   ServiceHealthItem,
   SystemSettings,
   BackupItem,
@@ -59,18 +67,109 @@ function formatTimestamp(dtStr?: string | null): string {
   }
 }
 
-function inferCategory(module: string, message: string): 'AUTH' | 'EXAM' | 'SYSTEM' | 'SECURITY' {
+function inferCategory(module: string, message: string): AuditLogCategory {
   const upper = (module + ' ' + message).toUpperCase();
-  if (upper.includes('LOGIN') || upper.includes('AUTH') || upper.includes('PASSWORD') || upper.includes('TOKEN')) {
-    return 'AUTH';
+  // 1. Khu vực Đăng nhập & Xác thực
+  if (
+    upper.includes('LOGIN') ||
+    upper.includes('AUTH_LOGIN') ||
+    upper.includes('DANG NHAP') ||
+    upper.includes('DANG XUAT') ||
+    upper.includes('LOGOUT')
+  ) {
+    return 'LOGIN';
   }
-  if (upper.includes('ROOM') || upper.includes('EXAM') || upper.includes('PHONG') || upper.includes('CA THI') || upper.includes('SUBMISSION') || upper.includes('NOP BAI') || upper.includes('TEMPLATE')) {
-    return 'EXAM';
+  // 2. Khu vực Đổi mật khẩu & Quản lý Tài khoản
+  if (
+    upper.includes('PASSWORD') ||
+    upper.includes('AUTH_PASSWORD') ||
+    upper.includes('MAT KHAU') ||
+    upper.includes('DOI MAT KHAU') ||
+    upper.includes('RESET') ||
+    upper.includes('USER_MGMT') ||
+    upper.includes('ADMIN_USER') ||
+    upper.includes('TAI KHOAN')
+  ) {
+    return 'PASSWORD';
   }
-  if (upper.includes('VIOLATION') || upper.includes('VI PHAM') || upper.includes('PROCTOR') || upper.includes('CANH BAO') || upper.includes('SECURITY')) {
+  // 3. Khu vực Sao lưu & Dữ liệu CSDL
+  if (
+    upper.includes('BACKUP') ||
+    upper.includes('SAO LUU') ||
+    upper.includes('PHUC HOI') ||
+    upper.includes('RESTORE') ||
+    upper.includes('DATABASE')
+  ) {
+    return 'BACKUP';
+  }
+  // 4. Khu vực Cảnh báo An ninh Hệ thống (Brute-force, Domain, Khóa tài khoản)
+  if (
+    upper.includes('BRUTE') ||
+    upper.includes('DO MAT KHAU') ||
+    upper.includes('THAT BAI') ||
+    upper.includes('TU CHOI') ||
+    upper.includes('DOMAIN') ||
+    upper.includes('AUTH_REGISTER') ||
+    upper.includes('SECURITY')
+  ) {
     return 'SECURITY';
   }
-  return 'SYSTEM';
+  // 5. Khu vực Cấu hình & Tham số Hạ tầng
+  return 'SETTINGS';
+}
+
+function getCategoryMeta(cat: AuditLogCategory) {
+  switch (cat) {
+    case 'LOGIN':
+      return {
+        label: 'Đăng nhập & Phiên',
+        badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20',
+        badgeIcon: LogIn,
+        dotColor: 'bg-emerald-500',
+        description: 'Lịch sử đăng nhập, đăng xuất và phiên làm việc tài khoản',
+      };
+    case 'PASSWORD':
+      return {
+        label: 'Mật khẩu & Tài khoản',
+        badgeColor: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/20',
+        badgeIcon: KeyRound,
+        dotColor: 'bg-violet-500',
+        description: 'Đổi mật khẩu, đặt lại mật khẩu, phân quyền và khóa tài khoản',
+      };
+    case 'SETTINGS':
+    case 'SYSTEM':
+      return {
+        label: 'Cấu hình Hạ tầng',
+        badgeColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20',
+        badgeIcon: Sliders,
+        dotColor: 'bg-blue-500',
+        description: 'Cập nhật tham số hệ thống, sandbox và chế độ bảo trì',
+      };
+    case 'BACKUP':
+      return {
+        label: 'Sao lưu & CSDL',
+        badgeColor: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20',
+        badgeIcon: HardDrive,
+        dotColor: 'bg-amber-500',
+        description: 'Tạo, tải về và xóa bản sao lưu cơ sở dữ liệu SQL Server',
+      };
+    case 'SECURITY':
+      return {
+        label: 'An ninh Hệ thống',
+        badgeColor: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20',
+        badgeIcon: ShieldAlert,
+        dotColor: 'bg-rose-500',
+        description: 'Cảnh báo dò mật khẩu, từ chối email sai miền và khóa truy cập',
+      };
+    default:
+      return {
+        label: 'Hệ thống',
+        badgeColor: 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-white/5 dark:text-slate-300 dark:border-white/10',
+        badgeIcon: Activity,
+        dotColor: 'bg-slate-500',
+        description: 'Nhật ký chung hệ thống',
+      };
+  }
 }
 
 function mapSeverity(level?: string | null): 'INFO' | 'WARNING' | 'CRITICAL' | 'SECURITY' {
@@ -109,6 +208,14 @@ const DEFAULT_SETTINGS: SystemSettings = {
   jwtTokenExpiryMinutes: 60,
   maintenanceMode: false,
   maintenanceMessage: 'Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.',
+
+  // 4. Thời gian & Chính sách Sao lưu
+  backupScheduleEnabled: true,
+  backupFrequency: 'daily',
+  backupTime: '02:00',
+  backupOnMaintenance: true,
+  backupRetentionDays: 30,
+  backupMaxCopies: 10,
 };
 
 const INITIAL_SERVICES: ServiceHealthItem[] = [
@@ -189,72 +296,15 @@ const INITIAL_SERVICES: ServiceHealthItem[] = [
   },
 ];
 
-// NHẬT KÝ KIỂM TOÁN CHUẨN ADMIN: Chỉ ghi nhận sự kiện An ninh, Quản trị và Ca thi
+// NHẬT KÝ KIỂM TOÁN CHUẨN ADMIN: Chỉ ghi nhận sự kiện An ninh hệ thống, Đăng nhập, Mật khẩu, Cấu hình và Sao lưu CSDL
 const INITIAL_LOGS: AuditLogItem[] = [
   {
     id: 'LOG_001',
-    timestamp: '2026-10-29 21:45:10',
-    actorName: 'Thầy Nguyễn Văn Nam',
-    actorRole: 'instructor',
-    action: 'Tạo phòng thi & điểm danh',
-    category: 'EXAM',
-    severity: 'INFO',
-    ipAddress: '172.16.20.14',
-    status: 'success',
-    details: 'Đã tạo phòng thi mới [CS101tdD] cho lớp CS101 - Nhập môn Lập trình C/C++ (Chế độ Nghiêm ngặt).',
-    payload: {
-      roomCode: 'CS101tdD',
-      durationMinutes: 120,
-      classId: 'CS101',
-      mode: 'Strict Lockdown Fullscreen + AI Proctoring',
-      allowExternalDocs: false,
-    },
-  },
-  {
-    id: 'LOG_002',
-    timestamp: '2026-10-29 21:40:22',
-    actorName: 'SE184802 - Trần Thị Bình',
-    actorRole: 'student',
-    action: 'Cảnh báo vi phạm: Rời màn hình bài thi',
-    category: 'SECURITY',
-    severity: 'WARNING',
-    ipAddress: '171.244.18.92',
-    status: 'flagged',
-    details: 'Thí sinh chuyển đổi cửa sổ ứng dụng (Alt+Tab / mất tiêu điểm bài thi 3 lần) trong giờ làm bài.',
-    payload: {
-      studentId: 'SE184802',
-      roomCode: 'CS101tdD',
-      event: 'WINDOW_BLUR_DETECTED',
-      blurCount: 3,
-      durationSeconds: 12,
-    },
-  },
-  {
-    id: 'LOG_003',
-    timestamp: '2026-10-29 21:35:00',
-    actorName: 'System AI Engine',
-    actorRole: 'system',
-    action: 'Cảnh báo AI: Phát hiện thiết bị di động',
-    category: 'SECURITY',
-    severity: 'CRITICAL',
-    ipAddress: '172.16.20.88',
-    status: 'flagged',
-    details: 'AI Proctoring phát hiện smartphone xuất hiện trong khung hình webcam của thí sinh SE184805 tại ca thi CS101.',
-    payload: {
-      studentId: 'SE184805',
-      confidence: 94.8,
-      detectedObject: 'Cell Phone',
-      roomCode: 'CS101tdD',
-      snapshotUrl: '/uploads/snapshots/vio_cellphone_01.jpg',
-    },
-  },
-  {
-    id: 'LOG_004',
     timestamp: '2026-10-29 21:28:15',
-    actorName: 'Admin Hệ thống',
+    actorName: 'admin',
     actorRole: 'admin',
     action: 'Cập nhật giới hạn Sandbox Chấm bài',
-    category: 'SYSTEM',
+    category: 'SETTINGS',
     severity: 'INFO',
     ipAddress: '172.16.1.10',
     status: 'success',
@@ -266,15 +316,31 @@ const INITIAL_LOGS: AuditLogItem[] = [
     },
   },
   {
-    id: 'LOG_005',
+    id: 'LOG_002',
+    timestamp: '2026-10-29 21:20:00',
+    actorName: 'admin',
+    actorRole: 'admin',
+    action: 'Kích hoạt Chế độ bảo trì hệ thống',
+    category: 'SETTINGS',
+    severity: 'WARNING',
+    ipAddress: '172.16.1.10',
+    status: 'flagged',
+    details: 'Bật chế độ bảo trì hạ tầng phục vụ nâng cấp máy chủ chấm thi.',
+    payload: {
+      maintenanceMode: true,
+      maintenanceMessage: 'Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT.',
+    },
+  },
+  {
+    id: 'LOG_003',
     timestamp: '2026-10-29 21:15:40',
-    actorName: 'SE184820 - Guest',
+    actorName: 'SE184820',
     actorRole: 'student',
-    action: 'Đăng nhập thất bại (Sai mật khẩu 3 lần)',
-    category: 'AUTH',
+    action: 'Cảnh báo dò mật khẩu (Sai 3 lần)',
+    category: 'SECURITY',
     severity: 'WARNING',
     ipAddress: '118.69.182.55',
-    status: 'failure',
+    status: 'flagged',
     details: 'Tài khoản SE184820 đăng nhập thất bại 3 lần liên tiếp. Cảnh báo nguy cơ dò mật khẩu (Brute-force).',
     payload: {
       username: 'SE184820',
@@ -283,31 +349,77 @@ const INITIAL_LOGS: AuditLogItem[] = [
     },
   },
   {
-    id: 'LOG_006',
-    timestamp: '2026-10-29 20:30:10',
-    actorName: 'Cô Lê Thị Mai',
-    actorRole: 'instructor',
-    action: 'Tạo ca kiểm tra thực hành mở (Open-Book Lab)',
-    category: 'EXAM',
+    id: 'LOG_004',
+    timestamp: '2026-10-29 20:45:00',
+    actorName: 'admin',
+    actorRole: 'admin',
+    action: 'Thay đổi tham số thời hạn JWT Token',
+    category: 'SETTINGS',
     severity: 'INFO',
-    ipAddress: '172.16.20.19',
+    ipAddress: '172.16.1.10',
     status: 'success',
-    details: 'Giảng viên tạo phòng kiểm tra giữa kỳ [PRJ301jBK] cho phép sinh viên tra cứu tài liệu môn học.',
+    details: 'Cập nhật thời hạn sống của JSON Web Token từ 60 phút lên 120 phút.',
     payload: {
-      roomCode: 'PRJ301jBK',
-      classId: 'PRJ301',
-      mode: 'Open-Book Flexible Quiz',
-      allowExternalDocs: true,
-      aiBypassHeadTurnCheck: true,
+      field: 'jwtTokenExpiryMinutes',
+      oldValue: 60,
+      newValue: 120,
+    },
+  },
+  {
+    id: 'LOG_005',
+    timestamp: '2026-10-29 20:12:10',
+    actorName: 'Guest User',
+    actorRole: 'system',
+    action: 'Từ chối đăng ký tài khoản (Sai tên miền)',
+    category: 'SECURITY',
+    severity: 'WARNING',
+    ipAddress: '14.161.35.88',
+    status: 'failure',
+    details: 'Từ chối đăng ký với email cá nhân "@gmail.com". Tên miền không thuộc cấu hình cho phép (@dtu.edu.vn).',
+    payload: {
+      attemptedEmail: 'student_test@gmail.com',
+      allowedDomain: '@dtu.edu.vn',
+    },
+  },
+  {
+    id: 'LOG_006',
+    timestamp: '2026-10-29 18:30:20',
+    actorName: 'admin',
+    actorRole: 'admin',
+    action: 'Đặt lại mật khẩu cho người dùng',
+    category: 'PASSWORD',
+    severity: 'WARNING',
+    ipAddress: '127.0.0.1',
+    status: 'success',
+    details: 'Quản trị viên đã đặt lại mật khẩu ngẫu nhiên cho giảng viên MSGV001 và gửi thông tin về email.',
+    payload: {
+      targetUser: 'instructor',
+      action: 'ADMIN_RESET_PASSWORD',
     },
   },
   {
     id: 'LOG_007',
+    timestamp: '2026-10-29 14:10:05',
+    actorName: 'Nguyễn Văn An',
+    actorRole: 'student',
+    action: 'Đổi mật khẩu người dùng',
+    category: 'PASSWORD',
+    severity: 'INFO',
+    ipAddress: '171.244.18.92',
+    status: 'success',
+    details: 'Người dùng sinh viên đổi mật khẩu cá nhân thành công qua cổng dịch vụ tài khoản.',
+    payload: {
+      username: 'student',
+      action: 'USER_CHANGE_PASSWORD',
+    },
+  },
+  {
+    id: 'LOG_008',
     timestamp: '2026-10-29 02:00:00',
     actorName: 'System Scheduler',
     actorRole: 'system',
     action: 'Sao lưu cơ sở dữ liệu tự động',
-    category: 'SYSTEM',
+    category: 'BACKUP',
     severity: 'INFO',
     ipAddress: '127.0.0.1',
     status: 'success',
@@ -316,6 +428,22 @@ const INITIAL_LOGS: AuditLogItem[] = [
       backupFile: 'oculide_db_auto_20261029_0200.bak',
       durationSeconds: 14,
       status: 'SUCCESS',
+    },
+  },
+  {
+    id: 'LOG_009',
+    timestamp: '2026-10-29 08:30:15',
+    actorName: 'admin',
+    actorRole: 'admin',
+    action: 'Đăng nhập hệ thống thành công',
+    category: 'LOGIN',
+    severity: 'INFO',
+    ipAddress: '127.0.0.1',
+    status: 'success',
+    details: 'Quản trị viên đăng nhập thành công vào bảng điều khiển hệ thống Oculide.',
+    payload: {
+      role: 'admin',
+      authMethod: 'PASSWORD_HASH_JWT',
     },
   },
 ];
@@ -357,6 +485,8 @@ export default function AdminSystemView() {
   const [backups, setBackups] = useState<BackupItem[]>([]);
   const [isLoadingBackups, setIsLoadingBackups] = useState(false);
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
+  const [isCleaningUpBackups, setIsCleaningUpBackups] = useState(false);
+  const [isSavingBackupPolicy, setIsSavingBackupPolicy] = useState(false);
 
   // Modal xem chi tiết Log
   const [selectedLog, setSelectedLog] = useState<AuditLogItem | null>(null);
@@ -466,6 +596,12 @@ export default function AdminSystemView() {
           jwtTokenExpiryMinutes: data.jwt_token_expiry_minutes ?? 60,
           maintenanceMode: Boolean(data.maintenance_mode),
           maintenanceMessage: data.maintenance_message ?? '',
+          backupScheduleEnabled: data.backup_schedule_enabled ?? true,
+          backupFrequency: data.backup_frequency ?? 'daily',
+          backupTime: data.backup_time ?? '02:00',
+          backupOnMaintenance: data.backup_on_maintenance ?? true,
+          backupRetentionDays: data.backup_retention_days ?? 30,
+          backupMaxCopies: data.backup_max_copies ?? 10,
         });
       }
     } catch (err) {
@@ -524,6 +660,12 @@ export default function AdminSystemView() {
         jwt_token_expiry_minutes: settings.jwtTokenExpiryMinutes,
         maintenance_mode: settings.maintenanceMode,
         maintenance_message: settings.maintenanceMessage,
+        backup_schedule_enabled: settings.backupScheduleEnabled,
+        backup_frequency: settings.backupFrequency,
+        backup_time: settings.backupTime,
+        backup_on_maintenance: settings.backupOnMaintenance,
+        backup_retention_days: settings.backupRetentionDays,
+        backup_max_copies: settings.backupMaxCopies,
       };
 
       const res = await fetchWithAuth<any>('/api/v1/admin/system/settings', {
@@ -536,12 +678,76 @@ export default function AdminSystemView() {
         showToast('Đã lưu thành công các tham số cấu hình hạ tầng hệ thống vào máy chủ!');
         loadSystemLogs();
         loadSystemHealth();
+        loadBackups();
       }
     } catch (err) {
       console.error('Không thể lưu cấu hình:', err);
       showToast('Lỗi khi lưu cấu hình hạ tầng lên máy chủ!');
     } finally {
       setIsSavingSettings(false);
+    }
+  };
+
+  // Lưu nhanh Chính sách sao lưu từ Tab Sao lưu
+  const handleSaveBackupPolicy = async () => {
+    setIsSavingBackupPolicy(true);
+    try {
+      const payload = {
+        max_code_file_size_mb: settings.maxCodeFileSizeMb,
+        max_sandbox_workers: settings.maxSandboxWorkers,
+        max_livekit_bitrate_kbps: settings.maxLiveKitBitrateKbps,
+        auto_cleanup_drafts_days: settings.autoCleanupDraftsDays,
+        audit_log_retention_days: settings.auditLogRetentionDays,
+        allowed_email_domain: settings.allowedEmailDomain,
+        max_login_attempts: settings.maxLoginAttempts,
+        jwt_token_expiry_minutes: settings.jwtTokenExpiryMinutes,
+        maintenance_mode: settings.maintenanceMode,
+        maintenance_message: settings.maintenanceMessage,
+        backup_schedule_enabled: settings.backupScheduleEnabled,
+        backup_frequency: settings.backupFrequency,
+        backup_time: settings.backupTime,
+        backup_on_maintenance: settings.backupOnMaintenance,
+        backup_retention_days: settings.backupRetentionDays,
+        backup_max_copies: settings.backupMaxCopies,
+      };
+
+      const res = await fetchWithAuth<any>('/api/v1/admin/system/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res) {
+        showToast('Đã lưu thành công chính sách thời gian & thời hạn lưu trữ sao lưu!');
+        await loadBackups();
+        loadSystemLogs();
+      }
+    } catch (err) {
+      console.error('Không thể lưu chính sách sao lưu:', err);
+      showToast('Lỗi khi lưu chính sách sao lưu!');
+    } finally {
+      setIsSavingBackupPolicy(false);
+    }
+  };
+
+  // Dọn dẹp bản sao lưu quá hạn chủ động
+  const handleCleanupBackups = async () => {
+    setIsCleaningUpBackups(true);
+    try {
+      const res = await fetchWithAuth<any>('/api/v1/admin/system/backups/cleanup', {
+        method: 'POST',
+      });
+      if (res) {
+        showToast(res.message || 'Đã dọn dẹp các bản sao lưu quá hạn thành công!');
+        await loadBackups();
+        loadStorageMetrics();
+        loadSystemLogs();
+      }
+    } catch (err) {
+      console.error('Lỗi khi dọn dẹp sao lưu:', err);
+      showToast('Lỗi khi kích hoạt dọn dẹp sao lưu!');
+    } finally {
+      setIsCleaningUpBackups(false);
     }
   };
 
@@ -648,7 +854,10 @@ export default function AdminSystemView() {
         log.details.toLowerCase().includes(searchLog.toLowerCase());
 
       const matchSeverity = filterSeverity === 'all' || log.severity === filterSeverity;
-      const matchCategory = filterCategory === 'all' || log.category === filterCategory;
+      const matchCategory =
+        filterCategory === 'all' ||
+        log.category === filterCategory ||
+        (filterCategory === 'SETTINGS' && log.category === 'SYSTEM');
       const matchRole = filterRole === 'all' || log.actorRole === filterRole;
 
       return matchSearch && matchSeverity && matchCategory && matchRole;
@@ -798,40 +1007,77 @@ export default function AdminSystemView() {
       {/* ========================================================= */}
       {activeTab === 'logs' && (
         <div className="space-y-5">
-          {/* 4 Thẻ KPI tóm tắt sự kiện */}
+          {/* 4 Thẻ KPI tóm tắt sự kiện theo các khu vực chính */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tổng sự kiện ghi nhận</span>
               <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{totalDbLogs || logs.length} logs</p>
-              <p className="mt-1 text-[11px] text-emerald-600 font-semibold">Tất cả dịch vụ đều ghi nhận</p>
+              <p className="mt-1 text-[11px] text-emerald-600 font-semibold">Tất cả khu vực hệ thống</p>
             </div>
 
             <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Cảnh báo An ninh & Ca thi</span>
-              <p className="mt-2 text-2xl font-black text-amber-600">
-                {logs.filter((l) => l.severity === 'WARNING' || l.severity === 'CRITICAL').length} vụ việc
-              </p>
-              <p className="mt-1 text-[11px] text-amber-600 font-medium">Bao gồm rời màn hình & điện thoại</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Thời hạn lưu trữ Log</span>
-              <p className="mt-2 text-2xl font-black text-indigo-600">{settings.auditLogRetentionDays} ngày</p>
-              <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">Tự động dọn sau mỗi học kỳ</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tỷ lệ truy cập hợp lệ</span>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Khu vực Đăng nhập & Phiên</span>
               <p className="mt-2 text-2xl font-black text-emerald-600">
-                {logs.length > 0
-                  ? (
-                      ((logs.length - logs.filter((l) => l.severity === 'WARNING' || l.severity === 'CRITICAL').length) /
-                        logs.length) *
-                      100
-                    ).toFixed(1)
-                  : '100'}%
+                {logs.filter((l) => l.category === 'LOGIN').length} lượt
               </p>
-              <p className="mt-1 text-[11px] text-emerald-600 font-medium">Không phát hiện tấn công DDoS</p>
+              <p className="mt-1 text-[11px] text-emerald-600 font-medium">Đăng nhập, đăng xuất & xác thực</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Đổi mật khẩu & Tài khoản</span>
+              <p className="mt-2 text-2xl font-black text-violet-600">
+                {logs.filter((l) => l.category === 'PASSWORD').length} tác động
+              </p>
+              <p className="mt-1 text-[11px] text-violet-600 font-medium">Đổi/reset pass, phân quyền, khóa</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Cấu hình & Sao lưu Dữ liệu</span>
+              <p className="mt-2 text-2xl font-black text-blue-600">
+                {logs.filter((l) => l.category === 'SETTINGS' || l.category === 'BACKUP' || l.category === 'SYSTEM').length} tác động
+              </p>
+              <p className="mt-1 text-[11px] text-blue-600 font-medium">Tham số hạ tầng & bản sao lưu CSDL</p>
+            </div>
+          </div>
+
+          {/* Dải nút chuyển Phân khu vực lưu trữ nhật ký hệ thống */}
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { id: 'all', label: 'Tất cả tác động', icon: Layers, count: logs.length, color: 'text-slate-600' },
+                { id: 'LOGIN', label: '1. Đăng nhập & Phiên', icon: LogIn, count: logs.filter((l) => l.category === 'LOGIN').length, color: 'text-emerald-600' },
+                { id: 'PASSWORD', label: '2. Đổi mật khẩu & Tài khoản', icon: KeyRound, count: logs.filter((l) => l.category === 'PASSWORD').length, color: 'text-violet-600' },
+                { id: 'SETTINGS', label: '3. Cấu hình Hạ tầng', icon: Sliders, count: logs.filter((l) => l.category === 'SETTINGS' || l.category === 'SYSTEM').length, color: 'text-blue-600' },
+                { id: 'BACKUP', label: '4. Sao lưu & CSDL', icon: HardDrive, count: logs.filter((l) => l.category === 'BACKUP').length, color: 'text-amber-600' },
+                { id: 'SECURITY', label: '5. An ninh Hệ thống', icon: ShieldAlert, count: logs.filter((l) => l.category === 'SECURITY').length, color: 'text-rose-600' },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = filterCategory === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFilterCategory(tab.id)}
+                    className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition cursor-pointer ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-slate-100/70 text-slate-600 hover:bg-slate-200/70 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                    }`}
+                  >
+                    <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-white' : tab.color}`} />
+                    <span>{tab.label}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                        isActive
+                          ? 'bg-white/20 text-white'
+                          : 'bg-white text-slate-700 dark:bg-white/10 dark:text-slate-300 shadow-2xs'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -844,7 +1090,7 @@ export default function AdminSystemView() {
                   type="text"
                   value={searchLog}
                   onChange={(e) => setSearchLog(e.target.value)}
-                  placeholder="Tìm theo tên tác nhân, hành động, địa chỉ IP (172.16...), mã phòng thi..."
+                  placeholder="Tìm theo tên tác nhân, hành động, địa chỉ IP (172.16...), mã phòng thi, chi tiết..."
                   className="h-10 w-full rounded-xl border border-slate-200 bg-[#f8fafc] pl-9 pr-4 text-xs text-slate-800 placeholder-slate-400 outline-none transition focus:border-blue-600 focus:bg-white focus:ring-1 focus:ring-blue-600 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder-slate-500 dark:focus:bg-[#0d1017]"
                 />
               </div>
@@ -855,11 +1101,12 @@ export default function AdminSystemView() {
                   onChange={(e) => setFilterCategory(e.target.value)}
                   className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-600 cursor-pointer dark:border-white/10 dark:bg-[#141824] dark:text-slate-200"
                 >
-                  <option value="all">Tất cả danh mục</option>
-                  <option value="AUTH">Xác thực (AUTH)</option>
-                  <option value="EXAM">Quản lý Thi cử (EXAM)</option>
-                  <option value="SYSTEM">Hệ thống (SYSTEM)</option>
-                  <option value="SECURITY">An ninh & AI (SECURITY)</option>
+                  <option value="all">Tất cả khu vực</option>
+                  <option value="LOGIN">Đăng nhập & Phiên (LOGIN)</option>
+                  <option value="PASSWORD">Đổi mật khẩu & Tài khoản (PASSWORD)</option>
+                  <option value="SETTINGS">Cấu hình Hạ tầng (SETTINGS)</option>
+                  <option value="BACKUP">Sao lưu & CSDL (BACKUP)</option>
+                  <option value="SECURITY">An ninh Hệ thống (SECURITY)</option>
                 </select>
 
                 <select
@@ -896,6 +1143,7 @@ export default function AdminSystemView() {
                 <thead>
                   <tr className="border-b border-slate-100 bg-[#f8fafc] text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
                     <th className="px-5 py-3.5">Thời gian</th>
+                    <th className="px-4 py-3.5">Khu vực</th>
                     <th className="px-4 py-3.5">Tác nhân & Vai trò</th>
                     <th className="px-4 py-3.5">Hành động & Sự kiện</th>
                     <th className="px-4 py-3.5">Địa chỉ IP Mạng</th>
@@ -906,7 +1154,7 @@ export default function AdminSystemView() {
                 <tbody className="divide-y divide-slate-100 text-xs text-slate-700 dark:divide-white/5 dark:text-slate-300">
                   {filteredLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-5 py-12 text-center text-slate-400">
+                      <td colSpan={7} className="px-5 py-12 text-center text-slate-400">
                         {isLoadingLogs ? (
                           <div className="flex items-center justify-center gap-2">
                             <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
@@ -918,74 +1166,85 @@ export default function AdminSystemView() {
                       </td>
                     </tr>
                   ) : (
-                    paginatedLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-slate-50/80 transition dark:hover:bg-white/5">
-                        <td className="px-5 py-3.5 font-mono text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                          {log.timestamp}
-                        </td>
+                    paginatedLogs.map((log) => {
+                      const catMeta = getCategoryMeta(log.category);
+                      const CatIcon = catMeta.badgeIcon;
+                      return (
+                        <tr key={log.id} className="hover:bg-slate-50/80 transition dark:hover:bg-white/5">
+                          <td className="px-5 py-3.5 font-mono text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                            {log.timestamp}
+                          </td>
 
-                        <td className="px-4 py-3.5">
-                          <div className="font-bold text-slate-900 dark:text-white">{log.actorName}</div>
-                          <span
-                            className={`inline-block mt-0.5 rounded-full px-2 py-0.2 text-[10px] font-bold ${
-                              log.actorRole === 'admin'
-                                ? 'bg-purple-50 text-purple-700'
-                                : log.actorRole === 'instructor'
-                                ? 'bg-blue-50 text-blue-700'
-                                : log.actorRole === 'system'
-                                ? 'bg-amber-50 text-amber-700'
-                                : 'bg-emerald-50 text-emerald-700'
-                            }`}
-                          >
-                            {log.actorRole.toUpperCase()}
-                          </span>
-                        </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-bold ${catMeta.badgeColor}`}>
+                              <CatIcon className="h-3 w-3 shrink-0" />
+                              <span>{catMeta.label}</span>
+                            </span>
+                          </td>
 
-                        <td className="px-4 py-3.5">
-                          <div className="font-semibold text-slate-900 dark:text-white">{log.action}</div>
-                          <div className="text-[11px] text-slate-400 truncate max-w-[280px]">
-                            {log.details}
-                          </div>
-                        </td>
+                          <td className="px-4 py-3.5">
+                            <div className="font-bold text-slate-900 dark:text-white">{log.actorName}</div>
+                            <span
+                              className={`inline-block mt-0.5 rounded-full px-2 py-0.2 text-[10px] font-bold ${
+                                log.actorRole === 'admin'
+                                  ? 'bg-purple-50 text-purple-700'
+                                  : log.actorRole === 'instructor'
+                                  ? 'bg-blue-50 text-blue-700'
+                                  : log.actorRole === 'system'
+                                  ? 'bg-amber-50 text-amber-700'
+                                  : 'bg-emerald-50 text-emerald-700'
+                              }`}
+                            >
+                              {log.actorRole.toUpperCase()}
+                            </span>
+                          </td>
 
-                        <td className="px-4 py-3.5 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5 font-mono font-bold text-slate-800 dark:text-slate-200">
-                            <Globe className="h-3.5 w-3.5 text-slate-400" />
-                            <span>{log.ipAddress}</span>
-                          </div>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            Client IP
-                          </span>
-                        </td>
+                          <td className="px-4 py-3.5">
+                            <div className="font-semibold text-slate-900 dark:text-white">{log.action}</div>
+                            <div className="text-[11px] text-slate-400 truncate max-w-[280px]">
+                              {log.details}
+                            </div>
+                          </td>
 
-                        <td className="px-4 py-3.5">
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                              log.severity === 'INFO'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : log.severity === 'WARNING'
-                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                : log.severity === 'CRITICAL'
-                                ? 'bg-red-50 text-red-700 border border-red-200'
-                                : 'bg-purple-50 text-purple-700 border border-purple-200'
-                            }`}
-                          >
-                            {log.severity}
-                          </span>
-                        </td>
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 font-mono font-bold text-slate-800 dark:text-slate-200">
+                              <Globe className="h-3.5 w-3.5 text-slate-400" />
+                              <span>{log.ipAddress}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              Client IP
+                            </span>
+                          </td>
 
-                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedLog(log)}
-                            className="inline-flex items-center gap-1 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition cursor-pointer dark:bg-white/10 dark:text-slate-200 dark:hover:bg-blue-600/20 dark:hover:text-blue-400"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            <span>Xem Payload</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                          <td className="px-4 py-3.5">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                                log.severity === 'INFO'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : log.severity === 'WARNING'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : log.severity === 'CRITICAL'
+                                  ? 'bg-red-50 text-red-700 border border-red-200'
+                                  : 'bg-purple-50 text-purple-700 border border-purple-200'
+                              }`}
+                            >
+                              {log.severity}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLog(log)}
+                              className="inline-flex items-center gap-1 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition cursor-pointer dark:bg-white/10 dark:text-slate-200 dark:hover:bg-blue-600/20 dark:hover:text-blue-400"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              <span>Xem Chi tiết</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1287,6 +1546,34 @@ export default function AdminSystemView() {
                     Tự động dọn dẹp các bản ghi log cũ hơn 1 học kỳ (90 - 180 ngày) để bảo vệ hiệu năng máy chủ.
                   </p>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Thời gian lưu trữ bản sao lưu CSDL (Backup Retention)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min={7}
+                      max={90}
+                      step={7}
+                      value={settings.backupRetentionDays}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          backupRetentionDays: parseInt(e.target.value, 10),
+                        })
+                      }
+                      className="flex-1 accent-blue-600 cursor-pointer"
+                    />
+                    <span className="w-24 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/10 px-2 py-1 text-center font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
+                      {settings.backupRetentionDays} ngày
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                    Tự động xóa các file sao lưu .bak cũ hơn số ngày này trên ổ cứng máy chủ.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -1550,6 +1837,233 @@ export default function AdminSystemView() {
             </div>
           </div>
 
+          {/* Cấu hình Thời gian & Chính sách Sao lưu tự động */}
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-[#141824]">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5 border-b border-slate-100 dark:border-white/5 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+                    <Clock className="h-4 w-4" />
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Cấu Hình Thời Gian & Chính Sách Sao Lưu (Backup Schedule & Retention)
+                  </h3>
+                </div>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Thiết lập khung giờ sao lưu định kỳ, cơ chế tự động sao lưu an toàn khi bảo trì và thời hạn lưu trữ bản sao lưu.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCleanupBackups}
+                  disabled={isCleaningUpBackups}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50/70 px-3.5 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition cursor-pointer dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-300 dark:hover:bg-amber-950/40 disabled:opacity-50"
+                  title="Dọn dẹp các tệp sao lưu đã quá hạn lưu trữ"
+                >
+                  <Trash2 className={`h-3.5 w-3.5 ${isCleaningUpBackups ? 'animate-spin' : ''}`} />
+                  <span>{isCleaningUpBackups ? 'Đang dọn dẹp...' : 'Dọn dẹp bản sao lưu quá hạn'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveBackupPolicy}
+                  disabled={isSavingBackupPolicy}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingBackupPolicy ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Đang lưu...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-3.5 w-3.5" />
+                      <span>Lưu chính sách</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              {/* Cột 1: Thời điểm & Tần suất sao lưu */}
+              <div className="space-y-4 rounded-xl border border-slate-100 bg-[#f8fafc] p-4.5 dark:border-white/5 dark:bg-white/5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-blue-600" />
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      1. Thời điểm thực hiện sao lưu (Backup Timing)
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.backupScheduleEnabled}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          backupScheduleEnabled: e.target.checked,
+                        })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Khung giờ chạy định kỳ
+                    </label>
+                    <input
+                      type="time"
+                      value={settings.backupTime}
+                      disabled={!settings.backupScheduleEnabled}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          backupTime: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-800 outline-none focus:border-blue-500 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                    />
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      Khuyến nghị chọn từ 01:00 - 04:00 sáng (giờ thấp điểm tải).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Tần suất sao lưu
+                    </label>
+                    <select
+                      value={settings.backupFrequency}
+                      disabled={!settings.backupScheduleEnabled}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          backupFrequency: e.target.value as 'daily' | 'weekly',
+                        })
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer dark:border-white/10 dark:bg-[#141824] dark:text-white"
+                    >
+                      <option value="daily">Hàng ngày (Daily - Khuyến nghị)</option>
+                      <option value="weekly">Hàng tuần (Chủ nhật)</option>
+                    </select>
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      Tự động tạo tệp .bak thực tế trên máy chủ theo chu kỳ.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Tùy chọn sao lưu khi vào Bảo trì */}
+                <div className="rounded-xl border border-blue-200/80 bg-blue-50/60 p-3 dark:border-blue-500/20 dark:bg-blue-950/20">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <Shield className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                        <span className="text-xs font-bold text-blue-950 dark:text-blue-200">
+                          Tự động sao lưu Snapshot khi bật Chế độ Bảo trì
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-blue-800 dark:text-blue-300 leading-relaxed">
+                        Mỗi khi Quản trị viên kích hoạt <strong>Chế độ Bảo trì Hệ thống</strong>, một bản sao lưu CSDL an toàn (Snapshot) sẽ được tự động tạo trước khi bất kỳ thao tác bảo trì/nâng cấp nào diễn ra.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.backupOnMaintenance}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          backupOnMaintenance: e.target.checked,
+                        })
+                      }
+                      className="h-4 w-4 rounded text-blue-600 cursor-pointer accent-blue-600 shrink-0 mt-0.5"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Cột 2: Thời hạn lưu trữ & Giới hạn dung lượng */}
+              <div className="space-y-4 rounded-xl border border-slate-100 bg-[#f8fafc] p-4.5 dark:border-white/5 dark:bg-white/5">
+                <div className="flex items-center gap-2">
+                  <HardDrive className="h-4 w-4 text-emerald-600" />
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    2. Thời hạn lưu trữ & Giới hạn tệp (Retention Policy)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Thời gian lưu trữ bản sao lưu
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={3}
+                        max={365}
+                        value={settings.backupRetentionDays}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            backupRetentionDays: parseInt(e.target.value, 10) || 30,
+                          })
+                        }
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-800 outline-none focus:border-blue-500 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                      />
+                      <span className="text-xs text-slate-500 font-semibold whitespace-nowrap">ngày</span>
+                    </div>
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      Các bản sao lưu cũ hơn thời hạn này sẽ được dọn dẹp tự động.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Số bản sao lưu tối đa giữ lại
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={2}
+                        max={50}
+                        value={settings.backupMaxCopies}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            backupMaxCopies: parseInt(e.target.value, 10) || 10,
+                          })
+                        }
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-800 outline-none focus:border-blue-500 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                      />
+                      <span className="text-xs text-slate-500 font-semibold whitespace-nowrap">bản</span>
+                    </div>
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      Tối đa số file .bak lưu trữ trên đĩa cứng để tránh tràn bộ nhớ.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/60 p-3 dark:border-emerald-500/20 dark:bg-emerald-950/20">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
+                      Chính sách bảo vệ dung lượng tự động
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-300 leading-relaxed">
+                    Hệ thống tự động kích hoạt dọn dẹp mỗi khi tạo bản sao lưu mới hoặc khi lưu cấu hình, đảm bảo không bao giờ vượt quá <strong>{settings.backupMaxCopies} bản</strong> và không giữ tệp quá <strong>{settings.backupRetentionDays} ngày</strong>.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Bảng Danh sách Bản sao lưu */}
           <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-[#141824]">
             <div className="flex items-center justify-between mb-4">
@@ -1612,12 +2126,14 @@ export default function AdminSystemView() {
                         <td className="px-4 py-3.5">
                           <span
                             className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                              bk.type === 'auto'
+                              bk.type === 'maintenance'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-500/30'
+                                : bk.type === 'auto'
                                 ? 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-500/30'
                                 : 'bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-400 dark:border-purple-500/30'
                             }`}
                           >
-                            {bk.type === 'auto' ? 'Tự động' : 'Thủ công'}
+                            {bk.type === 'maintenance' ? 'Bảo trì (Snapshot)' : bk.type === 'auto' ? 'Tự động' : 'Thủ công'}
                           </span>
                         </td>
 
@@ -1702,6 +2218,25 @@ export default function AdminSystemView() {
                   <div className="font-bold text-slate-900 dark:text-white mt-0.5">{selectedLog.action}</div>
                   <span className="text-[10px] text-emerald-600 font-mono font-bold">
                     Mức độ: {selectedLog.severity}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-slate-400 font-medium">Khu vực lưu trữ:</span>
+                  <div className="mt-1">
+                    {(() => {
+                      const meta = getCategoryMeta(selectedLog.category);
+                      const Icon = meta.badgeIcon;
+                      return (
+                        <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-bold ${meta.badgeColor}`}>
+                          <Icon className="h-3 w-3 shrink-0" />
+                          <span>{meta.label}</span>
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-medium mt-0.5 block">
+                    {getCategoryMeta(selectedLog.category).description}
                   </span>
                 </div>
 

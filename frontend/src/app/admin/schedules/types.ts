@@ -17,6 +17,7 @@ export interface ProctoringPolicy {
 
 export interface ExamScheduleItem {
   id: string; // Mã ca thi (ví dụ: "PRJ301-MID")
+  room_id?: number;
   title: string; // Tên ca thi (ví dụ: "Kiểm tra giữa kỳ • Lập trình Web")
   classId: string; // Mã lớp (ví dụ: "SE1848")
   className: string; // Tên lớp (ví dụ: "Lập trình Web")
@@ -33,11 +34,14 @@ export interface ExamScheduleItem {
   roomCode: string; // Mã phòng thi (ví dụ: "OC-482915")
   roomPassword?: string; // Mật khẩu phòng (ví dụ: "123456")
   status: ScheduleStatus;
+  rawStatus?: string;
   proctoringPolicy: ProctoringPolicy;
   isLobbyOpen?: boolean;
   readyStudentCount?: number;
   deviceCheckCount?: number;
   absentCount?: number;
+  attendedStudents?: number;
+  pendingViolations?: number;
   createdAt?: string;
   creatorRole?: 'instructor' | 'system';
 }
@@ -63,8 +67,8 @@ import {
   ScheduleSessionItem,
   INSTRUCTOR_SCHEDULES_STORAGE_KEY,
   INSTRUCTOR_ROOMS_STORAGE_KEY,
+  getStoredQuestionTemplates,
 } from '@/components/instructor/classes/types';
-import { getStoredQuestionTemplates } from '@/app/admin/classes/types';
 
 export { INSTRUCTOR_SCHEDULES_STORAGE_KEY, INSTRUCTOR_ROOMS_STORAGE_KEY };
 export const SCHEDULES_STORAGE_KEY = 'oculide_schedules_mock';

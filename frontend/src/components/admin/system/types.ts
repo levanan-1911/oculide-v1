@@ -1,10 +1,13 @@
+export type AuditLogCategory = 'LOGIN' | 'PASSWORD' | 'SETTINGS' | 'BACKUP' | 'SECURITY' | 'SYSTEM';
+
 export interface AuditLogItem {
   id: string;
   timestamp: string;
   actorName: string;
   actorRole: 'admin' | 'instructor' | 'student' | 'system';
   action: string;
-  category: 'AUTH' | 'EXAM' | 'SYSTEM' | 'SECURITY';
+  category: AuditLogCategory;
+  categoryLabel?: string;
   severity: 'INFO' | 'WARNING' | 'CRITICAL' | 'SECURITY';
   ipAddress: string;
   status: 'success' | 'failure' | 'flagged';
@@ -38,6 +41,13 @@ export interface SystemSettings {
   jwtTokenExpiryMinutes: number;
   maintenanceMode: boolean;
   maintenanceMessage: string;
+  // Cấu hình thời gian & chính sách sao lưu
+  backupScheduleEnabled: boolean;
+  backupFrequency: 'daily' | 'weekly';
+  backupTime: string;
+  backupOnMaintenance: boolean;
+  backupRetentionDays: number;
+  backupMaxCopies: number;
 }
 
 export interface BackupItem {
@@ -45,7 +55,7 @@ export interface BackupItem {
   filename: string;
   createdAt: string;
   sizeMb: number;
-  type: 'auto' | 'manual';
+  type: 'auto' | 'manual' | 'maintenance';
   status: 'completed' | 'in_progress' | 'failed';
   checksum: string;
 }

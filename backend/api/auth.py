@@ -20,6 +20,7 @@ from database.user_db import (
     create_user, update_last_login, update_user_profile, change_user_password,
     create_password_reset_token, verify_password_reset_token, mark_password_reset_token_used
 )
+from database.system_log_db import create_system_log
 from core.config import settings
 
 router = APIRouter()
@@ -144,20 +145,52 @@ async def get_my_ip(request: Request):
 async def login(credentials: LoginRequest, request: Request):
     """Đăng nhập hệ thống bằng username/email và password nhận cặp Access + Refresh JWT token"""
     identifier = credentials.username.strip()
+    client_ip = extract_client_ip(request)
     user = get_user_by_username(identifier) or get_user_by_email(identifier)
     if not user:
+        try:
+            create_system_log(
+                log_level="warning",
+                module="AUTH_LOGIN",
+                message=f"Đăng nhập thất bại: Tài khoản '{identifier}' không tồn tại trong hệ thống",
+                ip_address=client_ip,
+                extra_data={"attempted_identifier": identifier}
+            )
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Tên đăng nhập hoặc mật khẩu không chính xác"
         )
     
     if not verify_password(credentials.password, user["password_hash"]):
+        try:
+            create_system_log(
+                log_level="warning",
+                module="AUTH_LOGIN",
+                message=f"Đăng nhập thất bại: Sai mật khẩu cho tài khoản '{user['username']}'",
+                user_id=user["user_id"],
+                ip_address=client_ip,
+                extra_data={"username": user["username"], "email": user["email"]}
+            )
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Tên đăng nhập hoặc mật khẩu không chính xác"
         )
         
     if not user.get("is_active", True):
+        try:
+            create_system_log(
+                log_level="warning",
+                module="AUTH_LOGIN",
+                message=f"Từ chối đăng nhập: Tài khoản '{user['username']}' hiện đang bị vô hiệu hóa / khóa",
+                user_id=user["user_id"],
+                ip_address=client_ip
+            )
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tài khoản của bạn hiện đang bị khóa. Vui lòng liên hệ quản trị viên."
@@ -168,14 +201,36 @@ async def login(credentials: LoginRequest, request: Request):
     sys_settings = SystemSettingsManager.get_settings()
     user_role = (user.get("role") or "").lower()
     if sys_settings.maintenance_mode and user_role != "admin":
+        try:
+            create_system_log(
+                log_level="warning",
+                module="AUTH_LOGIN",
+                message=f"Từ chối đăng nhập: Hệ thống đang bật chế độ bảo trì ({user['username']})",
+                user_id=user["user_id"],
+                ip_address=client_ip
+            )
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=sys_settings.maintenance_message or "Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút."
         )
         
-    client_ip = extract_client_ip(request)
     update_last_login(user["user_id"], client_ip=client_ip)
     user["last_login_ip"] = client_ip
+    
+    # Ghi nhận nhật ký đăng nhập thành công vào bảng NhatKyHeThong
+    try:
+        create_system_log(
+            log_level="info",
+            module="AUTH_LOGIN",
+            message=f"Đăng nhập thành công: {user['full_name']} ({user['username']}) [Vai trò: {user['role']}]",
+            user_id=user["user_id"],
+            ip_address=client_ip,
+            extra_data={"role": user["role"], "email": user["email"]}
+        )
+    except Exception:
+        pass
     
     token_data = {
         "sub": str(user["user_id"]),
@@ -287,6 +342,18 @@ async def reset_password(request_data: ResetPasswordRequest):
     change_user_password(user_id, request_data.new_password)
     mark_password_reset_token_used(request_data.token)
     
+    try:
+        user = get_user_by_id(user_id)
+        u_name = user.get("username") if user else f"ID {user_id}"
+        create_system_log(
+            log_level="info",
+            module="AUTH_PASSWORD",
+            message=f"Đặt lại mật khẩu thành công qua email xác thực cho tài khoản '{u_name}'",
+            user_id=user_id
+        )
+    except Exception:
+        pass
+    
     return {"message": "Mật khẩu của bạn đã được cập nhật thành công. Vui lòng đăng nhập lại."}
 
 @router.put("/profile", response_model=UserResponse)
@@ -320,5 +387,16 @@ async def change_password(
             detail="Mật khẩu hiện tại không chính xác"
         )
     change_user_password(current_user["user_id"], password_data.new_password)
+    
+    try:
+        create_system_log(
+            log_level="info",
+            module="AUTH_PASSWORD",
+            message=f"Người dùng '{user.get('username')}' ({user.get('full_name')}) đã thay đổi mật khẩu thành công",
+            user_id=current_user["user_id"]
+        )
+    except Exception:
+        pass
+        
     return {"message": "Đổi mật khẩu thành công"}
 

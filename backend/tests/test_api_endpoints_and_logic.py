@@ -178,6 +178,29 @@ def test_admin_system_health_and_storage_endpoints():
 def test_system_logs_api_and_audit_trail(monkeypatch):
     admin_token = create_access_token({"user_id": 1, "role": "admin"})
 
+    # Giả lập CSDL trong bộ nhớ để test API contract an toàn cả khi chạy trên CI
+    logs_storage = []
+
+    def mock_get_system_logs(skip=0, limit=50, **kwargs):
+        return (logs_storage[skip:skip+limit], len(logs_storage))
+
+    def mock_create_system_log(log_level, module, message, user_id=None, extra_data=None, ip_address=None):
+        record = {
+            "log_id": len(logs_storage) + 1,
+            "log_level": log_level,
+            "module": module,
+            "message": message,
+            "user_id": user_id,
+            "ip_address": ip_address,
+            "extra_data": extra_data,
+            "created_at": "2026-11-17 15:00:00"
+        }
+        logs_storage.append(record)
+        return record
+
+    monkeypatch.setattr("api.system_logs.get_system_logs", mock_get_system_logs)
+    monkeypatch.setattr("api.system_logs.create_system_log", mock_create_system_log)
+
     # 1. Test list logs
     res_list = client.get(
         "/api/v1/system-logs?limit=5",

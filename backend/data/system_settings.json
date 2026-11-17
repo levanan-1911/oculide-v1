@@ -15,6 +15,6 @@
   "backup_on_maintenance": true,
   "backup_retention_days": 30,
   "backup_max_copies": 10,
-  "updated_at": "2026-11-17T15:35:35.033389",
+  "updated_at": "2026-11-17T16:27:28.175503",
   "updated_by": "test_teardown"
 }

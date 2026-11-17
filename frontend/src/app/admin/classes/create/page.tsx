@@ -46,6 +46,7 @@ export default function CreateClassPage() {
   const [sectionCode, setSectionCode] = useState('');
   const [className, setClassName] = useState('');
   const [semester, setSemester] = useState('HK1 2026–2027');
+  const [dbSemesters, setDbSemesters] = useState<string[]>([]);
   const [credits, setCredits] = useState<number | ''>(3);
   const [description, setDescription] = useState('');
   const [createStatus, setCreateStatus] = useState<ClassStatus>('Hoạt động');
@@ -221,7 +222,27 @@ export default function CreateClassPage() {
         setIsLoadingInstructors(false);
       }
     }
+
+    async function loadSemesters() {
+      try {
+        const res = await fetch('/api/v1/classes/semesters/list');
+        if (res.ok) {
+          const list = await res.json();
+          if (Array.isArray(list) && list.length > 0) {
+            const names = list.map((item: any) => item.ten_hoc_ky || item.ma_hoc_ky);
+            setDbSemesters(names);
+            if (names.length > 0) {
+              setSemester(names[0]);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Lỗi tải danh mục học kỳ:', err);
+      }
+    }
+
     loadInstructors();
+    loadSemesters();
   }, []);
 
   // Xử lý nạp tệp Excel / CSV
@@ -605,17 +626,15 @@ export default function CreateClassPage() {
       const newClass: ClassRow = {
         id: createdClassCode,
         name,
+        courseCode: courseCode || undefined,
+        sectionCode: sectionCode || undefined,
         semester: sem,
         startDate: '05/09/2026',
         endDate: '15/01/2027',
-        roomCode: `${createdClassCode}-ROOM`,
-        roomPassword: '123456',
         status: createStatus,
         studentCount: students.length,
         students: students,
         lecturer: gv,
-        labs: [],
-        exams: [],
       };
       saveStoredClasses([...existingClasses, newClass]);
 
@@ -813,7 +832,7 @@ export default function CreateClassPage() {
                         onChange={(e) => setSemester(e.target.value)}
                         className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-[#121622] dark:text-white"
                       >
-                        {SEMESTERS.map((sem) => (
+                        {(dbSemesters.length > 0 ? dbSemesters : SEMESTERS).map((sem) => (
                           <option key={sem} value={sem}>{sem}</option>
                         ))}
                       </select>

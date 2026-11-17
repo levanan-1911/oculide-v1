@@ -255,9 +255,11 @@ def _insert_questions_for_template(
             ]
 
         for tc in tcs:
-            is_hidden = 1 if tc.get("is_hidden") else 0
+            is_hidden = 1 if (tc.get("is_hidden") or tc.get("isHidden")) else 0
             is_sample = 0 if is_hidden else 1
             tc_pts = float(tc.get("points") if tc.get("points") is not None else 1.0)
+            in_val = tc.get("input_data") if tc.get("input_data") is not None else (tc.get("input") if tc.get("input") is not None else tc.get("inputData") or "")
+            out_val = tc.get("expected_output") if tc.get("expected_output") is not None else (tc.get("expectedOutput") or "")
             cursor.execute(
                 """
                 INSERT INTO BoKiemThu (
@@ -268,8 +270,8 @@ def _insert_questions_for_template(
                 """,
                 (
                     question_id,
-                    tc.get("input_data") or "",
-                    tc.get("expected_output") or "",
+                    str(in_val),
+                    str(out_val),
                     is_sample,
                     is_hidden,
                     tc_pts,

@@ -1,10 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import {
-  Room,
-  RoomEvent,
-  Track,
+import type {
+  Room as LiveKitRoom,
   RemoteTrack,
   RemoteTrackPublication,
   RemoteParticipant,
@@ -31,7 +29,7 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [localVideoTrack, setLocalVideoTrack] = useState<LocalVideoTrack | null>(null);
   const [remoteTracks, setRemoteTracks] = useState<Record<string, RemoteVideoTrack>>({});
-  const roomRef = useRef<Room | null>(null);
+  const roomRef = useRef<LiveKitRoom | null>(null);
 
   useEffect(() => {
     if (!enabled || !roomId) {
@@ -39,62 +37,77 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
     }
 
     let isCancelled = false;
-    const room = new Room({
-      adaptiveStream: true,
-      dynacast: true,
-    });
-    roomRef.current = room;
-
-    const handleTrackSubscribed = (
-      track: RemoteTrack,
-      _publication: RemoteTrackPublication,
-      participant: RemoteParticipant
-    ) => {
-      if (track.kind === Track.Kind.Video) {
-        setRemoteTracks((prev) => ({
-          ...prev,
-          [participant.identity]: track as RemoteVideoTrack,
-        }));
-      }
-    };
-
-    const handleTrackUnsubscribed = (
-      track: RemoteTrack,
-      _publication: RemoteTrackPublication,
-      participant: RemoteParticipant
-    ) => {
-      if (track.kind === Track.Kind.Video) {
-        setRemoteTracks((prev) => {
-          const next = { ...prev };
-          delete next[participant.identity];
-          return next;
-        });
-      }
-    };
-
-    const handleParticipantDisconnected = (participant: RemoteParticipant) => {
-      setRemoteTracks((prev) => {
-        const next = { ...prev };
-        delete next[participant.identity];
-        return next;
-      });
-    };
-
-    room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
-    room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-    room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+    let cleanupRoom: (() => void) | null = null;
 
     const connectToLiveKit = async () => {
       setConnectionState('connecting');
       setErrorMsg(null);
 
       try {
+        const { Room, RoomEvent, Track } = await import('livekit-client');
+        if (isCancelled) return;
+
+        const room = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
+        roomRef.current = room;
+
+        const handleTrackSubscribed = (
+          track: RemoteTrack,
+          _publication: RemoteTrackPublication,
+          participant: RemoteParticipant
+        ) => {
+          if (track.kind === Track.Kind.Video) {
+            setRemoteTracks((prev) => ({
+              ...prev,
+              [participant.identity]: track as RemoteVideoTrack,
+            }));
+          }
+        };
+
+        const handleTrackUnsubscribed = (
+          track: RemoteTrack,
+          _publication: RemoteTrackPublication,
+          participant: RemoteParticipant
+        ) => {
+          if (track.kind === Track.Kind.Video) {
+            setRemoteTracks((prev) => {
+              const next = { ...prev };
+              delete next[participant.identity];
+              return next;
+            });
+          }
+        };
+
+        const handleParticipantDisconnected = (participant: RemoteParticipant) => {
+          setRemoteTracks((prev) => {
+            const next = { ...prev };
+            delete next[participant.identity];
+            return next;
+          });
+        };
+
+        room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
+        room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+        room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+
+        cleanupRoom = () => {
+          room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
+          room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+          room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+          room.disconnect();
+        };
+
         const tokenData = await fetchWithAuth<LiveKitTokenResponse>('/api/v1/livekit/tokens', {
           method: 'POST',
           body: JSON.stringify({ room_id: roomId }),
         });
 
-        if (isCancelled) return;
+        if (isCancelled) {
+          room.disconnect();
+          return;
+        }
 
         await room.connect(tokenData.server_url, tokenData.token);
         if (isCancelled) {
@@ -140,10 +153,9 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
 
     return () => {
       isCancelled = true;
-      room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
-      room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-      room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
-      room.disconnect();
+      if (cleanupRoom) {
+        cleanupRoom();
+      }
       roomRef.current = null;
       setLocalVideoTrack(null);
       setRemoteTracks({});

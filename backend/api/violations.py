@@ -5,7 +5,7 @@ from schemas.violation import (
     ViolationCreateRequest, AIViolationHookRequest, SnapshotAnalyzeRequest,
     ViolationResponse, ViolationStatsItem, ViolationReviewRequest
 )
-from core.permissions import get_current_user, instructor_or_admin_required
+from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
 from database.violation_db import (
     create_violation, get_violations_by_session, get_violations_by_student,
     get_violations_by_room, update_violation_review, get_student_violation_stats
@@ -181,9 +181,9 @@ async def review_violation(
     violation_id: int,
     review_data: Optional[ViolationReviewRequest] = None,
     review_status: Optional[str] = Query(None),
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Giảng viên duyệt hoặc xác nhận sự kiện vi phạm (confirmed hoặc rejected) qua JSON body hoặc Query param"""
+    """Giảng viên duyệt hoặc xác nhận sự kiện vi phạm (confirmed hoặc rejected) - Quyền học thuật độc quyền của Giảng viên"""
     status_val = (review_data.review_status if review_data else None) or review_status or "confirmed"
     if status_val not in ["confirmed", "rejected"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Trạng thái duyệt phải là confirmed hoặc rejected")

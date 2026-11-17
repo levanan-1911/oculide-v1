@@ -24,7 +24,33 @@ class EmailService:
 
     @classmethod
     def _send_mime_message(cls, to_email: str, subject: str, html_body: str) -> bool:
-        """Thực thi kết nối SMTP và gửi Email HTML"""
+        """Thực thi kết nối SMTP và gửi Email HTML (có firewall kiểm soát tên miền)"""
+        # 1. Ràng buộc tên miền theo Cấu hình Hệ thống & Nhật ký (Inbound/Outbound Guard)
+        try:
+            from services.system_settings_manager import SystemSettingsManager
+            sys_settings = SystemSettingsManager.get_settings()
+            raw_domain = (sys_settings.allowed_email_domain or "").strip().lower()
+            if raw_domain:
+                allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
+                if not to_email.strip().lower().endswith(allowed_domain):
+                    logger.warning(
+                        f"🚫 [EMAIL FIREWALL BLOCKED] Từ chối gửi thư tới '{to_email}': "
+                        f"Tên miền không thuộc cấu hình cho phép trong Hệ Thống ({allowed_domain})"
+                    )
+                    try:
+                        from database.system_log_db import create_system_log
+                        create_system_log(
+                            log_level="warning",
+                            module="EMAIL_FIREWALL",
+                            message=f"Chặn gửi email tới '{to_email}': Tên miền không thuộc cấu hình cho phép ({allowed_domain})",
+                            extra_data={"to_email": to_email, "subject": subject, "allowed_domain": allowed_domain}
+                        )
+                    except Exception:
+                        pass
+                    return False
+        except Exception as e:
+            logger.error(f"Lỗi kiểm tra cấu hình tên miền email: {e}")
+
         sender_email = settings.SMTP_FROM_EMAIL or settings.SMTP_USER or "noreply@oculide.edu.vn"
         sender_name = settings.SMTP_FROM_NAME or "Hệ thống Khảo thí Oculide"
 

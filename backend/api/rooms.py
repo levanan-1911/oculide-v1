@@ -9,7 +9,7 @@ from schemas.room import (
     StudentJoinRoomResponse, DeviceCheckRequest, StudentRoomStatusResponse
 )
 from schemas.auth import JoinRoomRequest
-from core.permissions import get_current_user, instructor_or_admin_required
+from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
 from database.room_db import (
     create_room, get_room_by_id, get_room_by_code, get_rooms_by_instructor,
     get_all_rooms, get_rooms_for_student, update_room, delete_room, get_room_dashboard_data,
@@ -86,12 +86,14 @@ async def change_room_status(
 async def mark_manual_attendance(
     room_id: int,
     att_data: RoomManualAttendanceRequest,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Điểm danh thủ công sinh viên trong phòng chờ"""
+    """Điểm danh thủ công sinh viên trong phòng chờ (Quyền độc quyền của Giảng viên)"""
     room = get_room_by_id(room_id)
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    if room.get("instructor_id") != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền điểm danh phòng thi của giảng viên khác")
     success = toggle_manual_attendance(room_id, att_data.student_id, att_data.status)
     if not success:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Không thể cập nhật trạng thái điểm danh cho sinh viên")

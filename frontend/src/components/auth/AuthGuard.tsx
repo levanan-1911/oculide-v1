@@ -7,6 +7,27 @@ interface AuthGuardProps {
   allowedRoles: ('admin' | 'instructor' | 'student')[];
 }
 
+function parseJwtPayload(token: string): any | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4 !== 0) {
+      base64 += '=';
+    }
+    const jsonStr = atob(base64);
+    return JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpired(token: string): boolean {
+  const payload = parseJwtPayload(token);
+  if (!payload || !payload.exp) return false;
+  return Date.now() >= payload.exp * 1000;
+}
+
 export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
   const [isAuthorized, setIsAuthorized] = useState(false);
 
@@ -15,8 +36,14 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
     const token = localStorage.getItem('oculide_token');
     const rawUser = localStorage.getItem('oculide_user');
 
-    if (!token || !rawUser) {
-      // Chưa đăng nhập -> Đá về trang đăng nhập kèm redirect URL
+    if (!token || !rawUser || isTokenExpired(token)) {
+      // Chưa đăng nhập hoặc token đã hết hạn -> Xóa sạch và đá về login
+      localStorage.removeItem('oculide_token');
+      localStorage.removeItem('oculide_user');
+      localStorage.removeItem('oculide_refresh_token');
+      document.cookie = 'oculide_token=; path=/; max-age=0';
+      document.cookie = 'oculide_role=; path=/; max-age=0';
+
       const currentPath = window.location.pathname;
       window.location.replace(`/login?redirect=${encodeURIComponent(currentPath)}`);
       return;
@@ -24,7 +51,7 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
 
     try {
       const user = JSON.parse(rawUser);
-      const userRole = user.role;
+      const userRole = user.role?.toLowerCase();
 
       // 2. Kiểm tra quyền hạn theo vai trò (Role-Based Access Control)
       if (!userRole || !allowedRoles.includes(userRole)) {
@@ -39,11 +66,18 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
         return;
       }
 
+      // Đảm bảo Cookie luôn đồng bộ với localStorage cho server-side middleware
+      document.cookie = `oculide_token=${token}; path=/; max-age=86400; SameSite=Lax`;
+      document.cookie = `oculide_role=${userRole}; path=/; max-age=86400; SameSite=Lax`;
+
       // Xác thực thành công -> Cho phép hiển thị giao diện
       setIsAuthorized(true);
     } catch {
       localStorage.removeItem('oculide_token');
       localStorage.removeItem('oculide_user');
+      localStorage.removeItem('oculide_refresh_token');
+      document.cookie = 'oculide_token=; path=/; max-age=0';
+      document.cookie = 'oculide_role=; path=/; max-age=0';
       window.location.replace('/login');
     }
   }, [allowedRoles]);

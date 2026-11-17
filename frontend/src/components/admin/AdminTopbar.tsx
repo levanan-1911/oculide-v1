@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { fetchWithAuth } from '@/services/apiClient';
 import {
   Bell,
   Search,
@@ -41,69 +42,15 @@ interface NotificationItem {
   link: string;
 }
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'notif-1',
-    title: 'Phát hiện cảnh báo vi phạm AI',
-    desc: 'Ca thi SES-02 (PRJ301) ghi nhận 3 trường hợp mất kết nối và chuyển tab liên tục.',
-    time: '12 phút trước',
-    type: 'danger',
-    read: false,
-    link: '/admin/schedules',
-  },
-  {
-    id: 'notif-2',
-    title: 'Tải Docker Sandbox chạm ngưỡng 82%',
-    desc: 'Cụm máy chủ thực hành sandbox đang chịu tải cao từ 5 ca thi thực hành cùng lúc.',
-    time: '35 phút trước',
-    type: 'warning',
-    read: false,
-    link: '/admin/system',
-  },
-  {
-    id: 'notif-3',
-    title: 'Ca thi hoàn tất nộp bài',
-    desc: 'Ca thi Lab 03 (Lớp CS101) đã kết thúc thành công với 48/48 sinh viên nộp bài.',
-    time: '1 giờ trước',
-    type: 'success',
-    read: true,
-    link: '/admin/schedules',
-  },
-  {
-    id: 'notif-4',
-    title: 'Đã nạp 5 tài khoản mới',
-    desc: 'Dữ liệu Giảng viên và Sinh viên mới đã được đồng bộ vào hệ sinh thái Oculide.',
-    time: 'Hôm nay',
-    type: 'info',
-    read: true,
-    link: '/admin/users',
-  },
-];
+interface SearchResultItem {
+  category: string;
+  type: 'user' | 'class' | 'schedule';
+  title: string;
+  subtitle: string;
+  link: string;
+}
 
-// Dữ liệu mẫu tìm kiếm toàn cục đa module
-const SEARCH_DATABASE = [
-  // 1. Tài khoản
-  { category: 'Tài khoản & Phân quyền', icon: Users, title: 'Long Phạm', subtitle: 'Mã: QT0001 • admin.long@oclide.edu.vn', link: '/admin/users' },
-  { category: 'Tài khoản & Phân quyền', icon: Users, title: 'Thầy Nguyễn Văn Nam', subtitle: 'Mã: GV0012 • Khoa Kỹ thuật phần mềm', link: '/admin/users' },
-  { category: 'Tài khoản & Phân quyền', icon: Users, title: 'Lê Hải Nam', subtitle: 'Mã: GV0026 • Bộ môn An toàn thông tin', link: '/admin/users' },
-  { category: 'Tài khoản & Phân quyền', icon: Users, title: 'Trần Thu Bình', subtitle: 'Mã: SV184801 • Lớp SE1848 - Khoa CNTT', link: '/admin/users' },
-  { category: 'Tài khoản & Phân quyền', icon: Users, title: 'Phạm Minh Châu', subtitle: 'Mã: SV184803 • Lớp SE1848 - Khoa CNTT', link: '/admin/users' },
-
-  // 2. Lớp học
-  { category: 'Lớp học & Sinh viên', icon: BookOpen, title: 'CS101 - Nhập môn Lập trình C/C++', subtitle: 'HK1 2026–2027 • Sĩ số: 48 sinh viên', link: '/admin/classes' },
-  { category: 'Lớp học & Sinh viên', icon: BookOpen, title: 'PRJ301 - Lập trình ứng dụng Java Web', subtitle: 'HK1 2026–2027 • Sĩ số: 45 sinh viên', link: '/admin/classes' },
-  { category: 'Lớp học & Sinh viên', icon: BookOpen, title: 'CSD201 - Cấu trúc dữ liệu & Giải thuật', subtitle: 'HK1 2026–2027 • Sĩ số: 42 sinh viên', link: '/admin/classes' },
-  { category: 'Lớp học & Sinh viên', icon: BookOpen, title: 'CS102 - Kỹ thuật Lập trình nâng cao', subtitle: 'HK1 2026–2027 • Sĩ số: 50 sinh viên', link: '/admin/classes' },
-
-  // 3. Lịch kiểm tra
-  { category: 'Lịch & Phiên kiểm tra', icon: Calendar, title: 'SES-01: Lab 03 - Vòng lặp For/While & Mảng', subtitle: 'Lớp: CS101 • Hôm nay 07:30 - 09:50', link: '/admin/schedules' },
-  { category: 'Lịch & Phiên kiểm tra', icon: Calendar, title: 'SES-02: Kiểm tra quá trình Servlet & MVC', subtitle: 'Lớp: PRJ301 • Hôm nay 13:30 - 15:00', link: '/admin/schedules' },
-
-  // 4. Ngân hàng đề thi
-  { category: 'Đề & Câu hỏi', icon: Code2, title: 'TPL-LAB-01: Lab 01 - Cấu trúc điều khiển & Mảng', subtitle: 'Ngôn ngữ C++ • 3 bài coding (14 test cases)', link: '/admin/questions' },
-  { category: 'Đề & Câu hỏi', icon: Code2, title: 'TPL-LAB-02: Lab 02 - Cấu trúc rẽ nhánh If/Else', subtitle: 'Ngôn ngữ C++ • 4 bài coding (15 test cases)', link: '/admin/questions' },
-  { category: 'Đề & Câu hỏi', icon: Code2, title: 'TPL-EXAM-01: Đề thi trắc nghiệm & coding Python', subtitle: 'Ngôn ngữ Python 3.11 • 5 bài coding (20 test cases)', link: '/admin/questions' },
-];
+const INITIAL_NOTIFICATIONS: NotificationItem[] = [];
 
 export default function AdminTopbar({
   title = 'Tổng quan quản trị',
@@ -122,6 +69,8 @@ export default function AdminTopbar({
   // ── DROPDOWNS OPEN STATES ──
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
@@ -195,6 +144,28 @@ export default function AdminTopbar({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Tải danh sách thông báo từ API Backend
+  useEffect(() => {
+    let isSubscribed = true;
+    async function loadNotifications() {
+      try {
+        const data = await fetchWithAuth<NotificationItem[]>('/api/v1/notifications');
+        if (isSubscribed && Array.isArray(data)) {
+          setNotifications(data);
+        }
+      } catch {
+        if (isSubscribed) setNotifications([]);
+      }
+    }
+
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 30000);
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Xử lý đăng xuất
   const handleLogout = () => {
     localStorage.removeItem('oculide_token');
@@ -208,11 +179,13 @@ export default function AdminTopbar({
   // Đánh dấu tất cả đã đọc
   const handleMarkAllAsRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    fetchWithAuth('/api/v1/notifications/read-all', { method: 'PATCH' }).catch(() => {});
   };
 
   // Xóa toàn bộ thông báo
   const handleClearNotifications = () => {
     setNotifications([]);
+    fetchWithAuth('/api/v1/notifications', { method: 'DELETE' }).catch(() => {});
   };
 
   // Đọc 1 thông báo và điều hướng
@@ -220,21 +193,49 @@ export default function AdminTopbar({
     setNotifications((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, read: true } : n))
     );
+    fetchWithAuth(`/api/v1/notifications/${encodeURIComponent(item.id)}/read`, { method: 'PATCH' }).catch(() => {});
     setIsNotifOpen(false);
     router.push(item.link);
   };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  // Lọc kết quả tìm kiếm toàn cục
-  const filteredSearch = searchQuery.trim()
-    ? SEARCH_DATABASE.filter(
-        (item) =>
-          item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.category.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : [];
+  // Tìm kiếm toàn cục tức thời từ API Backend
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const data = await fetchWithAuth<{ total: number; results: SearchResultItem[] }>(
+          `/api/v1/admin/search?q=${encodeURIComponent(q)}`
+        );
+        if (data && Array.isArray(data.results)) {
+          setSearchResults(data.results);
+        } else {
+          setSearchResults([]);
+        }
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  function getSearchIcon(type: string) {
+    if (type === 'user') return Users;
+    if (type === 'class') return BookOpen;
+    if (type === 'schedule') return Calendar;
+    return Search;
+  }
 
   return (
     <header className="flex h-[68px] w-full shrink-0 items-center justify-between border-b border-slate-200/80 bg-white px-6 lg:px-8 dark:border-white/10 dark:bg-[#0d1017] transition-colors z-40 relative">
@@ -317,14 +318,19 @@ export default function AdminTopbar({
                     </div>
                   </div>
                 </div>
-              ) : filteredSearch.length > 0 ? (
-                // Danh sách kết quả tìm thấy
+              ) : isSearching ? (
+                <div className="p-6 text-center text-slate-400">
+                  <div className="h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  <p>Đang tìm kiếm trong hệ thống...</p>
+                </div>
+              ) : searchResults.length > 0 ? (
+                // Danh sách kết quả tìm thấy từ CSDL thật
                 <div className="divide-y divide-slate-100 dark:divide-white/5">
                   <div className="p-2 text-[11px] font-semibold text-slate-400">
-                    Tìm thấy {filteredSearch.length} kết quả phù hợp:
+                    Tìm thấy {searchResults.length} kết quả phù hợp:
                   </div>
-                  {filteredSearch.map((item, idx) => {
-                    const Icon = item.icon;
+                  {searchResults.map((item, idx) => {
+                    const Icon = getSearchIcon(item.type);
                     return (
                       <Link
                         key={idx}

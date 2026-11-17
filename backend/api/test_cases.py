@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from typing import List, Dict, Any
 
 from schemas.test_case import TestCaseCreateRequest, TestCaseUpdateRequest, TestCaseResponse
-from core.permissions import get_current_user, instructor_or_admin_required
+from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
 from database.question_db import (
     create_test_case,
     get_test_cases_by_question,
@@ -17,9 +17,9 @@ router = APIRouter()
 @router.post("", response_model=TestCaseResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_test_case(
     test_case_data: TestCaseCreateRequest,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Tạo mới test case cho câu hỏi lập trình (bảng TestCases)"""
+    """Tạo mới test case cho câu hỏi lập trình (Quyền độc quyền của Giảng viên)"""
     if not test_case_data.question_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question_id là bắt buộc")
         
@@ -66,9 +66,9 @@ async def get_single_test_case(
 async def modify_test_case(
     test_case_id: int,
     data: TestCaseUpdateRequest,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Cập nhật dữ liệu test case"""
+    """Cập nhật dữ liệu test case (Quyền độc quyền của Giảng viên)"""
     updated = update_test_case(
         test_case_id=test_case_id,
         input_data=data.input_data,
@@ -83,9 +83,9 @@ async def modify_test_case(
 @router.delete("/{test_case_id}", status_code=status.HTTP_200_OK)
 async def remove_test_case(
     test_case_id: int,
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Xóa một test case"""
+    """Xóa một test case (Quyền độc quyền của Giảng viên)"""
     deleted = delete_test_case(test_case_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy test case để xóa")

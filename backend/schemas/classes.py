@@ -18,6 +18,8 @@ class ClassUpdateRequest(BaseModel):
     section_code: Optional[str] = Field(None, max_length=50)
     semester: Optional[str] = Field(None, max_length=50)
     description: Optional[str] = Field(None, max_length=500)
+    instructor_id: Optional[int] = None
+    status: Optional[str] = Field(None, max_length=50)
 
 class ClassResponse(BaseModel):
     class_id: int
@@ -28,6 +30,7 @@ class ClassResponse(BaseModel):
     semester: Optional[str] = None
     instructor_id: int
     description: Optional[str] = None
+    status: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     instructor_name: Optional[str] = None

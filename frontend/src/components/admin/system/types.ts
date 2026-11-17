@@ -1,10 +1,13 @@
+export type AuditLogCategory = 'LOGIN' | 'PASSWORD' | 'SETTINGS' | 'BACKUP' | 'SECURITY' | 'SYSTEM';
+
 export interface AuditLogItem {
   id: string;
   timestamp: string;
   actorName: string;
   actorRole: 'admin' | 'instructor' | 'student' | 'system';
   action: string;
-  category: 'AUTH' | 'EXAM' | 'SYSTEM' | 'SECURITY';
+  category: AuditLogCategory;
+  categoryLabel?: string;
   severity: 'INFO' | 'WARNING' | 'CRITICAL' | 'SECURITY';
   ipAddress: string;
   status: 'success' | 'failure' | 'flagged';
@@ -28,25 +31,23 @@ export interface ServiceHealthItem {
 }
 
 export interface SystemSettings {
-  // 1. Giới hạn Hạ tầng & Bảo vệ Máy chủ (Server & Sandbox Protection)
   maxCodeFileSizeMb: number;
   maxSandboxWorkers: number;
   maxLiveKitBitrateKbps: number;
   autoCleanupDraftsDays: number;
   auditLogRetentionDays: number;
-
-  // 2. Tích hợp Dịch vụ & Kết nối (Integrations & Endpoints)
-  livekitServerUrl: string;
-  smtpHost: string;
-  smtpPort: number;
-  smtpSenderEmail: string;
   allowedEmailDomain: string;
-
-  // 3. Chính sách An ninh & Vận hành (Security & Maintenance)
   maxLoginAttempts: number;
   jwtTokenExpiryMinutes: number;
   maintenanceMode: boolean;
   maintenanceMessage: string;
+  // Cấu hình thời gian & chính sách sao lưu
+  backupScheduleEnabled: boolean;
+  backupFrequency: 'daily' | 'weekly';
+  backupTime: string;
+  backupOnMaintenance: boolean;
+  backupRetentionDays: number;
+  backupMaxCopies: number;
 }
 
 export interface BackupItem {
@@ -54,9 +55,28 @@ export interface BackupItem {
   filename: string;
   createdAt: string;
   sizeMb: number;
-  type: 'auto' | 'manual';
+  type: 'auto' | 'manual' | 'maintenance';
   status: 'completed' | 'in_progress' | 'failed';
   checksum: string;
+}
+
+export interface StorageStats {
+  submissions_count: number;
+  violations_count: number;
+  logs_count: number;
+  users_count: number;
+  counts: {
+    submissions_count: number;
+    violations_count: number;
+    logs_count: number;
+    users_count: number;
+  };
+  disk: {
+    total_gb: number;
+    used_gb: number;
+    free_gb: number;
+    used_percent: number;
+  };
 }
 
 export const SYSTEM_STORAGE_SETTINGS_KEY = 'oculide_admin_system_settings';

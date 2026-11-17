@@ -12,6 +12,13 @@ def _resolve_class_id(cursor, class_id_or_code: Any) -> Optional[int]:
     r = cursor.fetchone()
     if r:
         return r[0]
+    # Khớp bổ sung với khoảng trắng được chuẩn hóa (ví dụ 'CS 202  D' -> 'CS 202 D')
+    normalized = " ".join(val_str.split())
+    if normalized != val_str:
+        cursor.execute("SELECT ma_lop FROM LopHoc WHERE ma_lop_hoc = ?", (normalized,))
+        r = cursor.fetchone()
+        if r:
+            return r[0]
     return None
 
 def _resolve_user_id(cursor, student_id_or_ident: Any) -> Optional[int]:
@@ -51,6 +58,8 @@ def create_class(
     description: Optional[str] = None
 ) -> Dict:
     """Giảng viên tạo một lớp học phần mới trong bảng LopHoc"""
+    # Chuẩn hóa khoảng trắng và viết hoa mã lớp
+    class_code = " ".join(class_code.strip().split()).upper()
     # Tự động suy luận mã môn và mã phân lớp nếu người dùng không truyền riêng
     if not section_code and not course_code and class_code:
         parts = class_code.strip().split()
@@ -110,6 +119,7 @@ def get_class_by_id(class_id: Any) -> Optional[Dict]:
                    c.hoc_ky AS semester,
                    c.ma_giang_vien AS instructor_id,
                    c.mo_ta AS description, 
+                   c.trang_thai AS status,
                    c.ngay_tao AS created_at, 
                    c.ngay_cap_nhat AS updated_at, 
                    COALESCE(u.ho_va_ten, N'Chưa phân công') AS instructor_name,
@@ -142,6 +152,7 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
                        c.hoc_ky AS semester,
                        c.ma_giang_vien AS instructor_id,
                        c.mo_ta AS description, 
+                       c.trang_thai AS status,
                        c.ngay_tao AS created_at, 
                        c.ngay_cap_nhat AS updated_at, 
                        COALESCE(u.ho_va_ten, N'Chưa phân công') AS instructor_name,
@@ -161,6 +172,7 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
                        c.hoc_ky AS semester,
                        c.ma_giang_vien AS instructor_id,
                        c.mo_ta AS description, 
+                       c.trang_thai AS status,
                        c.ngay_tao AS created_at, 
                        c.ngay_cap_nhat AS updated_at, 
                        COALESCE(u.ho_va_ten, N'Chưa phân công') AS instructor_name,
@@ -177,18 +189,33 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
         conn.close()
 
 def update_class(
-    class_id: int,
+    class_id: Any,
     class_code: Optional[str] = None,
     class_name: Optional[str] = None,
     course_code: Optional[str] = None,
     section_code: Optional[str] = None,
     semester: Optional[str] = None,
-    description: Optional[str] = None
+    description: Optional[str] = None,
+    instructor_id: Optional[int] = None,
+    status: Optional[str] = None
 ) -> Optional[Dict]:
-    """Cập nhật thông tin lớp học phần"""
+    """Cập nhật thông tin lớp học phần (hỗ trợ cả int ID hoặc chuỗi mã lớp như 'CS101')"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        real_id = _resolve_class_id(cursor, class_id)
+        if not real_id:
+            return None
+        db_status = None
+        if status:
+            s_clean = status.strip().lower()
+            if s_clean in ('da_dong', 'closed', 'da_ket_thuc', 'đã kết thúc', 'khoa'):
+                db_status = 'da_dong'
+            elif s_clean in ('dang_mo', 'open', 'active', 'hoat_dong', 'hoạt động', 'chưa mở', 'chua_mo'):
+                db_status = 'dang_mo'
+            else:
+                db_status = 'dang_mo'
+
         cursor.execute("""
             UPDATE LopHoc
             SET ma_lop_hoc = COALESCE(?, ma_lop_hoc),
@@ -197,11 +224,13 @@ def update_class(
                 ma_phan_lop = COALESCE(?, ma_phan_lop),
                 hoc_ky = COALESCE(?, hoc_ky),
                 mo_ta = COALESCE(?, mo_ta),
+                ma_giang_vien = COALESCE(?, ma_giang_vien),
+                trang_thai = COALESCE(?, trang_thai),
                 ngay_cap_nhat = GETDATE()
             WHERE ma_lop = ?
-        """, (class_code, class_name, course_code, section_code, semester, description, class_id))
+        """, (class_code, class_name, course_code, section_code, semester, description, instructor_id, db_status, real_id))
         conn.commit()
-        return get_class_by_id(class_id)
+        return get_class_by_id(real_id)
     finally:
         cursor.close()
         conn.close()
@@ -240,6 +269,8 @@ def delete_class(class_id: Any) -> bool:
         real_id = _resolve_class_id(cursor, class_id)
         if not real_id:
             return False
+        # Gỡ liên kết phòng thi trước để tránh vi phạm khóa ngoại FK_Phong_LopHoc
+        cursor.execute("UPDATE Phong SET ma_lop = NULL WHERE ma_lop = ?", (real_id,))
         cursor.execute("DELETE FROM SinhVienLopHoc WHERE ma_lop = ?", (real_id,))
         cursor.execute("DELETE FROM LopHoc WHERE ma_lop = ?", (real_id,))
         conn.commit()
@@ -340,8 +371,14 @@ def search_students(
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
         results = []
+        seen_student_ids = set()
         for r in rows:
             item = dict(zip(columns, r))
+            sid = (item.get("student_id") or "").strip().upper()
+            if sid and sid in seen_student_ids:
+                continue
+            if sid:
+                seen_student_ids.add(sid)
             item["is_active"] = bool(item["is_active"])
             item["is_enrolled"] = bool(item["is_enrolled"])
             results.append(item)

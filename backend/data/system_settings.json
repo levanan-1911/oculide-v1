@@ -1,0 +1,20 @@
+{
+  "max_code_file_size_mb": 2,
+  "max_sandbox_workers": 4,
+  "max_livekit_bitrate_kbps": 350,
+  "auto_cleanup_drafts_days": 30,
+  "audit_log_retention_days": 90,
+  "allowed_email_domain": "@school.edu.vn",
+  "max_login_attempts": 5,
+  "jwt_token_expiry_minutes": 60,
+  "maintenance_mode": false,
+  "maintenance_message": "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",
+  "backup_schedule_enabled": true,
+  "backup_frequency": "daily",
+  "backup_time": "02:00",
+  "backup_on_maintenance": true,
+  "backup_retention_days": 30,
+  "backup_max_copies": 10,
+  "updated_at": "2026-11-17T16:27:28.175503",
+  "updated_by": "test_teardown"
+}

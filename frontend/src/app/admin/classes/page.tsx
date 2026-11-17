@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -42,27 +42,13 @@ import {
   ParsedStudentRow,
 } from './excelParser';
 import {
-  ClassExam,
-  ClassLab,
   ClassRow,
   ClassStatus,
-  ExamStatus,
   INITIAL_CLASSES,
-  MOCK_CLASS_IDS,
-  LabStatus,
-  QuestionTemplate,
-  SAMPLE_QUESTION_TEMPLATES,
   StudentRow,
   StudentStatus,
-  addMinutesToIso,
-  calculateDurationInMinutes,
-  formatDatetimeVietnamese,
-  generateRandomPassword,
-  generateRandomRoomCode,
   getStoredClasses,
-  getStoredQuestionTemplates,
   saveStoredClasses,
-  toIsoDatetime,
 } from './types';
 
 const SEMESTERS = ['HK1 2026–2027', 'HK2 2026–2027', 'HKT 2026-27', 'HKT 2025-26'];
@@ -97,12 +83,17 @@ function ClassManagerContent() {
 
   const [classes, setClasses] = useState<ClassRow[]>(INITIAL_CLASSES);
   const [selectedClassId, setSelectedClassId] = useState(INITIAL_CLASSES[0]?.id || '');
+  const selectedClassIdRef = useRef(selectedClassId);
+  useEffect(() => {
+    selectedClassIdRef.current = selectedClassId;
+  }, [selectedClassId]);
   const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
   const [search, setSearch] = useState('');
   const [semester, setSemester] = useState('Tất cả học kỳ');
   const [status, setStatus] = useState('Tất cả trạng thái');
   const [studentSearch, setStudentSearch] = useState('');
   const [dbSemesters, setDbSemesters] = useState<Array<{ ma_hoc_ky: string; ten_hoc_ky: string }>>([]);
+  const [instructorsList, setInstructorsList] = useState<Array<{ user_id: number; full_name: string; username: string; email: string }>>([]);
 
   // Modals state
   const [editingClass, setEditingClass] = useState<ClassRow | null>(null);
@@ -166,27 +157,8 @@ function ClassManagerContent() {
           const data = await res.json();
           setSearchedStudents(data);
         } else {
-          // Fallback tìm kiếm trong danh sách sinh viên mẫu
-          const allStoredStudents: any[] = [];
-          classes.forEach((c) => c.students.forEach((s) => allStoredStudents.push(s)));
-          const kLower = keyword.toLowerCase();
-          const filtered = allStoredStudents
-            .filter(
-              (s) =>
-                s.id.toLowerCase().includes(kLower) ||
-                s.name.toLowerCase().includes(kLower) ||
-                (s.email && s.email.toLowerCase().includes(kLower))
-            )
-            .map((s) => ({
-              user_id: s.id,
-              student_id: s.id,
-              full_name: s.name,
-              email: s.email || `${s.id.toLowerCase()}@dtu.edu.vn`,
-              lop_sinh_hoat: s.homeroomClass || 'K29-CSU',
-              department: s.department || 'Khoa CMU',
-              is_enrolled: targetClass?.students.some((st) => st.id === s.id) ?? false,
-            }));
-          setSearchedStudents(filtered.slice(0, 8));
+          setSearchedStudents([]);
+          setAddStudentError('Không tìm thấy sinh viên phù hợp trong hệ thống.');
         }
       } catch (err) {
         console.error('Lỗi tìm kiếm sinh viên:', err);
@@ -197,6 +169,67 @@ function ClassManagerContent() {
 
     return () => clearTimeout(timer);
   }, [studentSearchKeyword, isAddStudentOpen, targetClassForStudent, viewingClass, selectedClass, classes]);
+
+  // Hàm tải danh sách sinh viên ghi danh trong lớp từ CSDL SQL Server
+  const fetchStudentsForClass = useCallback(async (classId: string) => {
+    if (!classId) return;
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      const res = await fetch(`/api/v1/classes/${encodeURIComponent(classId)}/students`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (res.ok) {
+        const enrolledList = await res.json();
+        if (Array.isArray(enrolledList)) {
+          const mappedStudents: StudentRow[] = enrolledList.map((st: any) => ({
+            id: st.student_id || st.username || String(st.user_id),
+            name: st.full_name,
+            email: st.email,
+            phone: st.phone_number || undefined,
+            homeroomClass: st.lop_sinh_hoat || undefined,
+            department: st.department || undefined,
+            status:
+              st.status === 'hoc_ghep'
+                ? 'Học ghép'
+                : st.status === 'hoc_lai'
+                ? 'Học lại'
+                : st.status === 'hoc_vuot'
+                ? 'Học vượt'
+                : 'Đang học',
+          }));
+
+          setClasses((prev) => {
+            const updated = prev.map((c) =>
+              c.id === classId
+                ? {
+                    ...c,
+                    students: mappedStudents,
+                    studentCount: mappedStudents.length,
+                  }
+                : c
+            );
+            saveStoredClasses(updated);
+            return updated;
+          });
+
+          setViewingClass((prev) => {
+            if (prev && prev.id === classId) {
+              return {
+                ...prev,
+                students: mappedStudents,
+                studentCount: mappedStudents.length,
+              };
+            }
+            return prev;
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách sinh viên lớp:', err);
+    }
+  }, []);
 
   // Sync with localStorage on client mount & handle newly created class param
   useEffect(() => {
@@ -232,34 +265,45 @@ function ClassManagerContent() {
             const realClasses: ClassRow[] = apiClasses.map((apiCls: any) => ({
               id: apiCls.class_code,
               name: apiCls.class_name,
-              courseCode: apiCls.course_code,
-              sectionCode: apiCls.section_code,
+              courseCode: apiCls.course_code || undefined,
+              sectionCode: apiCls.section_code || undefined,
               semester: apiCls.semester || 'HK1 2026–2027',
-              startDate: '05/09/2026',
-              endDate: '15/01/2027',
-              roomCode: `${apiCls.class_code}-ROOM`,
-              roomPassword: '123456',
-              status: 'Hoạt động',
-              lecturer: apiCls.instructor_name || 'TS. Huỳnh Bá Diệu',
+              status: apiCls.status === 'da_dong' ? 'Đã kết thúc' : 'Hoạt động',
+              lecturer: apiCls.instructor_name || 'Chưa phân công',
+              instructor_id: apiCls.instructor_id ?? null,
               studentCount: typeof apiCls.student_count === 'number' ? apiCls.student_count : 0,
               students: [],
-              labs: [],
-              exams: [],
             }));
 
-            setClasses(realClasses);
-            saveStoredClasses(realClasses);
+            // Giữ lại sinh viên đã có trong state, không ghi đè thành mảng rỗng
+            setClasses((prev) => {
+              const updated = realClasses.map((rc) => {
+                const existing = prev.find((p) => p.id === rc.id);
+                return {
+                  ...rc,
+                  students: existing && existing.students && existing.students.length > 0 ? existing.students : rc.students,
+                  studentCount: rc.studentCount || (existing ? existing.studentCount : 0),
+                };
+              });
+              saveStoredClasses(updated);
+              return updated;
+            });
 
             const createdId = searchParams.get('created');
-            setSelectedClassId((current) => {
-              if (createdId && realClasses.some((c) => c.id === createdId)) {
-                return createdId;
-              }
-              if (!current || !realClasses.some((c) => c.id === current)) {
-                return realClasses[0]?.id || '';
-              }
-              return current;
-            });
+            const currentActive = selectedClassIdRef.current;
+            let activeIdToLoad = '';
+            if (createdId && realClasses.some((c) => c.id === createdId)) {
+              activeIdToLoad = createdId;
+            } else if (currentActive && realClasses.some((c) => c.id === currentActive)) {
+              activeIdToLoad = currentActive;
+            } else if (realClasses.length > 0) {
+              activeIdToLoad = realClasses[0].id;
+            }
+
+            if (activeIdToLoad) {
+              setSelectedClassId(activeIdToLoad);
+              fetchStudentsForClass(activeIdToLoad);
+            }
           }
         }
       } catch (err) {
@@ -267,7 +311,7 @@ function ClassManagerContent() {
       }
     }
     syncClassesFromApi();
-  }, [searchParams]);
+  }, [searchParams, fetchStudentsForClass]);
 
   // Tải danh mục học kỳ từ CSDL bảng HocKy để đồng bộ bộ lọc
   useEffect(() => {
@@ -284,66 +328,43 @@ function ClassManagerContent() {
         console.warn('Lỗi tải danh mục học kỳ từ CSDL:', err);
       }
     }
+    async function loadInstructors() {
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+        const res = await fetch('/api/v1/admin/users?role=instructor&page_size=100', {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.users)) {
+            setInstructorsList(
+              data.users.map((u: any) => ({
+                user_id: u.user_id,
+                full_name: u.full_name || u.username,
+                username: u.username,
+                email: u.email,
+              }))
+            );
+          }
+        }
+      } catch (err) {
+        console.warn('Lỗi tải danh sách giảng viên:', err);
+      }
+    }
     loadSemesters();
+    loadInstructors();
   }, []);
 
-  // Đồng bộ danh sách sinh viên ghi danh trong lớp từ CSDL Backend khi chọn lớp
+  // Tự động tải sinh viên ngay khi đổi lớp đang chọn hoặc khi lớp đang chọn chưa nạp sinh viên vào state
   useEffect(() => {
     if (!selectedClassId) return;
-    const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
-    fetch(`/api/v1/classes/${encodeURIComponent(selectedClassId)}/students`, {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((enrolledList) => {
-        if (Array.isArray(enrolledList)) {
-          const mappedStudents: StudentRow[] = enrolledList.map((st: any) => ({
-            id: st.student_id || st.username || String(st.user_id),
-            name: st.full_name,
-            email: st.email,
-            phone: st.phone_number || undefined,
-            homeroomClass: st.lop_sinh_hoat || undefined,
-            department: st.department || undefined,
-            status:
-              st.status === 'hoc_ghep'
-                ? 'Học ghép'
-                : st.status === 'hoc_lai'
-                ? 'Học lại'
-                : st.status === 'hoc_vuot'
-                ? 'Học vượt'
-                : 'Đang học',
-          }));
-
-          setClasses((prev) => {
-            const updated = prev.map((c) =>
-              c.id === selectedClassId
-                ? {
-                    ...c,
-                    students: mappedStudents,
-                    studentCount: mappedStudents.length,
-                  }
-                : c
-            );
-            saveStoredClasses(updated);
-            return updated;
-          });
-
-          setViewingClass((prev) => {
-            if (prev && prev.id === selectedClassId) {
-              return {
-                ...prev,
-                students: mappedStudents,
-                studentCount: mappedStudents.length,
-              };
-            }
-            return prev;
-          });
-        }
-      })
-      .catch((err) => console.error('Lỗi đồng bộ SV lớp:', err));
-  }, [selectedClassId]);
+    const currentCls = classes.find((c) => c.id === selectedClassId);
+    if (!currentCls || (currentCls.studentCount > 0 && currentCls.students.length === 0)) {
+      fetchStudentsForClass(selectedClassId);
+    }
+  }, [selectedClassId, classes, fetchStudentsForClass]);
 
   function confirmDeleteStudent() {
     if (!deletingStudent) return;
@@ -698,7 +719,7 @@ function ClassManagerContent() {
     setEditingClass(null);
   }
 
-  function handleToggleClassStatus(classId: string, newStatus: ClassStatus) {
+  async function handleToggleClassStatus(classId: string, newStatus: ClassStatus) {
     const updated = classes.map((item) =>
       item.id === classId
         ? {
@@ -716,9 +737,25 @@ function ClassManagerContent() {
         status: newStatus,
       });
     }
+
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      await fetch(`/api/v1/classes/${encodeURIComponent(classId)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          status: newStatus,
+        }),
+      });
+    } catch (err) {
+      console.error('Lỗi khi cập nhật trạng thái lớp:', err);
+    }
   }
 
-  function saveEditClass(event: FormEvent<HTMLFormElement>) {
+  async function saveEditClass(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingClass) return;
     const form = event.currentTarget;
@@ -726,11 +763,13 @@ function ClassManagerContent() {
     const newId = String(formData.get('classId') ?? '').trim().toUpperCase();
     const name = String(formData.get('className') ?? '').trim();
     const classSemester = String(formData.get('semester') ?? '').trim();
-    const classStartDate = String(formData.get('startDate') ?? '').trim() || '05/09/2026';
-    const classEndDate = String(formData.get('endDate') ?? '').trim() || '15/01/2027';
-    const classRoomCode = String(formData.get('roomCode') ?? '').trim().toUpperCase() || `${newId}-ROOM`;
-    const classRoomPassword = String(formData.get('roomPassword') ?? '').trim() || '123456';
+    const courseCode = String(formData.get('courseCode') ?? '').trim().toUpperCase() || undefined;
+    const sectionCode = String(formData.get('sectionCode') ?? '').trim().toUpperCase() || undefined;
     const classStatus = String(formData.get('status') ?? 'Hoạt động') as ClassStatus;
+    const instructorIdRaw = formData.get('instructorId');
+    const instructorId = instructorIdRaw ? Number(instructorIdRaw) : null;
+    const selectedInstructor = instructorsList.find((i) => i.user_id === instructorId);
+    const lecturer = selectedInstructor ? selectedInstructor.full_name : (editingClass.lecturer || 'Chưa phân công');
 
     if (!newId) {
       setEditError('Mã lớp không được để trống.');
@@ -755,12 +794,12 @@ function ClassManagerContent() {
             ...item,
             id: newId,
             name,
+            courseCode,
+            sectionCode,
             semester: classSemester,
-            startDate: classStartDate,
-            endDate: classEndDate,
-            roomCode: classRoomCode,
-            roomPassword: classRoomPassword,
             status: classStatus,
+            instructor_id: instructorId,
+            lecturer,
           }
         : item
     );
@@ -776,13 +815,35 @@ function ClassManagerContent() {
         ...viewingClass,
         id: newId,
         name,
+        courseCode,
+        sectionCode,
         semester: classSemester,
-        startDate: classStartDate,
-        endDate: classEndDate,
-        roomCode: classRoomCode,
-        roomPassword: classRoomPassword,
         status: classStatus,
+        instructor_id: instructorId,
+        lecturer,
       });
+    }
+
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
+      await fetch(`/api/v1/classes/${encodeURIComponent(editingClass.id)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          class_code: newId,
+          class_name: name,
+          course_code: courseCode,
+          section_code: sectionCode,
+          semester: classSemester,
+          status: classStatus,
+          instructor_id: instructorId,
+        }),
+      });
+    } catch (err) {
+      console.error('Lỗi khi lưu thông tin lớp vào CSDL:', err);
     }
 
     setEditingClass(null);
@@ -1111,8 +1172,8 @@ function ClassManagerContent() {
                             <td className="px-3 py-3 whitespace-nowrap">
                               <p className="font-semibold text-slate-700">{classItem.semester}</p>
                               <div className="mt-0.5 flex items-center gap-1 text-[10.5px] text-slate-400">
-                                <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
-                                <span>{classItem.startDate || '05/09/2026'} – {classItem.endDate || '15/01/2027'}</span>
+                                <BookOpen className="h-3 w-3 text-slate-400 shrink-0" />
+                                <span>{classItem.courseCode ? `Môn: ${classItem.courseCode}` : 'Học kỳ chính thức'}</span>
                               </div>
                             </td>
                             <td className="px-2 py-3 text-center whitespace-nowrap font-bold text-slate-700 dark:text-slate-200">
@@ -1446,7 +1507,8 @@ function ClassManagerContent() {
                     <StatusBadge status={viewingClass.status} />
                   </div>
                   <p className="text-xs font-medium text-slate-500 truncate mt-0.5">
-                    {viewingClass.startDate || '05/09/2026'} → {viewingClass.endDate || '15/01/2027'}
+                    {viewingClass.courseCode ? `Mã môn: ${viewingClass.courseCode}` : 'Học kỳ chính khóa'}
+                    {viewingClass.sectionCode ? ` • Phân lớp: ${viewingClass.sectionCode}` : ''}
                   </p>
                 </div>
               </div>
@@ -2358,7 +2420,7 @@ function ClassManagerContent() {
                   defaultValue={editingClass.semester}
                   className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 >
-                  {SEMESTERS.map((item) => (
+                  {availableSemesters.map((item) => (
                     <option key={item} value={item}>
                       {item}
                     </option>
@@ -2366,21 +2428,44 @@ function ClassManagerContent() {
                 </select>
               </div>
 
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">Giảng viên phụ trách</label>
+                  <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md dark:bg-blue-500/15 dark:text-blue-400">
+                    Admin phân công
+                  </span>
+                </div>
+                <select
+                  name="instructorId"
+                  defaultValue={editingClass.instructor_id ?? ''}
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">-- Chưa phân công giảng viên --</option>
+                  {instructorsList.map((inst) => (
+                    <option key={inst.user_id} value={inst.user_id}>
+                      {inst.full_name} ({inst.username})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">Thời gian bắt đầu</label>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Mã môn học</label>
                   <input
-                    name="startDate"
-                    defaultValue={editingClass.startDate || '05/09/2026'}
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    name="courseCode"
+                    defaultValue={editingClass.courseCode || ''}
+                    placeholder="VD: CMU-CS 316"
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 uppercase"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">Thời gian kết thúc</label>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Mã phân lớp</label>
                   <input
-                    name="endDate"
-                    defaultValue={editingClass.endDate || '15/01/2027'}
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    name="sectionCode"
+                    defaultValue={editingClass.sectionCode || ''}
+                    placeholder="VD: AIS, DDIS"
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 uppercase"
                   />
                 </div>
               </div>

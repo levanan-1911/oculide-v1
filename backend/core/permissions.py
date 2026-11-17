@@ -54,5 +54,6 @@ def require_roles(allowed_roles: List[str]) -> Callable:
 
 # Shortcuts cho các vai trò thông dụng
 admin_required = require_roles(["admin"])
+instructor_required = require_roles(["instructor"])
 instructor_or_admin_required = require_roles(["instructor", "admin"])
 student_required = require_roles(["student"])

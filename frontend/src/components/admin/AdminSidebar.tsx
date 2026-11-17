@@ -7,9 +7,7 @@ import {
   LayoutGrid,
   UserCheck,
   Table2,
-  FileCode2,
   Clock,
-  BookOpen,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -53,12 +51,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: 'Lớp & sinh viên',
         href: '/admin/classes',
         icon: Table2,
-      },
-      {
-        id: 'questions',
-        label: 'Đề & câu hỏi',
-        href: '/admin/questions',
-        icon: FileCode2,
       },
       {
         id: 'schedules',
@@ -154,8 +146,6 @@ export default function AdminSidebar({
       ? 'questions'
       : pathname.startsWith('/admin/schedules') 
       ? 'schedules'
-      : pathname.startsWith('/admin/reports') 
-      ? 'reports'
       : pathname.startsWith('/admin/system') 
       ? 'system'
       : pathname.startsWith('/admin/dashboard') || pathname === '/admin' 

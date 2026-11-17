@@ -33,26 +33,39 @@ export default function LoginPage() {
     message: string;
   }>({ isActive: false, message: '' });
 
-  // Kiểm tra cờ bảo trì hệ thống
+  // Kiểm tra cờ bảo trì hệ thống trực tiếp từ API công khai của Backend
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem('oculide_admin_system_settings');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed.maintenanceMode) {
-            setMaintenanceInfo({
-              isActive: true,
-              message:
-                parsed.maintenanceMessage ||
-                'Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.',
-            });
-          }
+    fetch('/api/v1/system/public-config')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.maintenance_mode) {
+          setMaintenanceInfo({
+            isActive: true,
+            message:
+              data.maintenance_message ||
+              'Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.',
+          });
         }
-      } catch {
-        // ignore
-      }
-    }
+      })
+      .catch(() => {
+        // Fallback đọc từ localStorage nếu mất mạng
+        try {
+          const raw = localStorage.getItem('oculide_admin_system_settings');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.maintenanceMode) {
+              setMaintenanceInfo({
+                isActive: true,
+                message:
+                  parsed.maintenanceMessage ||
+                  'Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.',
+              });
+            }
+          }
+        } catch {
+          // ignore
+        }
+      });
   }, []);
 
   // Khởi tạo Theme & tiền xử lý IP Public ngầm
@@ -65,6 +78,31 @@ export default function LoginPage() {
 
     // Tiền phân giải IP Public ngầm để sẵn sàng khi bấm Đăng nhập
     getClientPublicIp().catch(() => {});
+
+    // Nếu đã có token hợp lệ còn hạn trong localStorage -> Chuyển hướng về Dashboard
+    try {
+      const token = localStorage.getItem('oculide_token');
+      const rawUser = localStorage.getItem('oculide_user');
+      if (token && rawUser) {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+          if (payload.exp && Date.now() < payload.exp * 1000) {
+            const user = JSON.parse(rawUser);
+            const role = (user.role || '').toLowerCase();
+            const target =
+              role === 'admin'
+                ? '/admin/dashboard'
+                : role === 'instructor'
+                ? '/instructor/dashboard'
+                : '/student/dashboard';
+            window.location.replace(target);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
   }, []);
 
   const applyTheme = (t: 'dark' | 'light') => {

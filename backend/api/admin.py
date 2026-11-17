@@ -4,6 +4,9 @@ from typing import Optional, List, Dict, Any
 import asyncio
 import secrets
 import string
+import logging
+
+logger = logging.getLogger("admin_api")
 
 from schemas.admin import (
     AdminUserCreateRequest, AdminUserStatusUpdate, AdminUserRoleUpdate,

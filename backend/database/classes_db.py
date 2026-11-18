@@ -412,7 +412,9 @@ def enroll_student_to_class(
         if not real_student_id:
             if student_name and student_name.strip():
                 mssv = str(student_user_id).strip()
-                student_email = email.strip() if email else f"{mssv.lower()}@dtu.edu.vn"
+                if not email or not email.strip() or "@" not in email:
+                    raise ValueError(f"Thiếu địa chỉ email hợp lệ cho sinh viên '{student_name}' ({mssv}). Hệ thống không thể tự sinh email.")
+                student_email = email.strip().lower()
                 from core.security import get_password_hash
                 default_pwd_hash = get_password_hash(f"{mssv}@123")
                 cursor.execute("""

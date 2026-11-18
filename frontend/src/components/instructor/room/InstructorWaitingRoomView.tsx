@@ -100,7 +100,7 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
         const realAttendees: RoomAttendee[] = (data.attendees || []).map((a: any) => ({
           studentId: String(a.student_id),
           studentName: a.student_name,
-          studentEmail: a.student_email || `${a.student_id}@dtu.edu.vn`,
+          studentEmail: a.student_email || '',
           status: (a.status === 'waiting' || a.status === 'completed') ? 'waiting' : 'absent',
           joinedAt: a.joined_at ? new Date(a.joined_at).toLocaleTimeString('vi-VN') : undefined,
           device: a.device || 'Laptop cá nhân / Web Browser',

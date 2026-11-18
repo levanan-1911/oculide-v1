@@ -324,17 +324,12 @@ async def batch_import_users(
     
     for u in data.users:
         try:
-            # Chuẩn hóa email và username
+            # Chuẩn hóa email và username (Tuyệt đối không tự động sinh email)
             u_email = (u.email or "").strip().lower()
             if not u_email or "@" not in u_email:
-                if u.student_id:
-                    u_email = f"{u.student_id.strip().lower()}{allowed_domain}"
-                elif u.username:
-                    u_email = f"{u.username.strip().lower()}{allowed_domain}"
-                else:
-                    errors.append(f"Bỏ qua sinh viên '{u.full_name}': Không có thông tin email hợp lệ.")
-                    failed += 1
-                    continue
+                errors.append(f"Bỏ qua '{u.full_name}': Thiếu địa chỉ email hợp lệ. Hệ thống không thể tự sinh email.")
+                failed += 1
+                continue
             elif not u_email.endswith(allowed_domain):
                 errors.append(f"Bỏ qua '{u.full_name}': Email '{u_email}' không thuộc tên miền cho phép ({sys_settings.allowed_email_domain}).")
                 failed += 1

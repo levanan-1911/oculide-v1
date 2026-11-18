@@ -311,7 +311,7 @@ export default function InstructorClassManagerView() {
       const newStudent: StudentRow = {
         id: newStudentId.trim().toUpperCase(),
         name: newStudentName.trim(),
-        email: newStudentEmail.trim() || `${newStudentId.trim().toLowerCase()}@dtu.edu.vn`,
+        email: newStudentEmail.trim(),
         status: 'Đang học',
       };
 

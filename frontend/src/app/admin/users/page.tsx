@@ -1230,17 +1230,9 @@ export default function UserManagerPage() {
       // Thường bắt đầu bằng 24-35 theo sau là 7-9 chữ số (tổng độ dài 9-11 chữ số)
       const isDtuStudentCode = /^(2[4-9]|3[0-5])\d{7,9}$/.test(rawCode);
 
-      // Email
-      let rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
-      let isAutoEmail = false;
-      if (!rawEmail) {
-        if (rawCode) {
-          const domain = isDtuStudentCode ? 'dtu.edu.vn' : detectedDomain;
-          rawEmail = `${rawCode.toLowerCase()}@${domain}`;
-          isAutoEmail = true;
-          autoEmailCount++;
-        }
-      }
+      // Email (Tuyệt đối không tự sinh email)
+      const rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
+      const isAutoEmail = false;
 
       // Vai trò: Ưu tiên mã sinh viên Duy Tân khẳng định 100% là Sinh viên
       const rawRole = roleIdx >= 0 ? (cols[roleIdx] ?? '').trim() : '';
@@ -1313,7 +1305,9 @@ export default function UserManagerPage() {
       const missingFields: string[] = [];
       if (!rawCode) missingFields.push('Thiếu Mã SV/GV');
       if (!rawName) missingFields.push('Thiếu Họ và tên');
-      if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+      if (!rawEmail) {
+        missingFields.push('Thiếu Email');
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
         missingFields.push('Email sai định dạng');
       }
 
@@ -1468,6 +1462,18 @@ export default function UserManagerPage() {
   // ── XỬ LÝ LƯU DANH SÁCH NHẬP VÀO CSDL VÀ TỰ ĐỘNG BẮN EMAIL CHO TỪNG TÀI KHOẢN ──
   async function handleConfirmBulkImport() {
     if (importPreviewUsers.length === 0 || isImporting) return;
+
+    // Kiểm tra tính hợp lệ của Email: Tuyệt đối không tự sinh email
+    const usersWithoutValidEmail = importPreviewUsers.filter(
+      (u) => !u.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(u.email.trim())
+    );
+    if (usersWithoutValidEmail.length > 0) {
+      setImportError(
+        `Không thể nhập danh sách: Có ${usersWithoutValidEmail.length} tài khoản thiếu email hoặc email sai định dạng. Hệ thống không thể tự sinh email, vui lòng bổ sung email đầy đủ trong tệp.`
+      );
+      return;
+    }
+
     setIsImporting(true);
     setImportError('');
 
@@ -1482,16 +1488,15 @@ export default function UserManagerPage() {
         body: JSON.stringify({
           role: importPreviewUsers[0]?.role || 'student',
           users: importPreviewUsers.map((u) => {
-            const rawEmail = (u.email || '').trim().toLowerCase();
-            const fallbackEmail = rawEmail || (u.userCode ? `${u.userCode.toLowerCase()}@dtu.edu.vn` : '');
+            const cleanEmail = (u.email || '').trim().toLowerCase();
             const pass = u.password || generateRandomPassword();
             if (u.userCode) saveStoredInitialPassword(u.userCode, pass);
-            const userLoginName = fallbackEmail ? fallbackEmail.split('@')[0].trim().toLowerCase() : (u.userCode || '').toLowerCase();
+            const userLoginName = cleanEmail ? cleanEmail.split('@')[0].trim().toLowerCase() : (u.userCode || '').toLowerCase();
             if (userLoginName) saveStoredInitialPassword(userLoginName, pass);
             return {
               username: userLoginName,
               password: pass,
-              email: fallbackEmail,
+              email: cleanEmail,
               full_name: (u.fullName || '').trim() || u.userCode || 'Người dùng',
               student_id: (u.userCode || '').trim().toUpperCase(),
               department: u.department,
@@ -2971,7 +2976,7 @@ export default function UserManagerPage() {
                         <span className="font-bold text-slate-900 truncate ml-2">
                           {importMappingInfo.emailColName
                             ? `Cột [${importMappingInfo.emailColName}]`
-                            : `Tự sinh @${importMappingInfo.detectedDomain || 'dtu.edu.vn'}`}
+                            : 'Không có cột Email'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
@@ -3120,11 +3125,6 @@ export default function UserManagerPage() {
                                 ) : (
                                   <div className="flex items-center gap-1.5">
                                     <span>{u.email}</span>
-                                    {u.isAutoEmail && (
-                                      <span className="rounded bg-blue-50 px-1.5 py-0.2 text-[9px] font-bold text-blue-600">
-                                        Tự sinh
-                                      </span>
-                                    )}
                                   </div>
                                 )}
                               </td>

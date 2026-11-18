@@ -65,7 +65,7 @@ def run_student_phase2_violations_e2e():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT TOP 1 ma_sinh_vien FROM ViPhamGiamSat ORDER BY ma_vi_pham DESC")
+    cursor.execute("SELECT TOP 1 student_id FROM Violations ORDER BY violation_id DESC")
     row = cursor.fetchone()
     student_id = row[0] if row else 1
     cursor.close()

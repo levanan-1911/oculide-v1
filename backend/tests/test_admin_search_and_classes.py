@@ -16,7 +16,7 @@ def admin_client():
 @pytest.fixture
 def instructor_client():
     client = TestClient(app)
-    token = create_access_token({"user_id": 30, "role": "instructor", "username": "hbdieu"})
+    token = create_access_token({"user_id": 2, "role": "instructor", "username": "instructor"})
     client.headers = {"Authorization": f"Bearer {token}"}
     return client
 
@@ -63,28 +63,28 @@ def test_reassign_class_instructor(admin_client):
         "course_code": "TEST-101",
         "section_code": "SEC-A",
         "semester": "HK1 2026–2027",
-        "instructor_id": 30
+        "instructor_id": 2
     }
     res_create = admin_client.post("/api/v1/classes", json=create_payload)
     assert res_create.status_code == 201, res_create.text
     created_id = res_create.json()["class_id"]
 
     try:
-        # 2. Reassign to another instructor (user_id: 31 - ThS. Phạm Vũ Long)
+        # 2. Reassign to another instructor (user_id: 4 - ThS. Phạm Vũ Long)
         res_update = admin_client.put(
             f"/api/v1/classes/{unique_code}",
-            json={"instructor_id": 31}
+            json={"instructor_id": 4}
         )
         assert res_update.status_code == 200, res_update.text
         updated_data = res_update.json()
-        assert updated_data["instructor_id"] == 31
+        assert updated_data["instructor_id"] == 4
         assert "Phạm Vũ Long" in (updated_data.get("instructor_name") or "")
 
         # 3. Verify via GET /api/v1/classes/{id}
         res_get = admin_client.get(f"/api/v1/classes/{unique_code}")
         assert res_get.status_code == 200
         get_data = res_get.json()
-        assert get_data["instructor_id"] == 31
+        assert get_data["instructor_id"] == 4
         assert "Phạm Vũ Long" in (get_data.get("instructor_name") or "")
     finally:
         # Cleanup

@@ -231,3 +231,78 @@ def test_system_logs_api_and_audit_trail(monkeypatch):
     assert created_data["extra_data"] == {"action": "TEST", "value": 123}
 
 
+def test_no_auto_email_generation_batch_import(monkeypatch):
+    """Kiểm thử: Hệ thống tuyệt đối không tự sinh email khi batch import nếu thiếu email"""
+    from core.permissions import admin_required
+    mock_admin_user = {"user_id": 1, "username": "admin", "role": "admin"}
+    app.dependency_overrides[admin_required] = lambda: mock_admin_user
+    admin_token = create_access_token({"user_id": 1, "role": "admin"})
+
+    payload = {
+        "role": "student",
+        "users": [
+            {
+                "full_name": "Nguyen Van A",
+                "student_id": "29211200111",
+                "email": "",  # Trống email - Không được tự sinh email
+            },
+            {
+                "full_name": "Tran Thi B",
+                "student_id": "29211200222",
+                "email": "invalid_email_no_at",  # Sai định dạng email
+            }
+        ]
+    }
+
+    try:
+        res = client.post(
+            "/api/v1/admin/users/batch-import",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json=payload
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["total_imported"] == 0
+        assert data["failed_count"] == 2
+        assert any("không thể tự sinh email" in err for err in data["errors"])
+    finally:
+        app.dependency_overrides.pop(admin_required, None)
+
+
+def test_enroll_student_no_auto_email(monkeypatch):
+    """Kiểm thử: Ghi danh sinh viên mới chưa có tài khoản phải báo lỗi nếu thiếu email"""
+    import pytest
+    from database.classes_db import enroll_student_to_class
+
+    class DummyCursor:
+        def execute(self, *args, **kwargs):
+            pass
+        def fetchone(self):
+            return None
+        def close(self):
+            pass
+
+    class DummyConn:
+        def cursor(self):
+            return DummyCursor()
+        def commit(self):
+            pass
+        def rollback(self):
+            pass
+        def close(self):
+            pass
+
+    monkeypatch.setattr("database.classes_db.get_db_connection", lambda: DummyConn())
+    monkeypatch.setattr("database.classes_db._resolve_class_id", lambda c, cid: 1)
+    monkeypatch.setattr("database.classes_db._resolve_user_id", lambda c, uid: None)
+
+    with pytest.raises(ValueError, match="Hệ thống không thể tự sinh email"):
+        enroll_student_to_class(
+            class_id="CS101",
+            student_user_id="SV2026888",
+            student_name="Nguyen Van Moi",
+            email=""  # Thiếu email
+        )
+
+
+

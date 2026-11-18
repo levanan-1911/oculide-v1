@@ -34,7 +34,7 @@ def cleanup():
     from core.config import get_db_connection
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("UPDATE Phong SET trang_thai = 'da_dong' WHERE nguoi_tao = ? AND trang_thai = 'dang_dien_ra'", (INSTRUCTOR_ID,))
+    c.execute("UPDATE Rooms SET status = 'da_dong' WHERE creator_id = ? AND status = 'dang_dien_ra'", (INSTRUCTOR_ID,))
     conn.commit()
     c.close()
     conn.close()

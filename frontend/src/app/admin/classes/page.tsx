@@ -443,8 +443,7 @@ function ClassManagerContent() {
       selectedStudentToEnroll.username ||
       String(selectedStudentToEnroll.user_id);
     const studentName = selectedStudentToEnroll.full_name;
-    const email =
-      selectedStudentToEnroll.email || `${studentId.toLowerCase()}@dtu.edu.vn`;
+    const email = selectedStudentToEnroll.email || '';
 
     if (
       target.students.some(
@@ -589,7 +588,7 @@ function ClassManagerContent() {
         newStudents.push({
           id: p.id,
           name: p.name,
-          email: p.email || `${p.id.toLowerCase()}@dtu.edu.vn`,
+          email: p.email || '',
           status: 'Đang học',
           missingFields: p.missingFields,
         });
@@ -617,10 +616,9 @@ function ClassManagerContent() {
       const validUsers = newStudents
         .map((s) => {
           const emailVal = (s.email || '').trim().toLowerCase();
-          const fallbackEmail = emailVal || (s.id ? `${s.id.toLowerCase()}@dtu.edu.vn` : '');
           return {
-            username: fallbackEmail ? fallbackEmail.split('@')[0].trim().toLowerCase() : (s.id || '').toLowerCase(),
-            email: fallbackEmail,
+            username: emailVal ? emailVal.split('@')[0].trim().toLowerCase() : (s.id || '').toLowerCase(),
+            email: emailVal,
             full_name: (s.name || '').trim() || (s.id || 'Sinh viên'),
             student_id: (s.id || '').trim().toUpperCase(),
           };

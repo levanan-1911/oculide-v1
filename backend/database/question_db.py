@@ -7,21 +7,21 @@ def get_question_by_id(question_id: int) -> Optional[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_cau_hoi AS question_id, 
-                   ma_phong AS room_id, 
-                   thu_tu_cau AS question_order, 
-                   tieu_de AS question_title, 
-                   noi_dung_de AS question_description,
-                   loai_cau_hoi AS question_type, 
-                   ngon_ngu_cho_phep AS programming_language, 
-                   diem_toi_da AS max_points, 
-                   gioi_han_thoi_gian_ms AS time_limit_minutes,
-                   gioi_han_bo_nho_mb AS memory_limit_mb, 
-                   dang_hoat_dong AS is_active, 
-                   ngay_tao AS created_at, 
-                   ngay_cap_nhat AS updated_at
-            FROM CauHoi 
-            WHERE ma_cau_hoi = ?
+            SELECT question_id, 
+                   room_id, 
+                   question_order, 
+                   title AS question_title, 
+                   content AS question_description,
+                   question_type, 
+                   allowed_languages AS programming_language, 
+                   max_points, 
+                   time_limit_ms AS time_limit_minutes,
+                   memory_limit_mb, 
+                   is_active, 
+                   created_at, 
+                   updated_at
+            FROM Questions 
+            WHERE question_id = ?
         """, (question_id,))
         row = cursor.fetchone()
         if row:
@@ -41,22 +41,22 @@ def get_questions_by_room(room_id: int, include_hidden_tests: bool = False) -> L
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_cau_hoi AS question_id, 
-                   ma_phong AS room_id, 
-                   thu_tu_cau AS question_order, 
-                   tieu_de AS question_title, 
-                   noi_dung_de AS question_description,
-                   loai_cau_hoi AS question_type, 
-                   ngon_ngu_cho_phep AS programming_language, 
-                   diem_toi_da AS max_points, 
-                   gioi_han_thoi_gian_ms AS time_limit_minutes,
-                   gioi_han_bo_nho_mb AS memory_limit_mb, 
-                   dang_hoat_dong AS is_active, 
-                   ngay_tao AS created_at, 
-                   ngay_cap_nhat AS updated_at
-            FROM CauHoi 
-            WHERE ma_phong = ? AND dang_hoat_dong = 1
-            ORDER BY thu_tu_cau ASC
+            SELECT question_id, 
+                   room_id, 
+                   question_order, 
+                   title AS question_title, 
+                   content AS question_description,
+                   question_type, 
+                   allowed_languages AS programming_language, 
+                   max_points, 
+                   time_limit_ms AS time_limit_minutes,
+                   memory_limit_mb, 
+                   is_active, 
+                   created_at, 
+                   updated_at
+            FROM Questions 
+            WHERE room_id = ? AND is_active = 1
+            ORDER BY question_order ASC
         """, (room_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -72,19 +72,19 @@ def get_questions_by_room(room_id: int, include_hidden_tests: bool = False) -> L
         # Tối ưu hóa: Lấy toàn bộ test cases của tất cả câu hỏi trong 1 query duy nhất
         q_ids = [q["question_id"] for q in questions]
         placeholders = ",".join("?" for _ in q_ids)
-        hidden_filter = "" if include_hidden_tests else "AND la_test_an = 0"
+        hidden_filter = "" if include_hidden_tests else "AND is_hidden = 0"
         
         tc_sql = f"""
-            SELECT ma_test_case AS test_case_id, 
-                   ma_cau_hoi AS question_id, 
-                   du_lieu_dau_vao AS input_data, 
-                   ket_qua_mong_doi AS expected_output, 
-                   la_test_an AS is_hidden, 
-                   diem_test AS points, 
-                   ngay_tao AS created_at
-            FROM BoKiemThu
-            WHERE ma_cau_hoi IN ({placeholders}) {hidden_filter}
-            ORDER BY ma_test_case ASC
+            SELECT test_case_id, 
+                   question_id, 
+                   input_data, 
+                   expected_output, 
+                   is_hidden, 
+                   points, 
+                   created_at
+            FROM TestCases
+            WHERE question_id IN ({placeholders}) {hidden_filter}
+            ORDER BY test_case_id ASC
         """
         cursor.execute(tc_sql, tuple(q_ids))
         tc_rows = cursor.fetchall()
@@ -123,15 +123,15 @@ def create_question(
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO CauHoi (
-                ma_phong, thu_tu_cau, tieu_de, noi_dung_de,
-                loai_cau_hoi, ngon_ngu_cho_phep, diem_toi_da,
-                gioi_han_thoi_gian_ms, gioi_han_bo_nho_mb
+            INSERT INTO Questions (
+                room_id, question_order, title, content,
+                question_type, allowed_languages, max_points,
+                time_limit_ms, memory_limit_mb
             )
-            OUTPUT inserted.ma_cau_hoi, inserted.ma_phong, inserted.thu_tu_cau,
-                   inserted.tieu_de, inserted.noi_dung_de, inserted.loai_cau_hoi,
-                   inserted.ngon_ngu_cho_phep, inserted.diem_toi_da, inserted.gioi_han_thoi_gian_ms,
-                   inserted.gioi_han_bo_nho_mb, inserted.dang_hoat_dong, inserted.ngay_tao, inserted.ngay_cap_nhat
+            OUTPUT inserted.question_id, inserted.room_id, inserted.question_order,
+                   inserted.title, inserted.content, inserted.question_type,
+                   inserted.allowed_languages, inserted.max_points, inserted.time_limit_ms,
+                   inserted.memory_limit_mb, inserted.is_active, inserted.created_at, inserted.updated_at
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             room_id, question_order, question_title, question_description,
@@ -169,15 +169,15 @@ def update_question(question_id: int, **kwargs) -> Optional[Dict]:
         fields = []
         params = []
         mapping = {
-            "question_order": "thu_tu_cau",
-            "question_title": "tieu_de",
-            "question_description": "noi_dung_de",
-            "question_type": "loai_cau_hoi",
-            "programming_language": "ngon_ngu_cho_phep",
-            "max_points": "diem_toi_da",
-            "time_limit_minutes": "gioi_han_thoi_gian_ms",
-            "memory_limit_mb": "gioi_han_bo_nho_mb",
-            "is_active": "dang_hoat_dong"
+            "question_order": "question_order",
+            "question_title": "title",
+            "question_description": "content",
+            "question_type": "question_type",
+            "programming_language": "allowed_languages",
+            "max_points": "max_points",
+            "time_limit_minutes": "time_limit_ms",
+            "memory_limit_mb": "memory_limit_mb",
+            "is_active": "is_active"
         }
         for key, value in kwargs.items():
             if value is not None and key in mapping:
@@ -187,7 +187,7 @@ def update_question(question_id: int, **kwargs) -> Optional[Dict]:
         if not fields:
             return get_question_by_id(question_id)
         params.append(question_id)
-        cursor.execute(f"UPDATE CauHoi SET {', '.join(fields)}, ngay_cap_nhat = GETDATE() WHERE ma_cau_hoi = ?", tuple(params))
+        cursor.execute(f"UPDATE Questions SET {', '.join(fields)}, updated_at = GETDATE() WHERE question_id = ?", tuple(params))
         conn.commit()
         return get_question_by_id(question_id)
     finally:
@@ -198,7 +198,7 @@ def delete_question(question_id: int) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM CauHoi WHERE ma_cau_hoi = ?", (question_id,))
+        cursor.execute("DELETE FROM Questions WHERE question_id = ?", (question_id,))
         conn.commit()
         return cursor.rowcount > 0
     finally:
@@ -210,18 +210,18 @@ def get_test_cases_by_question(question_id: int, include_hidden: bool = True) ->
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        where_sql = "WHERE ma_cau_hoi = ?" if include_hidden else "WHERE ma_cau_hoi = ? AND la_test_an = 0"
+        where_sql = "WHERE question_id = ?" if include_hidden else "WHERE question_id = ? AND is_hidden = 0"
         cursor.execute(f"""
-            SELECT ma_test_case AS test_case_id, 
-                   ma_cau_hoi AS question_id, 
-                   du_lieu_dau_vao AS input_data, 
-                   ket_qua_mong_doi AS expected_output, 
-                   la_test_an AS is_hidden, 
-                   diem_test AS points, 
-                   ngay_tao AS created_at
-            FROM BoKiemThu 
+            SELECT test_case_id, 
+                   question_id, 
+                   input_data, 
+                   expected_output, 
+                   is_hidden, 
+                   points, 
+                   created_at
+            FROM TestCases 
             {where_sql}
-            ORDER BY ma_test_case ASC
+            ORDER BY test_case_id ASC
         """, (question_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -240,9 +240,9 @@ def create_test_case(question_id: int, input_data: str, expected_output: str, is
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO BoKiemThu (ma_cau_hoi, du_lieu_dau_vao, ket_qua_mong_doi, la_test_an, diem_test)
-            OUTPUT inserted.ma_test_case, inserted.ma_cau_hoi, inserted.du_lieu_dau_vao, 
-                   inserted.ket_qua_mong_doi, inserted.la_test_an, inserted.diem_test, inserted.ngay_tao
+            INSERT INTO TestCases (question_id, input_data, expected_output, is_hidden, points)
+            OUTPUT inserted.test_case_id, inserted.question_id, inserted.input_data, 
+                   inserted.expected_output, inserted.is_hidden, inserted.points, inserted.created_at
             VALUES (?, ?, ?, ?, ?)
         """, (question_id, input_data, expected_output, 1 if is_hidden else 0, points))
         row = cursor.fetchone()
@@ -266,7 +266,7 @@ def delete_test_case(test_case_id: int) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM BoKiemThu WHERE ma_test_case = ?", (test_case_id,))
+        cursor.execute("DELETE FROM TestCases WHERE test_case_id = ?", (test_case_id,))
         conn.commit()
         return cursor.rowcount > 0
     finally:
@@ -278,15 +278,15 @@ def get_test_case_by_id(test_case_id: int) -> Optional[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_test_case AS test_case_id, 
-                   ma_cau_hoi AS question_id, 
-                   du_lieu_dau_vao AS input_data, 
-                   ket_qua_mong_doi AS expected_output, 
-                   la_test_an AS is_hidden, 
-                   diem_test AS points, 
-                   ngay_tao AS created_at
-            FROM BoKiemThu 
-            WHERE ma_test_case = ?
+            SELECT test_case_id, 
+                   question_id, 
+                   input_data, 
+                   expected_output, 
+                   is_hidden, 
+                   points, 
+                   created_at
+            FROM TestCases 
+            WHERE test_case_id = ?
         """, (test_case_id,))
         row = cursor.fetchone()
         if row:
@@ -306,10 +306,10 @@ def update_test_case(test_case_id: int, **kwargs) -> Optional[Dict]:
         fields = []
         params = []
         mapping = {
-            "input_data": "du_lieu_dau_vao",
-            "expected_output": "ket_qua_mong_doi",
-            "is_hidden": "la_test_an",
-            "points": "diem_test"
+            "input_data": "input_data",
+            "expected_output": "expected_output",
+            "is_hidden": "is_hidden",
+            "points": "points"
         }
         for key, value in kwargs.items():
             if value is not None and key in mapping:
@@ -319,7 +319,7 @@ def update_test_case(test_case_id: int, **kwargs) -> Optional[Dict]:
         if not fields:
             return get_test_case_by_id(test_case_id)
         params.append(test_case_id)
-        cursor.execute(f"UPDATE BoKiemThu SET {', '.join(fields)} WHERE ma_test_case = ?", tuple(params))
+        cursor.execute(f"UPDATE TestCases SET {', '.join(fields)} WHERE test_case_id = ?", tuple(params))
         conn.commit()
         return get_test_case_by_id(test_case_id)
     finally:

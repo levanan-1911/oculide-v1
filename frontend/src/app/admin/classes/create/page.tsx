@@ -134,7 +134,7 @@ export default function CreateClassPage() {
     const newStudent: StudentRow = {
       id,
       name: st.full_name,
-      email: st.email || `${id.toLowerCase()}@dtu.edu.vn`,
+      email: st.email || '',
       homeroomClass: st.lop_sinh_hoat || undefined,
       department: st.department || undefined,
       phone: st.phone_number || undefined,
@@ -480,9 +480,9 @@ export default function CreateClassPage() {
       return;
     }
 
-    // Email tự động sinh chuẩn @dtu.edu.vn theo MSSV nếu để trống
     if (!email) {
-      email = `${id.toLowerCase()}@dtu.edu.vn`;
+      setErrorMessage(`Vui lòng nhập địa chỉ Email cho sinh viên "${id}". Hệ thống không thể tự sinh email.`);
+      return;
     }
 
     setStudents((curr) => [
@@ -576,10 +576,9 @@ export default function CreateClassPage() {
       const validUsers = students
         .map((s) => {
           const emailVal = (s.email || '').trim().toLowerCase();
-          const fallbackEmail = emailVal || (s.id ? `${s.id.toLowerCase()}@dtu.edu.vn` : '');
           return {
-            username: fallbackEmail ? fallbackEmail.split('@')[0].trim().toLowerCase() : (s.id || '').toLowerCase(),
-            email: fallbackEmail,
+            username: emailVal ? emailVal.split('@')[0].trim().toLowerCase() : (s.id || '').toLowerCase(),
+            email: emailVal,
             full_name: (s.name || '').trim() || (s.id || 'Sinh viên'),
             student_id: (s.id || '').trim().toUpperCase(),
           };
@@ -1018,7 +1017,7 @@ export default function CreateClassPage() {
                           <span className="text-blue-600 dark:text-blue-400 underline">chọn từ máy tính</span>
                         </p>
                         <p className="mt-1 text-[11px] text-slate-400 max-w-md">
-                          Hỗ trợ chuẩn tệp ĐH Duy Tân (.xlsx, .xls) và CSV. Hệ thống tự động nhận diện cột <strong>Họ và tên gộp ô</strong>, tự sinh <strong>email @dtu.edu.vn</strong> và bỏ qua các cột điểm thành phần.
+                          Hỗ trợ chuẩn tệp ĐH Duy Tân (.xlsx, .xls) và CSV. Hệ thống tự động nhận diện cột <strong>Họ và tên gộp ô</strong>, yêu cầu <strong>cột email</strong> và bỏ qua các cột điểm thành phần.
                         </p>
                       </div>
                     ) : (
@@ -1405,7 +1404,7 @@ export default function CreateClassPage() {
                                   }
                                 }}
                                 type="email"
-                                placeholder={manualId ? `${manualId.toLowerCase()}@dtu.edu.vn` : 'Tự sinh theo MSSV'}
+                                placeholder="VD: sinhvien@school.edu.vn (Bắt buộc)"
                                 maxLength={100}
                                 className="h-9.5 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-white/10 dark:bg-white/5 dark:text-white"
                               />

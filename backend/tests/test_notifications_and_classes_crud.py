@@ -98,7 +98,7 @@ def test_classes_crud_and_string_code(admin_client):
     assert res_put.status_code == 200, res_put.text
     updated_data = res_put.json()
     assert updated_data["description"] == updated_desc
-    assert updated_data["status"] == "dang_mo"
+    assert updated_data["status"] in ("open", "dang_mo")
 
     # Revert description back
     admin_client.put(

@@ -13,19 +13,19 @@ def create_violation(
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Lấy ma_phong từ session
-        cursor.execute("SELECT ma_phong FROM PhienLamBai WHERE ma_phien = ?", (session_id,))
+        # Lấy room_id từ session
+        cursor.execute("SELECT room_id FROM ExamSessions WHERE session_id = ?", (session_id,))
         sess_row = cursor.fetchone()
         room_id = sess_row[0] if sess_row else 1
 
         cursor.execute("""
-            INSERT INTO ViPhamGiamSat (
-                ma_phien, ma_phong, ma_sinh_vien, loai_vi_pham, 
-                muc_do_nghiem_trong, mo_ta, link_anh_bang_chung
+            INSERT INTO Violations (
+                session_id, room_id, student_id, violation_type, 
+                severity, description, evidence_url
             )
-            OUTPUT inserted.ma_vi_pham, inserted.ma_phien, inserted.ma_sinh_vien, inserted.loai_vi_pham, 
-                   inserted.muc_do_nghiem_trong, inserted.mo_ta, inserted.link_anh_bang_chung, inserted.thoi_gian_phat_hien, 
-                   inserted.da_kiem_tra, inserted.trang_thai_duyet, inserted.nguoi_duyet, inserted.thoi_gian_duyet
+            OUTPUT inserted.violation_id, inserted.session_id, inserted.student_id, inserted.violation_type, 
+                   inserted.severity, inserted.description, inserted.evidence_url, inserted.detected_at, 
+                   inserted.is_reviewed, inserted.review_status, inserted.reviewed_by, inserted.reviewed_at
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (session_id, room_id, student_id, violation_type, severity, description, snapshot_url))
         row = cursor.fetchone()
@@ -55,21 +55,21 @@ def get_violations_by_session(session_id: int) -> List[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_vi_pham AS violation_id, 
-                   ma_phien AS session_id, 
-                   ma_sinh_vien AS student_id, 
-                   loai_vi_pham AS violation_type, 
-                   muc_do_nghiem_trong AS severity,
-                   mo_ta AS description, 
-                   link_anh_bang_chung AS snapshot_url, 
-                   thoi_gian_phat_hien AS detected_at, 
-                   da_kiem_tra AS is_reviewed, 
-                   trang_thai_duyet AS review_status, 
-                   nguoi_duyet AS reviewed_by, 
-                   thoi_gian_duyet AS reviewed_at
-            FROM ViPhamGiamSat 
-            WHERE ma_phien = ?
-            ORDER BY thoi_gian_phat_hien DESC
+            SELECT violation_id, 
+                   session_id, 
+                   student_id, 
+                   violation_type, 
+                   severity,
+                   description, 
+                   evidence_url AS snapshot_url, 
+                   detected_at, 
+                   is_reviewed, 
+                   review_status, 
+                   reviewed_by, 
+                   reviewed_at
+            FROM Violations 
+            WHERE session_id = ?
+            ORDER BY detected_at DESC
         """, (session_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -89,49 +89,49 @@ def get_violations_by_student(student_id: int, room_id: Optional[int] = None) ->
     try:
         if room_id:
             cursor.execute("""
-                SELECT v.ma_vi_pham AS violation_id, 
-                       v.ma_phien AS session_id, 
-                       v.ma_sinh_vien AS student_id, 
-                       COALESCE(v.ma_phong, s.ma_phong) AS room_id,
-                       p.ma_phong_code AS room_code,
-                       p.tieu_de AS room_name,
-                       v.loai_vi_pham AS violation_type, 
-                       v.muc_do_nghiem_trong AS severity,
-                       v.mo_ta AS description, 
-                       v.link_anh_bang_chung AS snapshot_url, 
-                       v.thoi_gian_phat_hien AS detected_at, 
-                       v.da_kiem_tra AS is_reviewed, 
-                       v.trang_thai_duyet AS review_status, 
-                       v.nguoi_duyet AS reviewed_by, 
-                       v.thoi_gian_duyet AS reviewed_at
-                FROM ViPhamGiamSat v
-                LEFT JOIN PhienLamBai s ON v.ma_phien = s.ma_phien
-                LEFT JOIN Phong p ON COALESCE(v.ma_phong, s.ma_phong) = p.ma_phong
-                WHERE v.ma_sinh_vien = ? AND (v.ma_phong = ? OR s.ma_phong = ?)
-                ORDER BY v.thoi_gian_phat_hien DESC
+                SELECT v.violation_id, 
+                       v.session_id, 
+                       v.student_id, 
+                       COALESCE(v.room_id, s.room_id) AS room_id,
+                       p.room_code,
+                       p.room_name,
+                       v.violation_type, 
+                       v.severity,
+                       v.description, 
+                       v.evidence_url AS snapshot_url, 
+                       v.detected_at, 
+                       v.is_reviewed, 
+                       v.review_status, 
+                       v.reviewed_by, 
+                       v.reviewed_at
+                FROM Violations v
+                LEFT JOIN ExamSessions s ON v.session_id = s.session_id
+                LEFT JOIN Rooms p ON COALESCE(v.room_id, s.room_id) = p.room_id
+                WHERE v.student_id = ? AND (v.room_id = ? OR s.room_id = ?)
+                ORDER BY v.detected_at DESC
             """, (student_id, room_id, room_id))
         else:
             cursor.execute("""
-                SELECT v.ma_vi_pham AS violation_id, 
-                       v.ma_phien AS session_id, 
-                       v.ma_sinh_vien AS student_id, 
-                       COALESCE(v.ma_phong, s.ma_phong) AS room_id,
-                       p.ma_phong_code AS room_code,
-                       p.tieu_de AS room_name,
-                       v.loai_vi_pham AS violation_type, 
-                       v.muc_do_nghiem_trong AS severity,
-                       v.mo_ta AS description, 
-                       v.link_anh_bang_chung AS snapshot_url, 
-                       v.thoi_gian_phat_hien AS detected_at, 
-                       v.da_kiem_tra AS is_reviewed, 
-                       v.trang_thai_duyet AS review_status, 
-                       v.nguoi_duyet AS reviewed_by, 
-                       v.thoi_gian_duyet AS reviewed_at
-                FROM ViPhamGiamSat v
-                LEFT JOIN PhienLamBai s ON v.ma_phien = s.ma_phien
-                LEFT JOIN Phong p ON COALESCE(v.ma_phong, s.ma_phong) = p.ma_phong
-                WHERE v.ma_sinh_vien = ?
-                ORDER BY v.thoi_gian_phat_hien DESC
+                SELECT v.violation_id, 
+                       v.session_id, 
+                       v.student_id, 
+                       COALESCE(v.room_id, s.room_id) AS room_id,
+                       p.room_code,
+                       p.room_name,
+                       v.violation_type, 
+                       v.severity,
+                       v.description, 
+                       v.evidence_url AS snapshot_url, 
+                       v.detected_at, 
+                       v.is_reviewed, 
+                       v.review_status, 
+                       v.reviewed_by, 
+                       v.reviewed_at
+                FROM Violations v
+                LEFT JOIN ExamSessions s ON v.session_id = s.session_id
+                LEFT JOIN Rooms p ON COALESCE(v.room_id, s.room_id) = p.room_id
+                WHERE v.student_id = ?
+                ORDER BY v.detected_at DESC
             """, (student_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -149,32 +149,32 @@ def get_violations_by_room(room_id: int, review_status: Optional[str] = None) ->
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        where = ["s.ma_phong = ?"]
+        where = ["s.room_id = ?"]
         params = [room_id]
         if review_status:
-            where.append("v.trang_thai_duyet = ?")
+            where.append("v.review_status = ?")
             params.append(review_status)
         where_sql = f"WHERE {' AND '.join(where)}"
         cursor.execute(f"""
-            SELECT v.ma_vi_pham AS violation_id, 
-                   v.ma_phien AS session_id, 
-                   v.ma_sinh_vien AS student_id, 
-                   v.loai_vi_pham AS violation_type, 
-                   v.muc_do_nghiem_trong AS severity,
-                   v.mo_ta AS description, 
-                   v.link_anh_bang_chung AS snapshot_url, 
-                   v.thoi_gian_phat_hien AS detected_at, 
-                   v.da_kiem_tra AS is_reviewed, 
-                   v.trang_thai_duyet AS review_status,
-                   v.nguoi_duyet AS reviewed_by, 
-                   v.thoi_gian_duyet AS reviewed_at, 
-                   u.ho_va_ten AS student_name, 
-                   u.ma_dinh_danh AS student_code
-            FROM ViPhamGiamSat v
-            JOIN PhienLamBai s ON v.ma_phien = s.ma_phien
-            JOIN NguoiDung u ON v.ma_sinh_vien = u.ma_nguoi_dung
+            SELECT v.violation_id, 
+                   v.session_id, 
+                   v.student_id, 
+                   v.violation_type, 
+                   v.severity,
+                   v.description, 
+                   v.evidence_url AS snapshot_url, 
+                   v.detected_at, 
+                   v.is_reviewed, 
+                   v.review_status, 
+                   v.reviewed_by, 
+                   v.reviewed_at, 
+                   u.full_name AS student_name, 
+                   u.identifier_code AS student_code
+            FROM Violations v
+            JOIN ExamSessions s ON v.session_id = s.session_id
+            JOIN Users u ON v.student_id = u.user_id
             {where_sql}
-            ORDER BY v.thoi_gian_phat_hien DESC
+            ORDER BY v.detected_at DESC
         """, tuple(params))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -193,12 +193,12 @@ def update_violation_review(violation_id: int, reviewed_by: int, review_status: 
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            UPDATE ViPhamGiamSat 
-            SET da_kiem_tra = 1, trang_thai_duyet = ?, nguoi_duyet = ?, thoi_gian_duyet = GETDATE()
-            OUTPUT inserted.ma_vi_pham, inserted.ma_phien, inserted.ma_sinh_vien, inserted.loai_vi_pham,
-                   inserted.muc_do_nghiem_trong, inserted.mo_ta, inserted.link_anh_bang_chung, inserted.thoi_gian_phat_hien,
-                   inserted.da_kiem_tra, inserted.trang_thai_duyet, inserted.nguoi_duyet, inserted.thoi_gian_duyet
-            WHERE ma_vi_pham = ?
+            UPDATE Violations 
+            SET is_reviewed = 1, review_status = ?, reviewed_by = ?, reviewed_at = GETDATE()
+            OUTPUT inserted.violation_id, inserted.session_id, inserted.student_id, inserted.violation_type,
+                   inserted.severity, inserted.description, inserted.evidence_url, inserted.detected_at,
+                   inserted.is_reviewed, inserted.review_status, inserted.reviewed_by, inserted.reviewed_at
+            WHERE violation_id = ?
         """, (review_status, reviewed_by, violation_id))
         row = cursor.fetchone()
         conn.commit()

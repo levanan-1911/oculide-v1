@@ -266,16 +266,16 @@ class BackupService:
         }
         try:
             with get_db_cursor(commit=False) as cursor:
-                cursor.execute("SELECT COUNT(*) FROM BaiNop")
+                cursor.execute("SELECT COUNT(*) FROM Submissions")
                 counts["submissions_count"] = cursor.fetchone()[0]
 
-                cursor.execute("SELECT COUNT(*) FROM ViPhamGiamSat")
+                cursor.execute("SELECT COUNT(*) FROM Violations")
                 counts["violations_count"] = cursor.fetchone()[0]
 
-                cursor.execute("SELECT COUNT(*) FROM NhatKyHeThong")
+                cursor.execute("SELECT COUNT(*) FROM SystemAuditLogs")
                 counts["logs_count"] = cursor.fetchone()[0]
 
-                cursor.execute("SELECT COUNT(*) FROM NguoiDung")
+                cursor.execute("SELECT COUNT(*) FROM Users")
                 counts["users_count"] = cursor.fetchone()[0]
         except Exception as e:
             logger.error(f"Lỗi truy vấn số liệu CSDL: {e}")

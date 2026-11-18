@@ -11,22 +11,22 @@ def save_device_check(
     browser_info: Optional[str],
     is_passed: bool
 ) -> Dict:
-    """Lưu kết quả kiểm tra thiết bị của thí sinh trước khi thi vào bảng KiemTraThietBi"""
+    """Lưu kết quả kiểm tra thiết bị của thí sinh trước khi thi vào bảng DeviceChecks"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT ma_kiem_tra FROM KiemTraThietBi WHERE ma_phien = ?", (session_id,))
+        cursor.execute("SELECT check_id FROM DeviceChecks WHERE session_id = ?", (session_id,))
         existing = cursor.fetchone()
         
         if existing:
             cursor.execute("""
-                UPDATE KiemTraThietBi
-                SET trang_thai_camera = ?, trang_thai_micro = ?, do_tre_mang_ms = ?,
-                    thong_tin_he_dieu_hanh = ?, thong_tin_trinh_duyet = ?, du_dieu_kien_thi = ?, thoi_gian_kiem_tra = GETDATE()
-                OUTPUT inserted.ma_kiem_tra, inserted.ma_phien, inserted.ma_sinh_vien,
-                       inserted.trang_thai_camera, inserted.trang_thai_micro, inserted.do_tre_mang_ms,
-                       inserted.thong_tin_he_dieu_hanh, inserted.thong_tin_trinh_duyet, inserted.du_dieu_kien_thi, inserted.thoi_gian_kiem_tra
-                WHERE ma_phien = ?
+                UPDATE DeviceChecks
+                SET camera_status = ?, mic_status = ?, network_latency_ms = ?,
+                    os_info = ?, browser_info = ?, is_passed = ?, checked_at = GETDATE()
+                OUTPUT inserted.check_id, inserted.session_id, inserted.student_id,
+                       inserted.camera_status, inserted.mic_status, inserted.network_latency_ms,
+                       inserted.os_info, inserted.browser_info, inserted.is_passed, inserted.checked_at
+                WHERE session_id = ?
             """, (
                 1 if camera_status else 0,
                 1 if mic_status else 0,
@@ -38,11 +38,11 @@ def save_device_check(
             ))
         else:
             cursor.execute("""
-                INSERT INTO KiemTraThietBi (ma_phien, ma_sinh_vien, trang_thai_camera, trang_thai_micro,
-                                          do_tre_mang_ms, thong_tin_he_dieu_hanh, thong_tin_trinh_duyet, du_dieu_kien_thi)
-                OUTPUT inserted.ma_kiem_tra, inserted.ma_phien, inserted.ma_sinh_vien,
-                       inserted.trang_thai_camera, inserted.trang_thai_micro, inserted.do_tre_mang_ms,
-                       inserted.thong_tin_he_dieu_hanh, inserted.thong_tin_trinh_duyet, inserted.du_dieu_kien_thi, inserted.thoi_gian_kiem_tra
+                INSERT INTO DeviceChecks (session_id, student_id, camera_status, mic_status,
+                                          network_latency_ms, os_info, browser_info, is_passed)
+                OUTPUT inserted.check_id, inserted.session_id, inserted.student_id,
+                       inserted.camera_status, inserted.mic_status, inserted.network_latency_ms,
+                       inserted.os_info, inserted.browser_info, inserted.is_passed, inserted.checked_at
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 session_id,
@@ -81,18 +81,18 @@ def get_device_check_by_session(session_id: int) -> Optional[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_kiem_tra AS check_id, 
-                   ma_phien AS session_id, 
-                   ma_sinh_vien AS student_id, 
-                   trang_thai_camera AS camera_status, 
-                   trang_thai_micro AS mic_status,
-                   do_tre_mang_ms AS network_latency_ms, 
-                   thong_tin_he_dieu_hanh AS os_info, 
-                   thong_tin_trinh_duyet AS browser_info, 
-                   du_dieu_kien_thi AS is_passed, 
-                   thoi_gian_kiem_tra AS checked_at
-            FROM KiemTraThietBi
-            WHERE ma_phien = ?
+            SELECT check_id, 
+                   session_id, 
+                   student_id, 
+                   camera_status, 
+                   mic_status,
+                   network_latency_ms, 
+                   os_info, 
+                   browser_info, 
+                   is_passed, 
+                   checked_at
+            FROM DeviceChecks
+            WHERE session_id = ?
         """, (session_id,))
         row = cursor.fetchone()
         if row:
@@ -113,23 +113,23 @@ def get_device_checks_by_room(room_id: int) -> List[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT dc.ma_kiem_tra AS check_id, 
-                   dc.ma_phien AS session_id, 
-                   dc.ma_sinh_vien AS student_id, 
-                   dc.trang_thai_camera AS camera_status, 
-                   dc.trang_thai_micro AS mic_status,
-                   dc.do_tre_mang_ms AS network_latency_ms, 
-                   dc.thong_tin_he_dieu_hanh AS os_info, 
-                   dc.thong_tin_trinh_duyet AS browser_info, 
-                   dc.du_dieu_kien_thi AS is_passed, 
-                   dc.thoi_gian_kiem_tra AS checked_at,
-                   u.ho_va_ten AS student_name, 
-                   u.ma_dinh_danh AS student_code
-            FROM KiemTraThietBi dc
-            JOIN PhienLamBai s ON dc.ma_phien = s.ma_phien
-            JOIN NguoiDung u ON dc.ma_sinh_vien = u.ma_nguoi_dung
-            WHERE s.ma_phong = ?
-            ORDER BY dc.thoi_gian_kiem_tra DESC
+            SELECT dc.check_id, 
+                   dc.session_id, 
+                   dc.student_id, 
+                   dc.camera_status, 
+                   dc.mic_status,
+                   dc.network_latency_ms, 
+                   dc.os_info, 
+                   dc.browser_info, 
+                   dc.is_passed, 
+                   dc.checked_at,
+                   u.full_name AS student_name, 
+                   u.identifier_code AS student_code
+            FROM DeviceChecks dc
+            JOIN ExamSessions s ON dc.session_id = s.session_id
+            JOIN Users u ON dc.student_id = u.user_id
+            WHERE s.room_id = ?
+            ORDER BY dc.checked_at DESC
         """, (room_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]

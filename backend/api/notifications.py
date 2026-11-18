@@ -51,104 +51,99 @@ async def get_user_notifications(
     cursor = conn.cursor()
     try:
         if role == "admin":
-            # 1. Cảnh báo SOS khẩn cấp chưa xử lý từ sinh viên
+            # 1. Thông báo Bảo mật, Đăng nhập & Cảnh báo an ninh hạ tầng
             cursor.execute("""
                 SELECT TOP 5 
-                    s.ma_yeu_cau, 
-                    s.danh_muc_su_co, 
-                    s.tin_nhan_sos, 
-                    s.thoi_gian_gui,
-                    COALESCE(p.tieu_de, N'Phòng thi') AS ten_phong,
-                    COALESCE(u.ho_va_ten, u.ten_dang_nhap, N'Sinh viên') AS ten_sinh_vien
-                FROM YeuCauTroGiup s
-                LEFT JOIN Phong p ON s.ma_phong = p.ma_phong
-                LEFT JOIN NguoiDung u ON s.ma_sinh_vien = u.ma_nguoi_dung
-                WHERE s.trang_thai = 'cho_xu_ly'
-                ORDER BY s.thoi_gian_gui DESC
+                    log_id, 
+                    log_level, 
+                    action, 
+                    message, 
+                    created_at,
+                    ip_address
+                FROM SystemAuditLogs
+                WHERE log_level IN ('warning', 'error', 'danger', 'critical')
+                   OR action IN ('SECURITY', 'AUTH', 'FIREWALL', 'LOGIN_FAILED', 'ACCOUNT_LOCK')
+                ORDER BY created_at DESC
             """)
             for row in cursor.fetchall():
-                nid = f"sos-{row[0]}"
+                nid = f"sec-{row[0]}"
+                lvl = (row[1] or "").lower()
+                n_type = "danger" if lvl in ('error', 'danger', 'critical') else "warning"
                 notifications.append(NotificationItem(
                     id=nid,
-                    title=f"Yêu cầu SOS: {row[1] or 'Sự cố phòng thi'}",
-                    desc=f"{row[5]} ({row[4]}): {row[2] or 'Cần trợ giúp khẩn cấp'}",
-                    time=_format_relative_time(row[3]),
-                    type="danger",
-                    read=nid in read_set,
-                    link="/admin/schedules"
-                ))
-
-            # 2. Cảnh báo vi phạm AI mức độ nghiêm trọng
-            cursor.execute("""
-                SELECT TOP 5 
-                    v.ma_vi_pham, 
-                    v.muc_do_nghiem_trong, 
-                    v.loai_vi_pham, 
-                    v.mo_ta, 
-                    v.thoi_gian_phat_hien,
-                    COALESCE(p.tieu_de, N'Phòng thi') AS ten_phong,
-                    COALESCE(u.ho_va_ten, u.ten_dang_nhap, N'Sinh viên') AS ten_sinh_vien
-                FROM ViPhamGiamSat v
-                LEFT JOIN Phong p ON v.ma_phong = p.ma_phong
-                LEFT JOIN NguoiDung u ON v.ma_sinh_vien = u.ma_nguoi_dung
-                WHERE v.muc_do_nghiem_trong IN ('high', 'critical', 'nghiem_trong')
-                  AND v.trang_thai_duyet = 'pending'
-                ORDER BY v.thoi_gian_phat_hien DESC
-            """)
-            for row in cursor.fetchall():
-                nid = f"violation-{row[0]}"
-                notifications.append(NotificationItem(
-                    id=nid,
-                    title=f"Vi phạm AI: {row[2] or 'Bất thường'}",
-                    desc=f"{row[6]} tại {row[5]}: {row[3] or 'Phát hiện hành vi bất thường'}",
-                    time=_format_relative_time(row[4]),
-                    type="warning",
-                    read=nid in read_set,
-                    link="/admin/dashboard"
-                ))
-
-            # 3. Nhật ký hệ thống mức cảnh báo hoặc lỗi
-            cursor.execute("""
-                SELECT TOP 5 
-                    ma_nhat_ky, 
-                    muc_do, 
-                    hanh_dong, 
-                    thong_bao, 
-                    thoi_gian
-                FROM NhatKyHeThong
-                WHERE muc_do IN ('warning', 'error', 'danger')
-                ORDER BY thoi_gian DESC
-            """)
-            for row in cursor.fetchall():
-                nid = f"log-{row[0]}"
-                muc_do = (row[1] or "").lower()
-                n_type = "danger" if muc_do in ('error', 'danger') else "warning"
-                notifications.append(NotificationItem(
-                    id=nid,
-                    title=f"Hệ thống: {row[2] or 'Nhật ký bảo mật'}",
-                    desc=row[3] or 'Phát hiện sự kiện đáng chú ý trên hệ thống.',
+                    title=f"Bảo mật: {row[2] or 'Cảnh báo an ninh'}",
+                    desc=f"{row[3] or 'Sự kiện an ninh hệ thống'}" + (f" (IP: {row[5]})" if row[5] else ""),
                     time=_format_relative_time(row[4]),
                     type=n_type,
                     read=nid in read_set,
-                    link="/admin/logs"
+                    link="/admin/system"
+                ))
+
+            # 2. Thông báo Hạ tầng, Sao lưu CSDL & Bảo trì hệ thống
+            cursor.execute("""
+                SELECT TOP 4 
+                    log_id, 
+                    log_level, 
+                    action, 
+                    message, 
+                    created_at
+                FROM SystemAuditLogs
+                WHERE action IN ('BACKUP', 'SYSTEM_SETTINGS', 'MAINTENANCE', 'RESTORE')
+                ORDER BY created_at DESC
+            """)
+            for row in cursor.fetchall():
+                nid = f"infra-{row[0]}"
+                notifications.append(NotificationItem(
+                    id=nid,
+                    title=f"Hạ tầng: {row[2] or 'Hệ thống'}",
+                    desc=row[3] or "Cập nhật tham số hạ tầng hoặc sao lưu CSDL thành công.",
+                    time=_format_relative_time(row[4]),
+                    type="info",
+                    read=nid in read_set,
+                    link="/admin/system"
+                ))
+
+            # 3. Thông báo Quản trị Người dùng & Đào tạo (Tạo tài khoản / Import Excel / Tạo lớp)
+            cursor.execute("""
+                SELECT TOP 3 
+                    log_id, 
+                    log_level, 
+                    action, 
+                    message, 
+                    created_at
+                FROM SystemAuditLogs
+                WHERE action IN ('USER_MGMT', 'BATCH_IMPORT', 'CLASS_MGMT')
+                ORDER BY created_at DESC
+            """)
+            for row in cursor.fetchall():
+                nid = f"mgmt-{row[0]}"
+                is_user = "USER" in (row[2] or "").upper() or "IMPORT" in (row[2] or "").upper()
+                notifications.append(NotificationItem(
+                    id=nid,
+                    title=f"Quản trị: {row[2] or 'Vận hành'}",
+                    desc=row[3] or "Thao tác cập nhật danh sách người dùng hoặc lớp học phần.",
+                    time=_format_relative_time(row[4]),
+                    type="success" if (row[1] or "").lower() == "info" else "warning",
+                    read=nid in read_set,
+                    link="/admin/users" if is_user else "/admin/classes"
                 ))
 
         elif role == "instructor":
-            # Giảng viên nhận thông báo vi phạm và SOS thuộc các phòng do chính mình tạo
+            # 1. Cảnh báo Vi phạm AI phòng thi thuộc các phòng do Giảng viên tạo
             cursor.execute("""
-                SELECT TOP 8 
-                    v.ma_vi_pham, 
-                    v.muc_do_nghiem_trong, 
-                    v.loai_vi_pham, 
-                    v.mo_ta, 
-                    v.thoi_gian_phat_hien,
-                    p.ma_phong_code,
-                    COALESCE(u.ho_va_ten, u.ten_dang_nhap, N'Sinh viên') AS ten_sinh_vien
-                FROM ViPhamGiamSat v
-                INNER JOIN Phong p ON v.ma_phong = p.ma_phong
-                LEFT JOIN NguoiDung u ON v.ma_sinh_vien = u.ma_nguoi_dung
-                WHERE p.nguoi_tao = ? AND v.trang_thai_duyet = 'pending'
-                ORDER BY v.thoi_gian_phat_hien DESC
+                SELECT TOP 5 
+                    v.violation_id, 
+                    v.severity, 
+                    v.violation_type, 
+                    v.description, 
+                    v.detected_at,
+                    p.room_code,
+                    COALESCE(u.full_name, u.username, N'Sinh viên') AS ten_sinh_vien
+                FROM Violations v
+                INNER JOIN Rooms p ON v.room_id = p.room_id
+                LEFT JOIN Users u ON v.student_id = u.user_id
+                WHERE p.creator_id = ? AND (v.review_status = 'pending' OR v.review_status IS NULL)
+                ORDER BY v.detected_at DESC
             """, (user_id,))
             for row in cursor.fetchall():
                 nid = f"ins-vio-{row[0]}"
@@ -157,25 +152,25 @@ async def get_user_notifications(
                     title=f"Cảnh báo AI: {row[2]}",
                     desc=f"Thí sinh {row[6]} trong phòng {row[5]}: {row[3]}",
                     time=_format_relative_time(row[4]),
-                    type="danger" if row[1] in ('high', 'critical', 'nghiem_trong') else "warning",
+                    type="danger" if (row[1] or '').lower() in ('high', 'critical', 'nghiem_trong') else "warning",
                     read=nid in read_set,
                     link=f"/instructor/monitoring?room={row[5]}"
                 ))
 
-            # Yêu cầu SOS trong phòng của giảng viên
+            # 2. Yêu cầu hỗ trợ SOS phòng thi trong phòng của giảng viên
             cursor.execute("""
                 SELECT TOP 5 
-                    s.ma_yeu_cau, 
-                    s.danh_muc_su_co, 
-                    s.tin_nhan_sos, 
-                    s.thoi_gian_gui,
-                    p.ma_phong_code,
-                    COALESCE(u.ho_va_ten, u.ten_dang_nhap, N'Sinh viên') AS ten_sinh_vien
-                FROM YeuCauTroGiup s
-                INNER JOIN Phong p ON s.ma_phong = p.ma_phong
-                LEFT JOIN NguoiDung u ON s.ma_sinh_vien = u.ma_nguoi_dung
-                WHERE p.nguoi_tao = ? AND s.trang_thai = 'cho_xu_ly'
-                ORDER BY s.thoi_gian_gui DESC
+                    s.request_id, 
+                    s.issue_type, 
+                    s.sos_message, 
+                    s.sent_at,
+                    p.room_code,
+                    COALESCE(u.full_name, u.username, N'Sinh viên') AS ten_sinh_vien
+                FROM SupportRequests s
+                INNER JOIN Rooms p ON s.room_id = p.room_id
+                LEFT JOIN Users u ON s.student_id = u.user_id
+                WHERE p.creator_id = ? AND s.status IN ('pending', 'cho_xu_ly', 'open')
+                ORDER BY s.sent_at DESC
             """, (user_id,))
             for row in cursor.fetchall():
                 nid = f"ins-sos-{row[0]}"
@@ -189,24 +184,51 @@ async def get_user_notifications(
                     link=f"/instructor/monitoring?room={row[4]}"
                 ))
 
+            # 3. Thông báo sinh viên vừa nộp bài thi
+            cursor.execute("""
+                SELECT TOP 4
+                    sub.submission_id,
+                    sub.submitted_at,
+                    sub.grading_status,
+                    p.room_code,
+                    p.room_name,
+                    COALESCE(u.full_name, u.username, N'Sinh viên') AS ten_sinh_vien
+                FROM Submissions sub
+                INNER JOIN Rooms p ON sub.room_id = p.room_id
+                LEFT JOIN Users u ON sub.student_id = u.user_id
+                WHERE p.creator_id = ?
+                ORDER BY sub.submitted_at DESC
+            """, (user_id,))
+            for row in cursor.fetchall():
+                nid = f"ins-sub-{row[0]}"
+                notifications.append(NotificationItem(
+                    id=nid,
+                    title="Bài thi mới nộp",
+                    desc=f"Thí sinh {row[5]} vừa nộp bài thi tại phòng '{row[4]}' ({row[3]}).",
+                    time=_format_relative_time(row[1]),
+                    type="info",
+                    read=nid in read_set,
+                    link=f"/instructor/reports?room={row[3]}"
+                ))
+
         elif role == "student":
-            # Sinh viên nhận thông báo ca thi đang diễn ra hoặc sắp tới
+            # 1. Ca thi đang diễn ra hoặc sắp tới thuộc các lớp sinh viên tham gia
             cursor.execute("""
                 SELECT TOP 5 
-                    p.ma_phong, 
-                    p.ma_phong_code, 
-                    p.tieu_de, 
-                    p.trang_thai, 
-                    p.gio_bat_dau
-                FROM Phong p
-                INNER JOIN SinhVienLopHoc svl ON p.ma_lop = svl.ma_lop
-                WHERE svl.ma_sinh_vien = ?
-                  AND (p.trang_thai = 'dang_dien_ra' OR (p.trang_thai = 'chua_mo' AND p.gio_bat_dau > GETDATE()))
-                ORDER BY p.gio_bat_dau ASC
+                    p.room_id, 
+                    p.room_code, 
+                    p.room_name, 
+                    p.status, 
+                    p.start_time
+                FROM Rooms p
+                INNER JOIN ClassEnrollments svl ON p.class_id = svl.class_id
+                WHERE svl.student_id = ?
+                  AND (p.status IN ('dang_dien_ra', 'in_progress', 'ongoing') OR (p.status IN ('chua_mo', 'scheduled', 'draft') AND p.start_time > GETDATE()))
+                ORDER BY p.start_time ASC
             """, (user_id,))
             for row in cursor.fetchall():
                 nid = f"stu-room-{row[0]}"
-                is_running = row[3] == "dang_dien_ra"
+                is_running = row[3] in ("dang_dien_ra", "in_progress", "ongoing")
                 notifications.append(NotificationItem(
                     id=nid,
                     title="Ca thi đang diễn ra" if is_running else "Lịch thi sắp tới",
@@ -215,6 +237,57 @@ async def get_user_notifications(
                     type="info" if not is_running else "success",
                     read=nid in read_set,
                     link=f"/student/exams?code={row[1]}"
+                ))
+
+            # 2. Thông báo bài thi đã được chấm điểm
+            cursor.execute("""
+                SELECT TOP 3
+                    sub.submission_id,
+                    sub.total_score,
+                    sub.grading_status,
+                    sub.submitted_at,
+                    p.room_name,
+                    p.room_code
+                FROM Submissions sub
+                LEFT JOIN Rooms p ON sub.room_id = p.room_id
+                WHERE sub.student_id = ? AND sub.grading_status IN ('completed', 'graded', 'da_cham')
+                ORDER BY sub.submitted_at DESC
+            """, (user_id,))
+            for row in cursor.fetchall():
+                nid = f"stu-score-{row[0]}"
+                score_str = f"{row[1]:.1f}" if row[1] is not None else "0.0"
+                notifications.append(NotificationItem(
+                    id=nid,
+                    title="Kết quả bài thi đã công bố",
+                    desc=f"Bài thi tại phòng '{row[4] or row[5]}' đã hoàn tất chấm điểm: {score_str} điểm.",
+                    time=_format_relative_time(row[3]),
+                    type="success",
+                    read=nid in read_set,
+                    link="/student/submissions"
+                ))
+
+            # 3. Lớp học phần mới được thêm vào
+            cursor.execute("""
+                SELECT TOP 2
+                    c.class_id,
+                    c.class_code,
+                    c.class_name,
+                    e.enrolled_at
+                FROM ClassEnrollments e
+                INNER JOIN Classes c ON e.class_id = c.class_id
+                WHERE e.student_id = ?
+                ORDER BY e.enrolled_at DESC
+            """, (user_id,))
+            for row in cursor.fetchall():
+                nid = f"stu-class-{row[0]}"
+                notifications.append(NotificationItem(
+                    id=nid,
+                    title="Lớp học phần mới",
+                    desc=f"Bạn đã được ghi danh vào lớp '{row[2]}' ({row[1]}).",
+                    time=_format_relative_time(row[3]),
+                    type="info",
+                    read=nid in read_set,
+                    link="/student/dashboard"
                 ))
 
         return notifications

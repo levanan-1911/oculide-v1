@@ -7,32 +7,32 @@ def get_submission_by_id(submission_id: int, include_hidden_details: bool = True
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT s.ma_bai_nop AS submission_id, 
-                   s.ma_phong AS room_id, 
-                   p.ma_phong_code AS room_code,
-                   p.tieu_de AS room_name,
-                   s.ma_sinh_vien AS student_id, 
-                   u.ho_va_ten AS student_name,
-                   u.ma_dinh_danh AS student_code,
-                   s.ma_cau_hoi AS question_id, 
-                   q.tieu_de AS question_title,
-                   s.lan_nop AS attempt_number,
-                   s.ma_nguon_nop AS code_content, 
-                   s.ngon_ngu AS language, 
-                   s.thoi_gian_nop AS submitted_at, 
-                   s.trang_thai_cham AS status,
+            SELECT s.submission_id, 
+                   s.room_id, 
+                   p.room_code,
+                   p.room_name,
+                   s.student_id, 
+                   u.full_name AS student_name,
+                   u.identifier_code AS student_code,
+                   s.question_id, 
+                   q.title AS question_title,
+                   s.attempt_number,
+                   s.code_content, 
+                   s.programming_language AS language, 
+                   s.submitted_at, 
+                   s.grading_status AS status,
                    COALESCE((
-                       SELECT SUM(tc.diem_test)
-                       FROM KetQuaChamDiem gr
-                       JOIN BoKiemThu tc ON gr.ma_test_case = tc.ma_test_case
-                       WHERE gr.ma_bai_nop = s.ma_bai_nop AND gr.la_chinh_xac = 1
+                       SELECT SUM(tc.points)
+                       FROM GradingResults gr
+                       JOIN TestCases tc ON gr.test_case_id = tc.test_case_id
+                       WHERE gr.submission_id = s.submission_id AND gr.is_passed = 1
                    ), 0) AS total_points,
-                   q.diem_toi_da AS max_points
-            FROM BaiNop s
-            JOIN CauHoi q ON s.ma_cau_hoi = q.ma_cau_hoi
-            LEFT JOIN Phong p ON s.ma_phong = p.ma_phong
-            LEFT JOIN NguoiDung u ON s.ma_sinh_vien = u.ma_nguoi_dung
-            WHERE s.ma_bai_nop = ?
+                   q.max_points
+            FROM Submissions s
+            JOIN Questions q ON s.question_id = q.question_id
+            LEFT JOIN Rooms p ON s.room_id = p.room_id
+            LEFT JOIN Users u ON s.student_id = u.user_id
+            WHERE s.submission_id = ?
         """, (submission_id,))
         row = cursor.fetchone()
         if row:
@@ -55,38 +55,38 @@ def get_submissions_by_student(student_id: int, room_id: Optional[int] = None) -
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        where = ["s.ma_sinh_vien = ?"]
+        where = ["s.student_id = ?"]
         params = [student_id]
         if room_id:
-            where.append("s.ma_phong = ?")
+            where.append("s.room_id = ?")
             params.append(room_id)
         where_sql = f"WHERE {' AND '.join(where)}"
         
         cursor.execute(f"""
-            SELECT s.ma_bai_nop AS submission_id, 
-                   s.ma_phong AS room_id, 
-                   p.ma_phong_code AS room_code,
-                   p.tieu_de AS room_name,
-                   s.ma_sinh_vien AS student_id, 
-                   s.ma_cau_hoi AS question_id, 
-                   q.tieu_de AS question_title,
-                   s.lan_nop AS attempt_number,
-                   s.ma_nguon_nop AS code_content, 
-                   s.ngon_ngu AS language, 
-                   s.thoi_gian_nop AS submitted_at, 
-                   s.trang_thai_cham AS status,
+            SELECT s.submission_id, 
+                   s.room_id, 
+                   p.room_code,
+                   p.room_name,
+                   s.student_id, 
+                   s.question_id, 
+                   q.title AS question_title,
+                   s.attempt_number,
+                   s.code_content, 
+                   s.programming_language AS language, 
+                   s.submitted_at, 
+                   s.grading_status AS status,
                    COALESCE((
-                       SELECT SUM(tc.diem_test)
-                       FROM KetQuaChamDiem gr
-                       JOIN BoKiemThu tc ON gr.ma_test_case = tc.ma_test_case
-                       WHERE gr.ma_bai_nop = s.ma_bai_nop AND gr.la_chinh_xac = 1
+                       SELECT SUM(tc.points)
+                       FROM GradingResults gr
+                       JOIN TestCases tc ON gr.test_case_id = tc.test_case_id
+                       WHERE gr.submission_id = s.submission_id AND gr.is_passed = 1
                    ), 0) AS total_points,
-                   q.diem_toi_da AS max_points
-            FROM BaiNop s
-            JOIN CauHoi q ON s.ma_cau_hoi = q.ma_cau_hoi
-            LEFT JOIN Phong p ON s.ma_phong = p.ma_phong
+                   q.max_points
+            FROM Submissions s
+            JOIN Questions q ON s.question_id = q.question_id
+            LEFT JOIN Rooms p ON s.room_id = p.room_id
             {where_sql}
-            ORDER BY s.thoi_gian_nop DESC
+            ORDER BY s.submitted_at DESC
         """, tuple(params))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -108,27 +108,27 @@ def get_submissions_by_question(question_id: int) -> List[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT s.ma_bai_nop AS submission_id, 
-                   s.ma_phong AS room_id, 
-                   s.ma_sinh_vien AS student_id, 
-                   s.ma_cau_hoi AS question_id, 
-                   s.lan_nop AS attempt_number,
-                   s.ma_nguon_nop AS code_content, 
-                   s.ngon_ngu AS language, 
-                   s.thoi_gian_nop AS submitted_at, 
-                   s.trang_thai_cham AS status,
-                   u.ho_va_ten AS student_name, 
-                   u.ma_dinh_danh AS student_code,
+            SELECT s.submission_id, 
+                   s.room_id, 
+                   s.student_id, 
+                   s.question_id, 
+                   s.attempt_number,
+                   s.code_content, 
+                   s.programming_language AS language, 
+                   s.submitted_at, 
+                   s.grading_status AS status,
+                   u.full_name AS student_name, 
+                   u.identifier_code AS student_code,
                    COALESCE((
-                       SELECT SUM(tc.diem_test)
-                       FROM KetQuaChamDiem gr
-                       JOIN BoKiemThu tc ON gr.ma_test_case = tc.ma_test_case
-                       WHERE gr.ma_bai_nop = s.ma_bai_nop AND gr.la_chinh_xac = 1
+                       SELECT SUM(tc.points)
+                       FROM GradingResults gr
+                       JOIN TestCases tc ON gr.test_case_id = tc.test_case_id
+                       WHERE gr.submission_id = s.submission_id AND gr.is_passed = 1
                    ), 0) AS total_points
-            FROM BaiNop s
-            JOIN NguoiDung u ON s.ma_sinh_vien = u.ma_nguoi_dung
-            WHERE s.ma_cau_hoi = ?
-            ORDER BY s.thoi_gian_nop DESC
+            FROM Submissions s
+            JOIN Users u ON s.student_id = u.user_id
+            WHERE s.question_id = ?
+            ORDER BY s.submitted_at DESC
         """, (question_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -156,9 +156,9 @@ def create_submission(
     try:
         cursor.execute(
             """
-            SELECT COALESCE(MAX(lan_nop), 0)
-            FROM BaiNop
-            WHERE ma_phong = ? AND ma_sinh_vien = ? AND ma_cau_hoi = ?
+            SELECT COALESCE(MAX(attempt_number), 0)
+            FROM Submissions
+            WHERE room_id = ? AND student_id = ? AND question_id = ?
             """,
             (room_id, student_id, question_id),
         )
@@ -166,9 +166,9 @@ def create_submission(
         next_attempt = max(attempt_number, max_attempt + 1)
 
         cursor.execute("""
-            INSERT INTO BaiNop (ma_phong, ma_sinh_vien, ma_cau_hoi, lan_nop, ma_nguon_nop, ngon_ngu, trang_thai_cham)
-            OUTPUT inserted.ma_bai_nop, inserted.ma_phong, inserted.ma_sinh_vien, inserted.ma_cau_hoi,
-                   inserted.lan_nop, inserted.ma_nguon_nop, inserted.ngon_ngu, inserted.thoi_gian_nop, inserted.trang_thai_cham
+            INSERT INTO Submissions (room_id, student_id, question_id, attempt_number, code_content, programming_language, grading_status)
+            OUTPUT inserted.submission_id, inserted.room_id, inserted.student_id, inserted.question_id,
+                   inserted.attempt_number, inserted.code_content, inserted.programming_language, inserted.submitted_at, inserted.grading_status
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (room_id, student_id, question_id, next_attempt, code_content, language, status))
         row = cursor.fetchone()
@@ -196,7 +196,7 @@ def update_submission_status(submission_id: int, status: str) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE BaiNop SET trang_thai_cham = ? WHERE ma_bai_nop = ?", (status, submission_id))
+        cursor.execute("UPDATE Submissions SET grading_status = ? WHERE submission_id = ?", (status, submission_id))
         conn.commit()
         return cursor.rowcount > 0
     finally:
@@ -208,33 +208,33 @@ def get_submissions_by_room(room_id: int) -> List[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT s.ma_bai_nop AS submission_id,
-                   s.ma_phong AS room_id,
-                   p.ma_phong_code AS room_code,
-                   p.tieu_de AS room_name,
-                   s.ma_sinh_vien AS student_id,
-                   u.ho_va_ten AS student_name,
-                   u.ma_dinh_danh AS student_code,
-                   s.ma_cau_hoi AS question_id,
-                   q.tieu_de AS question_title,
-                   s.lan_nop AS attempt_number,
-                   s.ma_nguon_nop AS code_content,
-                   s.ngon_ngu AS language,
-                   s.thoi_gian_nop AS submitted_at,
-                   s.trang_thai_cham AS status,
+            SELECT s.submission_id,
+                   s.room_id,
+                   p.room_code,
+                   p.room_name,
+                   s.student_id,
+                   u.full_name AS student_name,
+                   u.identifier_code AS student_code,
+                   s.question_id,
+                   q.title AS question_title,
+                   s.attempt_number,
+                   s.code_content,
+                   s.programming_language AS language,
+                   s.submitted_at,
+                   s.grading_status AS status,
                    COALESCE((
-                       SELECT SUM(tc.diem_test)
-                       FROM KetQuaChamDiem gr
-                       JOIN BoKiemThu tc ON gr.ma_test_case = tc.ma_test_case
-                       WHERE gr.ma_bai_nop = s.ma_bai_nop AND gr.la_chinh_xac = 1
+                       SELECT SUM(tc.points)
+                       FROM GradingResults gr
+                       JOIN TestCases tc ON gr.test_case_id = tc.test_case_id
+                       WHERE gr.submission_id = s.submission_id AND gr.is_passed = 1
                    ), 0) AS total_points,
-                   q.diem_toi_da AS max_points
-            FROM BaiNop s
-            JOIN CauHoi q ON s.ma_cau_hoi = q.ma_cau_hoi
-            JOIN NguoiDung u ON s.ma_sinh_vien = u.ma_nguoi_dung
-            LEFT JOIN Phong p ON s.ma_phong = p.ma_phong
-            WHERE s.ma_phong = ?
-            ORDER BY s.thoi_gian_nop DESC
+                   q.max_points
+            FROM Submissions s
+            JOIN Questions q ON s.question_id = q.question_id
+            JOIN Users u ON s.student_id = u.user_id
+            LEFT JOIN Rooms p ON s.room_id = p.room_id
+            WHERE s.room_id = ?
+            ORDER BY s.submitted_at DESC
         """, (room_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -257,22 +257,22 @@ def get_grading_results(submission_id: int, include_hidden_details: bool = True)
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT gr.ma_ket_qua AS result_id, 
-                   gr.ma_bai_nop AS submission_id, 
-                   gr.ma_test_case AS test_case_id, 
-                   gr.la_chinh_xac AS is_passed,
-                   COALESCE(tc.la_test_an, 0) AS is_hidden,
-                   tc.du_lieu_dau_vao AS input_data,
-                   tc.ket_qua_mong_doi AS expected_output,
-                   gr.ket_qua_thuc_te AS actual_output, 
-                   gr.thoi_gian_chay_ms AS execution_time_ms, 
-                   gr.bo_nho_su_dung_mb AS memory_used_mb,
-                   gr.thong_bao_loi AS error_message, 
-                   gr.thoi_gian_cham AS graded_at
-            FROM KetQuaChamDiem gr
-            LEFT JOIN BoKiemThu tc ON gr.ma_test_case = tc.ma_test_case
-            WHERE gr.ma_bai_nop = ?
-            ORDER BY gr.ma_ket_qua ASC
+            SELECT gr.result_id, 
+                   gr.submission_id, 
+                   gr.test_case_id, 
+                   gr.is_passed,
+                   COALESCE(tc.is_hidden, 0) AS is_hidden,
+                   tc.input_data,
+                   tc.expected_output,
+                   gr.actual_output, 
+                   gr.execution_time_ms, 
+                   gr.memory_used_mb, 
+                   gr.error_message, 
+                   gr.graded_at
+            FROM GradingResults gr
+            LEFT JOIN TestCases tc ON gr.test_case_id = tc.test_case_id
+            WHERE gr.submission_id = ?
+            ORDER BY gr.result_id ASC
         """, (submission_id,))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -294,16 +294,16 @@ def get_grading_results(submission_id: int, include_hidden_details: bool = True)
 
 def save_grading_results(submission_id: int, results: List[Dict], final_status: str = "completed") -> bool:
     """
-    Lưu toàn bộ kết quả chấm từng test case vào KetQuaChamDiem và cập nhật trạng thái
-    BaiNop nguyên khối (Atomic Transaction).
+    Lưu toàn bộ kết quả chấm từng test case vào GradingResults và cập nhật trạng thái
+    Submissions nguyên khối (Atomic Transaction).
     """
     from core.database import get_db_cursor
     with get_db_cursor(commit=True) as cursor:
         for r in results:
             cursor.execute("""
-                INSERT INTO KetQuaChamDiem (
-                    ma_bai_nop, ma_test_case, la_chinh_xac,
-                    ket_qua_thuc_te, thoi_gian_chay_ms, bo_nho_su_dung_mb, thong_bao_loi, diem_dat_duoc
+                INSERT INTO GradingResults (
+                    submission_id, test_case_id, is_passed,
+                    actual_output, execution_time_ms, memory_used_mb, error_message, score_awarded
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
@@ -316,7 +316,7 @@ def save_grading_results(submission_id: int, results: List[Dict], final_status: 
                 r.get("error_message"),
                 r.get("points_earned") or (10.0 if r.get("is_passed") else 0.0)
             ))
-        cursor.execute("UPDATE BaiNop SET trang_thai_cham = ? WHERE ma_bai_nop = ?", (final_status, submission_id))
+        cursor.execute("UPDATE Submissions SET grading_status = ? WHERE submission_id = ?", (final_status, submission_id))
         return True
 
 def get_stuck_submissions(older_than_seconds: int = 120) -> List[Dict]:
@@ -326,17 +326,17 @@ def get_stuck_submissions(older_than_seconds: int = 120) -> List[Dict]:
     """
     from core.database import get_db_cursor, rows_to_dicts
     sql = """
-        SELECT ma_bai_nop AS submission_id, 
-               ma_phong AS room_id, 
-               ma_sinh_vien AS student_id, 
-               ma_cau_hoi AS question_id, 
-               lan_nop AS attempt_number,
-               ma_nguon_nop AS code_content, 
-               ngon_ngu AS language, 
-               thoi_gian_nop AS submitted_at, 
-               trang_thai_cham AS status
-        FROM BaiNop
-        WHERE trang_thai_cham = 'grading' AND DATEDIFF(second, thoi_gian_nop, GETDATE()) > ?
+        SELECT submission_id, 
+               room_id, 
+               student_id, 
+               question_id, 
+               attempt_number, 
+               code_content, 
+               programming_language AS language, 
+               submitted_at, 
+               grading_status AS status
+        FROM Submissions
+        WHERE grading_status = 'grading' AND DATEDIFF(second, submitted_at, GETDATE()) > ?
     """
     with get_db_cursor() as cursor:
         cursor.execute(sql, (older_than_seconds,))
@@ -350,20 +350,20 @@ def mark_submission_failed(submission_id: int, error_message: str = "Hệ thốn
     """
     from core.database import get_db_cursor
     with get_db_cursor(commit=True) as cursor:
-        cursor.execute("UPDATE BaiNop SET trang_thai_cham = 'failed' WHERE ma_bai_nop = ?", (submission_id,))
-        cursor.execute("SELECT COUNT(*) FROM KetQuaChamDiem WHERE ma_bai_nop = ?", (submission_id,))
+        cursor.execute("UPDATE Submissions SET grading_status = 'failed' WHERE submission_id = ?", (submission_id,))
+        cursor.execute("SELECT COUNT(*) FROM GradingResults WHERE submission_id = ?", (submission_id,))
         count = cursor.fetchone()[0]
         if count == 0:
             cursor.execute("""
-                SELECT TOP 1 tc.ma_test_case 
-                FROM BoKiemThu tc
-                JOIN BaiNop s ON tc.ma_cau_hoi = s.ma_cau_hoi
-                WHERE s.ma_bai_nop = ?
+                SELECT TOP 1 tc.test_case_id 
+                FROM TestCases tc
+                JOIN Submissions s ON tc.question_id = s.question_id
+                WHERE s.submission_id = ?
             """, (submission_id,))
             tc_row = cursor.fetchone()
             if tc_row:
                 cursor.execute("""
-                    INSERT INTO KetQuaChamDiem (ma_bai_nop, ma_test_case, la_chinh_xac, thong_bao_loi)
+                    INSERT INTO GradingResults (submission_id, test_case_id, is_passed, error_message)
                     VALUES (?, ?, 0, ?)
                 """, (submission_id, tc_row[0], error_message))
         return True
@@ -374,17 +374,17 @@ def get_grading_result_by_id(result_id: int) -> Optional[Dict]:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT ma_ket_qua AS result_id, 
-                   ma_bai_nop AS submission_id, 
-                   ma_test_case AS test_case_id, 
-                   la_chinh_xac AS is_passed,
-                   ket_qua_thuc_te AS actual_output, 
-                   thoi_gian_chay_ms AS execution_time_ms, 
-                   bo_nho_su_dung_mb AS memory_used_mb,
-                   thong_bao_loi AS error_message, 
-                   thoi_gian_cham AS graded_at
-            FROM KetQuaChamDiem
-            WHERE ma_ket_qua = ?
+            SELECT result_id, 
+                   submission_id, 
+                   test_case_id, 
+                   is_passed, 
+                   actual_output, 
+                   execution_time_ms, 
+                   memory_used_mb, 
+                   error_message, 
+                   graded_at
+            FROM GradingResults
+            WHERE result_id = ?
         """, (result_id,))
         row = cursor.fetchone()
         if row:

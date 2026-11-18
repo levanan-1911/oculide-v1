@@ -36,20 +36,30 @@ for i in $(seq 1 20); do
     sleep 2
 done
 
+# 2.1. Kiểm tra cờ đánh dấu đã khởi tạo (nằm trên volume bền vững sqlserver_data)
+if [ -f /var/opt/mssql/.schema_initialized ] && [ "$INIT_DB_FORCE" != "1" ]; then
+    echo "[init-db] Tệp cờ .schema_initialized đã tồn tại — CSDL đã được khởi tạo trước đó."
+    echo "[init-db] Bảo lưu toàn bộ dữ liệu hiện tại, bỏ qua việc khởi tạo lại."
+    echo "[init-db] (Nếu muốn xả lại CSDL từ đầu, đặt biến môi trường INIT_DB_FORCE=1 hoặc xóa volume docker)."
+    echo "[init-db] ========================================================"
+    exit 0
+fi
+
 # Dọn dẹp file .mdf/.ldf mồ côi nếu CSDL ExamSystem không tồn tại trong danh mục hệ thống
 DB_EXISTS=$(/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${SA_PASSWORD}" -No -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.databases WHERE name = 'ExamSystem'" 2>/dev/null | tr -d '[:space:]')
 if [ "$DB_EXISTS" = "0" ]; then
     rm -f /var/opt/mssql/data/ExamSystem.mdf /var/opt/mssql/data/ExamSystem_log.ldf
 fi
 
-# 3. Kiểm tra xem CSDL ExamSystem và bảng VaiTro (21 bảng mới) đã có chưa
+# 3. Kiểm tra xem CSDL ExamSystem và bảng Roles / Users (22 bảng chuẩn hóa tiếng Anh) đã có chưa
 CHECK_TABLE=$(/opt/mssql-tools18/bin/sqlcmd \
     -S localhost -U sa -P "${SA_PASSWORD}" \
     -No -d ExamSystem -h -1 \
-    -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.tables WHERE name = 'VaiTro'" 2>/dev/null | tr -d '[:space:]')
+    -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.tables WHERE name IN ('Roles', 'Users', 'VaiTro')" 2>/dev/null | tr -d '[:space:]')
 
-if [ "$CHECK_TABLE" = "1" ] && [ "$INIT_DB_FORCE" != "1" ]; then
-    echo "[init-db] CSDL ExamSystem và bảng VaiTro đã tồn tại — bỏ qua khởi tạo lại."
+if [ "$CHECK_TABLE" -ge "1" ] && [ "$INIT_DB_FORCE" != "1" ]; then
+    touch /var/opt/mssql/.schema_initialized
+    echo "[init-db] CSDL ExamSystem và các bảng (Roles/Users) đã tồn tại — bảo lưu toàn bộ dữ liệu."
     echo "[init-db] (Nếu muốn xả lại CSDL từ đầu, đặt biến môi trường INIT_DB_FORCE=1 hoặc xóa volume docker)."
     echo "[init-db] ========================================================"
     exit 0

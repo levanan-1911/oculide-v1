@@ -17,8 +17,8 @@ def admin_client():
 @pytest.fixture
 def instructor_client():
     client = TestClient(app)
-    # Token cho Giảng viên thật trong CSDL (user_id=30, role=instructor, username=hbdieu)
-    token = create_access_token({"user_id": 30, "role": "instructor", "username": "hbdieu"})
+    # Token cho Giảng viên thật trong CSDL (user_id=2, role=instructor, username=instructor)
+    token = create_access_token({"user_id": 2, "role": "instructor", "username": "instructor"})
     client.headers = {"Authorization": f"Bearer {token}"}
     return client
 

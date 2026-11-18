@@ -600,10 +600,11 @@ export async function parseStudentFile(file: File): Promise<StudentParseResult> 
     const missingHeaderCols: string[] = [];
     if (codeIdx === -1) missingHeaderCols.push('Mã sinh viên');
     if (nameIdx === -1 && firstNameIdx === -1) missingHeaderCols.push('Họ và tên');
+    if (emailIdx === -1) missingHeaderCols.push('Email');
 
     if (missingHeaderCols.length > 0) {
       warnings.push(
-        `Tệp thiếu cột tiêu đề bắt buộc: [${missingHeaderCols.join(', ')}]. Các trường thiếu sẽ được cảnh báo để bổ sung sau.`
+        `Tệp thiếu cột tiêu đề: [${missingHeaderCols.join(', ')}]. Hệ thống không tự sinh email; các dòng thiếu thông tin sẽ cần được bổ sung.`
       );
     }
   } else {
@@ -729,12 +730,8 @@ export async function parseStudentFile(file: File): Promise<StudentParseResult> 
 
     rawName = rawName.replace(/\s+/g, ' ').trim();
 
-    // 6. Nhận diện email hoặc tự sinh email @dtu.edu.vn chuẩn
-    const isDtuStudent = /^(?:[123]\d)\d{7,9}$/.test(rawCode) || /^\d{9,11}$/.test(rawCode) || /^SV\d+$/i.test(rawCode);
-    let rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
-    if (!rawEmail && rawCode && isDtuStudent) {
-      rawEmail = `${rawCode.toLowerCase()}@dtu.edu.vn`;
-    }
+    // 6. Nhận diện email (Tuyệt đối không tự sinh email)
+    const rawEmail = emailIdx >= 0 ? (cols[emailIdx] ?? '').trim() : '';
 
     // Bỏ qua dòng hoàn toàn rỗng
     if (!rawCode && !rawName && !rawEmail) continue;
@@ -743,10 +740,10 @@ export async function parseStudentFile(file: File): Promise<StudentParseResult> 
     if (!rawCode) missingFields.push('Thiếu Mã SV');
     if (!rawName) missingFields.push('Thiếu Họ và tên');
 
-    const finalEmail = rawEmail || (rawCode ? `${rawCode.toLowerCase()}@dtu.edu.vn` : '');
+    const finalEmail = rawEmail;
     if (!finalEmail) {
-      missingFields.push('Thiếu Email');
-    } else if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+      missingFields.push('Thiếu Email (Bắt buộc)');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(finalEmail)) {
       missingFields.push('Email sai định dạng');
     }
 

@@ -113,14 +113,14 @@ function ProfileViewContent({ role }: ProfileViewProps) {
   const searchParams = useSearchParams();
   const tabParam = searchParams?.get('tab');
   const [activeTab, setActiveTab] = useState<'info' | 'security' | 'activity'>(
-    tabParam === 'security' || tabParam === 'activity' ? tabParam : 'info'
+    tabParam === 'security' || (tabParam === 'activity' && role !== 'admin') ? (tabParam as any) : 'info'
   );
 
   useEffect(() => {
-    if (tabParam === 'security' || tabParam === 'info' || tabParam === 'activity') {
-      setActiveTab(tabParam);
+    if (tabParam === 'security' || tabParam === 'info' || (tabParam === 'activity' && role !== 'admin')) {
+      setActiveTab(tabParam as any);
     }
-  }, [tabParam]);
+  }, [tabParam, role]);
 
   // Thông tin chung
   const [name, setName] = useState(
@@ -621,7 +621,7 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
           idLabel: 'Mã Quản trị',
           badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
           icon: Shield,
-          activityTabLabel: 'Hệ thống & Thống kê phiên',
+          activityTabLabel: '',
         }
       : {
           title: 'Sinh viên',
@@ -744,7 +744,9 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
           {[
             { id: 'info', label: 'Thông tin cá nhân', icon: User },
             { id: 'security', label: 'Bảo mật & Mật khẩu', icon: KeyRound },
-            { id: 'activity', label: roleMeta.activityTabLabel, icon: Table2 },
+            ...(role !== 'admin'
+              ? [{ id: 'activity', label: roleMeta.activityTabLabel, icon: Table2 }]
+              : []),
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -1308,32 +1310,6 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
                 )}
               </div>
             </>
-          )}
-
-          {/* Hoạt động Admin */}
-          {role === 'admin' && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-                <span className="text-xs font-semibold text-slate-500">Tổng tài khoản</span>
-                <p className="mt-3 text-2xl font-black text-slate-900">1,248</p>
-                <p className="mt-1 text-[11px] text-purple-600 font-semibold">Tất cả vai trò</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-                <span className="text-xs font-semibold text-slate-500">Phiên thi đang mở</span>
-                <p className="mt-3 text-2xl font-black text-slate-900">14 phòng</p>
-                <p className="mt-1 text-[11px] text-emerald-600 font-semibold">LiveKit SFU active</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-                <span className="text-xs font-semibold text-slate-500">Docker Sandbox</span>
-                <p className="mt-3 text-2xl font-black text-slate-900">99.8%</p>
-                <p className="mt-1 text-[11px] text-slate-400">Trạng thái chấm ổn định</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-                <span className="text-xs font-semibold text-slate-500">Cảnh báo hệ thống</span>
-                <p className="mt-3 text-2xl font-black text-slate-900">0 lỗi</p>
-                <p className="mt-1 text-[11px] text-emerald-600 font-semibold">Hệ thống an toàn</p>
-              </div>
-            </div>
           )}
 
           {/* Hoạt động Sinh viên */}

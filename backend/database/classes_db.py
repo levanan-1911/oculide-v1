@@ -333,10 +333,32 @@ def update_class(
         conn.close()
 
 def sync_semesters_realtime(cursor, today: Optional[date] = None):
-    """Đồng bộ trạng thái học kỳ thời gian thực vào bảng Semesters (is_current, status)"""
+    """
+    Đồng bộ trạng thái học kỳ thời gian thực vào bảng Semesters:
+    - Năm bắt đầu hệ thống: 2026 (Năm học 2026-2027).
+    - Các năm tiếp theo trong tương lai được hệ thống tự động tính toán và sinh sẵn.
+    - Cập nhật cờ is_current và status hoàn toàn theo thời gian thực (real-time).
+    """
     if today is None:
         today = date.today()
     try:
+        start_year = 2026
+        target_year = max(today.year + 1, start_year + 1)
+        for y in range(start_year, target_year + 1):
+            semesters_def = [
+                (f"HK1_{y}_{y+1}", f"HK1 {y} - {y+1}", f"{y}-{y+1}", 1, date(y, 9, 1), date(y+1, 1, 15)),
+                (f"HK2_{y}_{y+1}", f"HK2 {y} - {y+1}", f"{y}-{y+1}", 2, date(y+1, 1, 16), date(y+1, 6, 15)),
+                (f"HKT_{y}_{y+1}", f"HKT {y} - {y+1}", f"{y}-{y+1}", 3, date(y+1, 6, 16), date(y+1, 8, 31)),
+            ]
+            for code, name, ac_year, term, s_date, e_date in semesters_def:
+                cursor.execute("""
+                    IF NOT EXISTS (SELECT 1 FROM Semesters WHERE semester_code = ?)
+                    BEGIN
+                        INSERT INTO Semesters (semester_code, semester_name, academic_year, term_number, start_date, end_date, is_current, status)
+                        VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
+                    END
+                """, (code, code, name, ac_year, term, s_date, e_date))
+
         cursor.execute("""
             UPDATE Semesters 
             SET is_current = CASE 

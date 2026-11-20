@@ -101,3 +101,21 @@ def test_semesters_list_api(admin_client):
     for s in semesters:
         assert "ma_hoc_ky" in s
         assert "ten_hoc_ky" in s
+
+def test_current_semester_calculation_formula(admin_client):
+    from database.classes_db import calculate_semester_by_date
+    
+    # 1. Test endpoint GET /api/v1/classes/semesters/current
+    res = admin_client.get("/api/v1/classes/semesters/current?date=2026-11-20")
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert "academic_year" in data
+    assert "semester_name" in data
+    assert data["academic_year"] == "2026-2027"
+    assert "HK1" in data["semester_name"]
+
+    # 2. Test direct function calculation
+    calc_res = calculate_semester_by_date("2027-03-15")
+    assert calc_res["academic_year"] == "2026-2027"
+    assert "HK2" in calc_res["semester_name"]
+    assert calc_res["term_number"] == 2

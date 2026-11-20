@@ -23,7 +23,9 @@ from database.classes_db import (
     enroll_students_batch,
     remove_student_from_class,
     get_class_enrolled_students,
-    get_class_rooms
+    get_class_rooms,
+    get_all_semesters,
+    calculate_semester_by_date
 )
 from database.system_log_db import create_system_log
 
@@ -46,13 +48,19 @@ async def add_class(
         if current_user["role"] == "admin" and data.instructor_id:
             assigned_instructor_id = data.instructor_id
 
+        final_semester = data.semester
+        if not final_semester and data.start_date:
+            auto_sem = calculate_semester_by_date(data.start_date)
+            if auto_sem:
+                final_semester = auto_sem.get("semester_name")
+
         new_cls = create_class(
             class_code=data.class_code,
             class_name=data.class_name,
             instructor_id=assigned_instructor_id,
             course_code=data.course_code,
             section_code=data.section_code,
-            semester=data.semester,
+            semester=final_semester,
             description=data.description,
             start_date=data.start_date,
             end_date=data.end_date,
@@ -112,10 +120,22 @@ async def search_students_endpoint(
         limit=limit
     )
 
+@router.get("/semesters/current")
+async def get_current_semester(
+    date: Optional[str] = Query(None, description="Ngày cần tính toán học kỳ (YYYY-MM-DD), mặc định là ngày hiện tại")
+):
+    """
+    Tự động tính toán học kỳ theo công thức:
+        Gọi T là ngày hiện tại (hoặc ngày chỉ định):
+        Semester = { S_i | StartDate_i <= T <= EndDate_i }
+        AcademicYear = AcademicYear_i
+        Trong đó S_i là học kỳ có khoảng thời gian chứa ngày hiện tại.
+    """
+    return calculate_semester_by_date(date)
+
 @router.get("/semesters/list")
 async def list_semesters():
-    """Lấy danh sách các học kỳ từ bảng HocKy trong CSDL SQL Server"""
-    from database.classes_db import get_all_semesters
+    """Lấy danh sách các học kỳ từ bảng Semesters trong CSDL SQL Server"""
     return get_all_semesters()
 
 @router.get("/{class_id}", response_model=ClassResponse)

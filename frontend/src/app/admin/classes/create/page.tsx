@@ -231,13 +231,31 @@ export default function CreateClassPage() {
 
     async function loadSemesters() {
       try {
-        const res = await fetch('/api/v1/classes/semesters/list');
-        if (res.ok) {
-          const list = await res.json();
+        const [listRes, curRes] = await Promise.all([
+          fetch('/api/v1/classes/semesters/list'),
+          fetch('/api/v1/classes/semesters/current').catch(() => null)
+        ]);
+
+        if (listRes.ok) {
+          const list = await listRes.json();
           if (Array.isArray(list) && list.length > 0) {
             const names = list.map((item: any) => item.ten_hoc_ky || item.ma_hoc_ky);
             setDbSemesters(names);
-            if (names.length > 0) {
+            
+            // Tự động nhận diện học kỳ hiện tại theo công thức
+            let detectedSem: string | null = null;
+            if (curRes && curRes.ok) {
+              const curData = await curRes.json();
+              detectedSem = curData.semester_name || curData.semester || null;
+            }
+            if (!detectedSem) {
+              const matchInList = list.find((item: any) => item.la_hoc_ky_hien_tai || item.is_current);
+              detectedSem = matchInList ? (matchInList.ten_hoc_ky || matchInList.ma_hoc_ky) : null;
+            }
+
+            if (detectedSem && names.includes(detectedSem)) {
+              setSemester(detectedSem);
+            } else if (names.length > 0) {
               setSemester(names[0]);
             }
           }

@@ -63,7 +63,9 @@ def test_reassign_class_instructor(admin_client):
         "course_code": "TEST-101",
         "section_code": "SEC-A",
         "semester": "HK1 2026–2027",
-        "instructor_id": 2
+        "instructor_id": 2,
+        "start_date": "2026-10-30",
+        "end_date": "2027-01-30"
     }
     res_create = admin_client.post("/api/v1/classes", json=create_payload)
     assert res_create.status_code == 201, res_create.text

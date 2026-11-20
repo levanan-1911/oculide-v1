@@ -319,6 +319,8 @@ def test_classes_crud():
         "class_name": "Nhập môn Lập trình",
         "instructor_id": 1,
         "description": "Lớp học phần C++",
+        "start_date": "2026-10-30",
+        "end_date": "2027-01-30",
         "created_at": "2026-10-30T00:00:00",
         "updated_at": "2026-10-30T00:00:00",
         "instructor_name": "Thầy Nam"
@@ -333,7 +335,9 @@ def test_classes_crud():
         c_res = client.post("/api/v1/classes", json={
             "class_code": "CS101",
             "class_name": "Nhập môn Lập trình",
-            "description": "Lớp học phần C++"
+            "description": "Lớp học phần C++",
+            "start_date": "2026-10-30",
+            "end_date": "2027-01-30"
         }, headers=headers)
         assert c_res.status_code == 201
         assert c_res.json()["class_code"] == "CS101"

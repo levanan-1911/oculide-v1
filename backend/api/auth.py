@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Header, BackgroundTasks, Request
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
+import logging
 import secrets
 
 from schemas.auth import (
@@ -24,6 +25,7 @@ from database.system_log_db import create_system_log
 from core.config import settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 def extract_client_ip(request: Request) -> str:
     """
@@ -217,8 +219,7 @@ async def login(credentials: LoginRequest, request: Request):
             detail=sys_settings.maintenance_message or "Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút."
         )
 
-    # 4. Kiểm tra xem có phải ĐĂNG NHẬP TỪ IP LẠ hay không:
-    # "đăng nhập thành công chỉ lưu log khi đăng nhập từ 1 địa chỉ IP lạ (chưa từng được ghi nhận trong hệ thống trong 1 khoảng thời gian)"
+    # 4. Phân loại IP mới để đánh dấu mức độ, không dùng điều kiện này để bỏ log đăng nhập thành công.
     is_unfamiliar_ip = False
     if client_ip not in ("127.0.0.1", "localhost", "::1", "testclient"):
         if user.get("last_login"):
@@ -237,21 +238,30 @@ async def login(credentials: LoginRequest, request: Request):
                     if seen_count == 0:
                         is_unfamiliar_ip = True
             except Exception:
-                pass
+                logger.exception(
+                    "Could not determine whether login IP is new for user_id=%s",
+                    user["user_id"],
+                )
 
-    if is_unfamiliar_ip:
-        try:
-            create_system_log(
-                log_level="warning",
-                module="Đăng nhập từ IP lạ",
-                message=f"Tài khoản {user['username']} ({user['full_name']}) đăng nhập từ địa chỉ IP mới: {client_ip}",
-                user_id=user["user_id"],
-                ip_address=client_ip,
-                extra_data={"is_new_ip": True, "ip": client_ip, "username": user["username"], "role": user["role"]}
-            )
-        except Exception:
-            pass
-    # Ngược lại: Đăng nhập thành công bình thường từ IP quen thuộc -> KHÔNG LƯU LOG để tránh tràn bộ nhớ.
+    try:
+        create_system_log(
+            log_level="warning" if is_unfamiliar_ip else "info",
+            module="AUTH_LOGIN",
+            message=f"Tài khoản {user['username']} đăng nhập thành công từ IP {client_ip}",
+            user_id=user["user_id"],
+            ip_address=client_ip,
+            extra_data={
+                "is_new_ip": is_unfamiliar_ip,
+                "ip": client_ip,
+                "username": user["username"],
+                "role": user["role"],
+            },
+        )
+    except Exception:
+        logger.exception(
+            "Could not write successful login audit for user_id=%s",
+            user["user_id"],
+        )
 
     update_last_login(user["user_id"], client_ip=client_ip)
     user["last_login_ip"] = client_ip

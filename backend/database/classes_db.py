@@ -334,42 +334,45 @@ def update_class(
 
 def get_semester_def_by_date(t: date):
     """
-    Xác định thông tin học kỳ dựa trên ngày t theo quy chuẩn:
-    - Năm học bắt đầu từ 01/09 hàng năm (Mốc xuất phát: 2026-09-01).
-    - HK1: 01/09/Y đến 15/01/(Y+1)
-    - HK2: 16/01/(Y+1) đến 30/06/(Y+1)
-    - HK hè: 01/07/(Y+1) đến 31/08/(Y+1) (kéo dài đúng 2 tháng)
+    Xác định thông tin học kỳ dựa trên ngày t theo quy chuẩn thực tế:
+    - Năm học bắt đầu từ ngày 10/08 hàng năm (Mốc bắt đầu hệ thống: 10/08/2026).
+    - HK1: 10/08/Y đến 15/01/(Y+1)
+    - HK2: 16/01/(Y+1) đến 09/06/(Y+1)
+    - HK hè: 10/06/(Y+1) đến 09/08/(Y+1) (kéo dài đúng 2 tháng)
     """
     year = t.year
     month = t.month
     day = t.day
 
-    if (month == 9 and day >= 1) or (month in (10, 11, 12)):
+    # HK1: Từ 10/08/Y đến 15/01/(Y+1)
+    if (month == 8 and day >= 10) or (month in (9, 10, 11, 12)):
         ac_year = f"{year}-{year + 1}"
         term = 1
-        s_date = date(year, 9, 1)
+        s_date = date(year, 8, 10)
         e_date = date(year + 1, 1, 15)
         sem_code = f"HK1_{year}_{year + 1}"
         sem_name = f"HK1 {year}-{year + 1}"
     elif month == 1 and day <= 15:
         ac_year = f"{year - 1}-{year}"
         term = 1
-        s_date = date(year - 1, 9, 1)
+        s_date = date(year - 1, 8, 10)
         e_date = date(year, 1, 15)
         sem_code = f"HK1_{year - 1}_{year}"
         sem_name = f"HK1 {year - 1}-{year}"
-    elif (month == 1 and day >= 16) or (month in (2, 3, 4, 5, 6)):
+    # HK2: Từ 16/01/(Y) đến 09/06/(Y)
+    elif (month == 1 and day >= 16) or (month in (2, 3, 4, 5)) or (month == 6 and day <= 9):
         ac_year = f"{year - 1}-{year}"
         term = 2
         s_date = date(year, 1, 16)
-        e_date = date(year, 6, 30)
+        e_date = date(year, 6, 9)
         sem_code = f"HK2_{year - 1}_{year}"
         sem_name = f"HK2 {year - 1}-{year}"
-    else:  # Tháng 7 và Tháng 8: Học kỳ hè kéo dài đúng 2 tháng
+    # HK hè: Từ 10/06/(Y) đến 09/08/(Y) (kéo dài trọn vẹn 2 tháng hè)
+    else:
         ac_year = f"{year - 1}-{year}"
         term = 3
-        s_date = date(year, 7, 1)
-        e_date = date(year, 8, 31)
+        s_date = date(year, 6, 10)
+        e_date = date(year, 8, 9)
         sem_code = f"HKT_{year - 1}_{year}"
         sem_name = f"HK hè {year - 1}-{year}"
 
@@ -378,7 +381,7 @@ def get_semester_def_by_date(t: date):
 def sync_semesters_realtime(cursor, today: Optional[date] = None):
     """
     Đồng bộ trạng thái học kỳ thời gian thực vào bảng Semesters:
-    - Năm bắt đầu hệ thống: 2026 (Năm học 2026-2027 bắt đầu từ 01/09/2026).
+    - Năm bắt đầu hệ thống: 2026 (Năm học 2026-2027 bắt đầu từ 10/08/2026).
     - Chỉ lưu học kỳ hiện tại (và các học kỳ đã thực sự diễn ra tính đến ngày hiện tại).
     - Tuyệt đối KHÔNG sinh sẵn bất kỳ học kỳ tương lai nào trong CSDL.
     - Nếu đang là HK1 thì trong DB CHỈ CÓ DUY NHẤT HK1.
@@ -388,7 +391,7 @@ def sync_semesters_realtime(cursor, today: Optional[date] = None):
         today = date.today()
     try:
         # Xóa mọi học kỳ cũ trước năm 2026 hoặc học kỳ tương lai chưa bắt đầu (start_date > today)
-        cursor.execute("DELETE FROM Semesters WHERE start_date < '2026-09-01' OR start_date > ?", (today,))
+        cursor.execute("DELETE FROM Semesters WHERE start_date < '2026-08-10' OR start_date > ?", (today,))
 
         # Xác định thông tin học kỳ hiện tại tương ứng với ngày today
         sem_code, sem_name, ac_year, term, s_date, e_date = get_semester_def_by_date(today)

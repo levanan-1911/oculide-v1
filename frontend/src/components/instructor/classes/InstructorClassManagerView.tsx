@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -74,6 +74,44 @@ export default function InstructorClassManagerView() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  // Tải danh sách Sinh viên và Phòng Lab/Thi của lớp học phần được chọn
+  const loadClassDetails = useCallback(async (targetClassId: string) => {
+    if (!targetClassId) return;
+    setIsLoadingDetails(true);
+    try {
+      const [studentsRes, roomsRes] = await Promise.all([
+        fetchWithAuth<any[]>(`/api/v1/classes/${encodeURIComponent(targetClassId)}/students`).catch(() => []),
+        fetchWithAuth<{ labs: ClassLab[]; exams: ClassExam[] }>(`/api/v1/classes/${encodeURIComponent(targetClassId)}/rooms`).catch(() => ({ labs: [], exams: [] })),
+      ]);
+
+      const mappedStudents: StudentRow[] = (studentsRes || []).map((s: any) => ({
+        id: s.student_id || s.username || String(s.user_id),
+        name: s.full_name || s.username,
+        email: s.email || '',
+        status: 'Đang học',
+      }));
+
+      setClasses((prev) =>
+        prev.map((c) => {
+          if (c.id === targetClassId) {
+            return {
+              ...c,
+              students: mappedStudents,
+              studentCount: mappedStudents.length,
+              labs: roomsRes?.labs || [],
+              exams: roomsRes?.exams || [],
+            };
+          }
+          return c;
+        })
+      );
+    } catch (err) {
+      console.error('Lỗi tải thông tin chi tiết lớp học:', err);
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  }, []);
+
   // 1. Tải danh sách lớp học phần từ Backend API thật
   useEffect(() => {
     let isCancelled = false;
@@ -110,15 +148,32 @@ export default function InstructorClassManagerView() {
             exams: [],
           }));
 
-          setClasses(mapped);
+          setClasses((prev) => {
+            return mapped.map((m) => {
+              const existing = prev.find((p) => p.id === m.id);
+              return {
+                ...m,
+                students: existing?.students?.length ? existing.students : m.students,
+                studentCount: existing?.students?.length ? existing.students.length : m.studentCount,
+                labs: existing?.labs?.length ? existing.labs : m.labs,
+                exams: existing?.exams?.length ? existing.exams : m.exams,
+              };
+            });
+          });
 
           // Nhận diện lớp cần chọn ưu tiên từ URL param hoặc mặc định lớp đầu tiên
           const paramClass = searchParams?.get('created') || searchParams?.get('class');
+          let activeId = '';
           if (paramClass && mapped.some((x) => x.id.toLowerCase() === paramClass.toLowerCase())) {
             const matched = mapped.find((x) => x.id.toLowerCase() === paramClass.toLowerCase());
-            setSelectedClassId(matched?.id || mapped[0]?.id || '');
+            activeId = matched?.id || mapped[0]?.id || '';
           } else if (mapped.length > 0) {
-            setSelectedClassId(mapped[0].id);
+            activeId = mapped[0].id;
+          }
+
+          if (activeId) {
+            setSelectedClassId(activeId);
+            loadClassDetails(activeId);
           }
         }
       } catch (err: any) {
@@ -155,56 +210,14 @@ export default function InstructorClassManagerView() {
     return () => {
       isCancelled = true;
     };
-  }, [searchParams]);
+  }, [searchParams, loadClassDetails]);
 
-  // 2. Tải danh sách Sinh viên và Phòng Lab/Thi khi chọn lớp học phần
+  // 2. Tải chi tiết khi người dùng chủ động click chọn lớp học phần khác
   useEffect(() => {
-    if (!selectedClassId) return;
-    let isCancelled = false;
-
-    async function loadClassDetails() {
-      setIsLoadingDetails(true);
-      try {
-        const [studentsRes, roomsRes] = await Promise.all([
-          fetchWithAuth<any[]>(`/api/v1/classes/${encodeURIComponent(selectedClassId)}/students`).catch(() => []),
-          fetchWithAuth<{ labs: ClassLab[]; exams: ClassExam[] }>(`/api/v1/classes/${encodeURIComponent(selectedClassId)}/rooms`).catch(() => ({ labs: [], exams: [] })),
-        ]);
-
-        if (isCancelled) return;
-
-        const mappedStudents: StudentRow[] = (studentsRes || []).map((s: any) => ({
-          id: s.student_id || s.username || String(s.user_id),
-          name: s.full_name || s.username,
-          email: s.email || '',
-          status: 'Đang học',
-        }));
-
-        setClasses((prev) =>
-          prev.map((c) => {
-            if (c.id === selectedClassId) {
-              return {
-                ...c,
-                students: mappedStudents,
-                studentCount: mappedStudents.length,
-                labs: roomsRes.labs || [],
-                exams: roomsRes.exams || [],
-              };
-            }
-            return c;
-          })
-        );
-      } catch (err) {
-        console.error('Lỗi tải thông tin chi tiết lớp học:', err);
-      } finally {
-        if (!isCancelled) setIsLoadingDetails(false);
-      }
+    if (selectedClassId) {
+      loadClassDetails(selectedClassId);
     }
-
-    loadClassDetails();
-    return () => {
-      isCancelled = true;
-    };
-  }, [selectedClassId]);
+  }, [selectedClassId, loadClassDetails]);
 
   // Tìm kiếm lớp học phần trong danh sách phụ trách
   const [searchClass, setSearchClass] = useState('');
@@ -327,6 +340,7 @@ export default function InstructorClassManagerView() {
         })
       );
 
+      loadClassDetails(currentClass.id);
       showToast(`Đã thêm sinh viên ${newStudent.name} (${newStudent.id}) vào lớp!`);
       setNewStudentId('');
       setNewStudentName('');
@@ -337,6 +351,34 @@ export default function InstructorClassManagerView() {
       showToast(err.message || 'Không thể thêm sinh viên vào lớp');
     } finally {
       setIsSubmittingStudent(false);
+    }
+  };
+
+  const handleDeleteRoomItem = async (roomCode: string, title: string) => {
+    if (
+      !window.confirm(
+        `Giảng viên có chắc chắn muốn xóa phòng thi [${roomCode}] (${title}) khỏi hệ thống?\nToàn bộ dữ liệu phiên thi sẽ bị xóa vĩnh viễn khỏi CSDL.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await fetchWithAuth(`/api/v1/rooms/by-code/${encodeURIComponent(roomCode)}`, { method: 'DELETE' });
+
+      setClasses((prev) =>
+        prev.map((c) => {
+          if (!currentClass || c.id !== currentClass.id) return c;
+          return {
+            ...c,
+            labs: (c.labs || []).filter((l) => l.roomCode?.toLowerCase() !== roomCode.toLowerCase()),
+            exams: (c.exams || []).filter((e) => e.roomCode?.toLowerCase() !== roomCode.toLowerCase()),
+          };
+        })
+      );
+      showToast(`Đã xóa thành công phòng thi ${roomCode}!`);
+    } catch (err: any) {
+      console.error('Lỗi khi xóa ca thi:', err);
+      showToast(err?.message || 'Không thể xóa phòng');
     }
   };
 
@@ -365,6 +407,7 @@ export default function InstructorClassManagerView() {
         })
       );
 
+      loadClassDetails(currentClass.id);
       showToast(`Đã xóa sinh viên ${targetStudent.name} (${targetStudent.id}) khỏi lớp ${currentClass.id}!`);
       setDeletingStudent(null);
     } catch (err: any) {
@@ -395,26 +438,35 @@ export default function InstructorClassManagerView() {
 
   return (
     <div className="mx-auto w-full max-w-[1440px] space-y-5 pb-8 text-slate-800 dark:text-slate-200">
-      {/* Toast thông báo */}
+      {/* Toast thông báo phong cách Học thuật */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-medium text-white shadow-lg animate-in slide-in-from-bottom-2 duration-200">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-md border border-slate-300 border-l-4 border-l-slate-900 dark:border-l-white bg-white px-4 py-3 text-xs shadow-lg dark:border-white/10 dark:border-l-[#fca5a5] dark:bg-neutral-900"
+        >
+          <div className="flex h-7 w-7 items-center justify-center rounded-xs bg-slate-100 text-slate-800 dark:bg-white/10 dark:text-slate-200 shrink-0">
+            <CheckCircle2 className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="font-serif text-xs font-bold text-[#2A282D] dark:text-white">Thông báo</p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">{toastMessage}</p>
+          </div>
+        </aside>
       )}
 
       {/* ── 1. HEADER BAR CHUYÊN BIỆT GIẢNG VIÊN ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-white/10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-300 dark:border-white/10">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
+            <h1 className="font-serif text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
               Lớp Học Phần &amp; Sinh Viên
             </h1>
-            <span className="rounded-full border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/15 px-2.5 py-1 text-[11px] font-bold text-blue-800 dark:text-blue-300">
+            <span className="rounded border border-slate-300 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-bold text-slate-800 dark:border-white/20 dark:bg-white/10 dark:text-slate-200">
               {isLoadingClasses ? 'Đang tải...' : `${classes.length} Lớp Phụ Trách`}
             </span>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             Quản lý các lớp học phần được phân công giảng dạy, tạo bài thực hành Lab, đề kiểm tra và điểm danh sinh viên.
           </p>
         </div>
@@ -424,34 +476,34 @@ export default function InstructorClassManagerView() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
         {/* CỘT TRÁI (4 Cột): DANH SÁCH LỚP PHỤ TRÁCH CỦA GIẢNG VIÊN */}
         <div className="lg:col-span-4 space-y-4 lg:sticky lg:top-4">
-          <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-4 shadow-[0_2px_10px_rgba(15,23,42,0.02)] space-y-3">
+          <div className="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 p-4 shadow-2xs space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Lớp học phần của bạn ({classes.length})
+              <span className="font-mono text-xs font-bold uppercase tracking-wider text-slate-500">
+                Lớp học phần ({classes.length})
               </span>
-              <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">Được phân công</span>
+              <span className="font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200">Phân công</span>
             </div>
 
             {/* Ô TÌM KIẾM LỚP HỌC PHẦN */}
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <input
                 type="text"
                 placeholder="Tìm mã hoặc tên lớp học..."
                 value={searchClass}
                 onChange={(e) => setSearchClass(e.target.value)}
-                className="h-10 w-full rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-50/80 dark:bg-white/[0.04] pl-10 pr-3.5 text-xs font-medium text-slate-700 dark:text-slate-300 outline-none transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.06] focus:border-blue-500 focus:bg-white dark:focus:bg-[#121824] focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-500/20 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                className="h-9 w-full rounded-md border border-slate-300 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.04] pl-9 pr-3.5 text-xs font-medium text-slate-800 dark:text-slate-100 outline-none transition focus:border-slate-600 focus:bg-white dark:focus:bg-neutral-900 placeholder:text-slate-500"
               />
             </div>
 
             <div className="space-y-2">
               {isLoadingClasses ? (
-                <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-slate-400">
-                  <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-slate-500">
+                  <Loader2 className="h-5 w-5 animate-spin text-slate-900 dark:text-white" />
                   <span>Đang tải danh sách lớp học...</span>
                 </div>
               ) : filteredClasses.length === 0 ? (
-                <div className="py-6 text-center text-xs text-slate-400 dark:text-slate-500">
+                <div className="py-6 text-center text-xs text-slate-500">
                   Không tìm thấy lớp học phần phù hợp.
                 </div>
               ) : (
@@ -473,24 +525,24 @@ export default function InstructorClassManagerView() {
                         }
                       }}
                       aria-pressed={isSelected}
-                      className={`rounded-xl border p-4 transition-colors cursor-pointer space-y-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                      className={`rounded-md border p-3.5 transition cursor-pointer space-y-2 focus-visible:outline-none ${
                         isSelected
-                          ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-500/15 ring-1 ring-blue-500/20'
-                          : 'border-transparent bg-slate-50/80 dark:bg-white/[0.04] hover:border-transparent hover:bg-slate-100 dark:hover:bg-white/[0.06]'
+                          ? 'border-brand bg-brand-50 dark:border-brand-400 dark:bg-brand-500/10 shadow-2xs'
+                          : 'border-slate-300 dark:border-white/10 bg-slate-50/40 dark:bg-white/[0.02] hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                       }`}
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <div className="flex min-w-0 flex-1 items-center gap-2">
                           <span
-                            className={`shrink-0 font-mono tabular-nums text-xs font-bold px-2.5 py-1 rounded-lg ${
+                            className={`shrink-0 font-mono tabular-nums text-xs font-bold px-2 py-0.5 rounded ${
                               isSelected
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-slate-100 dark:bg-white/[0.06] text-slate-700 dark:text-slate-300'
+                                ? 'bg-brand text-white'
+                                : 'bg-slate-50 dark:bg-white/10 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-white/10'
                             }`}
                           >
                             {c.id}
                           </span>
-                          <h3 className="min-w-0 flex-1 truncate font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-[13px] leading-normal">
+                          <h3 className="min-w-0 flex-1 truncate font-serif font-bold text-slate-900 dark:text-white text-xs sm:text-[13px] leading-normal">
                             {c.name}
                           </h3>
                         </div>
@@ -498,15 +550,15 @@ export default function InstructorClassManagerView() {
                         <ClassStatusBadge status={c.status} />
                       </div>
 
-                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-white/5">
+                      <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-300 dark:border-white/10">
                         <span className="flex items-center gap-1">
-                          <Users className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                          <Users className="h-3 w-3" />
                           <strong className="font-mono tabular-nums text-slate-700 dark:text-slate-200">
                             {c.studentCount}
                           </strong>{' '}
                           sinh viên
                         </span>
-                        <span>
+                        <span className="font-mono text-[11px]">
                           {labCount} Lab • {examCount} Thi
                         </span>
                       </div>
@@ -517,8 +569,8 @@ export default function InstructorClassManagerView() {
             </div>
 
             {/* Thông báo phân quyền */}
-            <div className="rounded-xl bg-slate-50/80 dark:bg-white/[0.04] p-3 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300 flex items-start gap-2">
-              <GraduationCap className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+            <div className="rounded-md border border-slate-300 bg-slate-50/60 dark:border-white/10 dark:bg-white/[0.02] p-3 text-[11px] leading-relaxed text-slate-500 flex items-start gap-2">
+              <GraduationCap className="h-4 w-4 text-brand-600 dark:text-brand-200 shrink-0 mt-0.5" />
               <span>
                 Bạn chỉ quản lý các lớp học phần được Khoa/Admin phân công. Mọi bài Lab và Kiểm tra tạo tại đây sẽ tự động thuộc lớp này.
               </span>
@@ -529,10 +581,10 @@ export default function InstructorClassManagerView() {
         {/* CỘT PHẢI (8 Cột): CHI TIẾT LỚP ĐƯỢC CHỌN (3 TAB: SINH VIÊN, LABS, EXAMS) */}
         <div className="min-w-0 lg:col-span-8 space-y-4">
           {!currentClass ? (
-            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-8 text-center text-xs text-slate-500 dark:text-slate-400">
+            <div className="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 p-8 text-center text-xs text-slate-500">
               {isLoadingClasses ? (
                 <div className="flex flex-col items-center gap-2">
-                  <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+                  <Loader2 className="h-6 w-6 animate-spin text-slate-900 dark:text-white" />
                   <span>Đang tải thông tin lớp học...</span>
                 </div>
               ) : (
@@ -542,17 +594,17 @@ export default function InstructorClassManagerView() {
           ) : (
             <>
               {/* Card Header Lớp học */}
-              <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] space-y-3.5">
+              <div className="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 shadow-2xs space-y-3.5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono tabular-nums text-xs font-bold bg-blue-50 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300 px-2.5 py-1 rounded-lg border border-blue-200 dark:border-blue-500/30">
+                      <span className="font-mono tabular-nums text-xs font-bold bg-slate-100 text-slate-800 dark:bg-white/10 dark:text-slate-200 px-2.5 py-0.5 rounded border border-slate-300 dark:border-white/10">
                         {currentClass.id}
                       </span>
-                      <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{currentClass.name}</h2>
+                      <h2 className="font-serif text-lg font-bold text-slate-900 dark:text-white">{currentClass.name}</h2>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Giảng viên: <strong className="text-slate-800 dark:text-slate-200">{currentClass.lecturer}</strong> • Học kỳ: {currentClass.semester} • Sĩ số: <strong className="font-mono tabular-nums text-blue-700 dark:text-blue-300">{currentClass.studentCount} SV</strong>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Giảng viên: <strong className="text-slate-800 dark:text-slate-200">{currentClass.lecturer}</strong> • Học kỳ: {currentClass.semester} • Sĩ số: <strong className="font-mono tabular-nums text-slate-900 dark:text-white">{currentClass.studentCount} SV</strong>
                     </p>
                   </div>
 
@@ -560,9 +612,9 @@ export default function InstructorClassManagerView() {
                   <div className="flex w-full flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:w-auto">
                     <Link
                       href={`/instructor/room?class=${encodeURIComponent(currentClass.id)}`}
-                      className="inline-flex h-11 w-full sm:w-[195px] items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-[0.99] whitespace-nowrap cursor-pointer shrink-0"
+                      className="system-primary-action inline-flex h-9 w-full sm:w-auto items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800 whitespace-nowrap cursor-pointer shrink-0"
                     >
-                      <Radio className="h-4 w-4 animate-pulse shrink-0" />
+                      <Radio className="h-3.5 w-3.5 shrink-0" />
                       <span>Tạo Phòng</span>
                     </Link>
 
@@ -570,18 +622,18 @@ export default function InstructorClassManagerView() {
                       /* ĐÃ CÓ PHÒNG MỞ: Cho phép vào phòng giám sát trực tiếp */
                       <Link
                         href={`/instructor/monitoring?room=${encodeURIComponent(activeRoomForCurrentClass.id)}`}
-                        className="inline-flex h-11 w-full sm:w-[195px] items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-xs font-semibold text-white shadow-sm shadow-red-500/20 transition-all hover:bg-red-700 hover:shadow-sm active:scale-[0.99] whitespace-nowrap cursor-pointer shrink-0"
+                        className="system-primary-action inline-flex h-9 w-full sm:w-auto items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800 whitespace-nowrap cursor-pointer shrink-0"
                       >
-                        <Video className="h-4 w-4 shrink-0" />
+                        <Video className="h-3.5 w-3.5 shrink-0" />
                         <span>Giám Sát</span>
                       </Link>
                     ) : waitingRoomForCurrentClass ? (
                       /* ĐANG Ở PHÒNG CHỜ: Điểm danh và bấm Bắt đầu trước khi giám sát */
                       <Link
                         href={`/instructor/room/${encodeURIComponent(waitingRoomForCurrentClass.id)}`}
-                        className="inline-flex h-11 w-full sm:w-[195px] items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 text-xs font-semibold text-white shadow-sm shadow-amber-500/20 transition-all hover:bg-amber-700 hover:shadow-sm active:scale-[0.99] whitespace-nowrap cursor-pointer shrink-0"
+                        className="inline-flex h-9 w-full sm:w-auto items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-xs font-bold text-slate-700 shadow-2xs transition hover:bg-slate-100 whitespace-nowrap cursor-pointer shrink-0 dark:border-white/10 dark:bg-white/10 dark:text-slate-200"
                       >
-                        <Users className="h-4 w-4 shrink-0" />
+                        <Users className="h-3.5 w-3.5 shrink-0" />
                         <span>Vào Phòng Chờ</span>
                       </Link>
                     ) : null}
@@ -589,18 +641,18 @@ export default function InstructorClassManagerView() {
                 </div>
 
                 {/* 3 Tabs điều khiển */}
-                <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-100 dark:border-white/5 pt-2">
+                <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-300 dark:border-white/10 pt-2">
                   <button
                     type="button"
                     onClick={() => setActiveTab('students')}
                     aria-pressed={activeTab === 'students'}
-                    className={`flex h-10 shrink-0 items-center gap-1.5 px-3 text-xs font-semibold transition-colors cursor-pointer border-b-2 ${
+                    className={`flex h-9 shrink-0 items-center gap-1.5 px-3 text-xs font-bold transition-colors cursor-pointer border-b-2 ${
                       activeTab === 'students'
-                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                        : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                        ? 'system-selected-tab'
+                        : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
-                    <Users className="h-4 w-4" />
+                    <Users className="h-3.5 w-3.5" />
                     <span>Danh Sách Sinh Viên ({currentClass.students?.length || 0})</span>
                   </button>
 
@@ -608,13 +660,13 @@ export default function InstructorClassManagerView() {
                     type="button"
                     onClick={() => setActiveTab('labs')}
                     aria-pressed={activeTab === 'labs'}
-                    className={`flex h-10 shrink-0 items-center gap-1.5 px-3 text-xs font-semibold transition-colors cursor-pointer border-b-2 ${
+                    className={`flex h-9 shrink-0 items-center gap-1.5 px-3 text-xs font-bold transition-colors cursor-pointer border-b-2 ${
                       activeTab === 'labs'
-                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                        : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                        ? 'system-selected-tab'
+                        : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
-                    <Code2 className="h-4 w-4" />
+                    <Code2 className="h-3.5 w-3.5" />
                     <span>Bài Thực Hành ({currentClass.labs?.length || 0})</span>
                   </button>
 
@@ -622,13 +674,13 @@ export default function InstructorClassManagerView() {
                     type="button"
                     onClick={() => setActiveTab('exams')}
                     aria-pressed={activeTab === 'exams'}
-                    className={`flex h-10 shrink-0 items-center gap-1.5 px-3 text-xs font-semibold transition-colors cursor-pointer border-b-2 ${
+                    className={`flex h-9 shrink-0 items-center gap-1.5 px-3 text-xs font-bold transition-colors cursor-pointer border-b-2 ${
                       activeTab === 'exams'
-                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                        : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                        ? 'system-selected-tab'
+                        : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
-                    <FileCode2 className="h-4 w-4" />
+                    <FileCode2 className="h-3.5 w-3.5" />
                     <span>Bài Kiểm Tra &amp; Thi ({currentClass.exams?.length || 0})</span>
                   </button>
                 </div>
@@ -636,16 +688,16 @@ export default function InstructorClassManagerView() {
 
               {/* ── TAB 1: DANH SÁCH SINH VIÊN ── */}
               {activeTab === 'students' && (
-                <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-4 sm:p-5 shadow-sm space-y-4">
+                <div className="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 p-4 sm:p-5 shadow-2xs space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="relative flex-1 max-w-sm">
-                      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                       <input
                         type="text"
                         placeholder="Tìm theo MSSV hoặc họ tên..."
                         value={searchStudent}
                         onChange={(e) => setSearchStudent(e.target.value)}
-                        className="h-10 w-full rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-50/80 dark:bg-white/[0.04] pl-10 pr-3.5 text-xs font-medium text-slate-700 dark:text-slate-300 outline-none transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.06] focus:border-blue-500 focus:bg-white dark:focus:bg-[#121824] focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-500/20 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                        className="h-9 w-full rounded-md border border-slate-300 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.04] pl-9 pr-3.5 text-xs font-medium text-slate-800 dark:text-slate-100 outline-none transition focus:border-slate-600 focus:bg-white dark:focus:bg-neutral-900 placeholder:text-slate-500"
                       />
                     </div>
 
@@ -653,7 +705,7 @@ export default function InstructorClassManagerView() {
                       <button
                         type="button"
                         onClick={handleExportStudentsCsv}
-                        className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-white/[0.04] px-3.5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-white/[0.04] px-3.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition cursor-pointer"
                         title="Xuất file CSV danh sách sinh viên"
                       >
                         <Download className="h-3.5 w-3.5" />
@@ -663,7 +715,7 @@ export default function InstructorClassManagerView() {
                       <button
                         type="button"
                         onClick={() => setIsAddStudentOpen(true)}
-                        className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition-colors hover:bg-blue-700 cursor-pointer"
+                        className="system-primary-action inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800 cursor-pointer"
                       >
                         <UserPlus className="h-3.5 w-3.5" />
                         <span>Thêm Sinh Viên</span>
@@ -672,30 +724,30 @@ export default function InstructorClassManagerView() {
                   </div>
 
                   {/* Bảng Sinh viên */}
-                  <div className="max-h-[65vh] overflow-auto rounded-xl border border-slate-200/90 dark:border-white/10">
+                  <div className="max-h-[65vh] overflow-auto rounded-md border border-slate-300 dark:border-white/10">
                     <table className="w-full min-w-[680px] text-left text-xs text-slate-700 dark:text-slate-300">
-                      <thead className="sticky top-0 z-10 bg-slate-50/80 dark:bg-white/[0.05] border-b border-slate-200/90 dark:border-white/10 text-slate-500 dark:text-slate-400 uppercase font-bold text-[10px] tracking-wider">
+                      <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-neutral-950 border-b border-slate-300 dark:border-white/10 text-slate-500 uppercase font-mono font-bold text-[10px] tracking-wider">
                         <tr>
-                          <th className="px-4 py-3.5 w-12 text-center">STT</th>
-                          <th className="px-4 py-3.5">MSSV</th>
-                          <th className="px-4 py-3.5">Họ và Tên</th>
-                          <th className="px-4 py-3.5">Email Sinh Viên</th>
-                          <th className="px-4 py-3.5 text-right">Thao Tác</th>
+                          <th className="px-4 py-3 w-12 text-center">STT</th>
+                          <th className="px-4 py-3">MSSV</th>
+                          <th className="px-4 py-3">Họ và Tên</th>
+                          <th className="px-4 py-3">Email Sinh Viên</th>
+                          <th className="px-4 py-3 text-right">Thao Tác</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-white/5 font-sans">
+                      <tbody className="divide-y divide-slate-300 dark:divide-white/10 font-sans">
                         {isLoadingDetails ? (
                           <tr>
-                            <td colSpan={5} className="py-10 text-center text-slate-400">
+                            <td colSpan={5} className="py-10 text-center text-slate-500">
                               <div className="flex flex-col items-center gap-2">
-                                <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                                <Loader2 className="h-5 w-5 animate-spin text-slate-900 dark:text-white" />
                                 <span>Đang tải danh sách sinh viên...</span>
                               </div>
                             </td>
                           </tr>
                         ) : filteredStudents.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="py-10 text-center text-slate-500 dark:text-slate-400">
+                            <td colSpan={5} className="py-10 text-center text-slate-500">
                               <div className="flex flex-col items-center gap-2">
                                 <Users className="h-6 w-6 text-slate-300 dark:text-slate-600" />
                                 <span>Không tìm thấy sinh viên nào trong lớp này.</span>
@@ -704,16 +756,16 @@ export default function InstructorClassManagerView() {
                           </tr>
                         ) : (
                           filteredStudents.map((st, idx) => (
-                            <tr key={st.id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.06] transition">
-                              <td className="px-4 py-3.5 text-center font-medium tabular-nums text-slate-500 dark:text-slate-400">{idx + 1}</td>
-                              <td className="px-4 py-3.5 font-mono tabular-nums font-bold text-slate-900 dark:text-slate-100">{st.id}</td>
-                              <td className="px-4 py-3.5 font-semibold text-slate-900 dark:text-slate-100">{st.name}</td>
-                              <td className="px-4 py-3.5 text-[11px] text-slate-500 dark:text-slate-400">{st.email}</td>
-                              <td className="px-4 py-3.5 text-right">
+                            <tr key={st.id} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02] transition">
+                              <td className="px-4 py-3 text-center font-mono font-medium tabular-nums text-slate-500">{idx + 1}</td>
+                              <td className="px-4 py-3 font-mono tabular-nums font-bold text-slate-900 dark:text-slate-100">{st.id}</td>
+                              <td className="px-4 py-3 font-bold text-slate-900 dark:text-slate-100">{st.name}</td>
+                              <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{st.email}</td>
+                              <td className="px-4 py-3 text-right">
                                 <button
                                   type="button"
                                   onClick={() => setDeletingStudent(st)}
-                                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/15 px-2.5 text-[11px] font-semibold text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors cursor-pointer"
+                                  className="inline-flex h-7 items-center gap-1 rounded border border-slate-300 bg-slate-100 px-2 text-[11px] font-bold text-slate-700 hover:bg-slate-200 transition cursor-pointer dark:border-white/10 dark:bg-white/10 dark:text-slate-200"
                                   title={`Xóa sinh viên ${st.name} khỏi lớp`}
                                 >
                                   <Trash2 className="h-3 w-3" />
@@ -731,13 +783,13 @@ export default function InstructorClassManagerView() {
 
               {/* ── TAB 2: BÀI THỰC HÀNH LAB (CHẾ ĐỘ MỞ - TỰ DO TRA CỨU) ── */}
               {activeTab === 'labs' && (
-                <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-4 sm:p-5 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/5">
+                <div className="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 p-4 sm:p-5 shadow-2xs space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-300 dark:border-white/10">
                     <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                      <h3 className="font-serif text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
                         Danh Sách Bài Thực Hành Lab ({currentClass.labs?.length || 0})
                       </h3>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      <p className="text-[11px] text-slate-500 mt-0.5">
                         Chế độ Lab: Cho phép tra cứu tài liệu, không phạt rời tab, camera tùy chọn theo GV.
                       </p>
                     </div>
@@ -745,12 +797,12 @@ export default function InstructorClassManagerView() {
 
                   <div className="space-y-3">
                     {isLoadingDetails ? (
-                      <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-slate-400">
-                        <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                      <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-slate-500">
+                        <Loader2 className="h-5 w-5 animate-spin text-slate-900 dark:text-white" />
                         <span>Đang tải danh sách bài thực hành...</span>
                       </div>
                     ) : (currentClass.labs || []).length === 0 ? (
-                      <div className="flex flex-col items-center gap-2 rounded-xl bg-slate-50/80 dark:bg-white/[0.04] py-10 text-center text-xs text-slate-500 dark:text-slate-400">
+                      <div className="flex flex-col items-center gap-2 rounded-md bg-slate-50/60 dark:bg-white/[0.02] py-10 text-center text-xs text-slate-500">
                         <Code2 className="h-6 w-6 text-slate-300 dark:text-slate-600" />
                         <span>Lớp chưa có buổi thực hành nào.</span>
                       </div>
@@ -758,43 +810,39 @@ export default function InstructorClassManagerView() {
                       currentClass.labs?.map((lab) => (
                         <div
                           key={lab.id}
-                          className="rounded-xl bg-slate-50/80 dark:bg-white/[0.04] p-4 space-y-2.5 transition-colors hover:bg-slate-100 dark:hover:bg-white/[0.06]"
+                          className="rounded-md border border-slate-300 dark:border-white/10 bg-slate-50/40 dark:bg-white/[0.02] p-4 space-y-2.5 transition hover:bg-slate-50/70 dark:hover:bg-white/[0.04]"
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
-                              <span className="rounded-lg bg-blue-50 dark:bg-blue-500/15 border border-blue-200 dark:border-blue-500/30 px-2 py-1 text-[10px] font-bold text-blue-800 dark:text-blue-300 uppercase tracking-wider">
+                              <span className="rounded border border-slate-300 bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-800 dark:border-white/10 dark:bg-white/10 dark:text-slate-200 uppercase tracking-wider">
                                 Lab {lab.labNumber < 10 ? `0${lab.labNumber}` : lab.labNumber}
                               </span>
-                              <h4 className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm">{lab.title}</h4>
+                              <h4 className="font-serif font-bold text-slate-900 dark:text-white text-xs sm:text-sm">{lab.title}</h4>
                             </div>
 
                             <span
-                              className={`self-start rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border ${
-                                lab.status === 'Đang mở'
-                                  ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/30'
-                                  : 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30'
-                              }`}
+                              className="self-start rounded px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider border border-slate-300 bg-white text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                             >
                               {lab.status}
                             </span>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-white/5">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 pt-1 border-t border-slate-300 dark:border-white/10">
                             <span>Ngôn ngữ: <strong className="text-slate-800 dark:text-slate-200">{lab.language}</strong></span>
                             <span>•</span>
-                            <span>Số bài đã nộp: <strong className="font-mono tabular-nums text-emerald-600 dark:text-emerald-400">{lab.submissionCount}/{currentClass.studentCount} SV</strong></span>
+                            <span>Số bài đã nộp: <strong className="font-mono tabular-nums text-slate-800 dark:text-slate-200">{lab.submissionCount}/{currentClass.studentCount} SV</strong></span>
                             <span>•</span>
                             <span>Mã phòng: <code className="font-mono tabular-nums font-bold text-slate-800 dark:text-slate-200">{lab.roomCode}</code></span>
                             {lab.roomPassword && (
                               <>
                                 <span>•</span>
-                                <span>Mã PIN: <code className="font-mono tabular-nums font-bold text-blue-700 dark:text-blue-300">{lab.roomPassword}</code></span>
+                                <span>Mã PIN: <code className="font-mono tabular-nums font-bold text-slate-900 dark:text-white">{lab.roomPassword}</code></span>
                               </>
                             )}
                           </div>
 
                           <div className="flex items-center justify-between pt-1">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700 dark:text-blue-300">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-800 dark:text-slate-200">
                               <ShieldCheck className="h-3 w-3" />
                               Chế độ Lab (Không AI, không phạt rời tab)
                             </span>
@@ -803,20 +851,30 @@ export default function InstructorClassManagerView() {
                               {lab.status === 'Đang mở' ? (
                                 <Link
                                   href={`/instructor/monitoring?room=${encodeURIComponent(lab.roomCode || lab.id)}`}
-                                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-[11px] font-semibold text-white hover:bg-blue-700 transition-colors"
+                                  className="system-primary-action inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-3 text-[11px] font-bold text-white hover:bg-slate-800 transition"
                                 >
                                   <Video className="h-3 w-3" />
                                   <span>Vào Phòng Giám Sát</span>
                                 </Link>
                               ) : (
                                 <span
-                                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] px-2.5 text-[11px] font-medium text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/10"
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-100 dark:bg-white/[0.06] px-2.5 text-[11px] font-medium text-slate-500 border border-slate-200 dark:border-white/10"
                                   title="Lab chưa mở - Chỉ có thể vào giám sát khi đã mở ca"
                                 >
-                                  <Lock className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                                  <Lock className="h-3 w-3" />
                                   <span>{lab.status}</span>
                                 </span>
                               )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRoomItem(lab.roomCode || lab.id, lab.title)}
+                                className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 transition cursor-pointer"
+                                title="Xóa buổi thực hành này khỏi lớp"
+                              >
+                                <Trash2 className="h-3 w-3 text-slate-500" />
+                                <span>Xóa</span>
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -828,13 +886,13 @@ export default function InstructorClassManagerView() {
 
               {/* ── TAB 3: BÀI KIỂM TRA & THI (CHẾ ĐỘ KHÓA MÀN HÌNH & AI PROCTORING) ── */}
               {activeTab === 'exams' && (
-                <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-sm space-y-3.5">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/5">
+                <div className="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 shadow-2xs space-y-3.5">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-300 dark:border-white/10">
                     <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                      <h3 className="font-serif text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
                         Danh Sách Bài Kiểm Tra &amp; Thi ({currentClass.exams?.length || 0})
                       </h3>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      <p className="text-[11px] text-slate-500 mt-0.5">
                         Chế độ Exam: Bắt buộc Khóa màn hình (Lockdown), Camera AI nhận diện gian lận.
                       </p>
                     </div>
@@ -842,12 +900,12 @@ export default function InstructorClassManagerView() {
 
                   <div className="space-y-3">
                     {isLoadingDetails ? (
-                      <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-slate-400">
-                        <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                      <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-slate-500">
+                        <Loader2 className="h-5 w-5 animate-spin text-slate-900 dark:text-white" />
                         <span>Đang tải danh sách bài kiểm tra...</span>
                       </div>
                     ) : (currentClass.exams || []).length === 0 ? (
-                      <div className="flex flex-col items-center gap-2 rounded-xl bg-slate-50/80 dark:bg-white/[0.04] py-10 text-center text-xs text-slate-500 dark:text-slate-400">
+                      <div className="flex flex-col items-center gap-2 rounded-md bg-slate-50/60 dark:bg-white/[0.04] py-10 text-center text-xs text-slate-500">
                         <FileCode2 className="h-6 w-6 text-slate-300 dark:text-slate-600" />
                         <span>Lớp chưa có bài kiểm tra nào.</span>
                       </div>
@@ -855,43 +913,37 @@ export default function InstructorClassManagerView() {
                       currentClass.exams?.map((exam) => (
                         <div
                           key={exam.id}
-                          className="rounded-xl bg-slate-50/80 dark:bg-white/[0.04] p-4 space-y-2.5 transition-colors hover:bg-slate-100 dark:hover:bg-white/[0.06]"
+                          className="rounded-md border border-slate-300 dark:border-white/10 bg-slate-50/40 dark:bg-white/[0.02] p-4 space-y-2.5 transition hover:bg-slate-50/70 dark:hover:bg-white/[0.04]"
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
-                              <span className="rounded-lg bg-blue-50 dark:bg-blue-500/15 border border-blue-200 dark:border-blue-500/30 px-2 py-1 text-[10px] font-bold text-blue-800 dark:text-blue-300 uppercase tracking-wider">
+                              <span className="rounded border border-slate-300 bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-800 dark:border-white/10 dark:bg-white/10 dark:text-slate-200 uppercase tracking-wider">
                                 {exam.type}
                               </span>
-                              <h4 className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm">{exam.title}</h4>
+                              <h4 className="font-serif font-bold text-slate-900 dark:text-white text-xs sm:text-sm">{exam.title}</h4>
                             </div>
 
                             <span
-                              className={`self-start rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border ${
-                                exam.status === 'Đang diễn ra'
-                                  ? 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30'
-                                  : exam.status === 'Sắp diễn ra'
-                                  ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/30'
-                                  : 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30'
-                              }`}
+                              className="self-start rounded px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider border border-slate-300 bg-white text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                             >
                               {exam.status}
                             </span>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-white/5">
-                            <span>Thời lượng: <strong className="text-slate-800 dark:text-slate-200">{exam.durationMinutes} phút</strong></span>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 pt-1 border-t border-slate-300 dark:border-white/10">
+                            <span>Thời lượng: <strong className="font-mono text-slate-800 dark:text-slate-200">{exam.durationMinutes} phút</strong></span>
                             <span>•</span>
                             <span>Mã phòng: <code className="font-mono tabular-nums font-bold text-slate-800 dark:text-slate-200">{exam.roomCode}</code></span>
                             {exam.roomPassword && (
                               <>
                                 <span>•</span>
-                                <span>Mã PIN: <code className="font-mono tabular-nums font-bold text-blue-700 dark:text-blue-300">{exam.roomPassword}</code></span>
+                                <span>Mã PIN: <code className="font-mono tabular-nums font-bold text-slate-900 dark:text-white">{exam.roomPassword}</code></span>
                               </>
                             )}
                           </div>
 
                           <div className="flex items-center justify-between pt-1">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-800 dark:text-slate-200">
                               <ShieldAlert className="h-3 w-3" />
                               Khóa màn hình &amp; AI Proctoring
                             </span>
@@ -899,7 +951,7 @@ export default function InstructorClassManagerView() {
                             <div className="flex items-center gap-2">
                               <Link
                                 href="/instructor/reports"
-                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#121824] px-2.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors"
+                                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 px-2.5 text-[11px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition"
                               >
                                 <BookOpen className="h-3 w-3" />
                                 <span>Báo Cáo Điểm</span>
@@ -908,20 +960,30 @@ export default function InstructorClassManagerView() {
                               {exam.status === 'Đang diễn ra' ? (
                                 <Link
                                   href={`/instructor/monitoring?room=${encodeURIComponent(exam.roomCode || exam.id)}`}
-                                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-red-600 px-3 text-[11px] font-semibold text-white hover:bg-red-700 transition-colors"
+                                  className="system-primary-action inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-3 text-[11px] font-bold text-white hover:bg-slate-800 transition"
                                 >
                                   <Video className="h-3 w-3" />
                                   <span>Giám Sát AI</span>
                                 </Link>
                               ) : (
                                 <span
-                                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] px-2.5 text-[11px] font-medium text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/10"
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-100 dark:bg-white/[0.06] px-2.5 text-[11px] font-medium text-slate-500 border border-slate-200 dark:border-white/10"
                                   title="Bài kiểm tra chưa diễn ra - Chỉ có thể vào giám sát khi ca thi đã mở"
                                 >
-                                  <Lock className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                                  <Lock className="h-3 w-3" />
                                   <span>{exam.status}</span>
                                 </span>
                               )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRoomItem(exam.roomCode || exam.id, exam.title)}
+                                className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 transition cursor-pointer"
+                                title="Xóa kỳ thi này khỏi lớp"
+                              >
+                                <Trash2 className="h-3 w-3 text-slate-500" />
+                                <span>Xóa</span>
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -937,12 +999,12 @@ export default function InstructorClassManagerView() {
 
       {/* ── 3. MODAL THÊM SINH VIÊN VÀO LỚP ── */}
       {isAddStudentOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 sm:p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-300 dark:border-white/10 pb-3">
               <div className="flex items-center gap-2">
-                <UserPlus className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Thêm Sinh Viên Vào Lớp</h3>
+                <UserPlus className="h-5 w-5 text-slate-900 dark:text-white" />
+                <h3 className="font-serif text-base font-bold text-slate-900 dark:text-white">Thêm Sinh Viên Vào Lớp</h3>
               </div>
               <button
                 type="button"
@@ -950,7 +1012,7 @@ export default function InstructorClassManagerView() {
                   setIsAddStudentOpen(false);
                   setSystemStudentSuggestions([]);
                 }}
-                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer"
+                className="text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -958,7 +1020,7 @@ export default function InstructorClassManagerView() {
 
             <form onSubmit={handleAddStudent} className="space-y-3.5 text-xs">
               <div className="relative">
-                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
                   Mã số sinh viên (MSSV) *
                 </label>
                 <div className="relative">
@@ -968,17 +1030,17 @@ export default function InstructorClassManagerView() {
                     placeholder="VD: 29211200333 hoặc SV2026001"
                     value={newStudentId}
                     onChange={(e) => handleStudentIdChange(e.target.value)}
-                    className="h-10 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-3 pr-8 text-xs font-mono tabular-nums text-slate-800 dark:text-slate-200 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-500/20"
+                    className="h-9 w-full rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-950 px-3 pr-8 text-xs font-mono tabular-nums text-slate-800 dark:text-slate-200 outline-none transition focus:border-slate-600"
                   />
                   {isSearchingSystem && (
-                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-slate-400" />
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-slate-500" />
                   )}
                 </div>
 
                 {/* Gợi ý sinh viên từ CSDL hệ thống */}
                 {systemStudentSuggestions.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full mt-1 z-20 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#182030] shadow-xl overflow-hidden divide-y divide-slate-100 dark:divide-white/5">
-                    <div className="p-2 text-[10px] uppercase font-bold text-slate-400 bg-slate-50 dark:bg-white/[0.02]">
+                  <div className="absolute left-0 right-0 top-full mt-1 z-20 rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-xl overflow-hidden divide-y divide-slate-300 dark:divide-white/10">
+                    <div className="p-2 font-mono text-[10px] uppercase font-bold text-slate-500 bg-slate-50 dark:bg-white/[0.02]">
                       Sinh viên tìm thấy trong hệ thống:
                     </div>
                     {systemStudentSuggestions.map((st) => (
@@ -986,18 +1048,18 @@ export default function InstructorClassManagerView() {
                         key={st.user_id}
                         type="button"
                         onClick={() => handleSelectSuggestion(st)}
-                        className="w-full text-left p-2.5 hover:bg-blue-50 dark:hover:bg-blue-500/15 flex items-center justify-between text-xs transition-colors cursor-pointer"
+                        className="w-full text-left p-2.5 hover:bg-slate-50 dark:hover:bg-white/10 flex items-center justify-between text-xs transition cursor-pointer"
                       >
                         <div>
-                          <div className="font-semibold text-slate-900 dark:text-slate-100">
-                            {st.full_name} <span className="font-mono text-blue-600 dark:text-blue-400">({st.student_id || st.username})</span>
+                          <div className="font-bold text-slate-900 dark:text-white">
+                            {st.full_name} <span className="font-mono text-slate-900 dark:text-white">({st.student_id || st.username})</span>
                           </div>
-                          <div className="text-[10px] text-slate-400">{st.email}</div>
+                          <div className="font-mono text-[10px] text-slate-500">{st.email}</div>
                         </div>
                         {st.is_enrolled ? (
-                          <span className="text-[10px] text-amber-600 font-semibold">Đã có trong lớp</span>
+                          <span className="text-[10px] text-slate-500 font-bold">Đã có trong lớp</span>
                         ) : (
-                          <span className="text-[10px] text-blue-600 font-bold">Chọn</span>
+                          <span className="text-[10px] text-slate-900 dark:text-white font-bold">Chọn</span>
                         )}
                       </button>
                     ))}
@@ -1006,7 +1068,7 @@ export default function InstructorClassManagerView() {
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
                   Họ và tên sinh viên *
                 </label>
                 <input
@@ -1015,12 +1077,12 @@ export default function InstructorClassManagerView() {
                   placeholder="VD: Hoàng Đình Khôi"
                   value={newStudentName}
                   onChange={(e) => setNewStudentName(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-3 text-xs text-slate-800 dark:text-slate-200 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-500/20"
+                  className="h-9 w-full rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-950 px-3 text-xs text-slate-800 dark:text-slate-200 outline-none transition focus:border-slate-600"
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
                   Email sinh viên (Tùy chọn)
                 </label>
                 <input
@@ -1028,25 +1090,25 @@ export default function InstructorClassManagerView() {
                   placeholder="VD: 29211200333@dtu.edu.vn"
                   value={newStudentEmail}
                   onChange={(e) => setNewStudentEmail(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-3 text-xs text-slate-800 dark:text-slate-200 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-500/20"
+                  className="h-9 w-full rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-950 px-3 text-xs text-slate-800 dark:text-slate-200 outline-none transition focus:border-slate-600"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-300 dark:border-white/10">
                 <button
                   type="button"
                   onClick={() => {
                     setIsAddStudentOpen(false);
                     setSystemStudentSuggestions([]);
                   }}
-                  className="inline-flex h-10 items-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-4 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.06] cursor-pointer"
+                  className="inline-flex h-9 items-center rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-white/[0.04] px-4 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.06] cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingStudent}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 hover:bg-blue-700 cursor-pointer disabled:opacity-50"
+                  className="system-primary-action inline-flex h-9 items-center gap-1.5 rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-2xs hover:bg-slate-800 cursor-pointer disabled:opacity-50"
                 >
                   {isSubmittingStudent && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   <span>{isSubmittingStudent ? 'Đang thêm...' : 'Thêm Vào Lớp'}</span>
@@ -1059,42 +1121,42 @@ export default function InstructorClassManagerView() {
 
       {/* ── 4. MODAL XÁC NHẬN XÓA SINH VIÊN KHỎI LỚP ── */}
       {deletingStudent && currentClass && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#121824] p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
-              <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-300 dark:border-white/10 pb-3">
+              <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200">
                 <AlertTriangle className="h-5 w-5" />
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Xóa Sinh Viên Khỏi Lớp</h3>
+                <h3 className="font-serif text-sm font-bold text-slate-900 dark:text-white">Xóa Sinh Viên Khỏi Lớp</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setDeletingStudent(null)}
-                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer"
+                className="text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              Bạn có chắc chắn muốn xóa sinh viên <strong className="text-slate-900 dark:text-slate-100">{deletingStudent.name}</strong> (MSSV: <code className="font-mono font-bold text-slate-900 dark:text-slate-100">{deletingStudent.id}</code>) khỏi lớp học phần <strong className="text-blue-700 dark:text-blue-300">{currentClass.id} - {currentClass.name}</strong> không?
+              Bạn có chắc chắn muốn xóa sinh viên <strong className="text-slate-900 dark:text-white">{deletingStudent.name}</strong> (MSSV: <code className="font-mono font-bold text-slate-900 dark:text-white">{deletingStudent.id}</code>) khỏi lớp học phần <strong className="font-serif text-slate-900 dark:text-white">{currentClass.id} - {currentClass.name}</strong> không?
             </p>
 
-            <div className="rounded-xl bg-amber-50 dark:bg-amber-500/15 p-3 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+            <div className="rounded-md border border-slate-300 bg-slate-50 dark:border-white/10 dark:bg-white/5 p-3 text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
               Sinh viên này sẽ không còn quyền truy cập vào các buổi thực hành Lab và bài Kiểm tra của lớp. Giảng viên vẫn có thể thêm lại bất cứ lúc nào qua MSSV.
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-300 dark:border-white/10">
               <button
                 type="button"
                 onClick={() => setDeletingStudent(null)}
-                className="inline-flex h-10 items-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-4 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+                className="inline-flex h-9 items-center rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-white/[0.04] px-4 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition cursor-pointer"
               >
                 Hủy Bỏ
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDeleteStudent}
-                className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-red-600 px-4 text-xs font-semibold text-white hover:bg-red-700 transition-colors cursor-pointer shadow-sm"
+                className="system-primary-action inline-flex h-9 items-center gap-1.5 rounded-md bg-slate-900 px-4 text-xs font-bold text-white hover:bg-slate-800 transition cursor-pointer shadow-2xs"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 <span>Xác Nhận Xóa</span>
@@ -1109,13 +1171,8 @@ export default function InstructorClassManagerView() {
 
 /** Badge trạng thái lớp học phần, đồng bộ với Admin ClassManagerView. */
 function ClassStatusBadge({ status }: { status: ClassRow['status'] }) {
-  const isNotOpened = status === 'Chưa mở';
-
-  const tone = isNotOpened
-    ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300'
-    : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300';
-
-  const dotTone = isNotOpened ? 'bg-amber-500' : 'bg-emerald-500';
+  const tone = 'border-slate-300 bg-white text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300';
+  const dotTone = 'bg-slate-400';
 
   return (
     <span

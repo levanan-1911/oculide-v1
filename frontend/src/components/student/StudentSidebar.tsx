@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import BrandLogo from "@/components/common/BrandLogo";
 
 export interface StudentNavItem {
   id: string;
@@ -123,7 +124,7 @@ export default function StudentSidebar({
 
   return (
     <aside
-      className={`sticky top-0 flex h-screen shrink-0 flex-col justify-between border-r border-slate-200/80 bg-white select-none z-30 dark:border-white/10 dark:bg-[#0d1017] transition-all duration-300 ease-in-out ${
+      className={`sticky top-0 flex h-screen shrink-0 flex-col justify-between border-r border-slate-300 bg-white select-none z-30 dark:border-white/10 dark:bg-neutral-900 transition-all duration-300 ease-in-out ${
         isCollapsed ? "w-[72px]" : "w-[256px]"
       }`}
     >
@@ -141,30 +142,10 @@ export default function StudentSidebar({
             isCollapsed ? "justify-center px-0" : "gap-3 px-2"
           }`}
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2563eb] shadow-sm shadow-blue-500/20">
-            <svg
-              className="h-6 w-6 text-white"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-            >
-              <circle
-                cx="12"
-                cy="12"
-                r="7.5"
-                stroke="currentColor"
-                strokeWidth="2.2"
-              />
-              <circle cx="12" cy="12" r="3" fill="currentColor" />
-            </svg>
-          </div>
+          <BrandLogo size={50} className="h-[50px] w-[50px] shrink-0 rounded-md object-cover shadow-sm" />
           {!isCollapsed && (
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-[22px] font-extrabold tracking-wide text-[#2563eb] dark:text-blue-400 truncate">
-                OCULIDE
-              </span>
-              <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/40">
+              <span className="rounded border border-brand-300 bg-brand-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-[#f0c2cf]">
                 SV
               </span>
             </div>
@@ -176,11 +157,11 @@ export default function StudentSidebar({
           {STUDENT_NAV_GROUPS.map((group) => (
             <div key={group.groupLabel} className="space-y-1">
               {!isCollapsed ? (
-                <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 truncate">
+                <p className="px-3 font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-[#9F9690] truncate">
                   {group.groupLabel}
                 </p>
               ) : (
-                <div className="my-2 border-t border-slate-100 dark:border-white/5 mx-2" />
+                <div className="my-2 border-t border-slate-300 dark:border-white/5 mx-2" />
               )}
               <div className="space-y-1">
                 {group.items.map((item) => {
@@ -195,21 +176,21 @@ export default function StudentSidebar({
                       key={item.id}
                       href={item.href}
                       title={isCollapsed ? item.label : undefined}
-                      className={`flex w-full items-center rounded-xl transition-all cursor-pointer ${
+                      className={`flex w-full items-center rounded-md transition-all cursor-pointer ${
                         isCollapsed
                           ? "justify-center p-2.5"
                           : "gap-3 px-3.5 py-2.5 text-left text-[13.5px]"
                       } ${
                         isActive
-                          ? "bg-[#eff6ff] font-semibold text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400 shadow-sm"
-                          : "font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 hover:text-slate-900 dark:hover:bg-white/5 dark:hover:text-white"
+                          ? "system-selected-module font-semibold border-l-2"
+                          : "font-medium text-[#5A5555] dark:text-[#9F9690] hover:bg-slate-900/5 hover:text-brand-700 dark:hover:bg-white/5 dark:hover:text-white"
                       }`}
                     >
                       <Icon
-                        className={`h-4 w-4 shrink-0 transition-transform ${
+                        className={`h-4 w-4 shrink-0 ${
                           isActive
-                            ? "text-[#2563eb] dark:text-blue-400 scale-105"
-                            : "text-slate-400 dark:text-slate-500"
+                            ? "text-white"
+                            : "text-slate-500 dark:text-[#9F9690]"
                         }`}
                       />
                       {!isCollapsed && (
@@ -225,26 +206,26 @@ export default function StudentSidebar({
       </div>
 
       {/* Phần dưới: Nút thu gọn / mở rộng Sidebar đồng bộ Admin */}
-      <div className="border-t border-slate-200/80 p-3 dark:border-white/10 transition-colors">
+      <div className="border-t border-slate-300 p-3 dark:border-white/10 transition-colors">
         <button
           type="button"
           onClick={toggleCollapse}
           title={isCollapsed ? "Mở rộng menu (Ctrl+B)" : "Thu gọn menu (Ctrl+B)"}
           aria-label={isCollapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
-          className={`flex w-full items-center rounded-xl py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white transition-all cursor-pointer ${
+          className={`flex w-full items-center rounded-md py-2 text-xs font-semibold text-[#5A5555] hover:bg-stone-50 hover:text-[#2A282D] dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white transition-all cursor-pointer ${
             isCollapsed ? "justify-center px-0" : "justify-between px-3"
           }`}
         >
           <div className="flex items-center gap-2">
             {isCollapsed ? (
-              <ChevronRight className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+              <ChevronRight className="h-4 w-4 text-slate-500 dark:text-[#9F9690]" />
             ) : (
-              <ChevronLeft className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+              <ChevronLeft className="h-4 w-4 text-slate-500 dark:text-[#9F9690]" />
             )}
             {!isCollapsed && <span>Thu gọn menu</span>}
           </div>
           {!isCollapsed && (
-            <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
+            <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-[#9F9690]">
               Ctrl B
             </kbd>
           )}

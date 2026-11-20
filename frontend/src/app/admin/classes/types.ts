@@ -22,6 +22,8 @@ export interface ClassRow {
   semester: string;
   startDate?: string;
   endDate?: string;
+  totalSessions?: number;
+  creditHours?: number;
   status: ClassStatus;
   studentCount: number;
   students: StudentRow[];

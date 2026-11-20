@@ -49,20 +49,20 @@ export default function ExtendSessionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
-      <div className="relative w-full max-w-md rounded-3xl border border-slate-200/90 bg-white p-6 shadow-2xl transition-all">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-xs">
+      <div className="relative w-full max-w-md rounded-md border border-slate-300 bg-white p-6 shadow-2xl transition-all dark:border-white/10 dark:bg-neutral-900">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+        <div className="flex items-center justify-between border-b border-slate-300 pb-4 dark:border-white/10">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-brand-300 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-rose-200">
               <Clock className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">
+              <h2 className="text-base font-serif font-bold text-stone-900 dark:text-stone-100">
                 Gia hạn thời gian phòng thi
               </h2>
-              <p className="text-xs text-slate-500">
-                Phòng: <span className="font-mono font-bold text-blue-600">{roomCode}</span> • Còn lại: <span className="font-bold text-slate-700">{currentRemainingMinutes} phút</span>
+              <p className="text-xs text-stone-500 dark:text-stone-400">
+                Phòng: <span className="font-mono font-bold text-slate-900 dark:text-rose-300">{roomCode}</span> • Còn lại: <span className="font-mono font-bold text-stone-700 dark:text-stone-200">{currentRemainingMinutes} phút</span>
               </p>
             </div>
           </div>
@@ -70,7 +70,7 @@ export default function ExtendSessionModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-stone-400 hover:bg-stone-100 dark:hover:bg-white/5 hover:text-stone-600 cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
@@ -80,8 +80,8 @@ export default function ExtendSessionModal({
         <form onSubmit={handleSubmit} className="mt-5 space-y-5">
           {/* Chọn số phút */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-2">
-              Thời gian cộng thêm: <strong className="text-blue-600 font-extrabold text-sm">+{minutes} phút</strong>
+            <label className="block text-xs font-serif font-bold text-stone-700 dark:text-stone-300 mb-2">
+              Thời gian cộng thêm: <strong className="text-slate-900 dark:text-rose-300 font-mono font-bold text-sm">+{minutes} phút</strong>
             </label>
 
             {/* Mốc chọn nhanh */}
@@ -91,10 +91,10 @@ export default function ExtendSessionModal({
                   key={p}
                   type="button"
                   onClick={() => handleSelectPreset(p)}
-                  className={`rounded-xl py-2 text-xs font-bold transition cursor-pointer ${
+                  className={`rounded-md py-2 text-xs font-mono font-bold transition cursor-pointer ${
                     minutes === p
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                      ? 'system-selected-module shadow-2xs'
+                      : 'border border-slate-300 bg-stone-50 text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-stone-900/50 dark:text-stone-300 dark:hover:bg-white/5'
                   }`}
                 >
                   +{p}p
@@ -104,7 +104,7 @@ export default function ExtendSessionModal({
 
             {/* Ô nhập tùy chỉnh số phút bất kỳ */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 shrink-0">Hoặc tự nhập số phút:</span>
+              <span className="text-xs text-stone-500 dark:text-stone-400 shrink-0">Hoặc tự nhập số phút:</span>
               <div className="relative flex-1">
                 <input
                   type="number"
@@ -112,11 +112,11 @@ export default function ExtendSessionModal({
                   max="360"
                   value={customInput}
                   onChange={handleCustomChange}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2 text-xs font-mono font-bold text-stone-800 outline-none transition focus:border-brand-600 focus:ring-1 focus:ring-brand-600 dark:border-white/10 dark:bg-neutral-950 dark:text-stone-100"
                   placeholder="Nhập số phút..."
                   required
                 />
-                <span className="absolute right-3 top-2 text-xs text-slate-400 font-medium">
+                <span className="absolute right-3 top-2 text-xs text-stone-400 font-medium">
                   phút
                 </span>
               </div>
@@ -125,7 +125,7 @@ export default function ExtendSessionModal({
 
           {/* Lý do gia hạn */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <label className="block text-xs font-serif font-bold text-stone-700 dark:text-stone-300 mb-1.5">
               Lý do gia hạn (Tùy chọn)
             </label>
             <input
@@ -133,41 +133,41 @@ export default function ExtendSessionModal({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="VD: Bù giờ sự cố mạng / Đề bài dài..."
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-stone-800 outline-none transition focus:border-brand-600 focus:ring-1 focus:ring-brand-600 dark:border-white/10 dark:bg-neutral-950 dark:text-stone-100"
             />
           </div>
 
           {/* Checkbox gửi thông báo cho SV */}
-          <label className="flex items-start gap-2.5 rounded-2xl border border-blue-100 bg-blue-50/60 p-3.5 cursor-pointer">
+          <label className="flex items-start gap-2.5 rounded-md border border-slate-900/20 bg-slate-900/5 p-3.5 cursor-pointer dark:bg-slate-900/15">
             <input
               type="checkbox"
               checked={notify}
               onChange={(e) => setNotify(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded text-blue-600 accent-blue-600"
+              className="mt-0.5 h-4 w-4 rounded accent-brand"
             />
             <div className="text-xs">
-              <p className="font-bold text-blue-900 flex items-center gap-1">
-                <BellRing className="h-3.5 w-3.5 text-blue-600" />
+              <p className="font-serif font-bold text-slate-900 dark:text-rose-200 flex items-center gap-1.5">
+                <BellRing className="h-3.5 w-3.5 text-slate-900 dark:text-rose-300" />
                 Phát thông báo đến tất cả sinh viên
               </p>
-              <p className="text-slate-500 mt-0.5 text-[11px]">
+              <p className="text-stone-600 dark:text-stone-400 mt-0.5 text-[11px]">
                 Màn hình làm bài của thí sinh sẽ nhận được pop-up thông báo gia hạn thời gian ngay lập tức.
               </p>
             </div>
           </label>
 
           {/* Buttons */}
-          <div className="flex items-center justify-end gap-2.5 border-t border-slate-100 pt-4">
+          <div className="flex items-center justify-end gap-2.5 border-t border-slate-300 pt-4 dark:border-white/10">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+              className="rounded-md border border-slate-300 px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 transition cursor-pointer dark:border-white/10 dark:text-stone-300 dark:hover:bg-white/5"
             >
               Hủy
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer"
+              className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-5 py-2 text-xs font-serif font-bold text-white shadow-2xs hover:bg-slate-800 transition cursor-pointer"
             >
               <Check className="h-4 w-4" />
               Xác nhận gia hạn (+{minutes}p)

@@ -5,9 +5,18 @@ interface Props {
   params: {
     id: string;
   };
+  searchParams?: {
+    returnTo?: string | string[];
+  };
 }
 
-export default function InstructorRoomLobbyPage({ params }: Props) {
+export default function InstructorRoomLobbyPage({ params, searchParams }: Props) {
   const roomId = params?.id || 'ROOM';
-  return <InstructorWaitingRoomView roomId={roomId} />;
+  const returnToSchedules = searchParams?.returnTo === 'schedules';
+  return (
+    <InstructorWaitingRoomView
+      roomId={roomId}
+      returnToSchedules={returnToSchedules}
+    />
+  );
 }

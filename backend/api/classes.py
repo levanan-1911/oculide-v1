@@ -34,7 +34,13 @@ async def add_class(
     data: ClassCreateRequest,
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
-    """Giảng viên hoặc Admin tạo một lớp học phần mới (Admin có thể gán giảng viên phụ trách)"""
+    """Giảng viên hoặc Admin tạo một lớp học phần mới (buộc có thời gian bắt đầu, kết thúc, số buổi để tự động đóng lớp)"""
+    if not data.start_date or not data.end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tạo lớp buộc phải có thời gian bắt đầu và thời gian kết thúc để lớp tự động đóng khi hết thời gian học."
+        )
+
     try:
         assigned_instructor_id = current_user["user_id"]
         if current_user["role"] == "admin" and data.instructor_id:
@@ -47,13 +53,19 @@ async def add_class(
             course_code=data.course_code,
             section_code=data.section_code,
             semester=data.semester,
-            description=data.description
+            description=data.description,
+            start_date=data.start_date,
+            end_date=data.end_date,
+            total_sessions=data.total_sessions or 15,
+            credit_hours=data.credit_hours or 3
         )
         try:
+            u_name = current_user.get("full_name") or current_user.get("username") or "Quản trị viên"
+            actor_prefix = f"Giảng viên {u_name}" if current_user.get("role") != "admin" else (f"Quản trị viên {u_name}" if "Quản trị viên" not in u_name else u_name)
             create_system_log(
                 log_level="info",
-                module="CLASS_MGMT",
-                message=f"Tạo lớp học phần mới: {new_cls.get('class_code')} - {new_cls.get('class_name')}",
+                module="Quản lý lớp học",
+                message=f"{actor_prefix} đã tạo lớp học phần mới: {new_cls.get('class_code')} ({new_cls.get('class_name')})",
                 user_id=current_user["user_id"],
                 extra_data={"class_code": new_cls.get("class_code"), "semester": new_cls.get("semester")}
             )
@@ -141,15 +153,21 @@ async def edit_class(
             semester=data.semester,
             description=data.description,
             instructor_id=assigned_instructor,
-            status=data.status
+            status=data.status,
+            start_date=data.start_date,
+            end_date=data.end_date,
+            total_sessions=data.total_sessions,
+            credit_hours=data.credit_hours,
         )
         if not updated:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy lớp học")
         try:
+            u_name = current_user.get("full_name") or current_user.get("username") or "Quản trị viên"
+            actor_prefix = f"Giảng viên {u_name}" if current_user.get("role") != "admin" else (f"Quản trị viên {u_name}" if "Quản trị viên" not in u_name else u_name)
             create_system_log(
                 log_level="info",
-                module="CLASS_MGMT",
-                message=f"Cập nhật thông tin lớp học phần: {cls.get('class_code')}",
+                module="Quản lý lớp học",
+                message=f"{actor_prefix} đã cập nhật thông tin lớp học phần: {cls.get('class_code')} ({cls.get('class_name')})",
                 user_id=current_user["user_id"]
             )
         except Exception:
@@ -176,10 +194,12 @@ async def remove_class(
         
     delete_class(class_id)
     try:
+        u_name = current_user.get("full_name") or current_user.get("username") or "Quản trị viên"
+        actor_prefix = f"Giảng viên {u_name}" if current_user.get("role") != "admin" else (f"Quản trị viên {u_name}" if "Quản trị viên" not in u_name else u_name)
         create_system_log(
             log_level="warning",
-            module="CLASS_MGMT",
-            message=f"Xóa lớp học phần: {cls.get('class_code')} - {cls.get('class_name')}",
+            module="Quản lý lớp học",
+            message=f"{actor_prefix} đã xóa lớp học phần: {cls.get('class_code')} ({cls.get('class_name')})",
             user_id=current_user["user_id"]
         )
     except Exception:
@@ -230,10 +250,12 @@ async def enroll_student(
         status=data.status
     )
     try:
+        u_name = current_user.get("full_name") or current_user.get("username") or "Quản trị viên"
+        actor_prefix = f"Giảng viên {u_name}" if current_user.get("role") != "admin" else (f"Quản trị viên {u_name}" if "Quản trị viên" not in u_name else u_name)
         create_system_log(
             log_level="info",
-            module="CLASS_MGMT",
-            message=f"Ghi danh sinh viên ({data.student_name or data.student_user_id}) vào lớp {cls.get('class_code')}",
+            module="Quản lý lớp học",
+            message=f"{actor_prefix} đã thêm sinh viên {data.student_name or data.student_user_id} vào lớp học phần {cls.get('class_code')} ({cls.get('class_name')})",
             user_id=current_user["user_id"],
             extra_data={"class_code": cls.get("class_code"), "student_id": data.student_user_id}
         )
@@ -261,10 +283,12 @@ async def enroll_students_batch_endpoint(
         status=data.status or "dang_hoc"
     )
     try:
+        u_name = current_user.get("full_name") or current_user.get("username") or "Quản trị viên"
+        actor_prefix = f"Giảng viên {u_name}" if current_user.get("role") != "admin" else (f"Quản trị viên {u_name}" if "Quản trị viên" not in u_name else u_name)
         create_system_log(
             log_level="info",
-            module="CLASS_MGMT",
-            message=f"Ghi danh {enrolled} sinh viên vào lớp {cls.get('class_code')}",
+            module="Quản lý lớp học",
+            message=f"{actor_prefix} đã thêm {enrolled} sinh viên vào lớp học phần {cls.get('class_code')} ({cls.get('class_name')})",
             user_id=current_user["user_id"],
             extra_data={"class_code": cls.get("class_code"), "enrolled_count": enrolled}
         )
@@ -293,10 +317,12 @@ async def unenroll_student(
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sinh viên không có trong lớp này")
     try:
+        u_name = current_user.get("full_name") or current_user.get("username") or "Quản trị viên"
+        actor_prefix = f"Giảng viên {u_name}" if current_user.get("role") != "admin" else (f"Quản trị viên {u_name}" if "Quản trị viên" not in u_name else u_name)
         create_system_log(
             log_level="warning",
-            module="CLASS_MGMT",
-            message=f"Xóa sinh viên ({student_user_id}) khỏi lớp {cls.get('class_code')}",
+            module="Quản lý lớp học",
+            message=f"{actor_prefix} đã xóa sinh viên ({student_user_id}) khỏi lớp học phần {cls.get('class_code')} ({cls.get('class_name')})",
             user_id=current_user["user_id"],
             extra_data={"class_code": cls.get("class_code"), "student_user_id": student_user_id}
         )

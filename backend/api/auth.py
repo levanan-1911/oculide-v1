@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Header, BackgroundTasks, Request
 from typing import Dict, Any, Optional
-from datetime import timedelta
+from datetime import datetime, timedelta
 import secrets
 
 from schemas.auth import (
@@ -141,51 +141,62 @@ async def get_my_ip(request: Request):
     client_ip = extract_client_ip(request)
     return {"ip": client_ip}
 
+# Bộ đếm theo dõi các lần đăng nhập sai để phát hiện bất thường (Brute-force / Dò mật khẩu)
+_FAILED_LOGIN_TRACKER: Dict[str, Dict[str, Any]] = {}
+FAILED_WINDOW_SECONDS = 900  # 15 phút
+FAILED_THRESHOLD = 3         # Chỉ ghi log cảnh báo khi sai liên tiếp từ lần thứ 3 trở lên
+
 @router.post("/login", response_model=TokenResponse)
 async def login(credentials: LoginRequest, request: Request):
     """Đăng nhập hệ thống bằng username/email và password nhận cặp Access + Refresh JWT token"""
     identifier = credentials.username.strip()
     client_ip = extract_client_ip(request)
+    track_key = f"{identifier.lower()}_{client_ip}"
+    now = datetime.now()
+
     user = get_user_by_username(identifier) or get_user_by_email(identifier)
-    if not user:
-        try:
-            create_system_log(
-                log_level="warning",
-                module="AUTH_LOGIN",
-                message=f"Đăng nhập thất bại: Tài khoản '{identifier}' không tồn tại trong hệ thống",
-                ip_address=client_ip,
-                extra_data={"attempted_identifier": identifier}
-            )
-        except Exception:
-            pass
+    is_password_valid = verify_password(credentials.password, user["password_hash"]) if user else False
+
+    # 1. Trường hợp sai tài khoản hoặc sai mật khẩu
+    if not user or not is_password_valid:
+        info = _FAILED_LOGIN_TRACKER.get(track_key)
+        if not info or (now - info["last_failed"]).total_seconds() > FAILED_WINDOW_SECONDS:
+            info = {"count": 1, "last_failed": now}
+        else:
+            info["count"] += 1
+            info["last_failed"] = now
+        _FAILED_LOGIN_TRACKER[track_key] = info
+
+        # CHỈ lưu log nếu có dấu hiệu bất thường (sai từ 3 lần trở lên liên tiếp).
+        # Sai bình thường 1-2 lần không lưu log để tránh tràn bộ nhớ.
+        if info["count"] >= FAILED_THRESHOLD:
+            try:
+                create_system_log(
+                    log_level="warning",
+                    module="Cảnh báo đăng nhập sai",
+                    message=f"Tài khoản '{identifier}' đăng nhập sai {info['count']} lần liên tiếp từ IP {client_ip}",
+                    user_id=user["user_id"] if user else None,
+                    ip_address=client_ip,
+                    extra_data={"attempt_count": info["count"], "identifier": identifier, "ip": client_ip}
+                )
+            except Exception:
+                pass
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Tên đăng nhập hoặc mật khẩu không chính xác"
         )
-    
-    if not verify_password(credentials.password, user["password_hash"]):
-        try:
-            create_system_log(
-                log_level="warning",
-                module="AUTH_LOGIN",
-                message=f"Đăng nhập thất bại: Sai mật khẩu cho tài khoản '{user['username']}'",
-                user_id=user["user_id"],
-                ip_address=client_ip,
-                extra_data={"username": user["username"], "email": user["email"]}
-            )
-        except Exception:
-            pass
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Tên đăng nhập hoặc mật khẩu không chính xác"
-        )
-        
+
+    # Đăng nhập thông tin chính xác -> Xóa bộ đếm đăng nhập sai
+    _FAILED_LOGIN_TRACKER.pop(track_key, None)
+
+    # 2. Kiểm tra tài khoản bị khóa
     if not user.get("is_active", True):
         try:
             create_system_log(
                 log_level="warning",
-                module="AUTH_LOGIN",
-                message=f"Từ chối đăng nhập: Tài khoản '{user['username']}' hiện đang bị vô hiệu hóa / khóa",
+                module="Từ chối đăng nhập",
+                message=f"Tài khoản '{user['username']}' bị khóa cố gắng đăng nhập",
                 user_id=user["user_id"],
                 ip_address=client_ip
             )
@@ -195,42 +206,55 @@ async def login(credentials: LoginRequest, request: Request):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tài khoản của bạn hiện đang bị khóa. Vui lòng liên hệ quản trị viên."
         )
-        
-    # Kiểm tra chế độ bảo trì hệ thống (Maintenance Mode)
+
+    # 3. Kiểm tra chế độ bảo trì hệ thống (Maintenance Mode)
     from services.system_settings_manager import SystemSettingsManager
     sys_settings = SystemSettingsManager.get_settings()
     user_role = (user.get("role") or "").lower()
     if sys_settings.maintenance_mode and user_role != "admin":
-        try:
-            create_system_log(
-                log_level="warning",
-                module="AUTH_LOGIN",
-                message=f"Từ chối đăng nhập: Hệ thống đang bật chế độ bảo trì ({user['username']})",
-                user_id=user["user_id"],
-                ip_address=client_ip
-            )
-        except Exception:
-            pass
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=sys_settings.maintenance_message or "Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút."
         )
-        
+
+    # 4. Kiểm tra xem có phải ĐĂNG NHẬP TỪ IP LẠ hay không:
+    # "đăng nhập thành công chỉ lưu log khi đăng nhập từ 1 địa chỉ IP lạ (chưa từng được ghi nhận trong hệ thống trong 1 khoảng thời gian)"
+    is_unfamiliar_ip = False
+    if client_ip not in ("127.0.0.1", "localhost", "::1", "testclient"):
+        if user.get("last_login"):
+            try:
+                from core.database import get_db_cursor
+                with get_db_cursor() as cursor:
+                    # Kiểm tra xem IP này đã từng xuất hiện trong SystemAuditLogs của user trong 30 ngày qua hay chưa
+                    cursor.execute("""
+                        SELECT COUNT(*) 
+                        FROM SystemAuditLogs 
+                        WHERE user_id = ? 
+                          AND ip_address = ? 
+                          AND created_at >= DATEADD(day, -30, GETDATE())
+                    """, (user["user_id"], client_ip))
+                    seen_count = cursor.fetchone()[0] or 0
+                    if seen_count == 0:
+                        is_unfamiliar_ip = True
+            except Exception:
+                pass
+
+    if is_unfamiliar_ip:
+        try:
+            create_system_log(
+                log_level="warning",
+                module="Đăng nhập từ IP lạ",
+                message=f"Tài khoản {user['username']} ({user['full_name']}) đăng nhập từ địa chỉ IP mới: {client_ip}",
+                user_id=user["user_id"],
+                ip_address=client_ip,
+                extra_data={"is_new_ip": True, "ip": client_ip, "username": user["username"], "role": user["role"]}
+            )
+        except Exception:
+            pass
+    # Ngược lại: Đăng nhập thành công bình thường từ IP quen thuộc -> KHÔNG LƯU LOG để tránh tràn bộ nhớ.
+
     update_last_login(user["user_id"], client_ip=client_ip)
     user["last_login_ip"] = client_ip
-    
-    # Ghi nhận nhật ký đăng nhập thành công vào bảng NhatKyHeThong
-    try:
-        create_system_log(
-            log_level="info",
-            module="AUTH_LOGIN",
-            message=f"Đăng nhập thành công: {user['full_name']} ({user['username']}) [Vai trò: {user['role']}]",
-            user_id=user["user_id"],
-            ip_address=client_ip,
-            extra_data={"role": user["role"], "email": user["email"]}
-        )
-    except Exception:
-        pass
     
     token_data = {
         "sub": str(user["user_id"]),
@@ -347,7 +371,7 @@ async def reset_password(request_data: ResetPasswordRequest):
         u_name = user.get("username") if user else f"ID {user_id}"
         create_system_log(
             log_level="info",
-            module="AUTH_PASSWORD",
+            module="Đặt lại mật khẩu",
             message=f"Đặt lại mật khẩu thành công qua email xác thực cho tài khoản '{u_name}'",
             user_id=user_id
         )
@@ -391,8 +415,8 @@ async def change_password(
     try:
         create_system_log(
             log_level="info",
-            module="AUTH_PASSWORD",
-            message=f"Người dùng '{user.get('username')}' ({user.get('full_name')}) đã thay đổi mật khẩu thành công",
+            module="Đổi mật khẩu",
+            message=f"Người dùng '{user.get('username')}' ({user.get('full_name')}) đã đổi mật khẩu thành công",
             user_id=current_user["user_id"]
         )
     except Exception:

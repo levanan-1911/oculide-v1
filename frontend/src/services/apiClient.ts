@@ -51,8 +51,26 @@ export async function fetchWithAuth<T = any>(
         }
       }
     }
-    const errorMsg = data.detail || res.statusText || 'Lỗi khi gọi API hệ thống';
-    throw new Error(errorMsg);
+    let errorMsg = 'Lỗi khi gọi API hệ thống';
+    const objectDetail =
+      data.detail && typeof data.detail === 'object' && !Array.isArray(data.detail)
+        ? data.detail
+        : null;
+    if (typeof data.detail === 'string') {
+      errorMsg = data.detail;
+    } else if (Array.isArray(data.detail)) {
+      errorMsg = data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ');
+    } else if (typeof objectDetail?.message === 'string') {
+      errorMsg = objectDetail.message;
+    } else if (data.message && typeof data.message === 'string') {
+      errorMsg = data.message;
+    } else if (res.statusText) {
+      errorMsg = res.statusText;
+    }
+    const error = new Error(errorMsg);
+    if (objectDetail) Object.assign(error, objectDetail);
+    Object.assign(error, { status: res.status });
+    throw error;
   }
 
   return data as T;

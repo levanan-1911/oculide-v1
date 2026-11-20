@@ -3,9 +3,10 @@ from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 
 class RoomCreateRequest(BaseModel):
-    room_code: str = Field(..., min_length=3, max_length=50)
+    room_code: str = Field(..., min_length=3, max_length=8)
     room_name: str = Field(..., min_length=1, max_length=200)
     room_type: str = Field("lab", pattern="^(exam|lab|classroom)$")
+    session_type: Optional[str] = Field(None, pattern="^(LAB|MIDTERM|FINAL)$")
     class_id: Optional[Union[int, str]] = None
     template_id: Optional[Union[int, str]] = None
     description: Optional[str] = None
@@ -13,13 +14,14 @@ class RoomCreateRequest(BaseModel):
     end_time: datetime
     duration_minutes: int = Field(..., gt=0)
     max_attempts: int = Field(default=10, gt=0)
-    passcode: Optional[str] = Field(None, max_length=50)
+    passcode: Optional[str] = Field(None, max_length=8)
     proctoring_config: Optional[Union[Dict[str, Any], str]] = None
     status: Optional[str] = "chua_mo"
 
 class RoomUpdateRequest(BaseModel):
     room_name: Optional[str] = None
     room_type: Optional[str] = None
+    session_type: Optional[str] = Field(None, pattern="^(LAB|MIDTERM|FINAL)$")
     class_id: Optional[Union[int, str]] = None
     template_id: Optional[Union[int, str]] = None
     description: Optional[str] = None
@@ -28,7 +30,7 @@ class RoomUpdateRequest(BaseModel):
     duration_minutes: Optional[int] = None
     max_attempts: Optional[int] = None
     is_active: Optional[bool] = None
-    passcode: Optional[str] = None
+    passcode: Optional[str] = Field(None, max_length=8)
     proctoring_config: Optional[Union[Dict[str, Any], str]] = None
     status: Optional[str] = None
 
@@ -37,6 +39,7 @@ class RoomResponse(BaseModel):
     room_code: str
     room_name: str
     room_type: str
+    session_type: Optional[str] = None
     instructor_id: int
     description: Optional[str] = None
     start_time: datetime
@@ -67,6 +70,7 @@ class PublicRoomResponse(BaseModel):
     room_code: str
     room_name: str
     room_type: str
+    session_type: Optional[str] = None
     start_time: datetime
     end_time: datetime
     duration_minutes: int
@@ -94,6 +98,7 @@ class RoomDashboardResponse(BaseModel):
     room_code: str
     room_name: str
     room_type: str
+    session_type: Optional[str] = None
     active_students_count: int
     students: List[RoomDashboardStudentItem] = []
 
@@ -111,7 +116,6 @@ class RoomAttendeeResponse(BaseModel):
     student_email: Optional[str] = None
     status: str = "absent"  # waiting, absent, completed
     joined_at: Optional[str] = None
-    device: Optional[str] = None
     camera_ready: Optional[bool] = False
 
 class RoomLobbyResponse(BaseModel):
@@ -119,6 +123,7 @@ class RoomLobbyResponse(BaseModel):
     room_code: str
     room_name: str
     room_type: str
+    session_type: Optional[str] = None
     instructor_id: int
     class_id: Optional[int] = None
     class_code: Optional[str] = None

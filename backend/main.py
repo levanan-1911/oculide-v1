@@ -39,7 +39,8 @@ async def lifespan(app: FastAPI):
                 port=settings.REDIS_PORT,
                 password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None,
                 db=settings.REDIS_DB,
-                socket_timeout=5
+                socket_timeout=None,
+                health_check_interval=30
             )
             
             async def redis_listener():
@@ -63,8 +64,11 @@ async def lifespan(app: FastAPI):
                                     pass
                     except asyncio.CancelledError:
                         break
+                    except (asyncio.TimeoutError, TimeoutError):
+                        # Timeout khi không có message mới trên kênh pubsub là bình thường
+                        continue
                     except Exception as e:
-                        print(f"Lưu ý: Redis chưa khởi động trên cổng 6379 ({e}). Hệ thống đang chạy chế độ bộ nhớ cục bộ (sẽ thử lại sau {retry_interval}s)...")
+                        print(f"Lưu ý: Redis chưa kết nối được ({e}). Hệ thống đang chạy chế độ bộ nhớ cục bộ (sẽ thử lại sau {retry_interval}s)...")
                         await asyncio.sleep(retry_interval)
                         retry_interval = min(retry_interval * 2, 60)
                     

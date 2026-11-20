@@ -248,14 +248,14 @@ export default function StudentTopbar({
   const unreadCount = notifications.filter((n) => n.unread).length;
 
   return (
-    <header className="flex h-16 w-full shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 px-6 lg:px-8 relative z-30 backdrop-blur-md dark:border-white/10 dark:bg-[#0d1017]/80 transition-colors">
+    <header className="flex h-16 w-full shrink-0 items-center justify-between border-b border-slate-300 bg-white/95 px-6 lg:px-8 relative z-30 dark:border-white/10 dark:bg-neutral-900/95 transition-colors">
       {/* Tiêu đề bên trái & Badge Sinh viên */}
       <div className="flex items-center gap-3 min-w-0">
-        <h1 className="text-[17px] font-bold tracking-tight text-slate-900 dark:text-white truncate">
+        <h1 className="font-serif text-[17px] font-bold tracking-tight text-[#2A282D] dark:text-white truncate">
           {title}
         </h1>
 
-        <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/40 shrink-0">
+        <span className="hidden sm:inline-flex items-center gap-1 rounded border border-brand-300 bg-brand-50 px-2 py-0.5 text-xs font-serif font-semibold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-[#f0c2cf] shrink-0">
           <GraduationCap className="h-3.5 w-3.5" />
           Sinh viên
         </span>
@@ -264,7 +264,7 @@ export default function StudentTopbar({
       {/* Cụm tìm kiếm + Đổi theme sáng/tối + thông báo + avatar bên phải */}
       <div className="flex items-center gap-3">
         <div className="relative hidden lg:block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500 dark:text-[#9F9690]" />
           <input
             type="text"
             onKeyDown={(e) => {
@@ -276,7 +276,7 @@ export default function StudentTopbar({
               }
             }}
             placeholder="Tìm kiếm ca thi, bài nộp... (Enter)"
-            className="h-9 w-64 xl:w-72 rounded-xl border border-slate-200/80 bg-slate-50/80 pl-9 pr-4 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none dark:border-white/10 dark:bg-[#121824] dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-500 transition-all"
+            className="h-9 w-64 xl:w-72 rounded-md border border-slate-300 bg-slate-50 pl-9 pr-4 text-xs text-[#2A282D] placeholder:text-slate-500 focus:border-slate-900 focus:bg-white focus:outline-none dark:border-white/10 dark:bg-neutral-950 dark:text-[#E8E6E8] dark:placeholder:text-[#9F9690] dark:focus:border-slate-800 transition-colors"
           />
         </div>
 
@@ -287,16 +287,16 @@ export default function StudentTopbar({
             onClick={toggleTheme}
             title={theme === "dark" ? "Chuyển sang giao diện Sáng (Light)" : "Chuyển sang giao diện Tối (Dark)"}
             aria-label="Chuyển đổi giao diện Sáng / Tối"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:scale-105 hover:bg-slate-50 active:scale-95 dark:border-white/10 dark:bg-[#141824] dark:text-amber-400 dark:hover:bg-[#1a2030] cursor-pointer"
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-[#2A282D] shadow-2xs transition-colors hover:bg-stone-50 dark:border-white/10 dark:bg-neutral-950 dark:text-amber-400 dark:hover:bg-white/5 cursor-pointer"
           >
             {theme === "dark" ? (
-              <Sun className="h-4 w-4 text-amber-400 transition-transform rotate-0 hover:rotate-45" />
+              <Sun className="h-4 w-4 text-amber-400" />
             ) : (
-              <Moon className="h-4 w-4 text-slate-700 transition-transform rotate-0 hover:-rotate-12" />
+              <Moon className="h-4 w-4 text-[#5A5555]" />
             )}
           </button>
         ) : (
-          <div className="h-9 w-9 rounded-full bg-slate-100 dark:bg-white/5 opacity-50" />
+          <div className="h-9 w-9 rounded-md bg-slate-50 dark:bg-white/5 opacity-50" />
         )}
 
         {/* Chuông thông báo */}
@@ -308,21 +308,21 @@ export default function StudentTopbar({
               setShowNotifications((prev) => !prev);
               setIsProfileOpen(false);
             }}
-            className="relative flex h-9 w-9 items-center justify-center rounded-full bg-[#eff6ff] text-[#2563eb] transition-colors hover:bg-blue-100/80 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 cursor-pointer"
+            className="relative flex h-9 w-9 items-center justify-center rounded-md border border-brand-300 bg-brand-50 text-brand-700 transition-colors hover:bg-brand-100 dark:border-white/10 dark:bg-brand-500/10 dark:text-[#f0c2cf] dark:hover:bg-brand-500/20 cursor-pointer"
           >
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-black text-white ring-2 ring-white dark:ring-[#0d1017] animate-bounce">
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 font-mono text-[9px] font-bold text-white ring-2 ring-white dark:ring-[#1C1820]">
                 {unreadCount}
               </span>
             )}
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 top-12 z-50 w-80 sm:w-96 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xl shadow-slate-900/10 dark:border-white/10 dark:bg-[#0d1017] dark:text-white">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-3">
-                <p className="text-xs font-bold text-slate-900 dark:text-white">Thông báo</p>
-                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+            <div className="absolute right-0 top-12 z-50 w-80 sm:w-96 rounded-md border border-slate-300 bg-white p-4 shadow-xl dark:border-white/10 dark:bg-neutral-900 dark:text-white">
+              <div className="flex items-center justify-between border-b border-slate-300 dark:border-white/10 pb-3">
+                <p className="font-serif text-xs font-bold text-[#2A282D] dark:text-white">Thông báo học tập</p>
+                <span className="rounded bg-brand-50 px-2 py-0.5 font-mono text-[10px] font-bold text-brand-700 dark:bg-brand-500/10 dark:text-[#f0c2cf]">
                   {unreadCount} mới
                 </span>
               </div>
@@ -333,24 +333,24 @@ export default function StudentTopbar({
                     key={notification.id}
                     href={notification.href || "#"}
                     onClick={() => setShowNotifications(false)}
-                    className="block rounded-xl border border-slate-100 p-2.5 text-xs transition hover:bg-slate-50 dark:border-white/5 dark:bg-white/[0.02] dark:hover:bg-white/5"
+                    className="block rounded-md border border-slate-300 p-2.5 text-xs transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.02] dark:hover:bg-white/5"
                   >
                     <div className="flex items-start gap-2">
                       {notification.unread ? (
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600 dark:bg-blue-400" />
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand dark:bg-[#e5a9b9]" />
                       ) : (
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600" />
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-stone-300 dark:bg-stone-600" />
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-1">
-                          <p className="font-semibold text-slate-800 dark:text-slate-100">
+                          <p className="font-semibold text-[#2A282D] dark:text-stone-100">
                             {notification.title}
                           </p>
-                          <span className="text-[10px] text-slate-400 shrink-0">
+                          <span className="font-mono text-[10px] text-slate-500 shrink-0">
                             {notification.time}
                           </span>
                         </div>
-                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        <p className="mt-1 text-[11px] text-[#5A5555] dark:text-[#9F9690] leading-relaxed">
                           {notification.message}
                         </p>
                       </div>
@@ -372,25 +372,25 @@ export default function StudentTopbar({
             }}
             aria-label="Tài khoản sinh viên"
             title={`${userProfile.name} (Sinh viên)`}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#eff6ff] text-xs font-bold text-[#2563eb] transition-all hover:scale-105 hover:bg-blue-100/80 dark:bg-blue-500/15 dark:text-blue-400 dark:hover:bg-blue-500/25 ring-2 ring-blue-500/20 cursor-pointer"
+            className="flex h-9 w-9 items-center justify-center rounded-md bg-brand text-xs font-serif font-bold text-white shadow-2xs hover:bg-brand-600 cursor-pointer"
           >
             {initials}
           </button>
 
           {isProfileOpen && (
-            <div className="absolute right-0 top-11 z-50 w-64 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl transition-all dark:border-white/10 dark:bg-[#0f131d] text-xs">
-              <div className="p-3 border-b border-slate-100 dark:border-white/10 flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-black text-white shadow-sm">
+            <div className="absolute right-0 top-11 z-50 w-64 rounded-md border border-slate-300 bg-white p-1.5 shadow-xl transition-all dark:border-white/10 dark:bg-neutral-900 text-xs">
+              <div className="p-3 border-b border-slate-300 dark:border-white/10 flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-serif font-bold text-white shadow-xs">
                   {initials}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold text-slate-900 dark:text-white truncate">
+                  <p className="font-bold text-[#2A282D] dark:text-white truncate">
                     {userProfile.name}
                   </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                  <p className="text-[11px] text-slate-500 dark:text-[#9F9690] truncate font-mono">
                     {userProfile.email}
                   </p>
-                  <span className="mt-1 inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 font-mono">
+                  <span className="mt-1 inline-flex items-center gap-1 rounded bg-brand-50 px-1.5 py-0.5 text-[9px] font-bold text-brand-700 dark:bg-brand-500/10 dark:text-[#f0c2cf] font-mono">
                     {userProfile.studentId}
                   </span>
                 </div>
@@ -400,45 +400,45 @@ export default function StudentTopbar({
                 <Link
                   href="/student/profile"
                   onClick={() => setIsProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 rounded-xl transition"
+                  className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
                 >
-                  <User className="h-4 w-4 text-slate-400" />
+                  <User className="h-4 w-4 text-slate-500" />
                   <span>Hồ sơ cá nhân</span>
                 </Link>
 
                 <Link
                   href="/student/schedule"
                   onClick={() => setIsProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 rounded-xl transition"
+                  className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
                 >
-                  <GraduationCap className="h-4 w-4 text-slate-400" />
+                  <GraduationCap className="h-4 w-4 text-slate-500" />
                   <span>Lịch thi của tôi</span>
                 </Link>
 
                 <Link
                   href="/student/submissions"
                   onClick={() => setIsProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 rounded-xl transition"
+                  className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
                 >
-                  <CheckCircle2 className="h-4 w-4 text-slate-400" />
+                  <CheckCircle2 className="h-4 w-4 text-slate-500" />
                   <span>Kết quả làm bài</span>
                 </Link>
 
                 <Link
                   href="/student/violations"
                   onClick={() => setIsProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 rounded-xl transition"
+                  className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
                 >
-                  <ShieldAlert className="h-4 w-4 text-slate-400" />
+                  <ShieldAlert className="h-4 w-4 text-slate-500" />
                   <span>Cảnh báo vi phạm AI</span>
                 </Link>
               </div>
 
-              <div className="border-t border-slate-100 dark:border-white/10 pt-1">
+              <div className="border-t border-slate-300 dark:border-white/10 pt-1">
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10 rounded-xl transition cursor-pointer"
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-slate-800 hover:bg-slate-900/10 dark:text-[#e5a9b9] dark:hover:bg-white/5 rounded-md transition cursor-pointer"
                 >
                   <LogOut className="h-4 w-4" />
                   <span>Đăng xuất</span>

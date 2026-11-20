@@ -1,4 +1,5 @@
 export type ScheduleStatus = 'ongoing' | 'scheduled' | 'draft' | 'completed' | 'cancelled';
+export type ExamFormat = 'coding' | 'quiz' | 'hybrid';
 
 export interface ProctoringPolicy {
   webcam: 'required' | 'optional' | 'disabled';
@@ -19,12 +20,20 @@ export interface ExamScheduleItem {
   id: string; // Mã ca thi (ví dụ: "PRJ301-MID")
   room_id?: number;
   title: string; // Tên ca thi (ví dụ: "Kiểm tra giữa kỳ • Lập trình Web")
+  courseCode?: string; // Mã học phần (ví dụ: "CS404")
+  courseName?: string; // Tên học phần (ví dụ: "Lập trình thuật toán & Cấu trúc dữ liệu")
+  creditHours?: number; // Số tín chỉ (ví dụ: 3)
+  examKind?: 'final' | 'midterm';
+  examKindLabel?: string; // "Thi Kết Thúc Học Phần" | "Thi Giữa Kỳ"
   classId: string; // Mã lớp (ví dụ: "SE1848")
   className: string; // Tên lớp (ví dụ: "Lập trình Web")
   studentCount: number; // Sĩ số (ví dụ: 48)
   lecturer: string; // Giảng viên khởi tạo (ví dụ: "Thầy Nguyễn Văn Nam")
-  templateId: string; // Mã bộ đề (ví dụ: "TPL-EXAM-01")
-  templateTitle: string; // Tên bộ đề (ví dụ: "Xây dựng ứng dụng Web tương tác")
+  creatorRole?: string; // 'admin' | 'instructor'
+  creatorLabel?: string; // 'Quản trị viên (Khảo thí)' | 'Giảng viên phụ trách'
+  templateId?: string | null; // Mã bộ đề (ví dụ: "TPL-EXAM-01")
+  templateTitle?: string; // Tên bộ đề (ví dụ: "Xây dựng ứng dụng Web tương tác")
+  templateType?: string; // 'final_exam' | 'exam' | 'lab' | 'midterm'
   templateVersion: string; // Phiên bản đề (ví dụ: "v1 • Sẵn sàng")
   date: string; // Ngày thi (dd/mm/yyyy hoặc yyyy-mm-dd)
   startTime: string; // Giờ bắt đầu (hh:mm)
@@ -35,6 +44,7 @@ export interface ExamScheduleItem {
   roomPassword?: string; // Mật khẩu phòng (ví dụ: "123456")
   status: ScheduleStatus;
   rawStatus?: string;
+  examFormat?: ExamFormat;
   proctoringPolicy: ProctoringPolicy;
   isLobbyOpen?: boolean;
   readyStudentCount?: number;
@@ -43,7 +53,6 @@ export interface ExamScheduleItem {
   attendedStudents?: number;
   pendingViolations?: number;
   createdAt?: string;
-  creatorRole?: 'instructor' | 'system';
 }
 
 export const DEFAULT_PROCTORING_POLICY: ProctoringPolicy = {
@@ -92,6 +101,14 @@ function mapInstructorSessionToExamSchedule(
       ? 'Hôm qua (27/10/2026)'
       : item.date || '28/10/2026';
 
+  const titleLower = (item.title + ' ' + (item.templateTitle || '')).toLowerCase();
+  let examFormat: ExamFormat = 'coding';
+  if (titleLower.includes('trắc nghiệm') || titleLower.includes('quiz') || titleLower.includes('mcq')) {
+    examFormat = 'quiz';
+  } else if (titleLower.includes('cuối kỳ') || titleLower.includes('hỗn hợp') || titleLower.includes('final')) {
+    examFormat = 'hybrid';
+  }
+
   return {
     id: item.id || item.roomCode,
     title: item.title,
@@ -111,6 +128,7 @@ function mapInstructorSessionToExamSchedule(
     roomCode: item.roomCode,
     roomPassword: item.passcode || '••••••',
     status,
+    examFormat,
     proctoringPolicy: item.isAiProctored
       ? DEFAULT_PROCTORING_POLICY
       : {

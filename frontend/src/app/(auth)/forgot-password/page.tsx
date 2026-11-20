@@ -3,16 +3,15 @@
 import React, { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import InstitutionalFooter from '@/components/common/InstitutionalFooter';
+import BrandLogo from '@/components/common/BrandLogo';
 import AuthShowcasePanel from '@/components/auth/AuthShowcasePanel';
 import {
   ArrowLeft,
   CheckCircle2,
-  Eye,
   Loader2,
   Mail,
   Moon,
   Send,
-  Sparkles,
   Sun,
 } from 'lucide-react';
 
@@ -97,47 +96,45 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
-      {/* ── NÚT CHUYỂN ĐEN/TRẮNG ICON GÓC TRÊN BÊN PHẢI (CHUẨN LOGIN) ── */}
+    <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-neutral-950 dark:text-slate-300 transition-colors duration-200">
+      
+      {/* ── NÚT CHUYỂN ĐEN/TRẮNG ICON GÓC TRÊN BÊN PHẢI ── */}
       {mounted && (
         <div className="fixed top-4 right-4 z-50">
           <button
             type="button"
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Chuyển sang giao diện Sáng (Light)' : 'Chuyển sang giao diện Tối (Dark)'}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white/90 text-slate-700 shadow-md backdrop-blur-md transition-all hover:scale-105 hover:bg-white active:scale-95 dark:border-white/15 dark:bg-[#121620]/90 dark:text-amber-400 dark:hover:bg-[#1a202c] cursor-pointer"
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-800 shadow-sm backdrop-blur-md transition-colors hover:bg-[#eae5e7] dark:border-white/15 dark:bg-neutral-900 dark:text-amber-300 dark:hover:bg-[#25202b] cursor-pointer"
             aria-label="Chuyển đổi giao diện Sáng / Tối"
           >
             {theme === 'dark' ? (
-              <Sun className="h-4 w-4 text-amber-400 transition-transform rotate-0 hover:rotate-45" />
+              <Sun className="h-4 w-4 text-amber-300" />
             ) : (
-              <Moon className="h-4 w-4 text-slate-700 transition-transform rotate-0 hover:-rotate-12" />
+              <Moon className="h-4 w-4 text-slate-800" />
             )}
           </button>
         </div>
       )}
 
       {/* ── HEADER CHUẨN ĐỒNG BỘ VỚI LOGIN ── */}
-      <header className="border-b border-slate-200/80 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#090a0f]/80 transition-colors">
+      <header className="border-b border-slate-300 bg-white/95 backdrop-blur-md dark:border-white/10 dark:bg-neutral-900/95 transition-colors">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 transition-transform group-hover:scale-105">
-              <Eye className="h-5 w-5" strokeWidth={2.3} />
-            </div>
+          <Link href="/" className="flex items-center gap-3">
+            <BrandLogo size={50} className="h-[50px] w-[50px] shrink-0 rounded-md object-cover shadow-sm" />
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-lg font-black tracking-tight text-slate-900 dark:text-white">OCULIDE</span>
-                <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                <span className="rounded border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
                   NCKH 2026
                 </span>
               </div>
-              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">AI Proctoring &amp; Lab LMS</p>
+              <p className="text-[11px] font-medium text-slate-500 dark:text-[#a59fa3]">AI Proctoring &amp; Lab LMS</p>
             </div>
           </Link>
 
           <Link
             href="/login"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-400 hover:bg-slate-50 dark:border-white/15 dark:bg-[#141824] dark:text-slate-200 dark:hover:bg-[#1a2030] pr-3 mr-12"
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-800 shadow-sm transition-colors hover:bg-[#eae5e7] dark:border-white/15 dark:bg-[#221e27] dark:text-slate-300 dark:hover:bg-[#2b2532] pr-3 mr-12"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>Quay lại đăng nhập</span>
@@ -154,28 +151,28 @@ export default function ForgotPasswordPage() {
             <AuthShowcasePanel />
           </div>
 
-          {/* CỘT PHẢI (5 CỘT): CARD KHÔI PHỤC MẬT KHẨU MATCH 100% DESIGN LOGIN */}
+          {/* CỘT PHẢI (5 CỘT): CARD KHÔI PHỤC MẬT KHẨU MATCH DESIGN LOGIN */}
           <div className="lg:col-span-5">
-            <div className="rounded-3xl border border-slate-200/80 bg-white p-7 sm:p-9 shadow-xl shadow-slate-200/50 transition-all dark:border-white/10 dark:bg-[#0d1017] dark:shadow-black/60">
+            <div className="rounded-md border border-slate-300 bg-white p-7 sm:p-9 shadow-sm dark:border-white/10 dark:bg-neutral-900">
               
               {isSubmitted ? (
                 /* ── GIAO DIỆN KHI ĐÃ GỬI THÀNH CÔNG ── */
-                <div className="space-y-5 text-left animate-in fade-in duration-300">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400">
+                <div className="space-y-5 text-left">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-md bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-200">
                     <Send className="h-6 w-6" aria-hidden="true" />
                   </div>
 
                   <div>
-                    <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                    <h2 className="text-2xl font-serif font-bold tracking-tight text-[#2A282D] dark:text-white sm:text-3xl">
                       Kiểm tra hộp thư của bạn
                     </h2>
-                    <p className="mt-2 text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                    <p className="mt-2 text-xs sm:text-sm text-[#5a565e] dark:text-[#b0a7aa] leading-relaxed">
                       Chúng tôi đã gửi một liên kết khôi phục mật khẩu đến email{' '}
-                      <strong className="font-bold text-blue-600 dark:text-blue-400">{email.trim()}</strong>.
+                      <strong className="font-bold text-slate-900 dark:text-[#e5a9b9]">{email.trim()}</strong>.
                     </p>
                   </div>
 
-                  <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3.5 text-xs text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300 leading-relaxed">
+                  <div className="rounded-md border border-slate-300 bg-slate-50 p-3.5 text-xs text-slate-900 dark:border-white/10 dark:bg-[#221e27] dark:text-[#f0c2cf] leading-relaxed">
                     💡 <strong>Lưu ý:</strong> Liên kết có hiệu lực trong <strong>15 phút</strong>. Vui lòng kiểm tra cả mục Thư rác (Spam) nếu không thấy trong Hộp thư đến.
                   </div>
 
@@ -186,7 +183,7 @@ export default function ForgotPasswordPage() {
                         setIsSubmitted(false);
                         setEmail('');
                       }}
-                      className="h-11 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                      className="h-11 w-full rounded-md border border-slate-300 bg-white dark:bg-white/5 text-xs font-semibold text-slate-800 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/10 transition-colors cursor-pointer"
                     >
                       Gửi lại bằng email khác
                     </button>
@@ -194,7 +191,7 @@ export default function ForgotPasswordPage() {
                     <div className="text-center pt-1">
                       <Link
                         href="/login"
-                        className="inline-flex items-center gap-2 text-xs font-bold text-blue-600 hover:underline dark:text-blue-400"
+                        className="inline-flex items-center gap-2 text-xs font-semibold text-brand-700 hover:underline dark:text-brand-200"
                       >
                         <ArrowLeft className="h-3.5 w-3.5" />
                         <span>Quay lại trang Đăng nhập</span>
@@ -206,16 +203,16 @@ export default function ForgotPasswordPage() {
                 /* ── GIAO DIỆN NHẬP FORM KHÔI PHỤC ── */
                 <>
                   <div className="mb-6 text-left">
-                    <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                    <h2 className="text-2xl font-serif font-bold tracking-tight text-[#2A282D] dark:text-white sm:text-3xl">
                       Khôi phục mật khẩu
                     </h2>
-                    <p className="mt-1.5 text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400">
+                    <p className="mt-1.5 text-xs sm:text-sm font-normal text-slate-500 dark:text-[#a59fa3]">
                       Nhập email tài khoản của bạn để nhận liên kết đổi mật khẩu mới.
                     </p>
                   </div>
 
                   {error && (
-                    <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 sm:text-sm">
+                    <div className="mb-4 flex items-start gap-2.5 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 sm:text-sm">
                       <span className="leading-snug">{error}</span>
                     </div>
                   )}
@@ -224,13 +221,13 @@ export default function ForgotPasswordPage() {
                     <div className="space-y-1.5">
                       <label
                         htmlFor="school-email"
-                        className="block text-xs font-semibold text-slate-700 dark:text-slate-300 sm:text-sm"
+                        className="block text-xs font-semibold text-slate-800 dark:text-slate-300 sm:text-sm"
                       >
                         Email trường hoặc tài khoản
                       </label>
                       <div className="relative">
                         <Mail
-                          className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+                          className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
                           aria-hidden="true"
                         />
                         <input
@@ -243,7 +240,7 @@ export default function ForgotPasswordPage() {
                           }}
                           placeholder="student@school.edu.vn"
                           disabled={isSubmitting}
-                          className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-xs font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-slate-500 dark:focus:ring-blue-500/20 sm:text-sm"
+                          className="h-11 w-full rounded-md border border-slate-300 bg-slate-50 pl-10 pr-4 text-xs font-medium text-slate-800 outline-none transition-colors placeholder:text-slate-500 focus:border-brand-600 disabled:cursor-not-allowed disabled:bg-[#f1edee] dark:border-white/15 dark:bg-[#221e27] dark:text-white dark:placeholder:text-slate-500 dark:focus:border-brand-400 sm:text-sm"
                         />
                       </div>
                     </div>
@@ -251,7 +248,7 @@ export default function ForgotPasswordPage() {
                     <button
                       type="submit"
                       disabled={isSubmitting}
-                      className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-md shadow-blue-500/25 transition-all hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer sm:text-base"
+                      className="system-primary-action mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
                     >
                       {isSubmitting ? (
                         <>
@@ -264,10 +261,10 @@ export default function ForgotPasswordPage() {
                     </button>
                   </form>
 
-                  <div className="mt-6 pt-4 border-t border-slate-100 dark:border-white/5 text-center">
+                  <div className="mt-6 pt-4 border-t border-slate-300 dark:border-white/10 text-center">
                     <Link
                       href="/login"
-                      className="inline-flex items-center gap-2 text-xs font-bold text-blue-600 hover:underline dark:text-blue-400 sm:text-sm"
+                      className="inline-flex items-center gap-2 text-xs font-semibold text-brand-700 hover:underline dark:text-brand-200 sm:text-sm"
                     >
                       <ArrowLeft className="h-3.5 w-3.5" />
                       <span>Quay lại trang Đăng nhập</span>

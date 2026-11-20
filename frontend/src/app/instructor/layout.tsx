@@ -33,7 +33,7 @@ export default function InstructorLayout({
   return (
     <AuthGuard allowedRoles={['instructor', 'admin']}>
       <MonitoringProvider>
-        <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] dark:bg-[#090a0f] font-sans text-slate-800 dark:text-slate-100 transition-colors">
+        <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-neutral-950 font-sans text-[#2A282D] dark:text-[#E8E6E8] transition-colors">
           <InstructorSidebar />
           <div className="flex flex-1 flex-col overflow-hidden">
             <InstructorTopbar title={title} />

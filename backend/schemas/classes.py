@@ -10,6 +10,10 @@ class ClassCreateRequest(BaseModel):
     semester: Optional[str] = Field(None, max_length=50)
     description: Optional[str] = Field(None, max_length=500)
     instructor_id: Optional[int] = None
+    start_date: Optional[str] = Field(None, description="Thời gian bắt đầu học phần (YYYY-MM-DD)")
+    end_date: Optional[str] = Field(None, description="Thời gian kết thúc học phần (YYYY-MM-DD)")
+    total_sessions: Optional[int] = Field(15, ge=1, le=100, description="Số buổi học")
+    credit_hours: Optional[int] = Field(3, ge=1, le=20, description="Giờ học theo tín chỉ")
 
 class ClassUpdateRequest(BaseModel):
     class_code: Optional[str] = Field(None, min_length=2, max_length=50)
@@ -20,6 +24,10 @@ class ClassUpdateRequest(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     instructor_id: Optional[int] = None
     status: Optional[str] = Field(None, max_length=50)
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    total_sessions: Optional[int] = Field(None, ge=1, le=100, description="Số buổi học")
+    credit_hours: Optional[int] = Field(None, ge=1, le=20, description="Giờ học theo tín chỉ")
 
 class ClassResponse(BaseModel):
     class_id: int
@@ -35,6 +43,10 @@ class ClassResponse(BaseModel):
     updated_at: datetime
     instructor_name: Optional[str] = None
     student_count: Optional[int] = 0
+    start_date: Optional[Union[datetime, str]] = None
+    end_date: Optional[Union[datetime, str]] = None
+    total_sessions: Optional[int] = 15
+    credit_hours: Optional[int] = 3
 
 class StudentSearchItem(BaseModel):
     user_id: int

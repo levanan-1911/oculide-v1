@@ -138,13 +138,17 @@ CREATE TABLE Classes (
     semester_name NVARCHAR(50) NULL,
     instructor_id INT NOT NULL,
     description NVARCHAR(500) NULL,
-    status NVARCHAR(20) DEFAULT 'open' NOT NULL,   -- 'open', 'closed', 'dang_mo', 'da_dong'
+    status NVARCHAR(50) DEFAULT 'open' NOT NULL,   -- 'open', 'closed', 'active', 'dang_mo', 'da_dong', 'Hoạt động', 'Đã kết thúc'
+    start_date DATETIME2 NULL,
+    end_date DATETIME2 NULL,
+    total_sessions INT DEFAULT 15,
+    credit_hours INT DEFAULT 3,
     created_at DATETIME2 DEFAULT GETDATE() NOT NULL,
     updated_at DATETIME2 DEFAULT GETDATE() NOT NULL,
 
     CONSTRAINT FK_Classes_Instructors FOREIGN KEY (instructor_id) 
         REFERENCES Users(user_id),
-    CONSTRAINT CHK_Classes_Status CHECK (status IN ('open', 'closed', 'active', 'dang_mo', 'da_dong'))
+    CONSTRAINT CHK_Classes_Status CHECK (status IN ('open', 'closed', 'active', 'dang_mo', 'da_dong', N'Hoạt động', N'Đang mở', N'Đã đóng', N'Đã kết thúc', N'Tạm dừng', N'Chưa bắt đầu', N'Chưa mở'))
 );
 GO
 CREATE INDEX IDX_Classes_InstructorId ON Classes(instructor_id);
@@ -227,7 +231,7 @@ CREATE TABLE ExamTemplates (
     template_id INT IDENTITY(1,1) PRIMARY KEY,
     template_code NVARCHAR(50) UNIQUE NOT NULL,      -- e.g. 'DE_LAB_01', 'THI_CUOIKY_CS101'
     title NVARCHAR(200) NOT NULL,
-    template_type NVARCHAR(20) NOT NULL,             -- 'lab' or 'exam'
+    template_type NVARCHAR(50) NOT NULL,             -- 'lab', 'exam', 'final_exam', 'midterm_exam', 'practice'
     duration_minutes INT NOT NULL,
     total_points DECIMAL(5,2) DEFAULT 10.00 NOT NULL,
     created_by INT NOT NULL,
@@ -235,7 +239,7 @@ CREATE TABLE ExamTemplates (
 
     CONSTRAINT FK_ExamTemplates_Creators FOREIGN KEY (created_by) 
         REFERENCES Users(user_id),
-    CONSTRAINT CHK_ExamTemplates_Type CHECK (template_type IN ('lab', 'exam', 'practice'))
+    CONSTRAINT CHK_ExamTemplates_Type CHECK (template_type IN ('lab', 'exam', 'practice', 'final', 'final_exam', 'midterm', 'midterm_exam', 'homework'))
 );
 GO
 CREATE INDEX IDX_ExamTemplates_CreatedBy ON ExamTemplates(created_by);
@@ -269,6 +273,7 @@ CREATE TABLE Rooms (
     room_code NVARCHAR(50) UNIQUE NOT NULL,          -- Room PIN / Code (e.g. 'EXAM_FINAL_CS404')
     room_name NVARCHAR(200) NOT NULL,
     room_type NVARCHAR(20) NOT NULL,                 -- 'lab', 'exam', 'practice', 'classroom'
+    session_type NVARCHAR(20) NULL,                  -- 'LAB', 'MIDTERM', 'FINAL'
     creator_id INT NOT NULL,                         -- Instructor who created the room
     description NVARCHAR(500) NULL,
     start_time DATETIME2 NOT NULL,
@@ -290,7 +295,8 @@ CREATE TABLE Rooms (
     CONSTRAINT FK_Rooms_Templates FOREIGN KEY (template_id) 
         REFERENCES ExamTemplates(template_id),
     CONSTRAINT FK_Rooms_Creators FOREIGN KEY (creator_id) 
-        REFERENCES Users(user_id)
+        REFERENCES Users(user_id),
+    CONSTRAINT CHK_Rooms_SessionType CHECK (session_type IS NULL OR session_type IN ('LAB', 'MIDTERM', 'FINAL'))
 );
 GO
 CREATE INDEX IDX_Rooms_RoomCode ON Rooms(room_code);

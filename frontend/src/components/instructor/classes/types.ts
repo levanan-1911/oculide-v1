@@ -89,7 +89,7 @@ export interface TemplateQuestionItem {
 export interface QuestionTemplate {
   id: string;
   title: string;
-  type: 'lab' | 'exam';
+  type: 'lab' | 'midterm' | 'final' | 'exam';
   category: string;
   language: string;
   questionCount: number;
@@ -106,7 +106,6 @@ export interface RoomAttendee {
   studentEmail: string;
   status: 'waiting' | 'in_exam' | 'absent';
   joinedAt?: string;
-  device?: string;
   cameraReady?: boolean;
 }
 
@@ -137,7 +136,7 @@ export interface RoomSession {
   classId: string;
   className: string;
   password: string; // Mã PIN ngẫu nhiên 6 ký tự ví dụ: k9A3zP
-  type: 'lab' | 'exam';
+  type: 'lab' | 'exam' | 'midterm' | 'final';
   title: string;
   templateId?: string;
   templateTitle?: string;
@@ -158,35 +157,51 @@ export interface RoomSession {
   attendees: RoomAttendee[];
 }
 
+export function isRoomCurrentlyRunning(
+  room: { status?: unknown; is_active?: unknown; end_time?: unknown },
+  now: number = Date.now()
+): boolean {
+  const status = String(room.status || '').toLowerCase();
+  if (status !== 'in_progress' && status !== 'dang_dien_ra') return false;
+  if (room.is_active === false || room.is_active === 0 || room.is_active === '0' || room.is_active === 'false') {
+    return false;
+  }
+
+  if (room.end_time) {
+    const endTime = new Date(String(room.end_time)).getTime();
+    if (Number.isFinite(endTime) && endTime <= now) return false;
+  }
+
+  return true;
+}
+
 export const INSTRUCTOR_STORAGE_KEY = 'oculide_instructor_classes_mock';
 export const INSTRUCTOR_ROOMS_STORAGE_KEY = 'oculide_instructor_rooms_mock';
 export const INSTRUCTOR_SCHEDULES_STORAGE_KEY = 'oculide_instructor_schedules_mock';
 export const CURRENT_INSTRUCTOR_NAME = 'Thầy Nguyễn Văn Nam';
 
 /**
- * Sinh mã phòng ngẫu nhiên: [MãLớp][3 ký tự ngẫu nhiên hoa/thường/số]
- * Ví dụ: CS101a8B, PRJ301x9K
+ * Sinh mã phòng ngẫu nhiên gồm 8 ký tự chữ in hoa và số.
  */
-export function generateClassRoomCode(classId: string): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let rand = '';
-  for (let i = 0; i < 3; i++) {
-    rand += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `${classId.trim().toUpperCase()}${rand}`;
+export function generateClassRoomCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const randomValues = new Uint32Array(8);
+  globalThis.crypto.getRandomValues(randomValues);
+  return Array.from(randomValues, (value) => chars[value % chars.length]).join('');
 }
 
 /**
- * Sinh mật khẩu phòng ngẫu nhiên gồm 6 ký tự chữ và số in hoa thường
+ * Sinh mật khẩu phòng ngẫu nhiên gồm tối đa 8 ký tự chữ và số in hoa thường
  * Ví dụ: k9A3zP, 7bM4xQ
  */
 export function generateRandomAlphanumericPassword(length: number = 6): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  if (!Number.isInteger(length) || length < 1 || length > 8) {
+    throw new RangeError('Mật khẩu phòng phải có từ 1 đến 8 ký tự.');
   }
-  return result;
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const randomValues = new Uint32Array(length);
+  globalThis.crypto.getRandomValues(randomValues);
+  return Array.from(randomValues, (value) => chars[value % chars.length]).join('');
 }
 
 export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [

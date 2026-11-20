@@ -17,14 +17,6 @@ def auto_close_expired_rooms() -> int:
         with get_db_cursor(commit=True) as cursor:
             cursor.execute(sql)
             closed_count = cursor.rowcount
-            
-        if closed_count > 0:
-            create_system_log(
-                log_level="info",
-                module="Maintenance",
-                message=f"Đã tự động đóng {closed_count} phòng thi/học quá hạn",
-                extra_data={"closed_rooms_count": closed_count}
-            )
     except Exception as e:
         create_system_log(
             log_level="error",

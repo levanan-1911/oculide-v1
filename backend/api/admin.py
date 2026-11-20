@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Request
+from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Request, Body
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta
 import asyncio
 import secrets
 import string
@@ -12,11 +14,12 @@ from schemas.admin import (
     AdminUserCreateRequest, AdminUserStatusUpdate, AdminUserRoleUpdate,
     AdminUserUpdateRequest, PaginatedUsersResponse, BatchImportRequest, BatchImportResult
 )
+from schemas.template import TemplateCreateRequest
 from schemas.system_management import (
     SystemSettingsModel, BackupListResponse, BackupCreateResponse, StorageStatsResponse, BackupCleanupResponse
 )
 from schemas.auth import UserResponse
-from core.permissions import admin_required
+from core.permissions import admin_required, instructor_or_admin_required
 from database.user_db import (
     get_user_by_id, get_user_by_username, get_user_by_email, get_user_by_student_id,
     create_user, get_all_users_paginated, update_user_status,
@@ -28,6 +31,7 @@ from services.email_service import EmailService
 from services.system_settings_manager import SystemSettingsManager
 from services.backup_service import BackupService
 from services.host_metrics import get_real_host_metrics
+from core.database import get_db_cursor
 
 router = APIRouter(dependencies=[Depends(admin_required)])
 
@@ -70,7 +74,7 @@ async def create_user_by_admin(
                 client_ip = request.client.host if request.client else "127.0.0.1"
                 create_system_log(
                     log_level="warning",
-                    module="ADMIN_USER",
+                    module="Quản lý người dùng",
                     message=f"Tạo người dùng thất bại với email '{clean_email}': Tên miền không thuộc cấu hình hệ thống cho phép ({allowed_domain})",
                     ip_address=client_ip,
                     extra_data={"attempted_email": clean_email, "allowed_domain": allowed_domain}
@@ -125,7 +129,7 @@ async def create_user_by_admin(
     try:
         create_system_log(
             log_level="info",
-            module="USER_MGMT",
+            module="Quản lý người dùng",
             message=f"Quản trị viên tạo tài khoản mới: {new_user['username']} ({new_user['full_name']}) - Vai trò: {new_user['role']}",
             user_id=new_user["user_id"],
             extra_data={"created_by": "admin", "role": new_user["role"], "email": new_user["email"]}
@@ -212,7 +216,7 @@ async def toggle_user_status(user_id: int, status_data: AdminUserStatusUpdate):
         act = "kích hoạt" if status_data.is_active else "vô hiệu hóa/khóa"
         create_system_log(
             log_level="warning",
-            module="USER_MGMT",
+            module="Quản lý người dùng",
             message=f"Quản trị viên đã {act} tài khoản '{user['username']}' (ID: {user_id})",
             user_id=user_id,
             extra_data={"is_active": status_data.is_active, "username": user["username"]}
@@ -231,7 +235,7 @@ async def change_user_role(user_id: int, role_data: AdminUserRoleUpdate):
     try:
         create_system_log(
             log_level="warning",
-            module="USER_MGMT",
+            module="Quản lý người dùng",
             message=f"Quản trị viên thay đổi vai trò tài khoản '{user['username']}' (ID: {user_id}) thành '{role_data.role}'",
             user_id=user_id,
             extra_data={"old_role": user.get("role"), "new_role": role_data.role}
@@ -255,7 +259,7 @@ async def reset_user_password(user_id: int, background_tasks: BackgroundTasks):
     try:
         create_system_log(
             log_level="warning",
-            module="AUTH_PASSWORD",
+            module="Đổi mật khẩu",
             message=f"Quản trị viên đã đặt lại mật khẩu cho tài khoản '{user['username']}' (gửi mật khẩu mới qua email {user['email']})",
             user_id=user_id,
             extra_data={"username": user["username"], "email": user["email"]}
@@ -297,7 +301,7 @@ async def remove_user(
     try:
         create_system_log(
             log_level="warning",
-            module="USER_MGMT",
+            module="Quản lý người dùng",
             message=f"Quản trị viên đã xóa tài khoản '{user['username']}' (ID: {user_id}) khỏi hệ thống",
             user_id=current_user.get("user_id"),
             extra_data={"deleted_username": user["username"], "deleted_email": user["email"]}
@@ -382,7 +386,7 @@ async def batch_import_users(
         client_ip = request.client.host if request.client else "127.0.0.1"
         create_system_log(
             log_level="warning" if failed > 0 else "info",
-            module="ADMIN_IMPORT",
+            module="Nhập danh sách",
             message=f"Nhập người dùng hàng loạt: Thành công {imported}, Thất bại {failed}. Tên miền áp dụng: '{allowed_domain}'",
             ip_address=client_ip,
             extra_data={"imported": imported, "failed": failed, "allowed_domain": allowed_domain, "errors": errors[:10]}
@@ -803,11 +807,131 @@ async def system_storage():
     """Lấy số liệu phân bổ dung lượng lưu trữ CSDL và dung lượng ổ cứng máy chủ thực tế"""
     return BackupService.get_storage_statistics()
 
+@router.get("/evidence/violations")
+async def get_all_evidence_violations(
+    room_id: Optional[int] = None,
+    student_id: Optional[int] = None,
+    review_status: Optional[str] = None
+):
+    """
+    Truy xuất danh sách hồ sơ bằng chứng vi phạm giám sát AI phục vụ công tác thanh tra,
+    hậu kiểm và phúc khảo bài thi của Ban Khảo thí / Quản trị viên.
+    """
+    with get_db_cursor() as cursor:
+        where_clauses = []
+        params = []
+        if room_id:
+            where_clauses.append("COALESCE(v.room_id, s.room_id) = ?")
+            params.append(room_id)
+        if student_id:
+            where_clauses.append("v.student_id = ?")
+            params.append(student_id)
+        if review_status:
+            where_clauses.append("v.review_status = ?")
+            params.append(review_status)
+        
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        cursor.execute(f"""
+            SELECT v.violation_id,
+                   v.session_id,
+                   v.student_id,
+                   u.full_name AS student_name,
+                   u.username AS student_code,
+                   COALESCE(v.room_id, s.room_id) AS room_id,
+                   p.room_code,
+                   p.room_name,
+                   v.violation_type,
+                   v.severity,
+                   v.description,
+                   v.evidence_url AS snapshot_url,
+                   v.detected_at,
+                   v.is_reviewed,
+                   v.review_status,
+                   v.reviewed_by,
+                   v.reviewed_at
+            FROM Violations v
+            LEFT JOIN Users u ON v.student_id = u.user_id
+            LEFT JOIN ExamSessions s ON v.session_id = s.session_id
+            LEFT JOIN Rooms p ON COALESCE(v.room_id, s.room_id) = p.room_id
+            {where_sql}
+            ORDER BY v.detected_at DESC
+        """, tuple(params))
+        columns = [col[0] for col in cursor.description]
+        rows = cursor.fetchall()
+        return [dict(zip(columns, row)) for row in rows]
+
+@router.patch("/evidence/violations/{violation_id}/review")
+async def admin_review_evidence_violation(
+    violation_id: int,
+    payload: Dict[str, Any] = Body(...),
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Admin / Ban Khảo Thí duyệt phúc khảo biên bản vi phạm AI (xác nhận phạt hoặc giải oan)"""
+    from database.violation_db import update_violation_review
+    status_val = payload.get("review_status") or payload.get("status") or "confirmed"
+    if str(status_val).lower() in ["rejected", "giai_oan", "cancel", "dismiss"]:
+        status_val = "rejected"
+    else:
+        status_val = "confirmed"
+
+    updated = update_violation_review(violation_id, reviewed_by=current_user.get("user_id", 1), review_status=status_val)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi vi phạm")
+    return updated
+
+@router.get("/evidence/submissions")
+async def get_all_evidence_submissions(
+    room_id: Optional[int] = None,
+    student_id: Optional[int] = None
+):
+    """
+    Truy xuất danh sách bài nộp và mã nguồn phục vụ công tác chấm phúc khảo,
+    đối soát bài thi và thanh tra chuyên môn.
+    """
+    with get_db_cursor() as cursor:
+        where_clauses = []
+        params = []
+        if room_id:
+            where_clauses.append("s.room_id = ?")
+            params.append(room_id)
+        if student_id:
+            where_clauses.append("s.student_id = ?")
+            params.append(student_id)
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        cursor.execute(f"""
+            SELECT s.submission_id,
+                   s.room_id,
+                   p.room_code,
+                   p.room_name,
+                   s.student_id,
+                   u.full_name AS student_name,
+                   u.username AS student_code,
+                   s.question_id,
+                   q.title AS question_title,
+                   s.programming_language,
+                   s.code_content,
+                   s.total_score,
+                   s.grading_status,
+                   s.execution_time_ms,
+                   s.memory_used_kb,
+                   s.submitted_at
+            FROM Submissions s
+            LEFT JOIN Users u ON s.student_id = u.user_id
+            LEFT JOIN Rooms p ON s.room_id = p.room_id
+            LEFT JOIN Questions q ON s.question_id = q.question_id
+            {where_sql}
+            ORDER BY s.submitted_at DESC
+        """, tuple(params))
+        columns = [col[0] for col in cursor.description]
+        rows = cursor.fetchall()
+        return [dict(zip(columns, row)) for row in rows]
+
 # ── CẤU HÌNH HẠ TẦNG HỆ THỐNG (SYSTEM SETTINGS - 0 DB TABLES) ───────────────────
 @router.get("/system/settings", response_model=SystemSettingsModel)
 async def get_system_settings():
     """Lấy toàn bộ các tham số cấu hình hạ tầng hiện tại"""
-    return SystemSettingsManager.get_settings()
+    return SystemSettingsManager.get_settings(force_reload=True)
 
 @router.put("/system/settings", response_model=SystemSettingsModel)
 async def update_system_settings(
@@ -846,8 +970,8 @@ async def update_system_settings(
     try:
         create_system_log(
             log_level="info",
-            module="SYSTEM_SETTINGS",
-            message=f"Admin {admin_name} cập nhật cấu hình hạ tầng (Bảo trì: {'BẬT' if updated.maintenance_mode else 'TẮT'}, Lưu backup: {updated.backup_retention_days} ngày)",
+            module="Cập nhật cấu hình",
+            message=f"Cập nhật tham số hệ thống: Bảo trì={'BẬT' if updated.maintenance_mode else 'TẮT'}, Worker={updated.max_sandbox_workers}, Lưu backup={updated.backup_retention_days} ngày",
             user_id=current_user.get("user_id"),
             ip_address=client_ip,
             extra_data=updated.model_dump()
@@ -870,8 +994,8 @@ async def reset_system_settings(
     try:
         create_system_log(
             log_level="warning",
-            module="SYSTEM_SETTINGS",
-            message=f"Admin {admin_name} khôi phục toàn bộ cấu hình hạ tầng về mặc định",
+            module="Khôi phục cấu hình",
+            message="Khôi phục toàn bộ cấu hình hạ tầng về mặc định ban đầu",
             user_id=current_user.get("user_id"),
             ip_address=client_ip,
             extra_data={"action": "RESET_DEFAULT"}
@@ -998,11 +1122,13 @@ async def list_system_logs(
 @router.get("/templates")
 async def list_admin_templates(
     room_type: Optional[str] = None,
+    template_type: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(admin_required)
 ):
     """Admin lấy danh sách toàn bộ bộ đề mẫu toàn trường từ CSDL SQL Server"""
     from database.template_db import list_templates_full
-    return list_templates_full(instructor_id=None, room_type=room_type)
+    target_type = template_type or room_type
+    return list_templates_full(instructor_id=None, room_type=target_type)
 
 # ── QUẢN TRỊ LỊCH THI & CA THI TOÀN TRƯỜNG (ADMIN EXAM SCHEDULES) ───────────────────
 @router.get("/schedules/overview")
@@ -1130,11 +1256,17 @@ async def list_admin_schedules(
                    p.is_active AS is_active,
                    p.created_at AS created_at,
                    COALESCE((SELECT COUNT(DISTINCT student_id) FROM ClassEnrollments svl WHERE svl.class_id = p.class_id), 0) AS student_count,
-                   COALESCE((SELECT COUNT(DISTINCT student_id) FROM ExamSessions pl WHERE pl.room_id = p.room_id AND pl.status IN ('dang_lam', 'active', 'da_nop', 'completed')), 0) AS attended_students,
-                   COALESCE((SELECT COUNT(*) FROM Violations vp WHERE vp.room_id = p.room_id), 0) AS pending_violations
+                   COALESCE((SELECT COUNT(DISTINCT student_id) FROM ExamSessions pl WHERE pl.room_id = p.room_id AND pl.status IN ('dang_lam', 'active', 'da_nop', 'completed', 'in_progress')), 0) AS attended_students,
+                   COALESCE((SELECT COUNT(*) FROM Violations vp WHERE vp.room_id = p.room_id), 0) AS pending_violations,
+                   COALESCE(lh.course_code, lh.class_code, 'CS404') AS course_code,
+                   COALESCE(lh.credit_hours, 3) AS credit_hours,
+                   COALESCE(r_creator.role_name, 'admin') AS creator_role,
+                   bdm.template_type AS template_type,
+                   p.session_type AS session_type
             FROM Rooms p
             LEFT JOIN Classes lh ON p.class_id = lh.class_id
             LEFT JOIN Users gv ON p.creator_id = gv.user_id
+            LEFT JOIN Roles r_creator ON gv.role_id = r_creator.role_id
             LEFT JOIN ExamTemplates bdm ON p.template_id = bdm.template_id
             {where_clause}
             ORDER BY p.created_at DESC
@@ -1176,17 +1308,53 @@ async def list_admin_schedules(
 
             st_time = r[12]
             end_time = r[13]
+            now = datetime.now()
+            # Tự động đóng phòng thi khi đã hết thời gian làm bài
+            if end_time and now >= end_time and raw_status in ("dang_dien_ra", "in_progress", "chua_mo", "waiting", "scheduled"):
+                try:
+                    cursor.execute("UPDATE Rooms SET status = 'da_dong' WHERE room_id = ?", (r[0],))
+                    mapped_status = "completed"
+                    raw_status = "da_dong"
+                except Exception:
+                    pass
+
+            title_str = r[2] or f"Ca thi {r[1]}"
+            title_lower = title_str.lower()
+            creator_role = (r[26] or "admin").lower()
+            room_type = (r[3] or "exam").lower()
+            template_type = (r[27] or "").lower()
+            session_type = (r[28] or "").upper()
+
+            is_final = session_type == "FINAL" if session_type else (
+                "cuối kỳ" in title_lower
+                or "kết thúc" in title_lower
+                or "final" in (r[1] or "").lower()
+                or template_type in ("final", "final_exam")
+                or (creator_role == "admin" and room_type == "exam")
+            )
+            exam_kind = "final" if is_final else "midterm"
+            exam_kind_label = "Thi Kết Thúc Học Phần" if is_final else "Thi Giữa Kỳ"
+            creator_label = "Hội đồng Khảo thí" if (creator_role == "admin" or is_final) else "Giảng viên phụ trách"
 
             items.append({
                 "id": str(r[0]),
                 "room_id": r[0],
-                "title": r[2] or f"Ca thi {r[1]}",
+                "title": title_str,
+                "courseCode": r[24] or r[7] or "CS404",
+                "courseName": r[8] or "Lập trình thuật toán & Cấu trúc dữ liệu",
+                "creditHours": int(r[25] or 3),
+                "examKind": exam_kind,
+                "examKindLabel": exam_kind_label,
+                "sessionType": session_type,
+                "creatorRole": creator_role,
+                "creatorLabel": creator_label,
                 "classId": r[7] or (f"CLASS-{r[6]}" if r[6] else "CHUA_GAN"),
                 "className": r[8] or "Lớp học phần chung",
                 "studentCount": int(r[21] or 0),
                 "lecturer": r[5] or "Giảng viên",
-                "templateId": r[10] or (f"TPL-{r[9]}" if r[9] else "TPL-01"),
-                "templateTitle": r[11] or "Bộ đề thi tiêu chuẩn",
+                "templateId": r[10] or ("TPL-" + str(r[9]) if r[9] else None),
+                "templateTitle": r[11] or ("Chưa gán đề thi (Bảo mật chống lộ đề)" if not r[9] else "Bộ đề thi tiêu chuẩn"),
+                "templateType": template_type,
                 "templateVersion": "v1 • Sẵn sàng",
                 "date": st_time.strftime("%d/%m/%Y") if st_time else "",
                 "startTime": st_time.strftime("%H:%M") if st_time else "08:00",
@@ -1249,6 +1417,35 @@ async def get_admin_schedule_detail(room_id: int):
         """
         cursor.execute(students_sql, (room_id, room_id, room_id, room_id, room.get("class_id")))
         rows = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT lh.course_code, lh.class_name, lh.credit_hours, r_creator.role_name, bdm.template_type, bdm.title
+            FROM Rooms p
+            LEFT JOIN Classes lh ON p.class_id = lh.class_id
+            LEFT JOIN Users gv ON p.creator_id = gv.user_id
+            LEFT JOIN Roles r_creator ON gv.role_id = r_creator.role_id
+            LEFT JOIN ExamTemplates bdm ON p.template_id = bdm.template_id
+            WHERE p.room_id = ?
+        """, (room_id,))
+        extra = cursor.fetchone()
+        if extra:
+            room["course_code"] = extra[0] or room.get("class_code") or "CS404"
+            room["course_name"] = extra[1] or room.get("class_name") or "Lập trình thuật toán & Cấu trúc dữ liệu"
+            room["credit_hours"] = int(extra[2] or 3)
+            creator_role = (extra[3] or "admin").lower()
+            tpl_type = extra[4] or ""
+            room["template_title"] = extra[5] or room.get("template_title") or "Chưa gán đề thi"
+            room["template_type"] = tpl_type
+            session_type = str(room.get("session_type") or "").upper()
+            is_final = session_type == "FINAL" if session_type else (
+                "cuối kỳ" in str(room.get("room_name", "")).lower()
+                or "kết thúc" in str(room.get("room_name", "")).lower()
+                or "final" in str(room.get("room_code", "")).lower()
+                or tpl_type in ("final", "final_exam")
+                or (creator_role == "admin" and room.get("room_type") == "exam")
+            )
+            room["exam_kind_label"] = "Thi Kết Thúc Học Phần" if is_final else "Thi Giữa Kỳ"
+            room["creator_label"] = "Hội đồng Khảo thí" if (creator_role == "admin" or is_final) else "Giảng viên phụ trách"
         
         students = []
         for r in rows:
@@ -1258,7 +1455,7 @@ async def get_admin_schedule_detail(room_id: int):
                 "full_name": r[2],
                 "student_code": r[3] or r[1],
                 "session_id": r[4],
-                "attendance_status": "present" if r[5] in ('dang_lam', 'active', 'da_nop', 'completed') else "absent",
+                "attendance_status": "present" if r[5] in ('dang_lam', 'active', 'da_nop', 'completed', 'in_progress') else "absent",
                 "session_status": r[5] or "chua_vao",
                 "joined_at": r[6].isoformat() if r[6] else None,
                 "camera_ready": bool(r[7]) if r[7] is not None else False,
@@ -1300,19 +1497,6 @@ async def update_admin_schedule_status(
         force_close_conflicts=True
     )
 
-    try:
-        client_ip = request.client.host if request.client else "127.0.0.1"
-        create_system_log(
-            log_level="warning",
-            module="ADMIN_SCHEDULE",
-            message=f"Admin {current_user.get('username')} chuyển trạng thái ca thi [{room['room_code']}] sang '{target_status}'",
-            user_id=current_user.get("user_id"),
-            ip_address=client_ip,
-            extra_data={"room_id": room_id, "room_code": room["room_code"], "new_status": target_status}
-        )
-    except Exception:
-        pass
-
     return updated
 
 @router.delete("/schedules/{room_id}")
@@ -1338,7 +1522,7 @@ async def delete_admin_schedule(
         client_ip = request.client.host if request.client else "127.0.0.1"
         create_system_log(
             log_level="warning",
-            module="ADMIN_SCHEDULE",
+            module="Quản lý lịch thi",
             message=f"Admin {current_user.get('username')} xóa ca thi [{room['room_code']}]",
             user_id=current_user.get("user_id"),
             ip_address=client_ip,
@@ -1348,6 +1532,252 @@ async def delete_admin_schedule(
         pass
 
     return {"success": True, "message": f"Đã xóa ca thi [{room['room_code']}] thành công"}
+
+class FinalExamCreateRequest(BaseModel):
+    title: str = Field(..., min_length=3, description="Tên kỳ thi / môn thi kết thúc học phần")
+    course_code: str = Field(..., min_length=2, description="Mã môn học phần")
+    lecturer: Optional[str] = Field("TS. Nguyễn Văn Nam", description="Cán bộ coi thi phụ trách")
+    exam_date: str = Field(..., description="Ngày thi YYYY-MM-DD")
+    start_time: str = Field(..., description="Giờ bắt đầu HH:MM")
+    duration_minutes: int = Field(90, ge=15, le=300)
+    student_count: int = Field(45, ge=1)
+    template_id: Optional[int] = Field(None, description="Mã đề thi lập trình (có thể gán sau)")
+
+@router.post("/schedules/final-exam")
+async def create_final_exam_schedule(
+    data: FinalExamCreateRequest,
+    current_user: Dict[str, Any] = Depends(admin_required)
+):
+    """Admin tạo lịch thi kết thúc học phần (Chỉ Lập Trình, không bắt buộc gắn đề ngay để chống lộ đề)"""
+    from core.config import get_db_connection
+    import random
+    from datetime import datetime, timedelta
+
+    clean_code = "".join(c for c in data.course_code if c.isalnum()).upper() or "EXAM"
+    room_code = f"EXAM_FINAL_{clean_code}_{random.randint(100, 999)}"
+
+    try:
+        dt_start = datetime.strptime(f"{data.exam_date} {data.start_time}", "%Y-%m-%d %H:%M")
+    except Exception:
+        dt_start = datetime.now()
+    dt_end = dt_start + timedelta(minutes=data.duration_minutes)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT TOP 1 user_id FROM Users WHERE full_name LIKE ? OR role_id = (SELECT role_id FROM Roles WHERE role_name = 'instructor')", (f"%{data.lecturer}%",))
+        inst_row = cursor.fetchone()
+        inst_id = inst_row[0] if inst_row else current_user["user_id"]
+
+        cursor.execute("""
+            INSERT INTO Rooms (room_code, room_name, room_type, session_type, creator_id, start_time, end_time, duration_minutes, template_id, status, passcode)
+            OUTPUT inserted.room_id, inserted.room_code, inserted.room_name, inserted.status
+            VALUES (?, ?, 'exam', 'FINAL', ?, ?, ?, ?, ?, 'waiting', ?)
+        """, (
+            room_code, data.title, inst_id, dt_start, dt_end, data.duration_minutes, data.template_id, str(random.randint(100000, 999999))
+        ))
+        row = cursor.fetchone()
+        conn.commit()
+
+        return {
+            "room_id": row[0],
+            "room_code": row[1],
+            "title": row[2],
+            "courseCode": data.course_code,
+            "lecturer": data.lecturer,
+            "status": "scheduled",
+            "session_type": "FINAL",
+            "date": dt_start.strftime("%d/%m/%Y"),
+            "startTime": dt_start.strftime("%H:%M"),
+            "endTime": dt_end.strftime("%H:%M"),
+            "durationMinutes": data.duration_minutes,
+            "studentCount": data.student_count,
+            "templateId": f"TPL-{data.template_id}" if data.template_id else None,
+            "templateTitle": "Đề thi đã gán" if data.template_id else "Chưa gán đề thi (Bảo mật)",
+            "message": "Đã khởi tạo lịch thi kết thúc học phần thành công."
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+class AttachTemplateRequest(BaseModel):
+    template_id: int
+
+@router.put("/schedules/{room_id}/attach-template")
+async def attach_template_to_final_exam(
+    room_id: int,
+    data: AttachTemplateRequest,
+    current_user: Dict[str, Any] = Depends(admin_required)
+):
+    """Admin gán hoặc đổi đề thi lập trình cho ca thi (chỉ cho phép đề kết thúc học phần cho ca thi cuối kỳ)"""
+    from core.config import get_db_connection
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT room_id, room_code, room_name, room_type, session_type FROM Rooms WHERE room_id = ?", (room_id,))
+        room = cursor.fetchone()
+        if not room:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy ca thi")
+
+        cursor.execute("SELECT template_id, title, template_type FROM ExamTemplates WHERE template_id = ?", (data.template_id,))
+        tpl_row = cursor.fetchone()
+        if not tpl_row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bộ đề thi")
+
+        session_type = str(room[4] or "").upper()
+        is_final_exam = session_type == "FINAL" if session_type else (
+            room[3] == "exam"
+            and (
+                "cuối kỳ" in str(room[2]).lower()
+                or "kết thúc" in str(room[2]).lower()
+                or "final" in str(room[1]).lower()
+            )
+        )
+        if not is_final_exam:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Chỉ có thể gán đề cuối kỳ cho phòng có session_type FINAL.",
+            )
+        if is_final_exam and tpl_row[2] not in ("final_exam", "exam"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ca thi kết thúc học phần chỉ được đổi các đề thi là 'Đề kết thúc học phần' (final_exam). Đề thi [{tpl_row[1]}] có loại là '{tpl_row[2]}'."
+            )
+
+        cursor.execute("UPDATE Rooms SET template_id = ? WHERE room_id = ?", (data.template_id, room_id))
+        conn.commit()
+        return {
+            "success": True,
+            "room_id": room_id,
+            "template_id": data.template_id,
+            "template_title": tpl_row[1],
+            "template_type": tpl_row[2],
+            "message": "Đã đổi đề thi kết thúc học phần thành công!"
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.post("/schedules/{room_id}/create-and-attach-template")
+async def create_and_attach_template_to_final_exam(
+    room_id: int,
+    payload: TemplateCreateRequest,
+    current_user: Dict[str, Any] = Depends(admin_required)
+):
+    """Admin tạo đề thi lập trình mới kèm test cases và gán trực tiếp vào ca thi kết thúc học phần"""
+    from core.config import get_db_connection
+    from database.template_db import create_template_full
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT room_id, room_code, room_name, room_type, session_type FROM Rooms WHERE room_id = ?", (room_id,))
+        room = cursor.fetchone()
+        if not room:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy ca thi")
+        session_type = str(room[4] or "").upper()
+        is_final_exam = session_type == "FINAL" if session_type else (
+            room[3] == "exam"
+            and (
+                "cuối kỳ" in str(room[2]).lower()
+                or "kết thúc" in str(room[2]).lower()
+                or "final" in str(room[1]).lower()
+            )
+        )
+        if not is_final_exam:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Chỉ có thể tạo và gán đề cuối kỳ cho phòng có session_type FINAL.",
+            )
+    finally:
+        cursor.close()
+        conn.close()
+
+    # Bắt buộc loại đề là final_exam
+    data_dict = payload.model_dump()
+    data_dict["type"] = "final_exam"
+    data_dict["category"] = "Thi Kết Thúc Học Phần"
+
+    created = create_template_full(
+        instructor_id=current_user["user_id"],
+        data=data_dict
+    )
+    new_template_id = created["template_id"]
+
+    # Gán vào phòng thi
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE Rooms SET template_id = ? WHERE room_id = ?", (new_template_id, room_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    return {
+        "success": True,
+        "room_id": room_id,
+        "template": created,
+        "message": f"Đã tạo và gán đề thi [{created['title']}] kèm bộ test case vào ca thi thành công!"
+    }
+
+@router.get("/schedules/{room_id}/students/{student_id}/live-screen")
+async def get_student_live_screen_code(
+    room_id: int,
+    student_id: int,
+    current_user: Dict[str, Any] = Depends(admin_required)
+):
+    """Thanh tra xem màn hình và trình biên soạn code thời gian thực của sinh viên đang thi"""
+    from core.config import get_db_connection
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT session_id, status, start_time FROM ExamSessions WHERE room_id = ? AND student_id = ?", (room_id, student_id))
+        session_row = cursor.fetchone()
+
+        code_content = ""
+        prog_lang = "python"
+        last_saved = None
+        if session_row:
+            sess_id = session_row[0]
+            cursor.execute("""
+                SELECT TOP 1 code_content, programming_language, last_saved_at 
+                FROM CodeDrafts 
+                WHERE session_id = ? 
+                ORDER BY last_saved_at DESC
+            """, (sess_id,))
+            draft_row = cursor.fetchone()
+            if draft_row:
+                code_content = draft_row[0] or ""
+                prog_lang = draft_row[1] or "python"
+                last_saved = draft_row[2].isoformat() if draft_row[2] else None
+
+        cursor.execute("SELECT full_name, identifier_code, email FROM Users WHERE user_id = ?", (student_id,))
+        user_row = cursor.fetchone()
+
+        snapshot_url = None
+        if session_row:
+            cursor.execute("""
+                SELECT TOP 1 image_url FROM Snapshots WHERE session_id = ? ORDER BY captured_at DESC
+            """, (session_row[0],))
+            snap_row = cursor.fetchone()
+            if snap_row:
+                snapshot_url = snap_row[0]
+
+        return {
+            "student_id": student_id,
+            "full_name": user_row[0] if user_row else "Sinh viên",
+            "student_code": user_row[1] if user_row else str(student_id),
+            "email": user_row[2] if user_row else "",
+            "session_status": session_row[1] if session_row else "in_progress",
+            "code_content": code_content or "# Sinh viên đang thao tác viết mã bài thi lập trình...",
+            "programming_language": prog_lang,
+            "last_saved_at": last_saved,
+            "snapshot_url": snapshot_url
+        }
+    finally:
+        cursor.close()
+        conn.close()
 
 @router.get("/search")
 async def search_admin_resources(
@@ -1446,5 +1876,32 @@ async def search_admin_resources(
     finally:
         cursor.close()
         conn.close()
+
+
+@router.get("/templates")
+async def admin_get_templates(
+    room_type: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Admin lấy danh sách toàn bộ đề thi (bao gồm cả đề thi cuối kỳ niêm phong)"""
+    from database.template_db import list_templates_full
+    return list_templates_full(instructor_id=None, room_type=room_type)
+
+
+@router.post("/templates", status_code=status.HTTP_201_CREATED)
+async def admin_create_template(
+    payload: Dict[str, Any] = Body(...),
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Admin / Ban Đào Tạo tạo đề thi chính thức (Đề cuối kỳ Final Exam, Giữa kỳ, Lab)"""
+    from database.template_db import create_template_full
+    # Mặc định nếu Admin tạo mà chưa set type thì gán final_exam
+    if "type" not in payload or not payload["type"]:
+        payload["type"] = "final_exam"
+    return create_template_full(
+        instructor_id=current_user.get("user_id", 1),
+        data=payload
+    )
+
 
 

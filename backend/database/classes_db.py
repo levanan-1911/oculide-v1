@@ -48,6 +48,35 @@ def _resolve_user_id(cursor, student_id_or_ident: Any) -> Optional[int]:
 
     return None
 
+from datetime import datetime, date
+
+def compute_class_status(start_date: Any, end_date: Any, current_status: Optional[str] = None) -> str:
+    """Tự động tính toán trạng thái lớp học dựa theo thời gian bắt đầu và kết thúc"""
+    today = date.today()
+    if end_date:
+        try:
+            if hasattr(end_date, 'date'):
+                end_d = end_date.date()
+            else:
+                end_d = datetime.fromisoformat(str(end_date).replace('Z', '')[:10]).date()
+            if today > end_d:
+                return 'Đã kết thúc'
+        except Exception:
+            pass
+
+    if start_date:
+        try:
+            if hasattr(start_date, 'date'):
+                start_d = start_date.date()
+            else:
+                start_d = datetime.fromisoformat(str(start_date).replace('Z', '')[:10]).date()
+            if today < start_d:
+                return 'Chưa mở'
+        except Exception:
+            pass
+
+    return 'Hoạt động'
+
 def create_class(
     class_code: str,
     class_name: str,
@@ -55,28 +84,37 @@ def create_class(
     course_code: Optional[str] = None,
     section_code: Optional[str] = None,
     semester: Optional[str] = None,
-    description: Optional[str] = None
+    description: Optional[str] = None,
+    start_date: Optional[Any] = None,
+    end_date: Optional[Any] = None,
+    total_sessions: Optional[int] = 15,
+    credit_hours: Optional[int] = 3
 ) -> Dict:
-    """Giảng viên tạo một lớp học phần mới trong bảng Classes"""
+    """Tạo một lớp học phần mới trong bảng Classes với thời gian bắt đầu/kết thúc bắt buộc"""
     # Chuẩn hóa khoảng trắng và viết hoa mã lớp
     class_code = " ".join(class_code.strip().split()).upper()
-    # Tự động suy luận mã môn và mã phân lớp nếu người dùng không truyền riêng
     if not section_code and not course_code and class_code:
         parts = class_code.strip().split()
         if len(parts) >= 2:
             section_code = parts[-1]
             course_code = ' '.join(parts[:-1])
 
+    calculated_status = compute_class_status(start_date, end_date)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO Classes (class_code, class_name, course_code, section_code, semester_name, instructor_id, description)
+            INSERT INTO Classes (class_code, class_name, course_code, section_code, semester_name, instructor_id, description, status, start_date, end_date, total_sessions, credit_hours)
             OUTPUT inserted.class_id, inserted.class_code, inserted.class_name, inserted.course_code,
                    inserted.section_code, inserted.semester_name, inserted.instructor_id, inserted.description,
+                   inserted.status, inserted.start_date, inserted.end_date, inserted.total_sessions, inserted.credit_hours,
                    inserted.created_at, inserted.updated_at
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (class_code, class_name, course_code, section_code, semester, instructor_id, description))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            class_code, class_name, course_code, section_code, semester, instructor_id, description,
+            calculated_status, start_date, end_date, total_sessions or 15, credit_hours or 3
+        ))
         row = cursor.fetchone()
         conn.commit()
         if row:
@@ -89,8 +127,13 @@ def create_class(
                 "semester": row[5],
                 "instructor_id": row[6],
                 "description": row[7],
-                "created_at": row[8],
-                "updated_at": row[9]
+                "status": row[8],
+                "start_date": row[9],
+                "end_date": row[10],
+                "total_sessions": row[11],
+                "credit_hours": row[12],
+                "created_at": row[13],
+                "updated_at": row[14]
             }
             cursor.execute("SELECT full_name FROM Users WHERE user_id = ?", (instructor_id,))
             inst_row = cursor.fetchone()
@@ -120,6 +163,10 @@ def get_class_by_id(class_id: Any) -> Optional[Dict]:
                    c.instructor_id,
                    c.description, 
                    c.status,
+                   c.start_date,
+                   c.end_date,
+                   c.total_sessions,
+                   c.credit_hours,
                    c.created_at, 
                    c.updated_at, 
                    COALESCE(u.full_name, N'Chưa phân công') AS instructor_name,
@@ -131,7 +178,13 @@ def get_class_by_id(class_id: Any) -> Optional[Dict]:
         row = cursor.fetchone()
         if row:
             columns = [column[0] for column in cursor.description]
-            return dict(zip(columns, row))
+            item = dict(zip(columns, row))
+            auto_status = compute_class_status(item.get("start_date"), item.get("end_date"), item.get("status"))
+            if auto_status != item.get("status"):
+                item["status"] = auto_status
+                cursor.execute("UPDATE Classes SET status = ? WHERE class_id = ?", (auto_status, real_id))
+                conn.commit()
+            return item
         return None
     finally:
         cursor.close()
@@ -153,6 +206,10 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
                        c.instructor_id,
                        c.description, 
                        c.status,
+                       c.start_date,
+                       c.end_date,
+                       c.total_sessions,
+                       c.credit_hours,
                        c.created_at, 
                        c.updated_at, 
                        COALESCE(u.full_name, N'Chưa phân công') AS instructor_name,
@@ -173,6 +230,10 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
                        c.instructor_id,
                        c.description, 
                        c.status,
+                       c.start_date,
+                       c.end_date,
+                       c.total_sessions,
+                       c.credit_hours,
                        c.created_at, 
                        c.updated_at, 
                        COALESCE(u.full_name, N'Chưa phân công') AS instructor_name,
@@ -183,7 +244,16 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
             """)
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
+        items = []
+        for r in rows:
+            it = dict(zip(columns, r))
+            auto_status = compute_class_status(it.get("start_date"), it.get("end_date"), it.get("status"))
+            if auto_status != it.get("status"):
+                it["status"] = auto_status
+                cursor.execute("UPDATE Classes SET status = ? WHERE class_id = ?", (auto_status, it["class_id"]))
+            items.append(it)
+        conn.commit()
+        return items
     finally:
         cursor.close()
         conn.close()
@@ -197,7 +267,11 @@ def update_class(
     semester: Optional[str] = None,
     description: Optional[str] = None,
     instructor_id: Optional[int] = None,
-    status: Optional[str] = None
+    status: Optional[str] = None,
+    start_date: Optional[Any] = None,
+    end_date: Optional[Any] = None,
+    total_sessions: Optional[int] = None,
+    credit_hours: Optional[int] = None,
 ) -> Optional[Dict]:
     """Cập nhật thông tin lớp học phần (hỗ trợ cả int ID hoặc chuỗi mã lớp như 'CS101')"""
     conn = get_db_connection()
@@ -226,9 +300,27 @@ def update_class(
                 description = COALESCE(?, description),
                 instructor_id = COALESCE(?, instructor_id),
                 status = COALESCE(?, status),
+                start_date = COALESCE(?, start_date),
+                end_date = COALESCE(?, end_date),
+                total_sessions = COALESCE(?, total_sessions),
+                credit_hours = COALESCE(?, credit_hours),
                 updated_at = GETDATE()
             WHERE class_id = ?
-        """, (class_code, class_name, course_code, section_code, semester, description, instructor_id, db_status, real_id))
+        """, (
+            class_code,
+            class_name,
+            course_code,
+            section_code,
+            semester,
+            description,
+            instructor_id,
+            db_status,
+            start_date,
+            end_date,
+            total_sessions,
+            credit_hours,
+            real_id,
+        ))
         conn.commit()
         return get_class_by_id(real_id)
     finally:
@@ -570,6 +662,7 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
                 p.room_code,
                 p.room_name AS title,
                 p.room_type,
+                p.session_type,
                 p.start_time,
                 p.end_time,
                 p.duration_minutes,
@@ -605,9 +698,18 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
                     sched_str = start_dt.strftime('%H:%M, %d/%m/%Y')
 
                 exams.append({
+                    "room_id": r.get("room_id"),
                     "id": r.get("room_code") or str(r.get("room_id")),
                     "title": r.get("title") or "Bài kiểm tra",
-                    "type": "Kiểm tra quá trình",
+                    "type": (
+                        "Thi kết thúc học phần"
+                        if r.get("session_type") == "FINAL"
+                        else "Thi giữa kỳ"
+                        if r.get("session_type") == "MIDTERM"
+                        else "Kiểm tra quá trình"
+                    ),
+                    "room_type": r_type,
+                    "sessionType": r.get("session_type"),
                     "language": "C++",
                     "durationMinutes": r.get("duration_minutes") or 60,
                     "scheduledAt": sched_str,
@@ -624,9 +726,12 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
                 end_dt = r.get("end_time")
 
                 labs.append({
+                    "room_id": r.get("room_id"),
                     "id": r.get("room_code") or str(r.get("room_id")),
                     "labNumber": len(labs) + 1,
                     "title": r.get("title") or f"Lab {len(labs) + 1}",
+                    "room_type": r_type,
+                    "sessionType": r.get("session_type"),
                     "language": "C++",
                     "questionCount": r.get("question_count") or 0,
                     "scheduleNote": f"Phòng {r.get('room_code')}",

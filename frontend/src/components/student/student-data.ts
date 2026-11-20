@@ -1,4 +1,4 @@
-export type ExamStatus = "Sắp diễn ra" | "Đang diễn ra" | "Đã hoàn thành";
+export type ExamStatus = "Sắp diễn ra" | "Đang diễn ra" | "Đã kết thúc" | "Đã hoàn thành";
 
 export interface StudentExam {
   id: string;
@@ -64,11 +64,11 @@ export function mapApiRoomToStudentExam(room: ApiStudentRoom): StudentExam {
     rawStatus === "ended" ||
     !isActive
   ) {
-    status = "Đã hoàn thành";
+    status = "Đã kết thúc";
   } else if (rawStatus === "dang_dien_ra" || rawStatus === "in_progress") {
     status = "Đang diễn ra";
   } else if (!Number.isNaN(endMs) && endMs < now) {
-    status = "Đã hoàn thành";
+    status = "Đã kết thúc";
   } else {
     status = "Sắp diễn ra";
   }

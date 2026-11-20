@@ -64,7 +64,7 @@ async def run_student_join_e2e():
     conn.close()
 
     instructor_user = {"user_id": instructor_id, "role": "instructor"}
-    test_code = "TEST-SV-JOIN-01"
+    test_code = "SVJOIN01"
 
     # Dọn phòng cũ nếu tồn tại
     from database.room_db import get_room_by_code

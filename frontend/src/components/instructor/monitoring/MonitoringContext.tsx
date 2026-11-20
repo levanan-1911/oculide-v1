@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { fetchWithAuth } from '@/services/apiClient';
+import { isRoomCurrentlyRunning } from '@/components/instructor/classes/types';
 
 export interface ViolationAlert {
   id: string;
@@ -72,6 +73,20 @@ const SAMPLE_STUDENTS = [
   { id: 'SE184806', name: 'Vũ Hải Yến' },
 ];
 
+const EMPTY_SESSION: MonitoringSessionInfo = {
+  id: '',
+  roomCode: '',
+  classCode: '',
+  className: '',
+  title: '',
+  type: 'EXAM',
+  remainingMinutes: 0,
+  totalStudents: 0,
+  attendedStudents: 0,
+  isAiActive: false,
+  requireCamera: false,
+};
+
 // TUÂN THỦ: Không theo dõi mic sinh viên!
 // Hệ thống đã KHÓA TAB (Lockdown Mode): Sinh viên không thể mở tab khác hay mở ứng dụng ngoài một cách thông thường.
 // Cảnh báo tập trung vào: Hành vi vật lý qua Camera (quay mặt, người thứ 2, dùng điện thoại) & Cố ý thoát chế độ toàn màn hình Fullscreen.
@@ -99,20 +114,7 @@ const VIOLATION_TYPES = [
 ];
 
 export function MonitoringProvider({ children }: { children: React.ReactNode }) {
-  // Mặc định là buổi kiểm tra EXAM (hoặc buổi LAB)
-  const [session, setSession] = useState<MonitoringSessionInfo>({
-    id: 'SES-01',
-    roomCode: 'CS101-LAB3',
-    classCode: 'CS101-A',
-    className: 'Nhập môn Lập trình C/C++',
-    title: 'Kiểm tra quá trình: Vòng lặp & Mảng 1 chiều',
-    type: 'EXAM', // Mặc định EXAM: AI bắt buộc, Camera bắt buộc
-    remainingMinutes: 54,
-    totalStudents: 48,
-    attendedStudents: 46,
-    isAiActive: true,
-    requireCamera: true,
-  });
+  const [session, setSession] = useState<MonitoringSessionInfo>(EMPTY_SESSION);
 
   // Chuyển đổi giữa Buổi Lab và Buổi Kiểm Tra
   const setSessionType = useCallback((type: 'LAB' | 'EXAM') => {
@@ -120,7 +122,6 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
       setSession((prev) => ({
         ...prev,
         type: 'LAB',
-        title: 'Thực hành Lab 03: Vòng lặp For/While & Mảng',
         isAiActive: false, // Lab thì không cần AI
         requireCamera: false, // Camera tùy theo yêu cầu của GV
       }));
@@ -128,7 +129,6 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
       setSession((prev) => ({
         ...prev,
         type: 'EXAM',
-        title: 'Kiểm tra quá trình: Vòng lặp & Mảng 1 chiều',
         isAiActive: true, // Kiểm tra bắt buộc AI
         requireCamera: true, // Kiểm tra bắt buộc Camera
       }));
@@ -154,22 +154,27 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
         const rooms = await fetchWithAuth<any[]>('/api/v1/rooms');
         if (isCancelled || !Array.isArray(rooms)) return;
 
-        const running =
-          rooms.find((r) => r.status === 'dang_dien_ra' || r.status === 'in_progress') || rooms[0];
+        const running = rooms.find((room) => isRoomCurrentlyRunning(room));
         if (!running) {
+          setSession(EMPTY_SESSION);
           setViolations([]);
+          setActiveToast(null);
           return;
         }
 
+        const endTime = running.end_time ? new Date(String(running.end_time)).getTime() : NaN;
+        const remainingMinutes = Number.isFinite(endTime)
+          ? Math.max(0, Math.ceil((endTime - Date.now()) / 60000))
+          : running.duration_minutes || 0;
         setSession((prev) => ({
           ...prev,
           id: String(running.room_id),
-          roomCode: running.room_code || prev.roomCode,
-          classCode: running.class_code || prev.classCode,
-          className: running.class_name || running.room_name || prev.className,
-          title: running.room_name || prev.title,
+          roomCode: running.room_code || '',
+          classCode: running.class_code || '',
+          className: running.class_name || running.room_name || '',
+          title: running.room_name || '',
           type: running.room_type === 'exam' ? 'EXAM' : 'LAB',
-          remainingMinutes: running.duration_minutes || prev.remainingMinutes,
+          remainingMinutes,
           totalStudents: running.total_students ?? prev.totalStudents,
           attendedStudents: running.attended_students ?? prev.attendedStudents,
         }));
@@ -218,8 +223,10 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
     }
 
     syncActiveRoomAndViolations();
+    const interval = window.setInterval(syncActiveRoomAndViolations, 10000);
     return () => {
       isCancelled = true;
+      window.clearInterval(interval);
     };
   }, []);
 
@@ -340,6 +347,12 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
   // Giả lập vi phạm AI theo thời gian thực (chỉ khi AI đang bật)
   const simulateViolation = useCallback(
     (typeOverride?: string) => {
+      if (!session.roomCode) {
+        setToastNotice('Hiện không có phòng nào đang diễn ra để giả lập cảnh báo.');
+        setTimeout(() => setToastNotice(null), 3000);
+        return;
+      }
+
       if (!session.isAiActive) {
         setToastNotice('Buổi thực hành Lab đang tắt AI Proctoring. Chuyển sang ca Kiểm tra để bật AI.');
         setTimeout(() => setToastNotice(null), 3000);

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Video,
   Monitor,
@@ -26,10 +26,13 @@ import {
   ToggleRight,
   Radio,
   Unlock,
+  LogOut,
+  ChevronDown,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   RoomSession,
-  INSTRUCTOR_ROOMS_STORAGE_KEY,
+  isRoomCurrentlyRunning,
 } from '@/components/instructor/classes/types';
 import { useMonitoring, ViolationAlert } from '@/components/instructor/monitoring/MonitoringContext';
 import ExtendSessionModal from '@/components/instructor/monitoring/ExtendSessionModal';
@@ -226,11 +229,16 @@ long long fib(int n) {
 ];
 
 function InstructorMonitoringContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const roomIdParam = searchParams?.get('room');
   const [activeRoomSession, setActiveRoomSession] = useState<RoomSession | null>(null);
   const [realRoomId, setRealRoomId] = useState<number | null>(null);
   const [realStudents, setRealStudents] = useState<(StudentDetailInfo & { userId?: number })[] | null>(null);
+  const [activeRooms, setActiveRooms] = useState<any[]>([]);
+  const [isLoadingRooms, setIsLoadingRooms] = useState<boolean>(true);
+  const [isClassSwitcherOpen, setIsClassSwitcherOpen] = useState<boolean>(false);
+  const [selectedRoomNotice, setSelectedRoomNotice] = useState<string | null>(null);
 
   const {
     session,
@@ -244,6 +252,44 @@ function InstructorMonitoringContent() {
     simulateViolation,
   } = useMonitoring();
 
+  // Tải danh sách tất cả các phòng đang hoạt động của Giảng viên để hỗ trợ giám sát nhiều lớp
+  useEffect(() => {
+    let isCancelled = false;
+    const fetchActiveRooms = async () => {
+      try {
+        const rooms = await fetchWithAuth<any[]>('/api/v1/rooms');
+        if (isCancelled) return;
+        const running = (rooms || []).filter((room) => isRoomCurrentlyRunning(room));
+        setActiveRooms(running);
+      } catch (err) {
+        console.error('Lỗi khi tải danh sách ca trực:', err);
+      } finally {
+        if (!isCancelled) setIsLoadingRooms(false);
+      }
+    };
+    fetchActiveRooms();
+    const interval = setInterval(fetchActiveRooms, 10000);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleEndLabEarly = async () => {
+    if (!realRoomId) return;
+    if (!window.confirm('Giảng viên có chắc chắn muốn kết thúc sớm ca thực hành này?')) return;
+    try {
+      await fetchWithAuth(`/api/v1/rooms/${realRoomId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'da_dong' }),
+      });
+      alert('Đã kết thúc sớm ca thực hành!');
+      router.push('/instructor/classes');
+    } catch (err: any) {
+      alert(err?.message || 'Không thể kết thúc phòng');
+    }
+  };
+
   // Kết nối LiveKit SFU (Chế độ Subscribe nhận video stream của tất cả sinh viên trong phòng)
   const { connectionState: livekitState, remoteTracks } = useLiveKitRoom({
     roomId: realRoomId,
@@ -251,16 +297,36 @@ function InstructorMonitoringContent() {
     enabled: Boolean(realRoomId),
   });
 
-  // Đọc thông tin phòng thật từ Backend (fallback localStorage nếu offline)
+  // Chỉ xác minh và mở phòng đang thực sự diễn ra từ Backend.
   useEffect(() => {
-    if (typeof window === 'undefined' || !roomIdParam) return;
+    if (!roomIdParam) {
+      setActiveRoomSession(null);
+      setRealRoomId(null);
+      setRealStudents(null);
+      setSelectedRoomNotice(null);
+      return;
+    }
+
+    if (typeof window === 'undefined') return;
     let isCancelled = false;
 
     const loadRealRoom = async () => {
       try {
         const data = await fetchWithAuth<any>(`/api/v1/rooms/lobby/${encodeURIComponent(roomIdParam)}`);
-        if (isCancelled || !data) return;
+        if (isCancelled) return;
+        if (!data || !isRoomCurrentlyRunning(data)) {
+          setActiveRoomSession(null);
+          setRealRoomId(null);
+          setRealStudents(null);
+          setSelectedRoomNotice(
+            data
+              ? 'Phòng này chưa bắt đầu hoặc đã kết thúc. Chỉ các phiên đang diễn ra mới có thể mở trong module Giám sát.'
+              : 'Không tìm thấy thông tin phòng này.'
+          );
+          return;
+        }
 
+        setSelectedRoomNotice(null);
         setRealRoomId(data.room_id);
         setSessionType(data.room_type === 'exam' ? 'EXAM' : 'LAB');
 
@@ -279,9 +345,7 @@ function InstructorMonitoringContent() {
           logs: [],
         }));
 
-        if (mappedAttendees.length > 0) {
-          setRealStudents(mappedAttendees);
-        }
+        setRealStudents(mappedAttendees);
 
         setActiveRoomSession({
           id: data.room_code,
@@ -291,32 +355,25 @@ function InstructorMonitoringContent() {
           type: data.room_type === 'exam' ? 'exam' : 'lab',
           title: data.room_name,
           durationMinutes: data.duration_minutes || 60,
-          status: data.status === 'dang_dien_ra' ? 'in_progress' : data.status === 'da_dong' ? 'ended' : 'waiting',
+          status: 'in_progress',
           createdAt: data.created_at,
           proctoringConfig: { lockdownFullscreen: true, aiFaceDetection: true, aiObjectDetection: true, allowTabSwitch: false },
           attendees: [],
         });
       } catch {
-        // Fallback localStorage nếu offline
-        try {
-          const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-          if (raw) {
-            const parsed: RoomSession[] = JSON.parse(raw);
-            const found = parsed.find((r) => r.id.toLowerCase() === roomIdParam.toLowerCase());
-            if (found) {
-              setActiveRoomSession(found);
-              setSessionType(found.type === 'lab' ? 'LAB' : 'EXAM');
-            }
-          }
-        } catch {
-          // ignore
-        }
+        if (isCancelled) return;
+        setActiveRoomSession(null);
+        setRealRoomId(null);
+        setRealStudents(null);
+        setSelectedRoomNotice('Không thể xác minh trạng thái phòng. Vui lòng tải lại hoặc quay về danh sách giám sát.');
       }
     };
 
     loadRealRoom();
+    const interval = window.setInterval(loadRealRoom, 10000);
     return () => {
       isCancelled = true;
+      window.clearInterval(interval);
     };
   }, [roomIdParam, setSessionType]);
 
@@ -508,25 +565,122 @@ function InstructorMonitoringContent() {
     }
   };
 
+  if (roomIdParam && !activeRoomSession) {
+    return (
+      <div className="rounded-md border border-slate-200 bg-white p-8 text-center shadow-xs dark:border-white/10 dark:bg-neutral-900">
+        <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-slate-500" />
+        <h1 className="text-sm font-bold text-slate-900 dark:text-white">
+          {selectedRoomNotice || 'Đang xác minh trạng thái phòng...'}
+        </h1>
+        <button
+          type="button"
+          onClick={() => router.replace('/instructor/monitoring')}
+          className="system-primary-action mt-4 inline-flex h-9 items-center rounded-md bg-slate-900 px-4 text-xs font-bold text-white"
+        >
+          Về danh sách phiên đang diễn ra
+        </button>
+      </div>
+    );
+  }
+
+  // Nếu chưa chọn lớp/phòng nào: Hiển thị danh sách các lớp đang hoạt động để Giảng viên chọn giám sát
+  if (!roomIdParam && !activeRoomSession) {
+    return (
+      <div className="space-y-6">
+        <div className="rounded-md border border-slate-300 bg-white p-6 shadow-xs sm:p-7 dark:border-white/10 dark:bg-neutral-900">
+          <div className="flex flex-col gap-2">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-slate-500">
+              Module Giám Sát Trực Tiếp
+            </span>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+              Danh Sách Các Lớp Đang Hoạt Động
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Một giảng viên có thể phụ trách nhiều lớp. Hãy chọn một lớp đang mở phòng bên dưới để vào giám sát trực tiếp.
+            </p>
+          </div>
+        </div>
+
+        {isLoadingRooms ? (
+          <div className="rounded-md border border-slate-200 bg-white p-12 text-center text-xs text-slate-500 dark:border-white/10 dark:bg-neutral-900">
+            Đang tải danh sách các lớp đang hoạt động...
+          </div>
+        ) : activeRooms.length === 0 ? (
+          <div className="rounded-md border border-dashed border-slate-300 bg-white p-12 text-center text-xs text-slate-500 dark:border-white/10 dark:bg-neutral-900">
+            <Users className="mx-auto h-8 w-8 text-slate-400 mb-2" />
+            <p className="font-semibold text-slate-700 dark:text-slate-300">Hiện tại không có lớp học phần nào đang mở phòng trực tiếp.</p>
+            <p className="text-slate-400 mt-1">Vui lòng vào Lịch Thi hoặc Quản Lý Lớp để bắt đầu mở phòng thi / thực hành.</p>
+            <Link
+              href="/instructor/schedules"
+              className="system-primary-action mt-4 inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-xs"
+            >
+              Xem Lịch Đào Tạo
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeRooms.map((r) => (
+              <div
+                key={r.room_id || r.room_code}
+                className="rounded-md border border-slate-300 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-neutral-900 flex flex-col justify-between space-y-4"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] uppercase font-bold text-slate-500">
+                      Mã: {r.room_code}
+                    </span>
+                    <span className="rounded-md bg-slate-100 dark:bg-white/10 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-300 font-mono">
+                      {r.room_type === 'exam' ? 'Phòng Thi' : 'Phòng Thực Hành'}
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2">
+                    {r.room_name || r.room_code}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Lớp: <strong className="text-slate-700 dark:text-slate-200">{r.class_name || r.class_code || 'Lớp học phần'}</strong>
+                  </p>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 dark:border-white/10 flex items-center justify-between">
+                  <span className="text-xs text-slate-500">
+                    Thời lượng: <strong className="text-slate-700 dark:text-slate-300">{r.duration_minutes || 60}p</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/instructor/monitoring?room=${encodeURIComponent(r.room_code)}`)}
+                    className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-slate-800 transition cursor-pointer"
+                  >
+                    <span>Vào giám sát</span>
+                    <ArrowLeft className="h-3 w-3 rotate-180" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       {/* ── BANNER THÔNG BÁO QUY TRÌNH & TRẠNG THÁI PHÒNG ── */}
       {activeRoomSession && activeRoomSession.status === 'waiting' && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs shadow-xs animate-in fade-in">
-          <div className="flex items-center gap-2.5 text-amber-900 font-medium">
-            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-slate-300 bg-slate-50 p-4 text-xs dark:bg-white/5 dark:border-white/10">
+          <div className="flex items-center gap-2.5 text-slate-800 dark:text-slate-200 font-medium">
+            <AlertTriangle className="h-5 w-5 text-slate-600 dark:text-slate-400 shrink-0" />
             <div>
-              <p className="font-bold text-amber-950">
+              <p className="font-serif font-bold text-slate-900 dark:text-white">
                 Phòng {activeRoomSession.id} đang ở trạng thái PHÒNG CHỜ (Điểm Danh)
               </p>
-              <p className="text-[11px] text-amber-800 mt-0.5">
+              <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
                 Lưu ý: Quá trình giám sát trực tiếp qua camera &amp; code chỉ chính thức bắt đầu sau khi bạn bấm <strong>[Bắt Đầu Làm Bài]</strong> tại màn hình Phòng Chờ.
               </p>
             </div>
           </div>
           <Link
             href={`/instructor/room/${activeRoomSession.id}`}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white hover:bg-amber-700 transition shrink-0 shadow-2xs cursor-pointer"
+            className="system-primary-action inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-slate-900 px-4 text-xs font-semibold text-white hover:bg-slate-800 transition shrink-0 cursor-pointer shadow-xs"
           >
             <span>Vào Phòng Chờ Điểm Danh</span>
           </Link>
@@ -534,128 +688,170 @@ function InstructorMonitoringContent() {
       )}
 
       {activeRoomSession && activeRoomSession.status === 'in_progress' && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-2xl border border-emerald-300 bg-emerald-50/90 px-4 py-3 text-xs font-medium text-emerald-900 shadow-xs animate-in fade-in">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-md border border-slate-300 bg-slate-50 px-4 py-3 text-xs font-medium text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
           <div className="flex items-center gap-2.5">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-600"></span>
-            </span>
+            <span className="flex h-2.5 w-2.5 rounded-full bg-slate-400" />
             <div>
-              <p className="font-bold text-emerald-950">
+              <p className="font-serif font-bold text-slate-900 dark:text-white">
                 ĐANG GIÁM SÁT TRỰC TIẾP: Phòng {activeRoomSession.id} ({activeRoomSession.title})
               </p>
-              <p className="text-[11px] text-emerald-800">
-                Mật khẩu PIN: <strong className="font-mono text-emerald-950">{activeRoomSession.password}</strong> • Bộ đề thi: <strong className="text-emerald-950">{activeRoomSession.templateTitle}</strong>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Mật khẩu PIN: <strong className="font-mono text-slate-900 dark:text-white">{activeRoomSession.password}</strong> • Bộ đề thi: <strong>{activeRoomSession.templateTitle}</strong>
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-[11px] font-semibold text-emerald-800">
-            <span className="rounded-md bg-white border border-emerald-200 px-2 py-0.5">
-              {activeRoomSession.proctoringConfig.lockdownFullscreen ? '🔒 Khóa Fullscreen' : '🔓 Cho phép rời tab'}
+          <div className="flex items-center gap-2 text-[11px] font-semibold">
+            <span className="rounded bg-white dark:bg-neutral-900 border border-slate-300 dark:border-white/10 px-2 py-0.5">
+              {activeRoomSession.proctoringConfig.lockdownFullscreen ? 'Khóa Fullscreen' : 'Cho phép rời tab'}
             </span>
-            <span className="rounded-md bg-white border border-emerald-200 px-2 py-0.5">
-              {activeRoomSession.proctoringConfig.aiFaceDetection ? '📷 AI Smartphone & Face: Bật' : '📷 AI: Tắt'}
+            <span className="rounded bg-white dark:bg-neutral-900 border border-slate-300 dark:border-white/10 px-2 py-0.5">
+              {activeRoomSession.proctoringConfig.aiFaceDetection ? 'AI Giám sát: Bật' : 'AI Giám sát: Tắt'}
             </span>
           </div>
         </div>
       )}
 
       {/* ── 1. HEADER BAR CHỈ HUY PHÒNG THI & CHUYỂN ĐỔI CHẾ ĐỘ LAB / KIỂM TRA ── */}
-      <div className="flex flex-col gap-4 rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs">
+      <div className="flex flex-col gap-4 rounded-md border border-slate-300 bg-white p-5 dark:border-white/10 dark:bg-neutral-900">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">
+              <span className="rounded bg-slate-100 dark:bg-white/10 px-2 py-0.5 font-mono text-xs font-bold text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-white/20">
                 {session.classCode}
               </span>
-              <span className="text-xs text-slate-400">•</span>
+              <span className="text-xs text-slate-500">•</span>
               <span className="text-xs font-medium text-slate-500">{session.className}</span>
 
               {/* Tag phân biệt chế độ EXAM vs LAB */}
               {session.type === 'EXAM' ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 px-2.5 py-0.5 text-[11px] font-bold text-purple-700 border border-purple-200">
-                  <ShieldAlert className="h-3 w-3 text-purple-600" />
+                <span className="inline-flex items-center gap-1.5 rounded bg-slate-100 dark:bg-white/10 px-2.5 py-0.5 font-serif text-[11px] font-bold text-slate-900 dark:text-white border border-slate-300 dark:border-white/20">
+                  <ShieldAlert className="h-3 w-3 text-slate-700 dark:text-slate-300" />
                   Buổi Kiểm Tra • Bắt buộc AI &amp; Camera
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-700 border border-blue-200">
-                  <Monitor className="h-3 w-3 text-blue-600" />
+                <span className="inline-flex items-center gap-1.5 rounded bg-slate-100 dark:bg-white/10 px-2.5 py-0.5 font-serif text-[11px] font-bold text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-white/10">
+                  <Monitor className="h-3 w-3 text-slate-500" />
                   Thực Hành Lab • Không dùng AI • Camera:{' '}
                   {session.requireCamera ? 'Bật (Theo GV)' : 'Tắt (Tùy chọn)'}
                 </span>
               )}
             </div>
 
-            <h1 className="mt-1 text-lg sm:text-xl font-extrabold tracking-tight text-slate-900">
+            <h1 className="mt-1 text-lg sm:text-xl font-serif font-bold tracking-tight text-slate-900 dark:text-white">
               {session.title}
             </h1>
 
-            <div className="mt-1 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+            <div className="mt-1 flex flex-wrap items-center gap-4 font-mono text-xs text-slate-500">
               <span>
-                Mã phòng: <strong className="font-mono font-bold text-blue-700">{session.roomCode}</strong>
+                Mã phòng: <strong className="font-bold text-slate-900 dark:text-white">{session.roomCode}</strong>
               </span>
               <span>
-                Sĩ số: <strong className="text-slate-800 font-bold">{session.attendedStudents}/{session.totalStudents} SV</strong>
+                Sĩ số: <strong className="text-slate-900 dark:text-white font-bold">{session.attendedStudents}/{session.totalStudents} SV</strong>
               </span>
             </div>
           </div>
 
           {/* Công cụ điều khiển phòng thi */}
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            {/* Chuyển nhanh giữa ca Kiểm tra (EXAM) và ca Thực hành (LAB) */}
-            <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+            {/* Lớp Switcher: Cho phép Giảng viên chuyển đổi nhanh giữa các lớp đang hoạt động */}
+            {activeRooms.length > 1 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsClassSwitcherOpen((prev) => !prev)}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-900 dark:text-stone-200 transition cursor-pointer shadow-2xs"
+                  title="Chuyển sang giám sát lớp khác đang hoạt động"
+                >
+                  <Users className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Đổi lớp ({activeRooms.length})</span>
+                  <ChevronDown className="h-3 w-3 text-slate-400" />
+                </button>
+                {isClassSwitcherOpen && (
+                  <div className="absolute right-0 top-10 z-50 w-72 rounded-md border border-slate-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-neutral-900">
+                    <p className="px-2 py-1 text-[11px] font-bold text-slate-400 uppercase">Các lớp đang hoạt động</p>
+                    <div className="mt-1 space-y-1">
+                      {activeRooms.map((r) => (
+                        <button
+                          key={r.room_id || r.room_code}
+                          type="button"
+                          onClick={() => {
+                            setIsClassSwitcherOpen(false);
+                            router.push(`/instructor/monitoring?room=${encodeURIComponent(r.room_code)}`);
+                          }}
+                          className={`w-full text-left rounded-md px-2.5 py-1.5 text-xs transition flex items-center justify-between ${
+                            r.room_code === roomIdParam
+                              ? 'bg-slate-100 dark:bg-white/10 font-bold text-slate-900 dark:text-white'
+                              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'
+                          }`}
+                        >
+                          <div className="truncate">
+                            <p className="font-semibold truncate">{r.room_name || r.room_code}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">{r.class_name || r.room_code}</p>
+                          </div>
+                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-200 dark:bg-white/10">
+                            {r.room_type === 'exam' ? 'Thi' : 'Lab'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Quy tắc kết thúc sớm: Phòng thực hành có thể kết thúc sớm; Phòng thi thì không */}
+            {session.type === 'LAB' ? (
               <button
                 type="button"
-                onClick={() => setSessionType('EXAM')}
-                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
-                  session.type === 'EXAM'
-                    ? 'bg-purple-600 text-white shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                onClick={handleEndLabEarly}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-900 dark:text-stone-200 transition cursor-pointer shadow-2xs"
+                title="Giảng viên kết thúc sớm ca thực hành cho sinh viên"
               >
-                Kiểm tra (EXAM)
+                <LogOut className="h-3.5 w-3.5 text-slate-500" />
+                <span>Kết thúc sớm</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setSessionType('LAB')}
-                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
-                  session.type === 'LAB'
-                    ? 'bg-blue-600 text-white shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Thực hành (LAB)
-              </button>
-            </div>
+            ) : (
+              <span className="inline-flex h-9 items-center gap-1.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-3 text-xs font-medium text-slate-600 dark:text-slate-400">
+                <ShieldCheck className="h-3.5 w-3.5 text-slate-500" />
+                <span>Quy chế: Phòng thi tự động kết thúc khi hết giờ</span>
+              </span>
+            )}
 
             {/* Nếu là buổi Lab: Toggle cho phép GV tùy chỉnh bật/tắt camera */}
             {session.type === 'LAB' && (
-              <label className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 cursor-pointer shadow-2xs">
+              <label className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#2A282D] dark:border-white/10 dark:bg-neutral-900 dark:text-stone-300 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={session.requireCamera}
                   onChange={(e) => setRequireCamera(e.target.checked)}
-                  className="rounded text-blue-600 accent-blue-600 h-3.5 w-3.5"
+                  className="rounded accent-slate-900 dark:accent-white h-3.5 w-3.5"
                 />
                 <span>Yêu cầu Webcam</span>
               </label>
             )}
 
             {/* Đồng hồ đếm ngược */}
-            <div className="flex items-center gap-1.5 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 shadow-2xs">
-              <Clock className="h-3.5 w-3.5 text-amber-600" />
+            <div className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 font-mono text-xs font-bold text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+              <Clock className="h-3.5 w-3.5 text-slate-500" />
               <span>{session.remainingMinutes}p</span>
             </div>
 
-            {/* Nút Gia hạn phòng tùy chỉnh */}
-            <button
-              type="button"
-              onClick={() => setIsExtendModalOpen(true)}
-              className="inline-flex items-center gap-1 rounded-2xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 shadow-2xs hover:bg-amber-100 transition cursor-pointer"
-            >
-              <Clock className="h-3.5 w-3.5" />
-              Gia hạn...
-            </button>
+            {/* Nút Gia hạn phòng tùy chỉnh: CẤM gia hạn đối với các kỳ thi theo quy chế */}
+            {session.type === 'EXAM' ? (
+              <span className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400" title="Quy chế khảo thí: Kỳ thi không cho phép gia hạn thêm thời gian">
+                <Clock className="h-3.5 w-3.5 text-slate-400" />
+                Thời gian cố định
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsExtendModalOpen(true)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 text-xs font-semibold text-[#2A282D] hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-900 dark:text-stone-200 transition cursor-pointer shadow-2xs"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Gia hạn...
+              </button>
+            )}
 
             {/* Nút Phát thông báo */}
             <button
@@ -664,24 +860,11 @@ function InstructorMonitoringContent() {
                 setTargetedStudent(null);
                 setIsSendNoticeModalOpen(true);
               }}
-              className="inline-flex items-center gap-1.5 rounded-2xl bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-blue-700 transition cursor-pointer"
+              className="system-primary-action inline-flex h-9 items-center gap-1.5 rounded-md bg-slate-900 px-4 text-xs font-semibold text-white hover:bg-slate-800 transition cursor-pointer shadow-xs"
             >
               <Send className="h-3.5 w-3.5" />
               Gửi thông báo
             </button>
-
-            {/* Nút Test Vi phạm AI (chỉ khi có AI) */}
-            {session.isAiActive && (
-              <button
-                type="button"
-                onClick={() => simulateViolation()}
-                className="inline-flex items-center gap-1 rounded-2xl border border-purple-200 bg-purple-50 px-2.5 py-1.5 text-xs font-bold text-purple-700 hover:bg-purple-100 transition cursor-pointer"
-                title="Bấm để kích hoạt cảnh báo vi phạm AI ngẫu nhiên"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-purple-600" />
-                <span>Test AI</span>
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -691,7 +874,7 @@ function InstructorMonitoringContent() {
         {/* CỘT TRÁI (3 Cột): Bộ lọc và Lưới theo dõi */}
         <div className="lg:col-span-3 space-y-4">
           {/* Bộ lọc và tìm kiếm */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-slate-300 bg-white p-3 dark:border-white/10 dark:bg-neutral-900">
             <div className="flex flex-wrap items-center gap-1.5">
               {[
                 { id: 'all', label: `Tất cả (${camerasSource.length})` },
@@ -703,10 +886,10 @@ function InstructorMonitoringContent() {
                   key={tab.id}
                   type="button"
                   onClick={() => setStatusFilter(tab.id as any)}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+                  className={`rounded px-3 py-1.5 font-sans text-xs font-bold transition cursor-pointer ${
                     statusFilter === tab.id
-                      ? 'bg-blue-600 text-white shadow-2xs'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      ? 'system-selected-module shadow-2xs'
+                      : 'text-slate-600 hover:bg-slate-100 dark:text-stone-300 dark:hover:bg-white/5'
                   }`}
                 >
                   {tab.label}
@@ -721,7 +904,7 @@ function InstructorMonitoringContent() {
                 placeholder="Tìm MSSV hoặc tên..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8.5 w-full sm:w-56 rounded-xl border border-slate-200/90 bg-slate-50/70 pl-10 pr-3.5 text-xs outline-none transition-all hover:bg-slate-50 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 placeholder:text-slate-400"
+                className="h-9 w-full sm:w-56 rounded-md border border-slate-300 bg-slate-50 pl-10 pr-3.5 text-xs outline-none transition-colors focus:border-slate-600 focus:bg-white dark:border-white/10 dark:bg-neutral-950 dark:text-white placeholder:text-slate-400"
               />
             </div>
           </div>
@@ -738,26 +921,24 @@ function InstructorMonitoringContent() {
               return (
                 <div
                   key={student.id}
-                  className={`rounded-3xl border bg-white p-3.5 shadow-xs transition-all hover:shadow-md relative ${
+                  className={`rounded-md border bg-white p-3.5 dark:bg-neutral-900 shadow-2xs transition-colors relative ${
                     student.status === 'critical'
-                      ? 'border-red-400 ring-2 ring-red-500/20 bg-red-50/10'
-                      : student.status === 'warning'
-                      ? 'border-amber-400 ring-2 ring-amber-500/10 bg-amber-50/10'
-                      : 'border-slate-200/90'
+                      ? 'border-slate-500 bg-slate-50 dark:border-white/30 dark:bg-white/[0.04]'
+                      : 'border-slate-300 dark:border-white/10'
                   }`}
                 >
                   {/* Khung stream: BẤM VÀO ĐỂ PHÓNG TO CHI TIẾT (MÀN HÌNH + WEBCAM) */}
                   <div
                     onClick={() => setFocusedStudent(student)}
-                    className="aspect-video w-full rounded-2xl bg-slate-900 flex items-center justify-center relative overflow-hidden group cursor-pointer"
+                    className="aspect-video w-full rounded bg-stone-950 flex items-center justify-center relative overflow-hidden group cursor-pointer"
                     title="Nhấp để phóng to màn hình và webcam của sinh viên này"
                   >
                     {/* Hiển thị Màn hình hoặc Webcam */}
                     {session.type === 'LAB' && !session.requireCamera ? (
                       <div className="absolute inset-0 bg-[#1e1e2e] p-2 flex flex-col justify-between font-mono text-[9px] text-slate-300">
                         <div className="flex items-center justify-between text-slate-400 border-b border-slate-700/60 pb-1">
-                          <span className="text-blue-400 font-bold">{student.currentFile}</span>
-                          <span className="text-emerald-400">{student.passedCases}</span>
+                          <span className="text-slate-200 font-bold">{student.currentFile}</span>
+                          <span className="text-slate-200">{student.passedCases}</span>
                         </div>
                         <p className="line-clamp-2 text-slate-400 select-none">
                           {student.codeSnippet.slice(0, 80)}...
@@ -778,13 +959,13 @@ function InstructorMonitoringContent() {
                         {/* Giả lập khung nhận diện khuôn mặt */}
                         {session.isAiActive && (
                           <div
-                            className={`absolute inset-4 rounded-xl border-2 pointer-events-none transition-all ${
-                              hasAlert ? 'border-red-500/80 animate-pulse' : 'border-emerald-400/40'
+                            className={`absolute inset-4 rounded-md border pointer-events-none ${
+                              hasAlert ? 'border-slate-300 bg-slate-900/10' : 'border-slate-500/40'
                             }`}
                           >
                             <span
-                              className={`absolute -top-2.5 left-2 rounded px-1 text-[8px] font-bold text-white uppercase ${
-                                hasAlert ? 'bg-red-600' : 'bg-emerald-600'
+                              className={`absolute -top-2.5 left-2 rounded px-1.5 py-0.5 text-[8px] font-mono font-bold text-white uppercase ${
+                                hasAlert ? 'bg-slate-800' : 'bg-slate-700'
                               }`}
                             >
                               {hasAlert ? 'AI Alert' : 'Face Track'}
@@ -795,30 +976,30 @@ function InstructorMonitoringContent() {
                     )}
 
                     {/* Tag FPS / LiveKit góc trên trái */}
-                    <div className="absolute top-2 left-2 flex items-center gap-1 rounded-md bg-black/75 px-1.5 py-0.2 text-[9px] text-white font-mono backdrop-blur-xs">
+                    <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded bg-black/80 px-2 py-0.5 text-[9px] text-white font-mono">
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${
-                          hasAlert ? 'bg-red-400 animate-ping' : lkTrack ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'
+                          hasAlert ? 'bg-slate-300' : lkTrack ? 'bg-slate-400' : 'bg-stone-400'
                         }`}
                       />
                       <span>{lkTrack ? 'LIVE • LiveKit' : `${student.fps} FPS`}</span>
                     </div>
 
                     {/* Lớp phủ Hover: Bấm để phóng to */}
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <span className="inline-flex items-center gap-1 rounded-xl bg-blue-600 text-white px-2.5 py-1 text-xs font-bold shadow-lg">
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <span className="inline-flex items-center gap-1.5 rounded-md bg-brand text-white px-3 py-1.5 text-xs font-bold shadow-md">
                         <Maximize2 className="h-3.5 w-3.5" />
                         Phóng to chi tiết
                       </span>
                     </div>
 
                     {/* Tag góc dưới: Tên & MSSV */}
-                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between rounded-xl bg-black/80 px-2 py-0.5 text-white backdrop-blur-xs">
-                      <span className="text-[11px] font-bold truncate">
+                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between rounded bg-black/85 px-2 py-1 text-white">
+                      <span className="text-[11px] font-medium truncate font-sans">
                         {student.id} • {student.name}
                       </span>
                       {hasAlert && (
-                        <span className="rounded bg-red-600 px-1 text-[9px] font-bold text-white shrink-0">
+                        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-mono font-bold text-white shrink-0">
                           {student.violationsCount} vi phạm
                         </span>
                       )}
@@ -828,28 +1009,20 @@ function InstructorMonitoringContent() {
                   {/* Trạng thái & Tác vụ nhanh */}
                   <div className="mt-2.5 space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-400 text-[10px]">Tiến độ / Trạng thái:</span>
+                      <span className="text-stone-400 dark:text-stone-500 text-[10px]">Tiến độ / Trạng thái:</span>
                       <span
-                        className={`text-[10px] font-bold truncate max-w-[190px] ${
-                          student.status === 'critical'
-                            ? 'text-red-600'
-                            : student.status === 'warning'
-                            ? 'text-amber-600'
-                            : isSubmitted
-                            ? 'text-blue-600'
-                            : 'text-emerald-600'
-                        }`}
+                        className="text-[10px] font-semibold truncate max-w-[190px] font-mono text-slate-700 dark:text-slate-300"
                       >
                         {student.statusText}
                       </span>
                     </div>
 
                     {/* Nút hành động */}
-                    <div className="flex items-center justify-between gap-1 pt-1.5 border-t border-slate-100">
+                    <div className="flex items-center justify-between gap-1 pt-2 border-t border-slate-300 dark:border-white/10">
                       <button
                         type="button"
                         onClick={() => setFocusedStudent(student)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                        className="inline-flex items-center gap-1 rounded-md bg-stone-100 dark:bg-stone-800 px-2 py-1 text-[11px] font-medium text-stone-700 dark:text-stone-200 hover:bg-stone-200 dark:hover:bg-stone-700 transition cursor-pointer"
                         title="Phóng to màn hình và webcam"
                       >
                         <Maximize2 className="h-3 w-3" />
@@ -860,7 +1033,7 @@ function InstructorMonitoringContent() {
                         <button
                           type="button"
                           onClick={() => handleUnlockStudent(student)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 transition cursor-pointer"
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 transition cursor-pointer"
                           title="Mở khóa bài thi từ xa cho sinh viên"
                         >
                           <Unlock className="h-3 w-3" />
@@ -871,7 +1044,7 @@ function InstructorMonitoringContent() {
                       <button
                         type="button"
                         onClick={() => handleOpenIndividualNotice(student.id, student.name)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition cursor-pointer"
+                        className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-white/10 border border-slate-300 dark:border-white/10 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 transition cursor-pointer"
                         title="Nhắn tin riêng cho SV này"
                       >
                         <MessageSquare className="h-3 w-3" />
@@ -882,13 +1055,13 @@ function InstructorMonitoringContent() {
                         <button
                           type="button"
                           onClick={() => reviewViolation(student.id, 'record')}
-                          className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-700 hover:bg-red-100 transition cursor-pointer"
+                          className="rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-800 dark:border-white/10 dark:bg-white/10 dark:text-slate-200 hover:bg-slate-200 transition cursor-pointer"
                         >
                           Biên bản
                         </button>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400">
-                          <ShieldCheck className="h-3 w-3 text-emerald-500" />
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-stone-500 dark:text-stone-400">
+                          <ShieldCheck className="h-3 w-3 text-slate-500 dark:text-slate-400" />
                           Hợp lệ
                         </span>
                       )}
@@ -901,63 +1074,70 @@ function InstructorMonitoringContent() {
         </div>
 
         {/* ── CỘT PHẢI (1 Cột): SIDEBAR THÔNG BÁO SIÊU GỌN THEO YÊU CẦU ── */}
-        <div className="rounded-3xl border border-slate-200/90 bg-white p-3.5 shadow-xs space-y-3">
-          {/* Header tabs nhỏ gọn */}
-          <div className="flex items-center gap-1 border-b border-slate-100 pb-2">
+        <div className="rounded-md border border-slate-300 bg-white p-3.5 dark:border-white/10 dark:bg-neutral-900 shadow-2xs space-y-3">
+          {/* Header tabs nhỏ gọn - Giao diện trung tính mặc định, không icon dư thừa */}
+          <div className="flex items-center gap-1 border-b border-slate-300 dark:border-white/10 pb-2">
             <button
               type="button"
               onClick={() => setActiveSideTab('violations')}
-              className={`flex-1 rounded-xl py-1 text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
+              className={`flex-1 rounded-md py-1.5 text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeSideTab === 'violations'
-                  ? 'bg-red-50 text-red-700 shadow-2xs'
-                  : 'text-slate-500 hover:bg-slate-50'
+                  ? 'system-selected-module shadow-2xs'
+                  : 'bg-white dark:bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 border border-slate-200 dark:border-white/10'
               }`}
             >
-              <span>{session.type === 'EXAM' ? '🚨 Vi phạm AI' : '🚨 Cảnh báo'}</span>
-              <span className="rounded-full bg-red-100 px-1.5 text-[9px] font-black text-red-700">
+              <span>{session.type === 'EXAM' ? 'Vi phạm AI' : 'Cảnh báo'}</span>
+              <span className={`rounded px-1.5 text-[9px] font-mono font-bold ${
+                activeSideTab === 'violations'
+                  ? 'bg-white/20 text-white dark:bg-slate-900/20 dark:text-slate-900'
+                  : 'bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-300'
+              }`}>
                 {violations.length}
               </span>
             </button>
             <button
               type="button"
               onClick={() => setActiveSideTab('announcements')}
-              className={`flex-1 rounded-xl py-1 text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
+              className={`flex-1 rounded-md py-1.5 text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeSideTab === 'announcements'
-                  ? 'bg-blue-50 text-blue-700 shadow-2xs'
-                  : 'text-slate-500 hover:bg-slate-50'
+                  ? 'system-selected-module shadow-2xs'
+                  : 'bg-white dark:bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 border border-slate-200 dark:border-white/10'
               }`}
             >
-              <span>📢 Đã gửi</span>
-              <span className="rounded-full bg-blue-100 px-1.5 text-[9px] font-black text-blue-700">
+              <span>Đã gửi</span>
+              <span className={`rounded px-1.5 text-[9px] font-mono font-bold ${
+                activeSideTab === 'announcements'
+                  ? 'bg-white/20 text-white dark:bg-slate-900/20 dark:text-slate-900'
+                  : 'bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-300'
+              }`}>
                 {announcements.length}
               </span>
             </button>
             <button
               type="button"
               onClick={() => setActiveSideTab('chat')}
-              className={`flex-1 rounded-xl py-1 text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
+              className={`flex-1 rounded-md py-1.5 text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeSideTab === 'chat'
-                  ? 'bg-blue-50 text-blue-700 shadow-2xs'
-                  : 'text-slate-500 hover:bg-slate-50'
+                  ? 'system-selected-module shadow-2xs'
+                  : 'bg-white dark:bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 border border-slate-200 dark:border-white/10'
               }`}
             >
-              <MessageSquare className="h-3 w-3" />
               <span>Chat phòng</span>
             </button>
           </div>
 
-          {/* Tab 1: Cảnh báo vi phạm (THIẾT KẾ SIÊU GỌN NHẤT CÓ THỂ THEO HÌNH ẢNH USER) */}
+          {/* Tab 1: Cảnh báo vi phạm */}
           {activeSideTab === 'violations' && (
             <div className="space-y-1.5 max-h-[580px] overflow-y-auto pr-0.5">
               {unlockNotice && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
+                <div className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-serif font-bold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                   {unlockNotice}
                 </div>
               )}
               {displayViolations.length === 0 ? (
-                <div className="p-4 text-center text-xs text-slate-400">
-                  <ShieldCheck className="mx-auto h-6 w-6 text-emerald-400" />
-                  <p className="mt-1 font-bold text-slate-600 text-xs">Không có vi phạm</p>
+                <div className="p-4 text-center text-xs text-stone-500 dark:text-stone-400">
+                  <ShieldCheck className="mx-auto h-6 w-6 text-slate-500 dark:text-slate-400" />
+                  <p className="mt-1 font-serif font-bold text-stone-700 dark:text-stone-300 text-xs">Không có vi phạm</p>
                 </div>
               ) : (
                 displayViolations.map((vio) => {
@@ -968,12 +1148,12 @@ function InstructorMonitoringContent() {
                   return (
                     <div
                       key={vio.id}
-                      className={`group rounded-xl border p-2 transition text-xs space-y-1.5 ${
+                      className={`group rounded-md border p-2 transition text-xs space-y-1.5 ${
                         isRecorded || isDismissed
-                          ? 'border-slate-200 bg-slate-50/80 opacity-60'
+                          ? 'border-slate-300 dark:border-white/10 bg-stone-50 dark:bg-stone-900/40 opacity-60'
                           : vio.severity === 'critical'
-                          ? 'border-red-200 bg-red-50/50 hover:bg-red-50 hover:border-red-300'
-                          : 'border-amber-200 bg-amber-50/40 hover:bg-amber-50 hover:border-amber-300'
+                          ? 'border-slate-400 bg-slate-50 dark:border-white/20 dark:bg-white/10'
+                          : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'
                       }`}
                     >
                       {/* Dòng 1: Header - Tên SV + MSSV + Giờ */}
@@ -986,47 +1166,47 @@ function InstructorMonitoringContent() {
                           <span
                             className={`h-2 w-2 shrink-0 rounded-full ${
                               isRecorded || isDismissed
-                                ? 'bg-slate-400'
+                                ? 'bg-stone-400'
                                 : vio.severity === 'critical'
-                                ? 'bg-red-500 animate-pulse'
-                                : 'bg-amber-500'
+                                ? 'bg-slate-800 dark:bg-white'
+                                : 'bg-slate-400'
                             }`}
                           />
-                          <span className="font-bold text-slate-900 truncate text-[11.5px]">
+                          <span className="font-serif font-bold text-stone-900 dark:text-stone-100 truncate text-[11.5px]">
                             {vio.studentName}
                           </span>
-                          <span className="font-mono text-slate-500 font-medium text-[10px] shrink-0">
+                          <span className="font-mono text-stone-500 dark:text-stone-400 font-medium text-[10px] shrink-0">
                             ({vio.studentId})
                           </span>
                         </div>
-                        <span className="font-mono text-[9.5px] text-slate-400 font-bold shrink-0">
+                        <span className="font-mono text-[9.5px] text-stone-500 dark:text-stone-400 font-bold shrink-0">
                           {vio.timestamp}
                         </span>
                       </div>
 
-                      {/* Dòng 2: Loại lỗi vi phạm - Gọn gàng 1 dòng không rớt */}
+                      {/* Dòng 2: Loại lỗi vi phạm */}
                       <div
                         onClick={() => matchedStudent && setFocusedStudent(matchedStudent)}
-                        className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold cursor-pointer truncate ${
+                        className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium cursor-pointer truncate ${
                           vio.severity === 'critical'
-                            ? 'bg-red-100/70 text-red-700'
-                            : 'bg-amber-100/70 text-amber-800'
+                            ? 'bg-slate-200 text-slate-900 font-bold dark:bg-white/20 dark:text-white'
+                            : 'bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-300'
                         }`}
                         title={`${vio.type}: ${vio.description}`}
                       >
-                        <AlertTriangle className="h-3 w-3 shrink-0 text-red-600" />
+                        <AlertTriangle className="h-3 w-3 shrink-0 text-slate-500" />
                         <span className="truncate">{vio.type}</span>
                       </div>
 
                       {/* Dòng 3: Nút bấm mini gọn gàng */}
-                      <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-200/60">
+                      <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-300 dark:border-white/10">
                         <button
                           type="button"
                           onClick={() => matchedStudent && setFocusedStudent(matchedStudent)}
-                          className="text-[10px] font-bold text-slate-600 hover:text-blue-600 inline-flex items-center gap-0.5 cursor-pointer"
+                          className="text-[10px] font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-0.5 cursor-pointer"
                           title="Phóng to màn hình & webcam SV"
                         >
-                          <Eye className="h-2.5 w-2.5 text-blue-500" />
+                          <Eye className="h-2.5 w-2.5 text-slate-600 dark:text-slate-300" />
                           <span>Xem</span>
                         </button>
 
@@ -1034,7 +1214,7 @@ function InstructorMonitoringContent() {
                           <button
                             type="button"
                             onClick={() => handleOpenIndividualNotice(vio.studentId, vio.studentName)}
-                            className="rounded px-1.5 py-0.5 text-[10px] font-bold text-blue-600 hover:bg-blue-50 cursor-pointer inline-flex items-center gap-0.5"
+                            className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer inline-flex items-center gap-0.5"
                             title="Nhắc nhở riêng"
                           >
                             <Send className="h-2.5 w-2.5" />
@@ -1046,7 +1226,7 @@ function InstructorMonitoringContent() {
                               <button
                                 type="button"
                                 onClick={() => handleReviewViolation(vio.id, 'record')}
-                                className="rounded bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-red-700 cursor-pointer shadow-2xs"
+                                className="system-primary-action rounded bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-slate-800 cursor-pointer"
                                 title="Lập biên bản vi phạm"
                               >
                                 Lập BB
@@ -1054,14 +1234,14 @@ function InstructorMonitoringContent() {
                               <button
                                 type="button"
                                 onClick={() => handleReviewViolation(vio.id, 'dismiss')}
-                                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                                className="rounded border border-slate-300 dark:border-white/10 bg-white dark:bg-stone-800 px-1.5 py-0.5 text-[10px] text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
                                 title="Bỏ qua cảnh báo"
                               >
                                 ✕
                               </button>
                             </>
                           ) : (
-                            <span className="text-[10px] font-bold text-slate-500">
+                            <span className="text-[10px] font-mono font-medium text-stone-500">
                               {vio.status === 'recorded' ? '✓ Đã lập BB' : 'Đã bỏ qua'}
                             </span>
                           )}
@@ -1078,25 +1258,25 @@ function InstructorMonitoringContent() {
           {activeSideTab === 'announcements' && (
             <div className="space-y-1.5 max-h-[580px] overflow-y-auto pr-0.5">
               {announcements.length === 0 ? (
-                <div className="p-4 text-center text-xs text-slate-400">
-                  <Send className="mx-auto h-6 w-6 text-slate-300" />
-                  <p className="mt-1 font-bold text-slate-600 text-xs">Chưa có thông báo</p>
+                <div className="p-4 text-center text-xs text-stone-400">
+                  <Send className="mx-auto h-6 w-6 text-stone-300 dark:text-stone-600" />
+                  <p className="mt-1 font-serif font-bold text-stone-600 dark:text-stone-300 text-xs">Chưa có thông báo</p>
                 </div>
               ) : (
                 announcements.map((ann) => (
                   <div
                     key={ann.id}
-                    className="rounded-xl border border-slate-200 bg-slate-50/80 p-2 space-y-1 text-xs"
+                    className="rounded-md border border-slate-300 dark:border-white/10 bg-stone-50 dark:bg-stone-900/40 p-2 space-y-1 text-xs"
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className="rounded bg-blue-100 px-1.5 py-0.2 text-[9.5px] font-bold text-blue-800 truncate">
+                      <span className="rounded bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 text-[9.5px] font-mono font-bold text-slate-800 dark:text-slate-200 truncate border border-slate-300 dark:border-white/20">
                         {ann.targetLabel}
                       </span>
-                      <span className="font-mono text-[9px] text-slate-400 shrink-0">
+                      <span className="font-mono text-[9px] text-stone-400 shrink-0">
                         {ann.timestamp}
                       </span>
                     </div>
-                    <p className="text-[10.5px] text-slate-700 leading-snug font-medium line-clamp-2">
+                    <p className="text-[10.5px] text-stone-700 dark:text-stone-300 leading-snug font-medium line-clamp-2">
                       {ann.message}
                     </p>
                   </div>

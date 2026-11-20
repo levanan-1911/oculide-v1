@@ -22,8 +22,8 @@ CURRENT_USER = {"user_id": INSTRUCTOR_ID, "role": "instructor", "username": "hbd
 
 # Lớp học kiểm thử: CMU-CS 316 AIS (class_id = 5, do GV 12 phụ trách, có 7 sinh viên)
 CLASS_ID = 5
-ROOM_CODE_1 = "TEST-E2E-LOBBY-01"
-ROOM_CODE_2 = "TEST-E2E-LOBBY-02"
+ROOM_CODE_1 = "LOBY0001"
+ROOM_CODE_2 = "LOBY0002"
 
 def cleanup():
     for code in [ROOM_CODE_1, ROOM_CODE_2]:

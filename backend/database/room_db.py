@@ -21,6 +21,64 @@ def _resolve_template_id(cursor, template_id: Optional[Any]) -> Optional[int]:
         return row[0]
     return None
 
+
+def _resolve_session_type(
+    cursor,
+    session_type: Optional[str],
+    room_type: str,
+    room_name: str,
+    template_id: Optional[int],
+) -> Optional[str]:
+    aliases = {
+        "LAB": "LAB",
+        "PRACTICE": "LAB",
+        "MIDTERM": "MIDTERM",
+        "MIDTERM_EXAM": "MIDTERM",
+        "EXAM": "MIDTERM",
+        "FINAL": "FINAL",
+        "FINAL_EXAM": "FINAL",
+    }
+    room_type = (room_type or "").strip().lower()
+
+    if session_type:
+        normalized = aliases.get(session_type.strip().upper())
+        if not normalized:
+            raise ValueError("session_type must be LAB, MIDTERM, or FINAL")
+    elif room_type in ("lab", "practice"):
+        normalized = "LAB"
+    elif room_type == "exam":
+        template_type = None
+        if template_id:
+            cursor.execute(
+                "SELECT template_type FROM ExamTemplates WHERE template_id = ?",
+                (template_id,),
+            )
+            template_row = cursor.fetchone()
+            template_type = template_row[0] if template_row else None
+        normalized = {
+            "MIDTERM": "MIDTERM",
+            "MIDTERM_EXAM": "MIDTERM",
+            "FINAL": "FINAL",
+            "FINAL_EXAM": "FINAL",
+        }.get(str(template_type or "").strip().upper())
+        if normalized is None:
+            room_name_lower = (room_name or "").lower()
+            normalized = (
+                "FINAL"
+                if "cuối kỳ" in room_name_lower or "kết thúc" in room_name_lower
+                else "MIDTERM"
+            )
+    else:
+        normalized = None
+
+    if room_type in ("lab", "practice") and normalized not in (None, "LAB"):
+        raise ValueError("Lab rooms must use session_type LAB")
+    if room_type == "exam" and normalized not in ("MIDTERM", "FINAL"):
+        raise ValueError("Exam rooms must use session_type MIDTERM or FINAL")
+    if room_type == "classroom" and normalized is not None:
+        raise ValueError("Classroom rooms cannot have a session_type")
+    return normalized
+
 def get_room_by_id(room_id: int) -> Optional[Dict]:
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -30,6 +88,7 @@ def get_room_by_id(room_id: int) -> Optional[Dict]:
                    p.room_code, 
                    p.room_name, 
                    p.room_type, 
+                   p.session_type,
                    p.creator_id AS instructor_id, 
                    p.description,
                    p.start_time, 
@@ -91,6 +150,7 @@ def get_room_by_code(room_code: str) -> Optional[Dict]:
                    p.room_code, 
                    p.room_name, 
                    p.room_type, 
+                   p.session_type,
                    p.creator_id AS instructor_id, 
                    p.description,
                    p.start_time, 
@@ -159,6 +219,7 @@ def get_rooms_by_instructor(instructor_id: int, skip: int = 0, limit: int = 100,
                    p.room_code, 
                    p.room_name, 
                    p.room_type, 
+                   p.session_type,
                    p.creator_id AS instructor_id, 
                    p.description,
                    p.start_time, 
@@ -225,6 +286,7 @@ def get_all_rooms(skip: int = 0, limit: int = 100, room_type: Optional[str] = No
                    p.room_code, 
                    p.room_name, 
                    p.room_type, 
+                   p.session_type,
                    p.creator_id AS instructor_id, 
                    p.description,
                    p.start_time, 
@@ -304,6 +366,7 @@ def get_rooms_for_student(student_id: int, skip: int = 0, limit: int = 100, room
                    p.room_code, 
                    p.room_name, 
                    p.room_type, 
+                   p.session_type,
                    p.creator_id AS instructor_id, 
                    p.description,
                    p.start_time, 
@@ -385,7 +448,8 @@ def create_room(
     class_id: Optional[Any] = None,
     template_id: Optional[Any] = None,
     proctoring_config: Optional[str] = None,
-    status: str = 'scheduled'
+    status: str = 'scheduled',
+    session_type: Optional[str] = None,
 ) -> Dict:
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -393,17 +457,20 @@ def create_room(
         from database.classes_db import _resolve_class_id
         real_class_id = _resolve_class_id(cursor, class_id) if class_id else None
         real_template_id = _resolve_template_id(cursor, template_id) if template_id else None
+        real_session_type = _resolve_session_type(
+            cursor, session_type, room_type, room_name, real_template_id
+        )
 
         cursor.execute("""
             INSERT INTO Rooms (
-                room_code, room_name, room_type, creator_id, description,
+                room_code, room_name, room_type, session_type, creator_id, description,
                 start_time, end_time, duration_minutes, max_attempts,
                 passcode, livekit_room_name, class_id, template_id, proctoring_config, status
             )
             OUTPUT inserted.room_id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            room_code, room_name, room_type, instructor_id, description,
+            room_code, room_name, room_type, real_session_type, instructor_id, description,
             start_time, end_time, duration_minutes, max_attempts,
             passcode, livekit_room_name, real_class_id, real_template_id, proctoring_config, status
         ))
@@ -426,6 +493,7 @@ def update_room(room_id: int, **kwargs) -> Optional[Dict]:
         mapping = {
             "room_name": "room_name",
             "room_type": "room_type",
+            "session_type": "session_type",
             "description": "description",
             "start_time": "start_time",
             "end_time": "end_time",
@@ -440,8 +508,13 @@ def update_room(room_id: int, **kwargs) -> Optional[Dict]:
             "status": "status"
         }
         for key, value in kwargs.items():
-            if value is not None and key in mapping:
+            if key in mapping:
                 db_col = mapping[key]
+                if key == "template_id":
+                    value = _resolve_template_id(cursor, value)
+                elif key == "class_id" and value:
+                    from database.classes_db import _resolve_class_id
+                    value = _resolve_class_id(cursor, value)
                 fields.append(f"{db_col} = ?")
                 params.append(1 if key == "is_active" and value else (0 if key == "is_active" else value))
         if not fields:
@@ -465,8 +538,16 @@ def get_exam_templates(instructor_id: Optional[int] = None, room_type: Optional[
             where.append("(created_by = ? OR created_by IS NULL)")
             params.append(instructor_id)
         if room_type:
-            where.append("template_type = ?")
-            params.append(room_type)
+            rt = room_type.lower()
+            if rt in ("lab", "practice"):
+                where.append("template_type IN ('lab', 'practice')")
+            elif rt in ("midterm", "midterm_exam"):
+                where.append("template_type IN ('midterm', 'midterm_exam')")
+            elif rt in ("final", "final_exam"):
+                where.append("template_type IN ('final', 'final_exam', 'exam')")
+            else:
+                where.append("template_type = ?")
+                params.append(room_type)
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         cursor.execute(f"""
             SELECT b.template_id AS id,
@@ -505,6 +586,7 @@ def get_room_lobby_details(room_identifier: str) -> Optional[Dict]:
                    p.room_code,
                    p.room_name,
                    p.room_type,
+                   p.session_type,
                    p.creator_id AS instructor_id,
                    p.description,
                    p.start_time,
@@ -554,11 +636,15 @@ def get_room_lobby_details(room_identifier: str) -> Optional[Dict]:
                            ELSE 'absent'
                        END AS status,
                        CONVERT(NVARCHAR(30), pl.start_time, 126) AS joined_at,
-                       pl.user_agent AS device,
                        COALESCE(kt.camera_status, 0) AS camera_ready
                 FROM ClassEnrollments svl
                 JOIN Users u ON svl.student_id = u.user_id
-                LEFT JOIN ExamSessions pl ON pl.room_id = ? AND pl.student_id = u.user_id
+                OUTER APPLY (
+                    SELECT TOP 1 es.session_id, es.status, es.start_time
+                    FROM ExamSessions es
+                    WHERE es.room_id = ? AND es.student_id = u.user_id
+                    ORDER BY es.session_id DESC
+                ) pl
                 LEFT JOIN (
                     SELECT session_id, student_id, MAX(CAST(camera_status AS INT)) AS camera_status
                     FROM DeviceChecks
@@ -586,16 +672,26 @@ def get_room_lobby_details(room_identifier: str) -> Optional[Dict]:
                            ELSE 'absent'
                        END AS status,
                        CONVERT(NVARCHAR(30), pl.start_time, 126) AS joined_at,
-                       pl.user_agent AS device,
                        COALESCE(kt.camera_status, 0) AS camera_ready
-                FROM ExamSessions pl
+                FROM (
+                    SELECT es.session_id,
+                           es.student_id,
+                           es.status,
+                           es.start_time,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY es.room_id, es.student_id
+                               ORDER BY es.session_id DESC
+                           ) AS rn
+                    FROM ExamSessions es
+                    WHERE es.room_id = ?
+                ) pl
                 JOIN Users u ON pl.student_id = u.user_id
                 LEFT JOIN (
                     SELECT session_id, student_id, MAX(CAST(camera_status AS INT)) AS camera_status
                     FROM DeviceChecks
                     GROUP BY session_id, student_id
                 ) kt ON kt.session_id = pl.session_id AND kt.student_id = u.user_id
-                WHERE pl.room_id = ?
+                WHERE pl.rn = 1
                 ORDER BY u.full_name ASC
             """, (room_id,))
             att_rows = cursor.fetchall()
@@ -626,7 +722,11 @@ def check_instructor_active_room(instructor_id: int, current_room_id: int) -> Op
                    p.status
             FROM Rooms p
             LEFT JOIN Classes lh ON p.class_id = lh.class_id
-            WHERE p.creator_id = ? AND p.room_id != ? AND p.status IN ('dang_dien_ra', 'in_progress')
+            WHERE p.creator_id = ?
+              AND p.room_id != ?
+              AND p.status IN ('dang_dien_ra', 'in_progress')
+              AND p.is_active = 1
+              AND (p.end_time IS NULL OR p.end_time > GETDATE())
         """, (instructor_id, current_room_id))
         row = cursor.fetchone()
         if row:

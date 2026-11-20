@@ -35,6 +35,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
 
 class SystemSettingsManager:
     _cached_settings: Optional[SystemSettingsModel] = None
+    _last_mtime: float = 0.0
 
     @classmethod
     def _ensure_dir_and_file(cls) -> None:
@@ -44,8 +45,15 @@ class SystemSettingsManager:
                 json.dump(DEFAULT_SYSTEM_SETTINGS, f, ensure_ascii=False, indent=2)
 
     @classmethod
-    def get_settings(cls) -> SystemSettingsModel:
-        if cls._cached_settings is not None:
+    def get_settings(cls, force_reload: bool = False) -> SystemSettingsModel:
+        current_mtime = 0.0
+        try:
+            if SETTINGS_FILE.exists():
+                current_mtime = os.path.getmtime(SETTINGS_FILE)
+        except Exception:
+            pass
+
+        if not force_reload and cls._cached_settings is not None and cls._last_mtime == current_mtime:
             return cls._cached_settings
 
         cls._ensure_dir_and_file()
@@ -54,6 +62,7 @@ class SystemSettingsManager:
                 data = json.load(f)
             merged = {**DEFAULT_SYSTEM_SETTINGS, **data}
             cls._cached_settings = SystemSettingsModel(**merged)
+            cls._last_mtime = current_mtime
         except Exception as e:
             logger.error(f"Lỗi khi đọc file cấu hình hệ thống: {e}. Sử dụng cấu hình mặc định.")
             cls._cached_settings = SystemSettingsModel(**DEFAULT_SYSTEM_SETTINGS)

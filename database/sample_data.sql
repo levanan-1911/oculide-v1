@@ -220,6 +220,29 @@ SELECT @cls_se, u.user_id, @gv_nam, 'enrolled'
 FROM Users u
 WHERE u.username IN ('student', 'sv_bich', 'sv_cuong')
   AND NOT EXISTS (SELECT 1 FROM ClassEnrollments WHERE class_id = @cls_se AND student_id = u.user_id);
+
+-- Enroll students into CMU-CS 316 AIS and IT202_2026
+DECLARE @cls_cmu INT = (SELECT TOP 1 class_id FROM Classes WHERE class_code = 'CMU-CS 316 AIS');
+DECLARE @cls_it INT = (SELECT TOP 1 class_id FROM Classes WHERE class_code = 'IT202_2026');
+DECLARE @admin_id INT = (SELECT TOP 1 user_id FROM Users WHERE username = 'admin');
+
+IF @cls_cmu IS NOT NULL
+BEGIN
+    INSERT INTO ClassEnrollments (class_id, student_id, enrolled_by, status)
+    SELECT @cls_cmu, u.user_id, @admin_id, 'enrolled'
+    FROM Users u
+    WHERE u.role_id = 3
+      AND NOT EXISTS (SELECT 1 FROM ClassEnrollments WHERE class_id = @cls_cmu AND student_id = u.user_id);
+END
+
+IF @cls_it IS NOT NULL
+BEGIN
+    INSERT INTO ClassEnrollments (class_id, student_id, enrolled_by, status)
+    SELECT @cls_it, u.user_id, @admin_id, 'enrolled'
+    FROM Users u
+    WHERE u.role_id = 3
+      AND NOT EXISTS (SELECT 1 FROM ClassEnrollments WHERE class_id = @cls_it AND student_id = u.user_id);
+END
 GO
 
 -- ────────────────────────────────────────────────────────────────────────────
@@ -231,11 +254,11 @@ DECLARE @cls_cs INT = (SELECT TOP 1 class_id FROM Classes WHERE class_code = 'CS
 IF NOT EXISTS (SELECT 1 FROM Rooms WHERE room_code = 'EXAM_FINAL_CS404')
 BEGIN
     INSERT INTO Rooms (
-        room_code, room_name, room_type, creator_id, description, 
+        room_code, room_name, room_type, session_type, creator_id, description,
         start_time, end_time, duration_minutes, max_attempts, 
         passcode, class_id, proctoring_config, is_active, status
     ) VALUES (
-        'EXAM_FINAL_CS404', N'Thi Cuối Kỳ: Lập Trình Thuật Toán & Cấu Trúc Dữ Liệu', 'exam', @gv_nam, 
+        'EXAM_FINAL_CS404', N'Thi Cuối Kỳ: Lập Trình Thuật Toán & Cấu Trúc Dữ Liệu', 'exam', 'FINAL', @gv_nam,
         N'Kỳ thi chính thức kết thúc học phần CS404. Giám sát AI toàn thời gian qua camera và chia sẻ màn hình.',
         DATEADD(hour, -1, GETDATE()), DATEADD(hour, 2, GETDATE()), 90, 5,
         '123456', @cls_cs, 
@@ -247,11 +270,11 @@ END
 IF NOT EXISTS (SELECT 1 FROM Rooms WHERE room_code = 'LAB_PRACTICE_01')
 BEGIN
     INSERT INTO Rooms (
-        room_code, room_name, room_type, creator_id, description, 
+        room_code, room_name, room_type, session_type, creator_id, description,
         start_time, end_time, duration_minutes, max_attempts, 
         passcode, class_id, proctoring_config, is_active, status
     ) VALUES (
-        'LAB_PRACTICE_01', N'Thực Hành Lab 05: Đệ Quy và Quy Hoạch Động', 'practice', @gv_nam, 
+        'LAB_PRACTICE_01', N'Thực Hành Lab 05: Đệ Quy và Quy Hoạch Động', 'practice', 'LAB', @gv_nam,
         N'Phòng thực hành tự do không tính điểm thi, hỗ trợ chạy thử mã nguồn và chấm điểm tự động tức thì.',
         DATEADD(day, -1, GETDATE()), DATEADD(day, 7, GETDATE()), 120, 20,
         '654321', @cls_cs, 
@@ -509,13 +532,29 @@ DECLARE @id_admin INT = (SELECT TOP 1 user_id FROM Users WHERE username = 'admin
 IF NOT EXISTS (SELECT 1 FROM SystemAuditLogs)
 BEGIN
     INSERT INTO SystemAuditLogs (user_id, log_level, action, message, ip_address)
-    VALUES (@id_admin, 'INFO', 'SYSTEM_BOOT', N'Khởi tạo thành công cơ sở dữ liệu và cấu hình hệ thống Oculide', '127.0.0.1');
+    VALUES (@id_admin, 'INFO', N'Khởi tạo hệ thống', N'Khởi tạo thành công cơ sở dữ liệu và cấu hình hệ thống Oculide', '127.0.0.1');
 
     INSERT INTO SystemAuditLogs (user_id, log_level, action, message, ip_address)
-    VALUES (@id_admin, 'INFO', 'USER_LOGIN', N'Quản trị viên đăng nhập vào hệ thống', '127.0.0.1');
+    VALUES (@id_admin, 'INFO', N'Đăng nhập', N'Quản trị viên đăng nhập vào hệ thống', '127.0.0.1');
 
     INSERT INTO SystemAuditLogs (user_id, log_level, action, message, ip_address)
-    VALUES (@id_admin, 'INFO', 'CREATE_ROOM', N'Giảng viên Nguyễn Văn Nam tạo phòng thi EXAM_FINAL_CS404', '127.0.0.1');
+    VALUES (@id_admin, 'INFO', N'Tạo phòng thi', N'Giảng viên Nguyễn Văn Nam tạo phòng thi EXAM_FINAL_CS404', '127.0.0.1');
+END
+GO
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 16. TABLE ExamTemplates (Standard Exam & Lab Templates)
+-- ────────────────────────────────────────────────────────────────────────────
+DECLARE @id_admin INT = (SELECT TOP 1 user_id FROM Users WHERE username = 'admin');
+
+IF NOT EXISTS (SELECT 1 FROM ExamTemplates WHERE template_code = 'FINAL_CS404_2026')
+BEGIN
+    INSERT INTO ExamTemplates (template_code, title, template_type, duration_minutes, total_points, created_by)
+    VALUES 
+    ('FINAL_CS404_2026', N'Đề thi Kết thúc học phần: Cấu trúc Dữ liệu & Giải thuật nâng cao', 'final_exam', 90, 10.0, @id_admin),
+    ('FINAL_CS202_2026', N'Đề thi Kết thúc học phần: Lập trình Hướng đối tượng Java/C++', 'final_exam', 90, 10.0, @id_admin),
+    ('FINAL_CS316_2026', N'Đề thi Kết thúc học phần: Cơ sở Dữ liệu & Hệ thống thông tin', 'final_exam', 75, 10.0, @id_admin),
+    ('FINAL_SE301_2026', N'Đề thi Thực hành: Kỹ thuật phần mềm & Kiểm thử tự động', 'final_exam', 120, 10.0, @id_admin);
 END
 GO
 

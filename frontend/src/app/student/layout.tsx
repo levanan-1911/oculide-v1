@@ -42,7 +42,7 @@ export default function StudentLayout({
   // Giao diện Dashboard chuẩn có Sidebar & Topbar đồng bộ với Admin và Giảng viên
   return (
     <AuthGuard allowedRoles={["student", "admin", "instructor"]}>
-      <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] dark:bg-[#090a0f] font-sans text-slate-800 dark:text-slate-100 transition-colors">
+      <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-neutral-950 font-sans text-[#2A282D] dark:text-[#E8E6E8] transition-colors">
         <StudentSidebar />
         <div className="flex flex-1 flex-col overflow-hidden">
           <StudentTopbar title={title} />

@@ -55,7 +55,7 @@ async def run_proctoring_violations_e2e():
     instructor_user = {"user_id": instructor_id, "role": "instructor"}
     student_user = {"user_id": student_id, "role": "student"}
 
-    room_code = "E2E-PROCTOR-01"
+    room_code = "PROCT001"
     created_room_id = None
 
     try:

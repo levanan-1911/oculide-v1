@@ -25,7 +25,7 @@ class TemplateQuestionSchema(BaseModel):
 class TemplateCreateRequest(BaseModel):
     code: Optional[str] = None
     title: str = Field(..., min_length=1, max_length=255)
-    type: str = Field(default="lab", pattern="^(lab|exam)$")
+    type: str = Field(default="lab", pattern="^(lab|exam|final_exam|final|midterm|midterm_exam)$")
     category: Optional[str] = "Lập trình"
     language: str = "C++ / Python"
     duration_minutes: int = Field(default=90, ge=5, le=600)
@@ -35,7 +35,7 @@ class TemplateCreateRequest(BaseModel):
 
 class TemplateUpdateRequest(BaseModel):
     title: Optional[str] = None
-    type: Optional[str] = Field(default=None, pattern="^(lab|exam)$")
+    type: Optional[str] = Field(default=None, pattern="^(lab|exam|final_exam|final|midterm|midterm_exam)$")
     category: Optional[str] = None
     language: Optional[str] = None
     duration_minutes: Optional[int] = Field(default=None, ge=5, le=600)

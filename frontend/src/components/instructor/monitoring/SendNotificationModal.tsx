@@ -140,19 +140,19 @@ export default function SendNotificationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
-      <div className="relative w-full max-w-lg rounded-3xl border border-slate-200/90 bg-white p-6 shadow-2xl transition-all max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-xs">
+      <div className="relative w-full max-w-lg rounded-md border border-slate-300 bg-white p-6 shadow-2xl transition-all max-h-[90vh] overflow-y-auto dark:border-white/10 dark:bg-neutral-900">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+        <div className="flex items-center justify-between border-b border-slate-300 pb-4 dark:border-white/10">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-brand-300 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-rose-200">
               <Send className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">
+              <h2 className="text-base font-serif font-bold text-stone-900 dark:text-stone-100">
                 Gửi thông báo tới thí sinh
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-stone-500 dark:text-stone-400">
                 Thông báo sẽ xuất hiện trực tiếp trên màn hình làm bài của sinh viên
               </p>
             </div>
@@ -161,7 +161,7 @@ export default function SendNotificationModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-stone-400 hover:bg-stone-100 dark:hover:bg-white/5 hover:text-stone-600 cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
@@ -171,50 +171,50 @@ export default function SendNotificationModal({
         <form onSubmit={handleSubmit} className="mt-5 space-y-5">
           {/* Chọn phạm vi người nhận: Toàn phòng / Nhóm / Cá nhân */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-2">
+            <label className="block text-xs font-serif font-bold text-stone-700 dark:text-stone-300 mb-2">
               Đối tượng nhận thông báo
             </label>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => setTargetType('all')}
-                className={`flex flex-col items-center justify-center gap-1.5 rounded-2xl p-3 text-xs font-bold transition cursor-pointer ${
+                className={`flex flex-col items-center justify-center gap-1.5 rounded-md p-3 text-xs font-serif font-bold transition cursor-pointer ${
                   targetType === 'all'
-                    ? 'border-2 border-blue-600 bg-blue-50/70 text-blue-700 shadow-xs'
-                    : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                    ? 'border-2 border-brand bg-brand-50 text-brand-700 dark:text-rose-200 dark:bg-brand-500/10 shadow-2xs'
+                    : 'border border-slate-300 bg-stone-50 text-stone-600 hover:bg-stone-100 dark:border-white/10 dark:bg-stone-900/50 dark:text-stone-300 dark:hover:bg-white/5'
                 }`}
               >
                 <Globe className="h-4 w-4" />
                 <span>Toàn phòng thi</span>
-                <span className="text-[10px] font-normal text-slate-400">46 SV</span>
+                <span className="text-[10px] font-mono font-normal text-stone-400">46 SV</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setTargetType('group')}
-                className={`flex flex-col items-center justify-center gap-1.5 rounded-2xl p-3 text-xs font-bold transition cursor-pointer ${
+                className={`flex flex-col items-center justify-center gap-1.5 rounded-md p-3 text-xs font-serif font-bold transition cursor-pointer ${
                   targetType === 'group'
-                    ? 'border-2 border-blue-600 bg-blue-50/70 text-blue-700 shadow-xs'
-                    : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                    ? 'border-2 border-brand bg-brand-50 text-brand-700 dark:text-rose-200 dark:bg-brand-500/10 shadow-2xs'
+                    : 'border border-slate-300 bg-stone-50 text-stone-600 hover:bg-stone-100 dark:border-white/10 dark:bg-stone-900/50 dark:text-stone-300 dark:hover:bg-white/5'
                 }`}
               >
                 <Users className="h-4 w-4" />
                 <span>Nhóm sinh viên</span>
-                <span className="text-[10px] font-normal text-slate-400">Theo bộ lọc</span>
+                <span className="text-[10px] font-mono font-normal text-stone-400">Theo bộ lọc</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setTargetType('individual')}
-                className={`flex flex-col items-center justify-center gap-1.5 rounded-2xl p-3 text-xs font-bold transition cursor-pointer ${
+                className={`flex flex-col items-center justify-center gap-1.5 rounded-md p-3 text-xs font-serif font-bold transition cursor-pointer ${
                   targetType === 'individual'
-                    ? 'border-2 border-blue-600 bg-blue-50/70 text-blue-700 shadow-xs'
-                    : 'border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                    ? 'border-2 border-brand bg-brand-50 text-brand-700 dark:text-rose-200 dark:bg-brand-500/10 shadow-2xs'
+                    : 'border border-slate-300 bg-stone-50 text-stone-600 hover:bg-stone-100 dark:border-white/10 dark:bg-stone-900/50 dark:text-stone-300 dark:hover:bg-white/5'
                 }`}
               >
                 <User className="h-4 w-4" />
                 <span>Cá nhân</span>
-                <span className="text-[10px] font-normal text-slate-400">Nhắc nhở riêng</span>
+                <span className="text-[10px] font-mono font-normal text-stone-400">Nhắc nhở riêng</span>
               </button>
             </div>
           </div>
@@ -222,13 +222,13 @@ export default function SendNotificationModal({
           {/* Nếu chọn Nhóm: Dropdown nhóm */}
           {targetType === 'group' && (
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <label className="block text-xs font-serif font-bold text-stone-700 dark:text-stone-300 mb-1.5">
                 Chọn nhóm sinh viên mục tiêu
               </label>
               <select
                 value={selectedGroup}
                 onChange={(e) => setSelectedGroup(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs text-slate-800 outline-none transition focus:border-blue-600"
+                className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-stone-800 outline-none transition focus:border-brand-600 dark:border-white/10 dark:bg-neutral-950 dark:text-stone-100"
               >
                 {PREDEFINED_GROUPS.map((grp) => (
                   <option key={grp.id} value={grp.id}>
@@ -242,13 +242,13 @@ export default function SendNotificationModal({
           {/* Nếu chọn Cá nhân: Dropdown danh sách SV */}
           {targetType === 'individual' && (
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <label className="block text-xs font-serif font-bold text-stone-700 dark:text-stone-300 mb-1.5">
                 Chọn sinh viên nhận cảnh báo / nhắc nhở
               </label>
               <select
                 value={selectedStudentId}
                 onChange={(e) => setSelectedStudentId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 outline-none transition focus:border-blue-600"
+                className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-serif font-bold text-stone-800 outline-none transition focus:border-brand-600 dark:border-white/10 dark:bg-neutral-950 dark:text-stone-100"
               >
                 {activeStudents.map((st) => (
                   <option key={st.id} value={st.id}>
@@ -261,15 +261,15 @@ export default function SendNotificationModal({
 
           {/* Phân loại mức độ thông báo */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-2">
+            <label className="block text-xs font-serif font-bold text-stone-700 dark:text-stone-300 mb-2">
               Mức độ &amp; Loại thông báo
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
-                { id: 'warning', label: 'Cảnh báo', icon: AlertTriangle, color: 'text-amber-700 border-amber-200 bg-amber-50' },
-                { id: 'urgent', label: 'Khẩn cấp', icon: ShieldAlert, color: 'text-red-700 border-red-200 bg-red-50' },
-                { id: 'time', label: 'Thời gian', icon: Clock, color: 'text-blue-700 border-blue-200 bg-blue-50' },
-                { id: 'info', label: 'Hướng dẫn', icon: Info, color: 'text-slate-700 border-slate-200 bg-slate-50' },
+                { id: 'warning', label: 'Cảnh báo', icon: AlertTriangle, color: 'text-stone-800 border-slate-300 bg-slate-50 dark:bg-white/10 dark:text-stone-200 dark:border-white/10' },
+                { id: 'urgent', label: 'Khẩn cấp', icon: ShieldAlert, color: 'text-slate-800 border-slate-800/30 bg-slate-800/10 dark:text-rose-300 dark:border-slate-800' },
+                { id: 'time', label: 'Thời gian', icon: Clock, color: 'text-brand-700 border-brand-300 bg-brand-50 dark:text-rose-200 dark:border-brand-500/30 dark:bg-brand-500/10' },
+                { id: 'info', label: 'Hướng dẫn', icon: Info, color: 'text-stone-700 border-slate-300 bg-stone-50 dark:text-stone-300 dark:border-white/10 dark:bg-stone-900/50' },
               ].map((t) => {
                 const Icon = t.icon;
                 const isSelected = noticeType === t.id;
@@ -278,10 +278,10 @@ export default function SendNotificationModal({
                     key={t.id}
                     type="button"
                     onClick={() => setNoticeType(t.id as any)}
-                    className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition cursor-pointer ${
+                    className={`flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-xs font-serif font-bold transition cursor-pointer ${
                       isSelected
-                        ? `${t.color} ring-2 ring-blue-600`
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        ? `${t.color} ring-2 ring-slate-900`
+                        : 'border-slate-300 bg-white text-stone-600 hover:bg-stone-50 dark:border-white/10 dark:bg-neutral-950 dark:text-stone-300 dark:hover:bg-white/5'
                     }`}
                   >
                     <Icon className="h-3.5 w-3.5" />
@@ -295,8 +295,8 @@ export default function SendNotificationModal({
           {/* Mẫu soạn sẵn (Quick Templates) */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                <Sparkles className="h-3.5 w-3.5 text-blue-600" />
+              <span className="text-xs font-serif font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1">
+                <Sparkles className="h-3.5 w-3.5 text-brand-600 dark:text-rose-300" />
                 Mẫu câu soạn sẵn (Gợi ý nhanh):
               </span>
             </div>
@@ -306,10 +306,10 @@ export default function SendNotificationModal({
                   key={idx}
                   type="button"
                   onClick={() => handleApplyTemplate(tmpl)}
-                  className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-left text-[11px] font-medium text-slate-700 hover:border-blue-400 hover:bg-blue-50/50 transition cursor-pointer"
+                  className="rounded-md border border-slate-300 bg-stone-50 p-2 text-left text-[11px] font-medium text-stone-700 hover:border-brand-400 hover:bg-brand-50 transition cursor-pointer dark:border-white/10 dark:bg-stone-900/40 dark:text-stone-300 dark:hover:bg-white/5"
                 >
-                  <p className="font-bold text-slate-900">{tmpl.label}</p>
-                  <p className="line-clamp-1 text-slate-500 mt-0.5">{tmpl.text}</p>
+                  <p className="font-serif font-bold text-stone-900 dark:text-stone-100">{tmpl.label}</p>
+                  <p className="line-clamp-1 text-stone-500 dark:text-stone-400 mt-0.5">{tmpl.text}</p>
                 </button>
               ))}
             </div>
@@ -317,7 +317,7 @@ export default function SendNotificationModal({
 
           {/* Nội dung thông báo */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <label className="block text-xs font-serif font-bold text-stone-700 dark:text-stone-300 mb-1.5">
               Nội dung thông báo chi tiết
             </label>
             <textarea
@@ -325,23 +325,23 @@ export default function SendNotificationModal({
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Nhập nội dung muốn thông báo hoặc chọn mẫu gợi ý phía trên..."
-              className="w-full rounded-2xl border border-slate-200 p-3.5 text-xs text-slate-800 outline-none transition focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              className="w-full rounded-md border border-slate-300 bg-white p-3.5 text-xs text-stone-800 outline-none transition focus:border-brand-600 focus:ring-1 focus:ring-brand-600 dark:border-white/10 dark:bg-neutral-950 dark:text-stone-100"
               required
             />
           </div>
 
           {/* Buttons */}
-          <div className="flex items-center justify-end gap-2.5 border-t border-slate-100 pt-4">
+          <div className="flex items-center justify-end gap-2.5 border-t border-slate-300 pt-4 dark:border-white/10">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+              className="rounded-md border border-slate-300 px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 transition cursor-pointer dark:border-white/10 dark:text-stone-300 dark:hover:bg-white/5"
             >
               Hủy
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer"
+              className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-5 py-2 text-xs font-serif font-bold text-white shadow-2xs hover:bg-slate-800 transition cursor-pointer"
             >
               <Send className="h-4 w-4" />
               Gửi thông báo ngay

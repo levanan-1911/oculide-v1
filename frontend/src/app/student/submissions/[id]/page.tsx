@@ -485,7 +485,7 @@ export default function SubmissionDetailPage() {
         <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
           <Link
             href="/student/submissions"
-            className="inline-flex items-center gap-1.5 font-medium hover:text-blue-600 dark:hover:text-blue-400 transition"
+            className="inline-flex items-center gap-1.5 font-medium hover:text-brand-700 dark:text-slate-500 dark:hover:text-brand-200 transition"
           >
             <ArrowLeft size={14} />
             <span>Danh sách bài làm</span>
@@ -508,17 +508,17 @@ export default function SubmissionDetailPage() {
       </div>
 
       {/* ─── Header Tiêu Đề Bài Làm (Mô phỏng 100% Header ảnh tham khảo) ─── */}
-      <header className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm transition">
+      <header className="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 sm:p-6 shadow-sm transition">
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           <div className="space-y-2">
             {/* Tiêu đề chính: Bài làm [mã] [tên bài] của [tác giả] */}
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+            <h1 className="text-xl sm:text-2xl font-serif font-bold tracking-tight text-[#2A282D] dark:text-[#ede8e9]">
               Bài làm{" "}
-              <span className="font-mono text-blue-600 dark:text-blue-400">
+              <span className="font-mono text-brand-700 dark:text-brand-200">
                 {submission.problemCode}
               </span>{" "}
               <span>{submission.problemTitle}</span> của{" "}
-              <span className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer">
+              <span className="text-brand-700 dark:text-brand-200 hover:underline cursor-pointer">
                 {submission.authorUsername}
               </span>
             </h1>
@@ -531,7 +531,7 @@ export default function SubmissionDetailPage() {
               <span>•</span>
               <span className="font-mono">MSSV: {submission.authorMssv}</span>
               <span>•</span>
-              <span className="rounded-md bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 font-semibold text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-500/20">
+              <span className="rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 font-semibold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
                 Lập trình C++ Nâng cao
               </span>
             </div>
@@ -543,7 +543,7 @@ export default function SubmissionDetailPage() {
               <Clock3 size={13} className="text-slate-400" />
               {submission.submittedAt}
             </span>
-            <span className="rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 px-2.5 py-1 font-mono text-xs font-bold shadow-sm">
+            <span className="rounded-md bg-brand px-2.5 py-1 font-mono text-xs font-bold text-white shadow-sm">
               {submission.language}
             </span>
           </div>
@@ -557,7 +557,7 @@ export default function SubmissionDetailPage() {
               <button
                 type="button"
                 onClick={() => handleSelectTab("result")}
-                className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition underline underline-offset-4"
+                className="inline-flex items-center gap-1.5 text-brand-700 dark:text-brand-200 hover:text-brand-600 dark:hover:text-brand-100 transition underline underline-offset-4"
               >
                 <CheckCircle2 size={14} />
                 <span>Xem kết quả</span>
@@ -566,7 +566,7 @@ export default function SubmissionDetailPage() {
               <button
                 type="button"
                 onClick={() => handleSelectTab("code")}
-                className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition underline underline-offset-4"
+                className="inline-flex items-center gap-1.5 text-brand-700 dark:text-brand-200 hover:text-brand-600 dark:hover:text-brand-100 transition underline underline-offset-4"
               >
                 <Code2 size={14} />
                 <span>Xem code</span>
@@ -580,7 +580,7 @@ export default function SubmissionDetailPage() {
                 <button
                   type="button"
                   onClick={() => setIsRawView(!isRawView)}
-                  className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition"
+                  className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-brand-700 dark:hover:text-brand-200 transition"
                 >
                   <FileCode2 size={14} />
                   <span>{isRawView ? "Xem mã tô màu cú pháp" : "Xem mã nguồn thô"}</span>
@@ -593,7 +593,7 @@ export default function SubmissionDetailPage() {
             {/* Nút Nộp lại dẫn về trang phòng thi hoặc làm lại */}
             <Link
               href="/student/exam-room"
-              className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition"
+              className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-brand-700 dark:hover:text-brand-200 transition"
             >
               <RotateCcw size={14} />
               <span>Nộp lại</span>
@@ -606,7 +606,7 @@ export default function SubmissionDetailPage() {
               type="button"
               onClick={handleDownloadCode}
               title="Tải mã nguồn về máy"
-              className="h-9 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-white/10 px-3 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition"
+              className="h-9 inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-white/10 px-3 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition"
             >
               <Download size={13} />
               <span className="hidden sm:inline">Tải mã nguồn</span>
@@ -615,10 +615,10 @@ export default function SubmissionDetailPage() {
             <button
               type="button"
               onClick={handleCopyCode}
-              className={`h-9 inline-flex items-center gap-1.5 rounded-xl px-3 text-xs font-bold transition active:scale-95 ${
+              className={`h-9 inline-flex items-center gap-1.5 rounded-md px-3 text-xs font-bold transition active:scale-95 ${
                 copied
                   ? "bg-emerald-600 text-white"
-                  : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                  : "bg-brand text-white hover:bg-brand-600 shadow-sm"
               }`}
             >
               {copied ? <Check size={14} /> : <Copy size={14} />}
@@ -631,7 +631,7 @@ export default function SubmissionDetailPage() {
       {/* ─── TAB 1: XEM KẾT QUẢ CHẠY (RUN RESULTS VIEW - MATCHING IMAGE 2) ─── */}
       {activeTab === "result" && (
         <section className="space-y-6">
-          <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] p-5 sm:p-6 shadow-sm">
+          <div className="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 sm:p-6 shadow-sm">
             {/* Tiêu đề mục Kết quả */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-white/5 pb-4">
               <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -645,7 +645,7 @@ export default function SubmissionDetailPage() {
                 <button
                   type="button"
                   onClick={() => toggleAllTestCases(true)}
-                  className="text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition"
+                  className="text-slate-500 hover:text-brand-700 dark:hover:text-brand-200 transition"
                 >
                   Mở tất cả
                 </button>
@@ -653,7 +653,7 @@ export default function SubmissionDetailPage() {
                 <button
                   type="button"
                   onClick={() => toggleAllTestCases(false)}
-                  className="text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition"
+                  className="text-slate-500 hover:text-brand-700 dark:hover:text-brand-200 transition"
                 >
                   Thu gọn
                 </button>
@@ -668,7 +668,7 @@ export default function SubmissionDetailPage() {
                   type="button"
                   onClick={() => toggleTestCase(tc.id)}
                   title={`${tc.name}: ${tc.statusText} [${tc.runtime}, ${tc.memory}]`}
-                  className={`inline-flex items-center justify-center w-8 h-8 rounded-lg font-bold text-sm transition-transform active:scale-95 ${
+                  className={`inline-flex items-center justify-center w-8 h-8 rounded-md font-bold text-sm transition-transform active:scale-95 ${
                     tc.status === "AC"
                       ? "bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/30 hover:bg-emerald-100"
                       : "bg-rose-50 text-rose-600 border border-rose-200 dark:bg-rose-500/15 dark:text-rose-400 dark:border-rose-500/30 hover:bg-rose-100"
@@ -691,7 +691,7 @@ export default function SubmissionDetailPage() {
                 return (
                   <div
                     key={tc.id}
-                    className={`rounded-xl border transition-all ${
+                    className={`rounded-md border transition-all ${
                       isSuccess
                         ? "border-emerald-200/80 bg-emerald-50/20 dark:border-emerald-500/20 dark:bg-emerald-500/[0.03]"
                         : "border-rose-200/90 bg-rose-50/30 dark:border-rose-500/30 dark:bg-rose-500/[0.04]"
@@ -701,7 +701,7 @@ export default function SubmissionDetailPage() {
                     <button
                       type="button"
                       onClick={() => toggleTestCase(tc.id)}
-                      className="w-full flex items-center justify-between p-3.5 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.02] rounded-xl transition"
+                      className="w-full flex items-center justify-between p-3.5 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.02] rounded-md transition"
                     >
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-slate-400">
@@ -748,7 +748,7 @@ export default function SubmissionDetailPage() {
                             <span className="font-bold text-slate-600 dark:text-slate-400 text-[11px]">
                               Dữ liệu đầu vào (Input):
                             </span>
-                            <pre className="font-mono text-xs rounded-lg bg-slate-900 text-slate-100 p-2.5 overflow-x-auto border border-slate-800">
+                            <pre className="font-mono text-xs rounded-md bg-slate-900 text-slate-100 p-2.5 overflow-x-auto border border-slate-800">
                               {tc.input}
                             </pre>
                           </div>
@@ -758,7 +758,7 @@ export default function SubmissionDetailPage() {
                             <span className="font-bold text-slate-600 dark:text-slate-400 text-[11px]">
                               Kết quả mong đợi (Expected Output):
                             </span>
-                            <pre className="font-mono text-xs rounded-lg bg-slate-900 text-emerald-400 p-2.5 overflow-x-auto border border-slate-800">
+                            <pre className="font-mono text-xs rounded-md bg-slate-900 text-emerald-400 p-2.5 overflow-x-auto border border-slate-800">
                               {tc.expectedOutput}
                             </pre>
                           </div>
@@ -770,7 +770,7 @@ export default function SubmissionDetailPage() {
                             Kết quả thực tế của chương trình (Your Output):
                           </span>
                           <pre
-                            className={`font-mono text-xs rounded-lg p-2.5 overflow-x-auto border ${
+                            className={`font-mono text-xs rounded-md p-2.5 overflow-x-auto border ${
                               isSuccess
                                 ? "bg-slate-900 text-emerald-300 border-slate-800"
                                 : "bg-slate-900 text-rose-300 border-rose-900/50"
@@ -783,7 +783,7 @@ export default function SubmissionDetailPage() {
                         {/* Ghi chú sai lệch (Diff note) */}
                         {tc.diffNote && (
                           <div
-                            className={`p-2.5 rounded-lg border text-xs flex items-start gap-2 ${
+                            className={`p-2.5 rounded-md border text-xs flex items-start gap-2 ${
                               isSuccess
                                 ? "bg-emerald-50 text-emerald-800 border-emerald-200/80 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20"
                                 : "bg-amber-50 text-amber-900 border-amber-200/80 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20"
@@ -814,7 +814,7 @@ export default function SubmissionDetailPage() {
 
               <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
                 <span className="font-bold text-slate-900 dark:text-white">Điểm cuối cùng:</span>
-                <span className="font-bold font-mono text-blue-600 dark:text-blue-400">
+                <span className="font-bold font-mono text-slate-900 dark:text-slate-500 dark:text-blue-400">
                   {submission.scoreEarned}/{submission.scoreMax} ({submission.pointsScaled})
                 </span>
               </div>
@@ -849,10 +849,10 @@ export default function SubmissionDetailPage() {
       {activeTab === "code" && (
         <section className="space-y-4">
           {/* Header của Code Viewer Box */}
-          <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] overflow-hidden shadow-sm">
+          <div className="rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm">
             <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-white/[0.03] border-b border-slate-200/80 dark:border-white/10 text-xs">
               <div className="flex items-center gap-2">
-                <FileCode2 size={15} className="text-blue-600 dark:text-blue-400" />
+                <FileCode2 size={15} className="text-slate-900 dark:text-slate-500 dark:text-blue-400" />
                 <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
                   solution.cpp
                 </span>
@@ -863,7 +863,7 @@ export default function SubmissionDetailPage() {
                 <button
                   type="button"
                   onClick={handleCopyCode}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 px-3 py-1 font-mono text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 px-3 py-1 font-mono text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
                 >
                   {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
                   <span>{copied ? "Đã copy" : "Copy"}</span>
@@ -890,7 +890,7 @@ export default function SubmissionDetailPage() {
                 {/* Cột Nội Dung Code (Tô màu cú pháp cơ bản) */}
                 <div className="py-4 px-4 flex-1 text-slate-900 dark:text-slate-100 whitespace-pre overflow-x-auto">
                   {codeLines.map((line, idx) => (
-                    <div key={idx} className="hover:bg-blue-50/30 dark:hover:bg-white/[0.02]">
+                    <div key={idx} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02]">
                       {renderSyntaxLine(line)}
                     </div>
                   ))}
@@ -930,7 +930,7 @@ function renderSyntaxLine(line: string) {
     return (
       <span>
         <span className="text-purple-600 dark:text-purple-400 font-semibold">using namespace</span>{" "}
-        <span className="text-blue-600 dark:text-blue-400">std</span>;
+        <span className="text-slate-900 dark:text-slate-500 dark:text-blue-400">std</span>;
       </span>
     );
   }
@@ -943,7 +943,7 @@ function renderSyntaxLine(line: string) {
       {parts.map((part, i) => {
         if (/^(int|long|char|string|void|bool|float|double)$/.test(part)) {
           return (
-            <span key={i} className="text-blue-600 dark:text-blue-400 font-semibold">
+            <span key={i} className="text-slate-900 dark:text-slate-500 dark:text-blue-400 font-semibold">
               {part}
             </span>
           );

@@ -332,44 +332,88 @@ def update_class(
         cursor.close()
         conn.close()
 
+def get_semester_def_by_date(t: date):
+    """
+    Xác định thông tin học kỳ dựa trên ngày t theo quy chuẩn:
+    - Năm học bắt đầu từ 01/09 hàng năm (Mốc xuất phát: 2026-09-01).
+    - HK1: 01/09/Y đến 15/01/(Y+1)
+    - HK2: 16/01/(Y+1) đến 30/06/(Y+1)
+    - HK hè: 01/07/(Y+1) đến 31/08/(Y+1) (kéo dài đúng 2 tháng)
+    """
+    year = t.year
+    month = t.month
+    day = t.day
+
+    if (month == 9 and day >= 1) or (month in (10, 11, 12)):
+        ac_year = f"{year}-{year + 1}"
+        term = 1
+        s_date = date(year, 9, 1)
+        e_date = date(year + 1, 1, 15)
+        sem_code = f"HK1_{year}_{year + 1}"
+        sem_name = f"HK1 {year}-{year + 1}"
+    elif month == 1 and day <= 15:
+        ac_year = f"{year - 1}-{year}"
+        term = 1
+        s_date = date(year - 1, 9, 1)
+        e_date = date(year, 1, 15)
+        sem_code = f"HK1_{year - 1}_{year}"
+        sem_name = f"HK1 {year - 1}-{year}"
+    elif (month == 1 and day >= 16) or (month in (2, 3, 4, 5, 6)):
+        ac_year = f"{year - 1}-{year}"
+        term = 2
+        s_date = date(year, 1, 16)
+        e_date = date(year, 6, 30)
+        sem_code = f"HK2_{year - 1}_{year}"
+        sem_name = f"HK2 {year - 1}-{year}"
+    else:  # Tháng 7 và Tháng 8: Học kỳ hè kéo dài đúng 2 tháng
+        ac_year = f"{year - 1}-{year}"
+        term = 3
+        s_date = date(year, 7, 1)
+        e_date = date(year, 8, 31)
+        sem_code = f"HKT_{year - 1}_{year}"
+        sem_name = f"HK hè {year - 1}-{year}"
+
+    return sem_code, sem_name, ac_year, term, s_date, e_date
+
 def sync_semesters_realtime(cursor, today: Optional[date] = None):
     """
     Đồng bộ trạng thái học kỳ thời gian thực vào bảng Semesters:
-    - Năm bắt đầu hệ thống: 2026 (Năm học 2026-2027).
-    - Các năm tiếp theo trong tương lai được hệ thống tự động tính toán và sinh sẵn.
-    - Cập nhật cờ is_current và status hoàn toàn theo thời gian thực (real-time).
+    - Năm bắt đầu hệ thống: 2026 (Năm học 2026-2027 bắt đầu từ 01/09/2026).
+    - Chỉ lưu học kỳ hiện tại (và các học kỳ đã thực sự diễn ra tính đến ngày hiện tại).
+    - Tuyệt đối KHÔNG sinh sẵn bất kỳ học kỳ tương lai nào trong CSDL.
+    - Nếu đang là HK1 thì trong DB CHỈ CÓ DUY NHẤT HK1.
+    - Khi thời gian thực tế bước qua HK2 hoặc HK hè thì hệ thống mới tự động tính toán và bổ sung sau.
     """
     if today is None:
         today = date.today()
     try:
-        start_year = 2026
-        target_year = max(today.year + 1, start_year + 1)
-        for y in range(start_year, target_year + 1):
-            semesters_def = [
-                (f"HK1_{y}_{y+1}", f"HK1 {y} - {y+1}", f"{y}-{y+1}", 1, date(y, 9, 1), date(y+1, 1, 15)),
-                (f"HK2_{y}_{y+1}", f"HK2 {y} - {y+1}", f"{y}-{y+1}", 2, date(y+1, 1, 16), date(y+1, 6, 15)),
-                (f"HKT_{y}_{y+1}", f"HKT {y} - {y+1}", f"{y}-{y+1}", 3, date(y+1, 6, 16), date(y+1, 8, 31)),
-            ]
-            for code, name, ac_year, term, s_date, e_date in semesters_def:
-                cursor.execute("""
-                    IF NOT EXISTS (SELECT 1 FROM Semesters WHERE semester_code = ?)
-                    BEGIN
-                        INSERT INTO Semesters (semester_code, semester_name, academic_year, term_number, start_date, end_date, is_current, status)
-                        VALUES (?, ?, ?, ?, ?, ?, 0, 'active')
-                    END
-                """, (code, code, name, ac_year, term, s_date, e_date))
+        # Xóa mọi học kỳ cũ trước năm 2026 hoặc học kỳ tương lai chưa bắt đầu (start_date > today)
+        cursor.execute("DELETE FROM Semesters WHERE start_date < '2026-09-01' OR start_date > ?", (today,))
 
+        # Xác định thông tin học kỳ hiện tại tương ứng với ngày today
+        sem_code, sem_name, ac_year, term, s_date, e_date = get_semester_def_by_date(today)
+
+        # Đảm bảo học kỳ hiện tại có trong CSDL
         cursor.execute("""
-            UPDATE Semesters 
-            SET is_current = CASE 
-                    WHEN start_date <= ? AND ? <= end_date THEN 1 
-                    ELSE 0 
-                END,
-                status = CASE 
-                    WHEN end_date < ? THEN 'closed' 
-                    ELSE 'active' 
-                END
-        """, (today, today, today))
+            IF NOT EXISTS (SELECT 1 FROM Semesters WHERE semester_code = ?)
+            BEGIN
+                INSERT INTO Semesters (semester_code, semester_name, academic_year, term_number, start_date, end_date, is_current, status)
+                VALUES (?, ?, ?, ?, ?, ?, 1, 'active')
+            END
+            ELSE
+            BEGIN
+                UPDATE Semesters
+                SET semester_name = ?, academic_year = ?, term_number = ?, start_date = ?, end_date = ?, is_current = 1, status = 'active'
+                WHERE semester_code = ?
+            END
+        """, (sem_code, sem_code, sem_name, ac_year, term, s_date, e_date, sem_name, ac_year, term, s_date, e_date, sem_code))
+
+        # Cập nhật các học kỳ đã kết thúc trong quá khứ thành closed và is_current = 0
+        cursor.execute("""
+            UPDATE Semesters
+            SET is_current = 0, status = 'closed'
+            WHERE end_date < ?
+        """, (today,))
     except Exception as e:
         print("Lỗi đồng bộ học kỳ realtime:", e)
 
@@ -397,12 +441,12 @@ def calculate_semester_by_date(target_date: Optional[Union[date, datetime, str]]
     else:
         t = date.today()
 
-    # 1. Tra cứu trong bảng Semesters theo đúng công thức StartDate_i <= T <= EndDate_i
+    # 1. Tra cứu trong bảng Semesters nếu đã tồn tại
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            sync_semesters_realtime(cursor, t)
+            sync_semesters_realtime(cursor, date.today())
             conn.commit()
 
             cursor.execute("""
@@ -425,62 +469,10 @@ def calculate_semester_by_date(target_date: Optional[Union[date, datetime, str]]
     except Exception as e:
         print("Lỗi khi tra cứu học kỳ trong CSDL:", e)
 
-    # 2. Thuật toán dự phòng (Heuristic Fallback) khi CSDL chưa có khoảng ngày đó:
-    # Chu kỳ học phần chuẩn Việt Nam (không có khoảng trống giữa các kỳ):
-    # - HK1: Ngày 01/09/Y đến 15/01/(Y+1)
-    # - HK2: Ngày 16/01/(Y+1) đến 15/06/(Y+1)
-    # - HKT (Kỳ hè): Ngày 16/06/(Y+1) đến 31/08/(Y+1)
-    year = t.year
-    month = t.month
-    day = t.day
-
-    if (month == 9 and day >= 1) or (month in (10, 11, 12)):
-        ac_year = f"{year}-{year + 1}"
-        term = 1
-        s_date = date(year, 9, 1)
-        e_date = date(year + 1, 1, 15)
-        sem_code = f"HK1_{year}_{year + 1}"
-        sem_name = f"HK1 {year} - {year + 1}"
-    elif month == 1 and day <= 15:
-        ac_year = f"{year - 1}-{year}"
-        term = 1
-        s_date = date(year - 1, 9, 1)
-        e_date = date(year, 1, 15)
-        sem_code = f"HK1_{year - 1}_{year}"
-        sem_name = f"HK1 {year - 1} - {year}"
-    elif (month == 1 and day >= 16) or (month in (2, 3, 4, 5)) or (month == 6 and day <= 15):
-        ac_year = f"{year - 1}-{year}"
-        term = 2
-        s_date = date(year, 1, 16)
-        e_date = date(year, 6, 15)
-        sem_code = f"HK2_{year - 1}_{year}"
-        sem_name = f"HK2 {year - 1} - {year}"
-    else:
-        ac_year = f"{year - 1}-{year}"
-        term = 3
-        s_date = date(year, 6, 16)
-        e_date = date(year, 8, 31)
-        sem_code = f"HKT_{year - 1}_{year}"
-        sem_name = f"HKT {year - 1} - {year}"
-
-    # Tự động nạp vào CSDL nếu chưa có để lưu vết lâu dài
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("""
-                IF NOT EXISTS (SELECT 1 FROM Semesters WHERE semester_code = ?)
-                BEGIN
-                    INSERT INTO Semesters (semester_code, semester_name, academic_year, term_number, start_date, end_date, is_current, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 1, 'active')
-                END
-            """, (sem_code, sem_code, sem_name, ac_year, term, s_date, e_date))
-            conn.commit()
-        finally:
-            cursor.close()
-            conn.close()
-    except Exception:
-        pass
+    # 2. Tính toán động qua thuật toán (không tự ý chèn các kỳ tương lai vào DB)
+    sem_code, sem_name, ac_year, term, s_date, e_date = get_semester_def_by_date(t)
+    is_curr = (s_date <= date.today() <= e_date)
+    stat = "active" if date.today() <= e_date else "closed"
 
     return {
         "semester": sem_name,
@@ -490,8 +482,8 @@ def calculate_semester_by_date(target_date: Optional[Union[date, datetime, str]]
         "term_number": term,
         "start_date": s_date,
         "end_date": e_date,
-        "is_current": True,
-        "status": "active"
+        "is_current": is_curr,
+        "status": stat
     }
 
 def get_all_semesters() -> List[Dict]:

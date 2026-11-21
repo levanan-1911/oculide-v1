@@ -154,7 +154,7 @@ export default function InstructorWaitingRoomView({
           studentId: String(a.student_id),
           studentName: a.student_name,
           studentEmail: a.student_email || '',
-          status: (a.status === 'waiting' || a.status === 'completed') ? 'waiting' : 'absent',
+          status: a.status === 'late' ? 'late' : (a.status === 'waiting' || a.status === 'completed') ? 'waiting' : 'absent',
           joinedAt: a.joined_at ? new Date(a.joined_at).toLocaleTimeString('vi-VN') : undefined,
           cameraReady: Boolean(a.camera_ready),
         }));
@@ -264,13 +264,13 @@ export default function InstructorWaitingRoomView({
         a.studentEmail.toLowerCase().includes(search.toLowerCase());
 
       if (!matchSearch) return false;
-      if (filterStatus === 'waiting') return a.status === 'waiting';
+      if (filterStatus === 'waiting') return a.status === 'waiting' || a.status === 'late';
       if (filterStatus === 'absent') return a.status === 'absent';
       return true;
     });
   }, [attendees, search, filterStatus]);
 
-  const waitingCount = attendees.filter((a) => a.status === 'waiting').length;
+  const waitingCount = attendees.filter((a) => a.status === 'waiting' || a.status === 'late').length;
   const absentCount = attendees.filter((a) => a.status === 'absent').length;
   const attendancePercent = attendees.length > 0 ? Math.round((waitingCount / attendees.length) * 100) : 0;
   const endTimeMs = room?.endTime ? Date.parse(room.endTime) : Number.NaN;
@@ -959,7 +959,7 @@ export default function InstructorWaitingRoomView({
                 </tr>
               ) : (
                 filteredAttendees.map((a) => {
-                  const isPresent = a.status === 'waiting';
+                  const isPresent = a.status === 'waiting' || a.status === 'late';
 
                   return (
                     <tr key={a.studentId} className="hover:bg-slate-50/50 transition-colors dark:hover:bg-white/[0.02]">
@@ -969,7 +969,12 @@ export default function InstructorWaitingRoomView({
                       <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">{a.studentName}</td>
                       <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{a.studentEmail}</td>
                       <td className="px-4 py-3 text-center">
-                        {isPresent ? (
+                        {a.status === 'late' ? (
+                          <span className="inline-flex items-center gap-1.5 rounded border border-amber-300 bg-amber-50 px-2.5 py-0.5 font-mono text-[11px] font-bold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                            <Clock className="h-3 w-3" />
+                            Điểm danh muộn{a.joinedAt ? ` (${a.joinedAt})` : ''}
+                          </span>
+                        ) : isPresent ? (
                           <span className="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
                             <CheckCircle2 className="h-3 w-3" />
                             Có mặt{a.joinedAt ? ` (${a.joinedAt})` : ''}

@@ -631,8 +631,9 @@ def get_room_lobby_details(room_identifier: str) -> Optional[Dict]:
                        u.full_name AS student_name,
                        u.email AS student_email,
                        CASE 
-                           WHEN pl.status IN ('active', 'dang_lam') THEN 'waiting'
                            WHEN pl.status IN ('completed', 'da_nop', 'submitted') THEN 'completed'
+                           WHEN pl.status IN ('late', 'muon', 'diem_danh_muon') THEN 'late'
+                           WHEN pl.status IN ('active', 'dang_lam') THEN 'waiting'
                            ELSE 'absent'
                        END AS status,
                        CONVERT(NVARCHAR(30), pl.start_time, 126) AS joined_at,
@@ -667,8 +668,9 @@ def get_room_lobby_details(room_identifier: str) -> Optional[Dict]:
                        u.full_name AS student_name,
                        u.email AS student_email,
                        CASE 
-                           WHEN pl.status IN ('active', 'dang_lam') THEN 'waiting'
                            WHEN pl.status IN ('completed', 'da_nop', 'submitted') THEN 'completed'
+                           WHEN pl.status IN ('late', 'muon', 'diem_danh_muon') THEN 'late'
+                           WHEN pl.status IN ('active', 'dang_lam') THEN 'waiting'
                            ELSE 'absent'
                        END AS status,
                        CONVERT(NVARCHAR(30), pl.start_time, 126) AS joined_at,
@@ -956,8 +958,9 @@ def upsert_student_lobby_session(
     student_id: int,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
+    is_late: bool = False,
 ) -> int:
-    """Tạo hoặc kích hoạt lại phiên làm bài (ExamSessions) ở trạng thái active khi sinh viên join phòng"""
+    """Tạo hoặc kích hoạt lại phiên làm bài (ExamSessions) ở trạng thái active/late khi sinh viên join phòng"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -967,18 +970,22 @@ def upsert_student_lobby_session(
         )
         row = cursor.fetchone()
         ua_trimmed = (user_agent or "")[:250] or None
+        target_status = 'late' if is_late else 'active'
+
         if row:
             session_id = row[0]
-            if row[1] not in ("completed", "da_nop", "submitted"):
+            curr_status = str(row[1] or '').lower()
+            if curr_status not in ("completed", "da_nop", "submitted"):
+                final_status = 'late' if (is_late or curr_status in ('late', 'muon', 'diem_danh_muon')) else 'active'
                 cursor.execute(
                     """
                     UPDATE ExamSessions
-                    SET status = 'active',
+                    SET status = ?,
                         ip_address = COALESCE(?, ip_address),
                         user_agent = COALESCE(?, user_agent)
                     WHERE session_id = ?
                     """,
-                    (ip_address, ua_trimmed, session_id),
+                    (final_status, ip_address, ua_trimmed, session_id),
                 )
                 conn.commit()
             return session_id
@@ -987,13 +994,34 @@ def upsert_student_lobby_session(
             """
             INSERT INTO ExamSessions (room_id, student_id, ip_address, user_agent, status, start_time)
             OUTPUT INSERTED.session_id
-            VALUES (?, ?, ?, ?, 'active', GETDATE())
+            VALUES (?, ?, ?, ?, ?, GETDATE())
             """,
-            (room_id, student_id, ip_address, ua_trimmed),
+            (room_id, student_id, ip_address, ua_trimmed, target_status),
         )
         new_id = cursor.fetchone()[0]
         conn.commit()
         return new_id
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_student_exam_session(room_id: int, student_id: int) -> Optional[Dict]:
+    """Lấy thông tin phiên làm bài của sinh viên trong phòng"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT TOP 1 session_id, status, start_time FROM ExamSessions WHERE room_id = ? AND student_id = ? ORDER BY session_id DESC",
+            (room_id, student_id),
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                "session_id": row[0],
+                "status": row[1],
+                "start_time": row[2],
+            }
+        return None
     finally:
         cursor.close()
         conn.close()
@@ -1103,4 +1131,3 @@ def finalize_student_submission(room_id: int, student_id: int) -> bool:
     finally:
         cursor.close()
         conn.close()
-

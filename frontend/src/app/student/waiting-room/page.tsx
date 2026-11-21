@@ -30,6 +30,8 @@ interface PendingExamSession {
   subject?: string;
   duration?: number;
   status?: string;
+  isLate?: boolean;
+  attendanceStatus?: string;
 }
 
 export default function StudentWaitingRoomPage() {
@@ -43,7 +45,7 @@ export default function StudentWaitingRoomPage() {
   const [roomStatus, setRoomStatus] = useState<string>("chua_mo");
   const [isLecturerUnlocked, setIsLecturerUnlocked] = useState(false);
   const [isRoomClosed, setIsRoomClosed] = useState(false);
-  const [isBlockedLate, setIsBlockedLate] = useState(false);
+  const [isLateEntry, setIsLateEntry] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [isEntering, setIsEntering] = useState(false);
 
@@ -69,13 +71,10 @@ export default function StudentWaitingRoomPage() {
           (Number.isFinite(savedEndTime) && savedEndTime <= Date.now())
         ) {
           setIsRoomClosed(true);
-        } else if (parsed.roomType === "exam" && (parsed.status === "dang_dien_ra" || parsed.status === "in_progress")) {
-          // Quy chế khảo thí: Nếu phòng thi đã bắt đầu thì không được phép vào phòng chờ
-          setIsBlockedLate(true);
-          return;
-        } else if (parsed.status === "dang_dien_ra" || parsed.status === "in_progress") {
+        } else if (parsed.isLate || (parsed.status === "dang_dien_ra" || parsed.status === "in_progress")) {
+          // Phòng chờ đã đóng khi ca thi/lớp bắt đầu; ghi nhận điểm danh muộn
           setRoomStatus("dang_dien_ra");
-          setIsLecturerUnlocked(true);
+          setIsLateEntry(true);
         }
       }
       const rawUser = localStorage.getItem("oculide_user");
@@ -93,7 +92,7 @@ export default function StudentWaitingRoomPage() {
 
   // Polling 3 giây/lần kiểm tra trạng thái bắt đầu thi thật từ Giảng viên
   useEffect(() => {
-    if (!session?.roomCode || isBlockedLate) return;
+    if (!session?.roomCode) return;
 
     let isCancelled = false;
     const pollRoomStatus = async () => {
@@ -104,6 +103,8 @@ export default function StudentWaitingRoomPage() {
           duration_minutes: number;
           end_time: string;
           has_submitted?: boolean;
+          is_late?: boolean;
+          attendance_status?: string;
         }>(`/api/v1/rooms/${encodeURIComponent(session.roomCode!)}/student-status`);
 
         if (isCancelled) return;
@@ -111,6 +112,7 @@ export default function StudentWaitingRoomPage() {
           setHasSubmitted(true);
           setIsRoomClosed(true);
           setIsLecturerUnlocked(false);
+          setIsLateEntry(false);
           return;
         }
         const expired =
@@ -124,8 +126,13 @@ export default function StudentWaitingRoomPage() {
         if (expired) {
           setIsRoomClosed(true);
           setIsLecturerUnlocked(false);
+          setIsLateEntry(false);
         } else if (res.status === "dang_dien_ra" || res.status === "in_progress") {
-          setIsLecturerUnlocked(true);
+          if (res.is_late || res.attendance_status === "muon" || isLateEntry) {
+            setIsLateEntry(true);
+          } else {
+            setIsLecturerUnlocked(true);
+          }
         }
       } catch {
         // Bỏ qua lỗi mạng tạm thời khi polling
@@ -138,17 +145,18 @@ export default function StudentWaitingRoomPage() {
       isCancelled = true;
       clearInterval(interval);
     };
-  }, [session?.roomCode]);
+  }, [session?.roomCode, isLateEntry]);
 
-  // Tự động chuyển vào phòng thi khi Giảng viên đã bấm Bắt đầu
+  // Tự động chuyển vào phòng thi khi Giảng viên đã bấm Bắt đầu hoặc sinh viên vào muộn
   useEffect(() => {
-    if (!isLecturerUnlocked || isEntering) return;
-    const autoTimer = setTimeout(() => {
-      setIsEntering(true);
-      router.push("/student/exam-room");
-    }, 1500);
-    return () => clearTimeout(autoTimer);
-  }, [isLecturerUnlocked, isEntering, router]);
+    if ((isLecturerUnlocked || isLateEntry) && !isEntering) {
+      const autoTimer = setTimeout(() => {
+        setIsEntering(true);
+        router.push("/student/exam-room");
+      }, isLateEntry ? 2500 : 1500);
+      return () => clearTimeout(autoTimer);
+    }
+  }, [isLecturerUnlocked, isLateEntry, isEntering, router]);
 
   // Xử lý Chuyển tiếp vào Màn hình Làm bài thi IDE
   const handleStartExam = () => {
@@ -240,24 +248,31 @@ export default function StudentWaitingRoomPage() {
                   </Link>
                 </div>
               </div>
-            ) : isBlockedLate ? (
+            ) : isLateEntry ? (
               <div className="space-y-3">
-                <div className="inline-flex h-14 w-14 items-center justify-center rounded-md bg-slate-100 text-slate-800 dark:bg-white/10 dark:text-white">
-                  <AlertCircle size={32} />
+                <div className="inline-flex h-14 w-14 items-center justify-center rounded-md bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30">
+                  <Clock size={30} />
                 </div>
                 <h3 className="font-serif text-xl font-bold text-slate-900 dark:text-white">
-                  Không thể vào phòng chờ: Ca thi đã bắt đầu
+                  Phòng chờ đã đóng: Ca thi đang diễn ra
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
-                  Theo quy chế khảo thí, thí sinh không được phép vào phòng chờ sau khi ca thi đã chính thức bắt đầu. Vui lòng liên hệ Giảng viên / Hội đồng thi để được hướng dẫn xử lý.
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-amber-50 border border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-800/40 dark:text-amber-300 font-mono text-xs font-bold">
+                  <AlertCircle size={14} />
+                  <span>Trạng thái ghi nhận: ĐIỂM DANH MUỘN</span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 max-w-md mx-auto leading-relaxed">
+                  Phòng chờ đã đóng do ca thi đã bắt đầu. Hệ thống ghi nhận trạng thái: <strong>Điểm danh muộn</strong>. Bạn đang được chuyển tiếp tự động vào không gian làm bài thi.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => router.push("/student/exams")}
-                  className="system-primary-action mt-2 inline-flex items-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 font-serif text-xs font-bold text-white hover:bg-slate-800 cursor-pointer"
-                >
-                  Quay lại danh sách ca thi
-                </button>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleStartExam}
+                    className="system-primary-action inline-flex items-center gap-2 rounded-md bg-amber-600 hover:bg-amber-700 px-6 py-3 font-serif text-xs font-bold text-white shadow-2xs cursor-pointer transition"
+                  >
+                    <span>VÀO LÀM BÀI THI NGAY</span>
+                    <ArrowRight size={16} />
+                  </button>
+                </div>
               </div>
             ) : isRoomClosed ? (
               <div className="space-y-3">

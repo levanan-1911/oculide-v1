@@ -32,6 +32,7 @@ export interface StudentDetailInfo {
   name: string;
   status: 'normal' | 'warning' | 'critical' | 'submitted';
   statusText: string;
+  isLate?: boolean;
   violationsCount: number;
   entryTime: string;
   fps: number;
@@ -129,6 +130,13 @@ export default function StudentDetailModal({
                     ? 'Đã nộp bài'
                     : 'Bình thường'}
                 </span>
+
+                {(student.isLate || student.statusText?.includes('muộn')) && (
+                  <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    <Clock className="h-2.5 w-2.5" />
+                    Điểm danh muộn
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-stone-400 mt-0.5">
                 Thiết bị: <strong className="text-stone-200">{student.deviceInfo || 'Thiết bị cá nhân'}</strong> • Vào phòng: <span className="font-mono">{student.entryTime}</span>

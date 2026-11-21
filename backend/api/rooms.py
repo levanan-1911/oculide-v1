@@ -15,7 +15,7 @@ from database.room_db import (
     get_all_rooms, get_rooms_for_student, update_room, delete_room, get_room_dashboard_data,
     get_exam_templates, get_room_lobby_details, check_instructor_active_room,
     update_room_status, toggle_manual_attendance,
-    is_student_in_class, get_class_metadata, upsert_student_lobby_session,
+    is_student_in_class, get_class_metadata, upsert_student_lobby_session, get_student_exam_session,
     save_student_device_check, is_student_already_submitted, finalize_student_submission
 )
 from database.scoreboard_db import get_room_scoreboard
@@ -292,14 +292,12 @@ async def join_room_authenticated(
             detail=f"Phòng chờ sẽ mở từ {lobby_open_time.strftime('%H:%M %d/%m/%Y')} (15 phút trước giờ bắt đầu)."
         )
 
-    # Cho phép sinh viên vào phòng chờ trước giờ thi; không cho tham gia sau khi ca thi đã bắt đầu.
-    if current_user.get("role") == "student" and (room.get("room_type") == "exam" or "thi" in str(room.get("room_name", "")).lower()):
+    # Khi giảng viên đã mở lớp (phòng đang diễn ra), đóng phòng chờ; sinh viên vào sau sẽ được ghi nhận là điểm danh muộn.
+    is_late_entry = False
+    if current_user.get("role") == "student":
         r_status = (room.get("status") or "").lower()
         if r_status in ("dang_dien_ra", "in_progress"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Phòng thi đã bắt đầu. Theo quy chế khảo thí, thí sinh không được phép vào phòng chờ sau khi ca thi đã chính thức bắt đầu."
-            )
+            is_late_entry = True
 
     student_id = current_user["user_id"]
 
@@ -333,6 +331,7 @@ async def join_room_authenticated(
         student_id=student_id,
         ip_address=client_ip,
         user_agent=user_agent,
+        is_late=is_late_entry,
     )
 
     return {
@@ -341,6 +340,8 @@ async def join_room_authenticated(
         "class_code": class_meta.get("class_code") if class_meta else None,
         "class_name": class_meta.get("class_name") if class_meta else None,
         "course_name": class_meta.get("course_name") if class_meta else None,
+        "is_late": is_late_entry,
+        "attendance_status": "muon" if is_late_entry else "co_mat",
     }
 
 
@@ -379,8 +380,22 @@ async def get_student_room_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
     is_expired = _is_room_expired(room)
     has_sub = False
+    is_late = False
+    att_status = "co_mat"
+
     if current_user.get("role") == "student":
-        has_sub = is_student_already_submitted(room["room_id"], current_user["user_id"])
+        student_id = current_user["user_id"]
+        has_sub = is_student_already_submitted(room["room_id"], student_id)
+        sess = get_student_exam_session(room["room_id"], student_id)
+        if sess:
+            if str(sess.get("status", "")).lower() in ("late", "muon", "diem_danh_muon"):
+                is_late = True
+                att_status = "muon"
+        else:
+            r_st = (room.get("status") or "").lower()
+            if r_st in ("dang_dien_ra", "in_progress"):
+                is_late = True
+                att_status = "muon"
 
     return {
         "room_id": room["room_id"],
@@ -394,6 +409,8 @@ async def get_student_room_status(
         "start_time": room["start_time"],
         "end_time": room["end_time"],
         "has_submitted": has_sub,
+        "is_late": is_late,
+        "attendance_status": att_status,
     }
 
 @router.get("", response_model=List[RoomResponse])

@@ -176,6 +176,31 @@ export default function InstructorClassManagerView() {
             loadClassDetails(activeId);
           }
         }
+
+        // Đồng bộ danh sách phòng thực tế từ backend để giải phóng phòng cũ đã kết thúc
+        try {
+          const apiRooms = await fetchWithAuth<any[]>('/api/v1/rooms');
+          if (!isCancelled && Array.isArray(apiRooms)) {
+            const mappedRooms: RoomSession[] = apiRooms.map((r) => ({
+              id: r.room_code,
+              classId: r.class_code || String(r.class_id || ''),
+              className: r.class_name || r.room_name,
+              password: r.passcode || '',
+              type: r.room_type === 'exam' ? 'exam' : 'lab',
+              title: r.room_name,
+              durationMinutes: r.duration_minutes || 60,
+              status: (r.status === 'in_progress' || r.status === 'dang_dien_ra')
+                ? 'in_progress'
+                : (r.status === 'scheduled' || r.status === 'waiting' || r.status === 'chua_mo')
+                ? 'waiting'
+                : 'ended',
+              createdAt: r.created_at || '',
+              proctoringConfig: { lockdownFullscreen: false, aiFaceDetection: false, aiObjectDetection: false, allowTabSwitch: true },
+              attendees: [],
+            }));
+            setCreatedRooms(mappedRooms);
+          }
+        } catch {}
       } catch (err: any) {
         console.error('Lỗi khi tải danh sách lớp học phần:', err);
         showToast(err.message || 'Không thể kết nối CSDL lớp học phần');
@@ -246,17 +271,28 @@ export default function InstructorClassManagerView() {
   }, [classes, selectedClassId]);
 
   // Kiểm tra phòng ca học đang mở hoặc phòng chờ của lớp hiện tại
+  const isTerminalStatus = (status?: string) => {
+    const s = String(status || '').toLowerCase().trim();
+    return ['ended', 'completed', 'da_dong', 'da_huy', 'da_ket_thuc', 'closed', 'cancelled'].includes(s);
+  };
+
   const activeRoomForCurrentClass = useMemo(() => {
     if (!currentClass) return null;
     return createdRooms.find(
-      (r) => r.classId.toUpperCase() === currentClass.id.toUpperCase() && r.status === 'in_progress'
+      (r) =>
+        r.classId.toUpperCase() === currentClass.id.toUpperCase() &&
+        (r.status === 'in_progress' || r.status === 'dang_dien_ra') &&
+        !isTerminalStatus(r.status)
     ) || null;
   }, [createdRooms, currentClass]);
 
   const waitingRoomForCurrentClass = useMemo(() => {
     if (!currentClass) return null;
     return createdRooms.find(
-      (r) => r.classId.toUpperCase() === currentClass.id.toUpperCase() && r.status === 'waiting'
+      (r) =>
+        r.classId.toUpperCase() === currentClass.id.toUpperCase() &&
+        (r.status === 'waiting' || r.status === 'chua_mo' || r.status === 'scheduled') &&
+        !isTerminalStatus(r.status)
     ) || null;
   }, [createdRooms, currentClass]);
 

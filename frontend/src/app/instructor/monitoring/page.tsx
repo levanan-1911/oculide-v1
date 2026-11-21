@@ -100,6 +100,16 @@ function InstructorMonitoringContent() {
         method: 'PATCH',
         body: JSON.stringify({ status: 'da_dong' }),
       });
+      try {
+        const raw = localStorage.getItem('oculide_instructor_rooms_mock');
+        if (raw) {
+          const list = JSON.parse(raw);
+          const updated = list.map((r: any) =>
+            r.id === activeRoomSession?.id || r.id === roomIdParam ? { ...r, status: 'da_dong' } : r
+          );
+          localStorage.setItem('oculide_instructor_rooms_mock', JSON.stringify(updated));
+        }
+      } catch {}
       alert('Đã kết thúc sớm ca thực hành!');
       router.push('/instructor/classes');
     } catch (err: any) {
@@ -153,10 +163,11 @@ function InstructorMonitoringContent() {
           name: a.student_name,
           studentClass: data.class_code || 'Lớp học phần',
           status: (a.status === 'completed' ? 'submitted' : 'normal') as 'normal' | 'warning' | 'critical' | 'submitted',
-          statusText: a.status === 'waiting' ? 'Đang làm bài (Live)' : a.status === 'completed' ? 'Đã nộp bài' : 'Chưa vào phòng',
+          statusText: a.status === 'late' ? 'Điểm danh muộn (Live)' : a.status === 'waiting' ? 'Đang làm bài (Live)' : a.status === 'completed' ? 'Đã nộp bài' : 'Chưa vào phòng',
+          isLate: a.status === 'late',
           violationsCount: 0,
           entryTime: a.joined_at ? new Date(a.joined_at).toLocaleTimeString('vi-VN') : 'Chưa vào phòng',
-          fps: a.status === 'waiting' ? 30 : 0,
+          fps: (a.status === 'waiting' || a.status === 'late') ? 30 : 0,
           deviceInfo: 'Thiết bị thí sinh',
           trustScore: 100,
           activeApp: 'Oculide Exam IDE',
@@ -876,11 +887,22 @@ function InstructorMonitoringContent() {
                   <div className="mt-2.5 space-y-2">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-stone-400 dark:text-stone-500 text-[10px]">Tiến độ / Trạng thái:</span>
-                      <span
-                        className="text-[10px] font-semibold truncate max-w-[190px] font-mono text-slate-700 dark:text-slate-300"
-                      >
-                        {student.statusText}
-                      </span>
+                      <div className="flex items-center gap-1.5 truncate max-w-[190px]">
+                        {(student.isLate || student.statusText.includes('muộn')) && (
+                          <span className="inline-flex items-center gap-1 rounded bg-amber-100 dark:bg-amber-950/50 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">
+                            Muộn
+                          </span>
+                        )}
+                        <span
+                          className={`text-[10px] font-semibold truncate font-mono ${
+                            student.statusText.includes('muộn')
+                              ? 'text-amber-700 dark:text-amber-400 font-bold'
+                              : 'text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {student.statusText}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Nút hành động */}

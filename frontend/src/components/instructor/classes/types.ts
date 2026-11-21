@@ -104,7 +104,7 @@ export interface RoomAttendee {
   studentId: string;
   studentName: string;
   studentEmail: string;
-  status: 'waiting' | 'in_exam' | 'absent';
+  status: 'waiting' | 'in_exam' | 'absent' | 'late';
   joinedAt?: string;
   cameraReady?: boolean;
 }

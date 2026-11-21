@@ -470,7 +470,7 @@ export default function InstructorCreateRoomView() {
 
     return (
       existingSessions.find((s) => {
-        if (s.status === 'ended' || s.status === 'Đã kết thúc' || s.status === 'da_dong' || s.status === 'da_huy') return false;
+        if (['ended', 'completed', 'da_dong', 'da_huy', 'da_ket_thuc', 'closed', 'cancelled', 'đã kết thúc'].includes(String(s.status || '').toLowerCase().trim())) return false;
         if (s.roomCode.toLowerCase() === roomCode.toLowerCase()) return false;
 
         // Nếu khác ngày thì không trùng

@@ -114,7 +114,7 @@ class RoomAttendeeResponse(BaseModel):
     user_id: Optional[int] = None
     student_name: str
     student_email: Optional[str] = None
-    status: str = "absent"  # waiting, absent, completed
+    status: str = "absent"  # waiting, absent, completed, late
     joined_at: Optional[str] = None
     camera_ready: Optional[bool] = False
 
@@ -155,6 +155,8 @@ class StudentJoinRoomResponse(RoomResponse):
     class_code: Optional[str] = None
     class_name: Optional[str] = None
     course_name: Optional[str] = None
+    is_late: Optional[bool] = False
+    attendance_status: Optional[str] = "co_mat"
 
 class DeviceCheckRequest(BaseModel):
     camera_ready: bool = True
@@ -175,4 +177,6 @@ class StudentRoomStatusResponse(BaseModel):
     start_time: datetime
     end_time: datetime
     has_submitted: Optional[bool] = False
+    is_late: Optional[bool] = False
+    attendance_status: Optional[str] = "co_mat"
 

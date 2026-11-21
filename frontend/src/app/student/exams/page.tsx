@@ -295,6 +295,8 @@ function ExamJoinContent() {
         studentInfo,
         passcode: trimmedPass,
         joinedAt: new Date().toISOString(),
+        isLate: Boolean(data.is_late),
+        attendanceStatus: data.attendance_status || (data.is_late ? "muon" : "co_mat"),
         securityVerification: {
           ipAddress: "Campus Network",
           deviceFingerprint: "FP-OCULIDE-VERIFIED",

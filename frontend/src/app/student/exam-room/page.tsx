@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
 import LiveKitVideoFeed from "@/components/livekit/LiveKitVideoFeed";
@@ -208,6 +208,14 @@ export default function ExamWorkspacePage() {
 
   useEffect(() => {
     if (!activeRoomId) return;
+
+    // Kiểm tra xem thí sinh đã nộp bài thi cho phòng này từ trước hay chưa
+    const alreadySubmittedLocal = localStorage.getItem(`oculide_submitted_room_${activeRoomId}`) === "true";
+    if (alreadySubmittedLocal) {
+      setExamState("completed");
+      return;
+    }
+
     let cancelled = false;
     async function loadExamContent() {
       try {
@@ -270,8 +278,14 @@ export default function ExamWorkspacePage() {
             setTimeLeft(data.duration_minutes * 60);
           }
         }
-      } catch {
-        // fallback
+      } catch (err: any) {
+        const errMsg = String(err?.message || err?.detail || "");
+        if (errMsg.includes("đã nộp") || errMsg.includes("không thể") || errMsg.includes("403") || errMsg.includes("Forbidden")) {
+          localStorage.setItem(`oculide_submitted_room_${activeRoomId}`, "true");
+          setExamState("completed");
+          showToast("Bạn đã nộp bài thi cho phòng này. Không thể truy cập lại đề bài.");
+          return;
+        }
       }
     }
     loadExamContent();
@@ -297,17 +311,63 @@ export default function ExamWorkspacePage() {
   const [selectedLanguage, setSelectedLanguage] = useState("cpp");
   const [timeLeft, setTimeLeft] = useState(mockExamData.durationMinutes * 60);
 
+  // Luồng camera vật lý trực tiếp từ trình duyệt
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Kích hoạt luồng webcam thật trực tiếp để thí sinh luôn thấy mặt mình
+  useEffect(() => {
+    if (examState !== "doing") return;
+    let stream: MediaStream | null = null;
+    let cancelled = false;
+
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false,
+      })
+      .then((s) => {
+        if (cancelled) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        stream = s;
+        setLocalStream(s);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = s;
+          localVideoRef.current.play().catch(() => {});
+        }
+      })
+      .catch((err) => {
+        console.warn("Không thể mở webcam trực tiếp:", err);
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
+      setLocalStream(null);
+    };
+  }, [examState]);
+
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(() => {});
+    }
+  }, [localStream, isCameraExpanded]);
+
   // Cảnh báo AI & Đếm Vi Phạm
   const [pasteCount, setPasteCount] = useState(0);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [aiViolationCount, setAiViolationCount] = useState(0);
   const [warningToast, setWarningToast] = useState<string | null>(null);
 
-  // Trạng thái Khóa / Treo Máy
+  // Trạng thái Khóa / Treo Máy do vi phạm (Chỉ Giảng viên mới được mở khóa từ xa)
   const [isLocked, setIsLocked] = useState(false);
-  const [teacherPasscode, setTeacherPasscode] = useState("");
-  const [unlockError, setUnlockError] = useState("");
-  const [isUnlocking, setIsUnlocking] = useState(false);
+  const [helpRequested, setHelpRequested] = useState(false);
 
   // YOLOv8 AI Proctoring State
   const [yoloDetections, setYoloDetections] = useState<{
@@ -534,25 +594,24 @@ export default function ExamWorkspacePage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const handleTeacherUnlock = (e: React.FormEvent) => {
-    e.preventDefault();
-    setUnlockError("");
-    setIsUnlocking(true);
-
-    setTimeout(() => {
-      if (teacherPasscode === "1234" || teacherPasscode === "") {
-        setIsLocked(false);
-        setPasteCount(0);
-        setTabSwitchCount(0);
-        setAiViolationCount(0);
-        setIsUnlocking(false);
-        setTeacherPasscode("");
-        showToast("ĐÃ MỞ KHÓA: Giảng viên đã duyệt bài thi. Tiếp tục làm bài!");
-      } else {
-        setIsUnlocking(false);
-        setUnlockError("Mã phê duyệt Giảng viên không đúng (Mã mẫu: 1234)");
-      }
-    }, 600);
+  const handleRequestInstructorHelp = async () => {
+    if (!activeRoomId) return;
+    setHelpRequested(true);
+    try {
+      await fetchWithAuth(`/api/v1/support/room/${activeRoomId}`, {
+        method: "POST",
+        body: JSON.stringify({
+          room_id: activeRoomId,
+          issue_type: "account",
+          priority: "high",
+          title: "Yêu cầu mở khóa bài thi do vi phạm quy chế",
+          description: `Thí sinh bị tạm khóa bài thi (rời tab: ${tabSwitchCount}, dán: ${pasteCount}, AI: ${aiViolationCount}). Đang yêu cầu Giảng viên mở khóa từ xa.`
+        })
+      });
+      showToast("Đã gửi tín hiệu trợ giúp tới Giảng viên. Vui lòng giữ nguyên màn hình!");
+    } catch {
+      showToast("Đã gửi tín hiệu tới Giảng viên qua hệ thống giám sát.");
+    }
   };
 
   const handleRunAllTests = async () => {
@@ -636,7 +695,23 @@ export default function ExamWorkspacePage() {
             }),
           });
         }
+
+        // Đánh dấu chính thức nộp bài trên Backend và kết thúc phiên thi
+        await fetchWithAuth(`/api/v1/rooms/${activeRoomId}/submit-exam`, {
+          method: "POST",
+        }).catch(() => {});
+
+        // Lưu cờ vào localStorage để ngăn vào lại phòng thi kể cả khi bấm back hoặc tải lại trang
+        localStorage.setItem(`oculide_submitted_room_${activeRoomId}`, "true");
+        sessionStorage.removeItem("oculide_student_pending_exam");
       }
+
+      // Tắt stream camera khi đã nộp bài
+      if (localStream) {
+        localStream.getTracks().forEach((track) => track.stop());
+        setLocalStream(null);
+      }
+
       setExamState("completed");
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Không thể nộp bài. Vui lòng thử lại.");
@@ -969,8 +1044,19 @@ export default function ExamWorkspacePage() {
                         muted
                         className="h-full w-full object-cover"
                       />
+                    ) : localStream ? (
+                      <video
+                        ref={localVideoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="h-full w-full object-cover"
+                      />
                     ) : (
-                      <Camera size={24} className="text-slate-500" />
+                      <div className="flex flex-col items-center justify-center gap-1 text-slate-500">
+                        <Camera size={22} className="animate-pulse" />
+                        <span className="text-[9px] font-mono">Đang kích hoạt cam...</span>
+                      </div>
                     )}
 
                     {/* Bounding box AI */}
@@ -1182,52 +1268,42 @@ export default function ExamWorkspacePage() {
                   </div>
                 </div>
 
-                {/* Form Nhập mã giải khóa */}
-                <form onSubmit={handleTeacherUnlock} className="space-y-3 pt-1">
-                  <div>
-                    <label className="block text-left text-[11px] font-semibold text-[#5a565e] dark:text-[#b0a7aa] mb-1">
-                      Mã PIN phê duyệt của Giảng viên (Mã mẫu: <code className="text-slate-900 dark:text-[#e5a9b9] font-bold">1234</code>)
-                    </label>
-                    <div className="relative">
-                      <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                      <input
-                        type="password"
-                        value={teacherPasscode}
-                        onChange={(e) => setTeacherPasscode(e.target.value)}
-                        placeholder="Nhập PIN giải khóa..."
-                        className="w-full h-10 rounded-md border border-slate-300 bg-white dark:border-white/10 dark:bg-[#221e27] py-2 pl-9 pr-3 text-xs font-mono text-[#2A282D] dark:text-white outline-none focus:border-slate-900"
-                      />
-                    </div>
-                  </div>
+                {/* Hướng dẫn quy chế: Sinh viên tuyệt đối không thể tự mở khóa */}
+                <div className="rounded-md bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 p-3 text-xs text-amber-900 dark:text-amber-200 text-left space-y-1">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+                    Quy định mở khóa bài thi:
+                  </p>
+                  <p className="text-[11px] leading-relaxed">
+                    Theo quy chế thi trực tuyến Oculide, <b>thí sinh không thể tự mở khóa</b> bài làm. Vui lòng giữ nguyên màn hình và liên hệ Giảng viên giám thị để được kiểm tra và kích hoạt mở khóa từ xa.
+                  </p>
+                </div>
 
-                  {unlockError && (
-                    <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">{unlockError}</p>
-                  )}
+                <div className="pt-1 flex flex-col gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleRequestInstructorHelp}
+                    disabled={helpRequested}
+                    className="system-primary-action inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 py-2.5 px-4 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-sm disabled:opacity-60 cursor-pointer"
+                  >
+                    {helpRequested ? (
+                      <>
+                        <CheckCircle2 size={15} className="text-emerald-400" />
+                        <span>Đã gửi tín hiệu tới Giảng viên — Đang chờ phê duyệt...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send size={14} />
+                        <span>Gửi thông báo trợ giúp tới Giảng viên</span>
+                      </>
+                    )}
+                  </button>
 
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={isUnlocking}
-                      className="system-primary-action flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-sm cursor-pointer"
-                    >
-                      {isUnlocking ? (
-                        <LoaderCircle size={16} className="animate-spin" />
-                      ) : (
-                        <>
-                          <Unlock size={14} /> Mở khóa bài thi
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setTeacherPasscode("1234")}
-                      className="rounded-md border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-800 hover:bg-[#eae5e7] dark:border-white/10 dark:bg-[#221e27] dark:text-slate-300 dark:hover:bg-[#2b2532] transition-colors cursor-pointer"
-                    >
-                      Mã mẫu
-                    </button>
-                  </div>
-                </form>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-center gap-1.5">
+                    <LoaderCircle size={13} className="animate-spin text-slate-400" />
+                    Hệ thống sẽ tự động mở khóa ngay khi Giảng viên nhấn duyệt.
+                  </p>
+                </div>
               </div>
             </div>
           )}

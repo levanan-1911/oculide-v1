@@ -174,4 +174,5 @@ class StudentRoomStatusResponse(BaseModel):
     duration_minutes: int
     start_time: datetime
     end_time: datetime
+    has_submitted: Optional[bool] = False
 

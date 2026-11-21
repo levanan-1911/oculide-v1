@@ -1059,3 +1059,48 @@ def save_student_device_check(
     finally:
         cursor.close()
         conn.close()
+
+def is_student_already_submitted(room_id: int, student_id: int) -> bool:
+    """Kiểm tra xem thí sinh đã hoàn thành và nộp bài thi cho phòng này chưa"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT TOP 1 1 
+            FROM ExamSessions 
+            WHERE room_id = ? AND student_id = ? 
+              AND status IN ('completed', 'submitted', 'da_nop')
+            """,
+            (room_id, student_id),
+        )
+        return cursor.fetchone() is not None
+    except Exception:
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def finalize_student_submission(room_id: int, student_id: int) -> bool:
+    """Đánh dấu phiên thi của thí sinh là đã nộp bài (completed / submitted)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE ExamSessions
+            SET status = 'completed',
+                end_time = GETDATE(),
+                submitted_at = GETDATE()
+            WHERE room_id = ? AND student_id = ?
+            """,
+            (room_id, student_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception:
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+

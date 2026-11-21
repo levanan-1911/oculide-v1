@@ -44,6 +44,7 @@ export default function StudentWaitingRoomPage() {
   const [isLecturerUnlocked, setIsLecturerUnlocked] = useState(false);
   const [isRoomClosed, setIsRoomClosed] = useState(false);
   const [isBlockedLate, setIsBlockedLate] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   const [isEntering, setIsEntering] = useState(false);
 
   // Đọc dữ liệu phòng từ Session Storage & thông tin thí sinh từ Local Storage
@@ -53,6 +54,14 @@ export default function StudentWaitingRoomPage() {
       if (savedData) {
         const parsed = JSON.parse(savedData);
         setSession(parsed);
+
+        // Kiểm tra xem thí sinh đã nộp bài phòng này chưa
+        if (parsed.roomId && localStorage.getItem(`oculide_submitted_room_${parsed.roomId}`) === "true") {
+          setHasSubmitted(true);
+          setIsRoomClosed(true);
+          return;
+        }
+
         const savedStatus = String(parsed.status || '').toLowerCase();
         const savedEndTime = parsed.endTime ? Date.parse(parsed.endTime) : Number.NaN;
         if (
@@ -94,9 +103,16 @@ export default function StudentWaitingRoomPage() {
           is_active: boolean;
           duration_minutes: number;
           end_time: string;
+          has_submitted?: boolean;
         }>(`/api/v1/rooms/${encodeURIComponent(session.roomCode!)}/student-status`);
 
         if (isCancelled) return;
+        if (res.has_submitted) {
+          setHasSubmitted(true);
+          setIsRoomClosed(true);
+          setIsLecturerUnlocked(false);
+          return;
+        }
         const expired =
           ['da_dong', 'da_huy', 'da_ket_thuc', 'completed', 'ended', 'closed', 'cancelled'].includes(
             String(res.status || '').toLowerCase()
@@ -197,7 +213,34 @@ export default function StudentWaitingRoomPage() {
               <span>TRẠNG THÁI ĐỒNG BỘ PHÒNG THI</span>
             </div>
 
-            {isBlockedLate ? (
+            {hasSubmitted ? (
+              <div className="space-y-3">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30">
+                  <CheckCircle2 size={30} />
+                </div>
+                <h3 className="font-serif text-xl font-bold text-slate-900 dark:text-white">
+                  Bạn đã hoàn thành và nộp bài thi
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-300 max-w-md mx-auto leading-relaxed">
+                  Theo quy chế khảo thí, thí sinh không thể vào lại phòng thi sau khi đã nộp bài. Bạn có thể theo dõi tiến độ chấm điểm trong danh sách bài nộp.
+                </p>
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <Link
+                    href="/student/submissions"
+                    className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-5 py-2.5 font-serif text-xs font-bold text-white hover:bg-slate-800 transition"
+                  >
+                    Xem danh sách bài nộp
+                    <ArrowRight size={14} />
+                  </Link>
+                  <Link
+                    href="/student"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-5 py-2.5 font-serif text-xs font-bold text-slate-800 hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 transition"
+                  >
+                    Về trang tổng quan
+                  </Link>
+                </div>
+              </div>
+            ) : isBlockedLate ? (
               <div className="space-y-3">
                 <div className="inline-flex h-14 w-14 items-center justify-center rounded-md bg-slate-100 text-slate-800 dark:bg-white/10 dark:text-white">
                   <AlertCircle size={32} />

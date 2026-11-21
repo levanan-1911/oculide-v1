@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -34,6 +34,10 @@ export default function StudentDeviceCheckPage() {
   const router = useRouter();
   const [sessionInfo, setSessionInfo] = useState<PendingSession | null>(null);
 
+  // Video Ref cho luồng camera thật
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
   // Trạng thái kiểm tra thiết bị
   const [camStatus, setCamStatus] = useState<"testing" | "success" | "error">("testing");
   const [micStatus, setMicStatus] = useState<"testing" | "success" | "error">("testing");
@@ -48,7 +52,7 @@ export default function StudentDeviceCheckPage() {
   const [faceVerified, setFaceVerified] = useState(false);
   const [faceScore, setFaceScore] = useState<number | null>(null);
 
-  // Đọc dữ liệu phòng thi từ sessionStorage
+  // Đọc dữ liệu phòng thi từ sessionStorage và kết nối Camera vật lý thật
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem("oculide_student_pending_exam");
@@ -59,12 +63,31 @@ export default function StudentDeviceCheckPage() {
       // Bỏ qua nếu không đọc được
     }
 
-    // Tự động kiểm tra phần cứng ban đầu
-    const timer = setTimeout(() => {
+    // Yêu cầu quyền truy cập Camera thật từ trình duyệt
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: true
+      })
+      .then((stream) => {
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+        setCamStatus("success");
+        setMicStatus("success");
+      })
+      .catch((err) => {
+        console.warn("Không thể truy cập camera hoặc mic thật:", err);
+        setCamStatus("error");
+      });
+    } else {
       setCamStatus("success");
       setMicStatus("success");
-      setNetworkStatus("success");
-    }, 1200);
+    }
+
+    setNetworkStatus("success");
 
     // Giả lập sóng mic động
     const micInterval = setInterval(() => {
@@ -72,8 +95,10 @@ export default function StudentDeviceCheckPage() {
     }, 300);
 
     return () => {
-      clearTimeout(timer);
       clearInterval(micInterval);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
     };
   }, []);
 
@@ -184,9 +209,18 @@ export default function StudentDeviceCheckPage() {
 
           {/* Khung Xem trước Camera */}
           <div className="relative aspect-video w-full overflow-hidden rounded-md border border-stone-800 bg-stone-950 flex items-center justify-center">
-            {/* Tấm bìa camera giả lập */}
-            <div className="relative flex flex-col items-center justify-center text-center p-6 space-y-3 z-10">
-              <div className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-dashed border-[#e5a9b9]/60 bg-slate-900/20">
+            {/* Luồng Video Webcam thật */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 h-full w-full object-cover z-0"
+            />
+
+            {/* Lớp phủ AI Scanning khi đối soát khuôn mặt */}
+            <div className={`relative flex flex-col items-center justify-center text-center p-6 space-y-3 z-10 ${camStatus === 'success' ? 'bg-black/40 backdrop-blur-[2px] rounded-xl' : ''}`}>
+              <div className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-dashed border-[#e5a9b9]/80 bg-slate-900/30">
                 <ScanFace size={48} className="text-[#f0c2cf]" />
               </div>
 
@@ -200,17 +234,17 @@ export default function StudentDeviceCheckPage() {
                   <p className="text-xs font-bold text-emerald-400 flex items-center justify-center gap-1">
                     <CheckCircle2 size={16} /> Khuôn mặt hợp lệ ({faceScore}%)
                   </p>
-                  <p className="text-[11px] text-stone-400">Khớp dữ liệu thẻ sinh viên Oculide</p>
+                  <p className="text-[11px] text-stone-300">Khớp dữ liệu thẻ sinh viên Oculide</p>
                 </div>
               ) : (
-                <p className="text-xs text-stone-400">
+                <p className="text-xs text-stone-200">
                   Nhấn nút bên dưới để tiến hành quét sinh trắc học khuôn mặt
                 </p>
               )}
             </div>
 
             {/* HUD Cài đặt thông số AI */}
-            <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[11px] font-mono text-stone-300 bg-stone-900/90 px-3 py-1.5 rounded-md border border-stone-800">
+            <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[11px] font-mono text-stone-200 bg-black/80 px-3 py-1.5 rounded-md border border-stone-800 z-10">
               <span>Độ phân giải: 1280x720</span>
               <span>Độ sáng: Đạt chuẩn</span>
             </div>

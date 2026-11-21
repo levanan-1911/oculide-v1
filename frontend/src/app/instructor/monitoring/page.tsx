@@ -1116,6 +1116,7 @@ function InstructorMonitoringContent() {
         student={focusedStudent}
         sessionType={session.type}
         requireCamera={session.requireCamera}
+        videoTrack={focusedStudent?.userId ? remoteTracks[`user_${focusedStudent.userId}`] : undefined}
         onSendNotice={(studentId, studentName) => {
           handleOpenIndividualNotice(studentId, studentName);
         }}

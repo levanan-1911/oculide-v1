@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import LiveKitVideoFeed from '@/components/livekit/LiveKitVideoFeed';
 import {
   X,
   Video,
@@ -56,6 +57,7 @@ interface StudentDetailModalProps {
   student: StudentDetailInfo | null;
   sessionType: 'LAB' | 'EXAM';
   requireCamera: boolean;
+  videoTrack?: any;
   onSendNotice: (studentId: string, studentName: string) => void;
   onRecordViolation: (studentId: string) => void;
   onNextStudent?: () => void;
@@ -68,6 +70,7 @@ export default function StudentDetailModal({
   student,
   sessionType,
   requireCamera,
+  videoTrack,
   onSendNotice,
   onRecordViolation,
   onNextStudent,
@@ -255,9 +258,17 @@ export default function StudentDetailModal({
               {/* WEBCAM SINH VIÊN (Picture-in-Picture ở góc dưới bên phải) */}
               {showWebcam && viewMode === 'screen-pip' && (
                 <div className="absolute bottom-3 right-3 w-44 sm:w-52 aspect-video rounded-md bg-stone-950 border border-white/20 shadow-2xl overflow-hidden group/cam">
-                  <div className="absolute inset-0 bg-stone-900 flex items-center justify-center">
-                    <Video className="h-6 w-6 text-stone-600" />
-                  </div>
+                  {videoTrack ? (
+                    <LiveKitVideoFeed
+                      track={videoTrack}
+                      muted
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-stone-900 flex items-center justify-center">
+                      <Video className="h-6 w-6 text-stone-600" />
+                    </div>
+                  )}
 
                   {/* Bounding box trên webcam nhỏ */}
                   <div
@@ -296,7 +307,15 @@ export default function StudentDetailModal({
             {/* Chế độ chia đôi (Split Mode): Nếu chọn hiển thị song song */}
             {showWebcam && viewMode === 'split' && (
               <div className="aspect-video w-full rounded-md bg-stone-950 border border-white/10 relative overflow-hidden flex items-center justify-center">
-                <Video className="h-10 w-10 text-stone-700" />
+                {videoTrack ? (
+                  <LiveKitVideoFeed
+                    track={videoTrack}
+                    muted
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <Video className="h-10 w-10 text-stone-700" />
+                )}
                 <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded bg-black/80 px-2 py-0.5 text-[10px] font-mono text-white">
                   <span className="h-1.5 w-1.5 rounded-full bg-stone-300" />
                   <span>WEBCAM THÍ SINH • 1080p ({student.fps} FPS)</span>

@@ -230,6 +230,11 @@ function ExamJoinContent() {
       return;
     }
 
+    if (selectedExam && typeof window !== "undefined" && localStorage.getItem(`oculide_submitted_room_${selectedExam.id}`) === "true") {
+      setError("Bạn đã hoàn thành và nộp bài thi cho phòng này. Không thể vào lại phòng thi theo quy chế khảo thí.");
+      return;
+    }
+
     const scheduledStart = selectedExam?.rawStartTime
       ? Date.parse(selectedExam.rawStartTime)
       : Number.NaN;

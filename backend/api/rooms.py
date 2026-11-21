@@ -16,7 +16,7 @@ from database.room_db import (
     get_exam_templates, get_room_lobby_details, check_instructor_active_room,
     update_room_status, toggle_manual_attendance,
     is_student_in_class, get_class_metadata, upsert_student_lobby_session,
-    save_student_device_check
+    save_student_device_check, is_student_already_submitted, finalize_student_submission
 )
 from database.scoreboard_db import get_room_scoreboard
 from database.template_db import get_exam_content_for_room
@@ -302,6 +302,15 @@ async def join_room_authenticated(
             )
 
     student_id = current_user["user_id"]
+
+    # Quy chế khảo thí: Thí sinh đã nộp bài thì tuyệt đối không được phép vào lại phòng thi
+    if current_user.get("role") == "student":
+        if is_student_already_submitted(room["room_id"], student_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bạn đã hoàn thành và nộp bài thi cho phòng này. Theo quy chế khảo thí, thí sinh không thể vào lại phòng thi sau khi đã nộp bài."
+            )
+
     class_meta = None
     if room.get("class_id"):
         if current_user.get("role") == "student" and not is_student_in_class(room["class_id"], student_id):
@@ -369,6 +378,10 @@ async def get_student_room_status(
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
     is_expired = _is_room_expired(room)
+    has_sub = False
+    if current_user.get("role") == "student":
+        has_sub = is_student_already_submitted(room["room_id"], current_user["user_id"])
+
     return {
         "room_id": room["room_id"],
         "room_code": "" if is_expired else room["room_code"],
@@ -380,6 +393,7 @@ async def get_student_room_status(
         "duration_minutes": room.get("duration_minutes") or 60,
         "start_time": room["start_time"],
         "end_time": room["end_time"],
+        "has_submitted": has_sub,
     }
 
 @router.get("", response_model=List[RoomResponse])
@@ -613,8 +627,51 @@ async def get_room_exam_content(
     room = get_room_by_id(room_id)
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+
+    # Quy chế khảo thí: Nếu sinh viên đã nộp bài, không cho phép truy cập lại nội dung đề thi để làm tiếp
+    if current_user.get("role") == "student":
+        if is_student_already_submitted(room_id, current_user["user_id"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bạn đã hoàn thành và nộp bài thi cho phòng này. Không thể truy cập lại môi trường làm bài."
+            )
+
     include_hidden = current_user.get("role") in ("instructor", "admin")
     return get_exam_content_for_room(room_id, include_hidden_tests=include_hidden)
+
+
+@router.post("/{room_id}/submit-exam")
+async def submit_exam_endpoint(
+    room_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Xác nhận nộp bài thi chính thức và kết thúc phiên làm bài của thí sinh"""
+    if current_user["role"] != "student":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ sinh viên mới thực hiện nộp bài thi")
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+
+    finalize_student_submission(room_id, current_user["user_id"])
+
+    # Broadcast thông báo sinh viên đã nộp bài qua WebSocket để Giảng viên giám sát cập nhật ngay
+    try:
+        from websocket.connection_manager import manager
+        await manager.broadcast_json(room_id, {
+            "type": "student_submitted",
+            "student_id": current_user["user_id"],
+            "full_name": current_user.get("full_name") or current_user.get("username"),
+            "room_id": room_id
+        })
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "message": "Bài thi đã được nộp thành công. Phiên làm bài kết thúc.",
+        "room_id": room_id,
+        "student_id": current_user["user_id"]
+    }
 
 
 @router.get("/{room_id}/config")

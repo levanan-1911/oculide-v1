@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Union, List
 from datetime import datetime
 
@@ -15,6 +15,22 @@ class ClassCreateRequest(BaseModel):
     total_sessions: Optional[int] = Field(15, ge=1, le=100, description="Số buổi học")
     credit_hours: Optional[int] = Field(3, ge=1, le=20, description="Giờ học theo tín chỉ")
 
+    @field_validator("credit_hours", mode="before")
+    @classmethod
+    def normalize_credit_hours(cls, v):
+        if v is None:
+            return 3
+        try:
+            val = int(v)
+            # Nếu người dùng truyền số tiết học (ví dụ 45 tiết, 60 tiết, >= 30), tự động quy đổi về số tín chỉ (15 tiết = 1 tín chỉ)
+            if val >= 30 and val % 15 == 0:
+                return val // 15
+            elif val >= 30:
+                return round(val / 15)
+            return val
+        except Exception:
+            return v
+
 class ClassUpdateRequest(BaseModel):
     class_code: Optional[str] = Field(None, min_length=2, max_length=50)
     class_name: Optional[str] = Field(None, min_length=2, max_length=150)
@@ -28,6 +44,22 @@ class ClassUpdateRequest(BaseModel):
     end_date: Optional[str] = None
     total_sessions: Optional[int] = Field(None, ge=1, le=100, description="Số buổi học")
     credit_hours: Optional[int] = Field(None, ge=1, le=20, description="Giờ học theo tín chỉ")
+
+    @field_validator("credit_hours", mode="before")
+    @classmethod
+    def normalize_credit_hours(cls, v):
+        if v is None:
+            return None
+        try:
+            val = int(v)
+            # Nếu người dùng truyền số tiết học (ví dụ 45 tiết, 60 tiết, >= 30), tự động quy đổi về số tín chỉ (15 tiết = 1 tín chỉ)
+            if val >= 30 and val % 15 == 0:
+                return val // 15
+            elif val >= 30:
+                return round(val / 15)
+            return val
+        except Exception:
+            return v
 
 class ClassResponse(BaseModel):
     class_id: int

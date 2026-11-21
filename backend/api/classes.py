@@ -80,10 +80,15 @@ async def add_class(
         except Exception:
             pass
         return new_cls
+    except HTTPException:
+        raise
     except Exception as e:
-        if "UNIQUE" in str(e).upper() or "UQ" in str(e).upper():
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mã lớp học đã tồn tại")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        err_str = str(e)
+        if "UNIQUE" in err_str.upper() or "UQ" in err_str.upper():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mã lớp học đã tồn tại trong hệ thống")
+        if "FOREIGN KEY" in err_str.upper() or "FK_" in err_str.upper():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Thông tin liên kết (giảng viên hoặc học kỳ) không hợp lệ")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Lỗi tạo lớp học: {err_str}")
 
 @router.get("", response_model=List[ClassResponse])
 async def list_classes(
@@ -195,10 +200,15 @@ async def edit_class(
         return updated
     except HTTPException:
         raise
+    except HTTPException:
+        raise
     except Exception as e:
-        if "UNIQUE" in str(e).upper() or "UQ" in str(e).upper():
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mã lớp học đã tồn tại")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        err_str = str(e)
+        if "UNIQUE" in err_str.upper() or "UQ" in err_str.upper():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mã lớp học đã tồn tại trong hệ thống")
+        if "FOREIGN KEY" in err_str.upper() or "FK_" in err_str.upper():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Thông tin liên kết (giảng viên hoặc học kỳ) không hợp lệ")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Lỗi tạo lớp học: {err_str}")
 
 @router.delete("/{class_id}", status_code=status.HTTP_200_OK)
 async def remove_class(

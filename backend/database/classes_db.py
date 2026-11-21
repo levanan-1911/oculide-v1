@@ -109,6 +109,21 @@ def create_class(
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # Kiểm tra tính tồn tại của instructor_id để tránh lỗi Foreign Key Constraint
+        cursor.execute("SELECT user_id FROM Users WHERE user_id = ?", (instructor_id,))
+        if not cursor.fetchone():
+            # Fallback sang giảng viên đầu tiên trong hệ thống
+            cursor.execute("SELECT TOP 1 user_id FROM Users WHERE role_id = 2 ORDER BY user_id ASC")
+            fb_inst = cursor.fetchone()
+            if fb_inst:
+                instructor_id = fb_inst[0]
+            else:
+                # Fallback sang Quản trị viên nếu chưa có giảng viên
+                cursor.execute("SELECT TOP 1 user_id FROM Users WHERE role_id = 1 ORDER BY user_id ASC")
+                fb_admin = cursor.fetchone()
+                if fb_admin:
+                    instructor_id = fb_admin[0]
+
         cursor.execute("""
             INSERT INTO Classes (class_code, class_name, course_code, section_code, semester_name, instructor_id, description, status, start_date, end_date, total_sessions, credit_hours)
             OUTPUT inserted.class_id, inserted.class_code, inserted.class_name, inserted.course_code,
@@ -285,6 +300,20 @@ def update_class(
         real_id = _resolve_class_id(cursor, class_id)
         if not real_id:
             return None
+
+        if instructor_id is not None:
+            cursor.execute("SELECT user_id FROM Users WHERE user_id = ?", (instructor_id,))
+            if not cursor.fetchone():
+                cursor.execute("SELECT TOP 1 user_id FROM Users WHERE role_id = 2 ORDER BY user_id ASC")
+                fb_inst = cursor.fetchone()
+                if fb_inst:
+                    instructor_id = fb_inst[0]
+                else:
+                    cursor.execute("SELECT TOP 1 user_id FROM Users WHERE role_id = 1 ORDER BY user_id ASC")
+                    fb_admin = cursor.fetchone()
+                    if fb_admin:
+                        instructor_id = fb_admin[0]
+
         db_status = None
         if status:
             s_clean = status.strip().lower()

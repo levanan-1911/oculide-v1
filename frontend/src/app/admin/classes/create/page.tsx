@@ -598,6 +598,7 @@ export default function CreateClassPage() {
       // 1. Lưu lớp học vào CSDL SQL Server (bảng Classes) với Giảng viên được Admin gán
       let createdClassCode = id;
       try {
+        const payloadCredits = Number(credits) || (Number(creditHours) > 20 ? Math.round(Number(creditHours) / 15) : Number(creditHours)) || 3;
         const clsData = await fetchWithAuth<any>('/api/v1/classes', {
           method: 'POST',
           body: JSON.stringify({
@@ -611,14 +612,17 @@ export default function CreateClassPage() {
             start_date: startDate,
             end_date: endDate,
             total_sessions: Number(totalSessions),
-            credit_hours: Number(creditHours),
+            credit_hours: payloadCredits,
           }),
         });
         if (clsData?.class_code) {
           createdClassCode = clsData.class_code;
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Lỗi khi lưu lớp học vào CSDL SQL Server:', err);
+        setErrorMessage(err?.message || 'Không thể tạo lớp học trong cơ sở dữ liệu. Vui lòng kiểm tra lại thông tin.');
+        setIsSubmitting(false);
+        return;
       }
 
       // 2. Tự động đồng bộ tài khoản sinh viên vào CSDL SQL Server (vai trò student)
@@ -894,7 +898,13 @@ export default function CreateClassPage() {
                         min={1}
                         max={10}
                         value={credits}
-                        onChange={(e) => setCredits(e.target.value ? Number(e.target.value) : '')}
+                        onChange={(e) => {
+                          const val = e.target.value ? Number(e.target.value) : '';
+                          setCredits(val);
+                          if (val && typeof val === 'number') {
+                            setCreditHours(val * 15);
+                          }
+                        }}
                         placeholder="3"
                         className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-white/5 dark:text-white"
                       />
@@ -1006,7 +1016,13 @@ export default function CreateClassPage() {
                         max={200}
                         required
                         value={creditHours}
-                        onChange={(e) => setCreditHours(e.target.value ? Number(e.target.value) : '')}
+                        onChange={(e) => {
+                          const val = e.target.value ? Number(e.target.value) : '';
+                          setCreditHours(val);
+                          if (val && typeof val === 'number') {
+                            setCredits(Math.max(1, Math.min(10, Math.round(val / 15))));
+                          }
+                        }}
                         placeholder="45"
                         className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-white/5 dark:text-white"
                       />

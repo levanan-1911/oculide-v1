@@ -169,20 +169,25 @@ async def login(credentials: LoginRequest, request: Request):
             info["last_failed"] = now
         _FAILED_LOGIN_TRACKER[track_key] = info
 
-        # CHỈ lưu log nếu có dấu hiệu bất thường (sai từ 3 lần trở lên liên tiếp).
-        # Sai bình thường 1-2 lần không lưu log để tránh tràn bộ nhớ.
-        if info["count"] >= FAILED_THRESHOLD:
-            try:
-                create_system_log(
-                    log_level="warning",
-                    module="Cảnh báo đăng nhập sai",
-                    message=f"Tài khoản '{identifier}' đăng nhập sai {info['count']} lần liên tiếp từ IP {client_ip}",
-                    user_id=user["user_id"] if user else None,
-                    ip_address=client_ip,
-                    extra_data={"attempt_count": info["count"], "identifier": identifier, "ip": client_ip}
-                )
-            except Exception:
-                pass
+        # Ghi nhận log đăng nhập thất bại vào SystemAuditLogs
+        try:
+            if info["count"] >= FAILED_THRESHOLD:
+                log_msg = f"Cảnh báo dò mật khẩu: Tài khoản '{identifier}' đăng nhập sai {info['count']} lần liên tiếp từ IP {client_ip}"
+                mod = "Cảnh báo an ninh"
+            else:
+                log_msg = f"Tài khoản '{identifier}' đăng nhập thất bại (sai tài khoản hoặc mật khẩu) từ IP {client_ip}"
+                mod = "AUTH_LOGIN_FAILED"
+
+            create_system_log(
+                log_level="warning",
+                module=mod,
+                message=log_msg,
+                user_id=user["user_id"] if user else None,
+                ip_address=client_ip,
+                extra_data={"attempt_count": info["count"], "identifier": identifier, "ip": client_ip}
+            )
+        except Exception:
+            pass
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

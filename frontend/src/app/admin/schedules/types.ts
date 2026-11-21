@@ -31,6 +31,8 @@ export interface ExamScheduleItem {
   lecturer: string; // Giảng viên khởi tạo (ví dụ: "Thầy Nguyễn Văn Nam")
   creatorRole?: string; // 'admin' | 'instructor'
   creatorLabel?: string; // 'Quản trị viên (Khảo thí)' | 'Giảng viên phụ trách'
+  creatorName?: string; // Tên người tạo
+  createdBy?: string; // Tên người tạo
   templateId?: string | null; // Mã bộ đề (ví dụ: "TPL-EXAM-01")
   templateTitle?: string; // Tên bộ đề (ví dụ: "Xây dựng ứng dụng Web tương tác")
   templateType?: string; // 'final_exam' | 'exam' | 'lab' | 'midterm'
@@ -146,28 +148,23 @@ function mapInstructorSessionToExamSchedule(
   };
 }
 
-export const INITIAL_SCHEDULES: ExamScheduleItem[] = INITIAL_INSTRUCTOR_SCHEDULES.map((s) =>
-  mapInstructorSessionToExamSchedule(s)
-);
+export const INITIAL_SCHEDULES: ExamScheduleItem[] = [];
 
 /**
- * Đọc toàn bộ danh sách lịch kiểm tra trực tiếp từ nguồn lịch của Role Giảng viên
- * đảm bảo 100% khớp giữa /instructor/schedules và /admin/schedules.
+ * Đọc toàn bộ danh sách lịch kiểm tra từ local storage nếu có
  */
 export function getStoredSchedules(): ExamScheduleItem[] {
-  if (typeof window === 'undefined') return INITIAL_SCHEDULES;
+  if (typeof window === 'undefined') return [];
 
   try {
-    const templates = getStoredQuestionTemplates();
-    const templatesMap = new Map(
-      templates.map((t) => [t.id, { title: t.title, durationMinutes: t.durationMinutes }])
-    );
-    const instructorSessions = getStoredInstructorSchedules();
-    return instructorSessions.map((item) =>
-      mapInstructorSessionToExamSchedule(item, templatesMap)
-    );
+    const raw = localStorage.getItem(SCHEDULES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+    return [];
   } catch {
-    return INITIAL_SCHEDULES;
+    return [];
   }
 }
 

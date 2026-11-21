@@ -29,6 +29,7 @@ import {
   Terminal,
   ShieldAlert,
   Filter,
+  UserCheck,
 } from 'lucide-react';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
@@ -39,6 +40,21 @@ import {
   saveStoredSchedules,
   ScheduleStatus,
 } from './types';
+
+function formatScheduleCreatedAt(val?: string): string {
+  if (!val) return '—';
+  if (val.includes('/')) return val;
+  try {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  } catch {
+    // fallback
+  }
+  return val;
+}
 
 // Helper to filter only formal exams: Midterm & Final examinations
 function isFormalExamSession(item: ExamScheduleItem): boolean {
@@ -188,20 +204,24 @@ export default function ScheduleManagerPage() {
     setIsLoading(true);
     try {
       const resSchedules = await fetchWithAuth<{ total: number; schedules: ExamScheduleItem[] }>('/api/v1/admin/schedules');
-      if (resSchedules?.schedules && resSchedules.schedules.length > 0) {
+      if (resSchedules && Array.isArray(resSchedules.schedules)) {
         setSchedules(resSchedules.schedules);
       } else {
-        setSchedules(getStoredSchedules());
+        setSchedules([]);
       }
     } catch (err: any) {
-      console.warn('API error, falling back to local storage cache:', err.message);
-      setSchedules(getStoredSchedules());
+      console.warn('API error loading schedules:', err.message);
+      setSchedules([]);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('oculide_schedules_mock');
+      localStorage.removeItem('oculide_instructor_schedules_mock');
+    }
     loadSchedulesFromApi();
     loadFinalTemplates();
   }, []);
@@ -560,6 +580,8 @@ export default function ScheduleManagerPage() {
         'Mã học phần',
         'Sĩ số dự thi',
         'Cán bộ coi thi',
+        'Người tạo',
+        'Thời gian tạo',
         'Mã đề thi',
         'Tên đề thi lập trình',
         'Ngày thi',
@@ -587,6 +609,8 @@ export default function ScheduleManagerPage() {
         s.courseCode || s.classId,
         String(s.studentCount),
         s.lecturer,
+        s.creatorName || s.createdBy || 'Quản trị viên',
+        formatScheduleCreatedAt(s.createdAt),
         s.templateId || 'Chưa gán',
         s.templateTitle || 'Chưa gán đề thi',
         s.date,
@@ -901,6 +925,7 @@ export default function ScheduleManagerPage() {
                       <th className="px-3 py-3 whitespace-nowrap min-w-[140px]">KỲ THI</th>
                       <th className="px-3 py-3 whitespace-nowrap min-w-[180px]">BẮT ĐẦU &amp; THỜI LƯỢNG</th>
                       <th className="px-3 py-3 whitespace-nowrap min-w-[150px]">CÁN BỘ COI THI</th>
+                      <th className="px-3 py-3 whitespace-nowrap min-w-[160px]">NGƯỜI TẠO &amp; NGÀY TẠO</th>
                       <th className="px-2.5 py-3 whitespace-nowrap text-center min-w-[65px]">SĨ SỐ</th>
                       <th className="px-3 py-3 whitespace-nowrap min-w-[110px]">TRẠNG THÁI</th>
                       <th className="px-3.5 py-3 whitespace-nowrap text-right min-w-[170px]">THAO TÁC</th>
@@ -909,7 +934,7 @@ export default function ScheduleManagerPage() {
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10 font-medium">
                     {filteredSchedules.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-6 py-12 text-center">
+                        <td colSpan={8} className="px-6 py-12 text-center">
                           <FileCode2 className="mx-auto h-12 w-12 text-slate-300" />
                           <p className="mt-3 text-base font-bold text-slate-900 dark:text-white">
                             Không tìm thấy ca thi phù hợp
@@ -975,7 +1000,21 @@ export default function ScheduleManagerPage() {
                               </div>
                             </td>
 
-                            {/* Cột 5: Sĩ số dự thi */}
+                            {/* Cột 5: Người tạo & Ngày tạo */}
+                            <td className="px-3 py-3 whitespace-nowrap">
+                              <div>
+                                <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                  <UserCheck className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                                  <span>{item.creatorName || item.createdBy || item.creatorLabel || 'Quản trị viên'}</span>
+                                </p>
+                                <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1 font-mono">
+                                  <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
+                                  <span>{formatScheduleCreatedAt(item.createdAt)}</span>
+                                </p>
+                              </div>
+                            </td>
+
+                            {/* Cột 6: Sĩ số dự thi */}
                             <td className="px-2.5 py-3 text-center whitespace-nowrap">
                               <div>
                                 <p className="text-xs font-extrabold text-slate-900 dark:text-white">
@@ -1806,12 +1845,12 @@ export default function ScheduleManagerPage() {
                     <span className="text-[10.5px] text-slate-500 block">Thời lượng: {selectedSchedule.durationMinutes} phút</span>
                   </div>
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">Người tạo lịch:</span>
-                    <span className="mt-0.5 block font-bold text-slate-900 dark:text-white">
-                      {selectedSchedule.examKind === 'final' ? 'Ban Khảo thí' : 'Giảng viên phụ trách lớp'}
+                    <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">Người tạo &amp; Ngày tạo:</span>
+                    <span className="mt-0.5 block font-bold text-slate-900 dark:text-white truncate">
+                      {selectedSchedule.creatorName || selectedSchedule.createdBy || (selectedSchedule.examKind === 'final' ? 'Ban Khảo thí' : 'Giảng viên phụ trách')}
                     </span>
                     <span className="text-[10.5px] text-slate-500 block">
-                      {selectedSchedule.examKind === 'final' ? 'Hội đồng Khảo thí' : (selectedSchedule.creatorLabel || 'Giảng viên phụ trách')}
+                      Tạo: {formatScheduleCreatedAt(selectedSchedule.createdAt)}
                     </span>
                   </div>
                   <div>

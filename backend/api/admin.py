@@ -1349,6 +1349,8 @@ async def list_admin_schedules(
                 "sessionType": session_type,
                 "creatorRole": creator_role,
                 "creatorLabel": creator_label,
+                "creatorName": r[5] or creator_label,
+                "createdBy": r[5] or creator_label,
                 "classId": r[7] or (f"CLASS-{r[6]}" if r[6] else "CHUA_GAN"),
                 "className": r[8] or "Lớp học phần chung",
                 "studentCount": int(r[21] or 0),
@@ -1369,7 +1371,8 @@ async def list_admin_schedules(
                 "proctoringPolicy": policy,
                 "attendedStudents": int(r[22] or 0),
                 "pendingViolations": int(r[23] or 0),
-                "createdAt": r[20].isoformat() if r[20] else ""
+                "createdAt": r[20].strftime("%d/%m/%Y %H:%M") if r[20] else "",
+                "createdAtIso": r[20].isoformat() if r[20] else ""
             })
 
         return {
@@ -1420,7 +1423,7 @@ async def get_admin_schedule_detail(room_id: int):
         rows = cursor.fetchall()
 
         cursor.execute("""
-            SELECT lh.course_code, lh.class_name, lh.credit_hours, r_creator.role_name, bdm.template_type, bdm.title
+            SELECT lh.course_code, lh.class_name, lh.credit_hours, r_creator.role_name, bdm.template_type, bdm.title, gv.full_name, p.created_at
             FROM Rooms p
             LEFT JOIN Classes lh ON p.class_id = lh.class_id
             LEFT JOIN Users gv ON p.creator_id = gv.user_id
@@ -1447,6 +1450,10 @@ async def get_admin_schedule_detail(room_id: int):
             )
             room["exam_kind_label"] = "Thi Kết Thúc Học Phần" if is_final else "Thi Giữa Kỳ"
             room["creator_label"] = "Hội đồng Khảo thí" if (creator_role == "admin" or is_final) else "Giảng viên phụ trách"
+            room["creator_name"] = extra[6] or room["creator_label"]
+            room["created_by"] = extra[6] or room["creator_label"]
+            room["created_at"] = extra[7].strftime("%d/%m/%Y %H:%M") if extra[7] else ""
+            room["created_at_iso"] = extra[7].isoformat() if extra[7] else ""
         
         students = []
         for r in rows:

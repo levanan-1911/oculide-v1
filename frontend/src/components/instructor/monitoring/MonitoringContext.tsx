@@ -156,7 +156,11 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
 
         const running = rooms.find((room) => isRoomCurrentlyRunning(room));
         if (!running) {
-          setSession(EMPTY_SESSION);
+          // Chỉ dọn dẹp vi phạm nếu thực sự không còn phòng nào hoạt động
+          setSession((prev) => ({
+            ...EMPTY_SESSION,
+            requireCamera: prev.requireCamera, // Bảo lưu lựa chọn camera của người dùng
+          }));
           setViolations([]);
           setActiveToast(null);
           return;
@@ -166,6 +170,16 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
         const remainingMinutes = Number.isFinite(endTime)
           ? Math.max(0, Math.ceil((endTime - Date.now()) / 60000))
           : running.duration_minutes || 0;
+
+        let parsedConfig: any = null;
+        if (running.proctoring_config) {
+          try {
+            parsedConfig = typeof running.proctoring_config === 'string'
+              ? JSON.parse(running.proctoring_config)
+              : running.proctoring_config;
+          } catch {}
+        }
+
         setSession((prev) => ({
           ...prev,
           id: String(running.room_id),
@@ -177,6 +191,13 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
           remainingMinutes,
           totalStudents: running.total_students ?? prev.totalStudents,
           attendedStudents: running.attended_students ?? prev.attendedStudents,
+          // Giữ nguyên thiết lập camera người dùng đã chọn hoặc đọc từ cấu hình phòng
+          requireCamera:
+            prev.requireCamera !== undefined && prev.requireCamera !== false
+              ? prev.requireCamera
+              : parsedConfig?.requireCamera !== undefined
+              ? Boolean(parsedConfig.requireCamera)
+              : prev.requireCamera,
         }));
 
         if (running.room_id) {

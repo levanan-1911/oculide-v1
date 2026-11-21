@@ -66,9 +66,10 @@ export default function StudentWaitingRoomPage() {
 
         const savedStatus = String(parsed.status || '').toLowerCase();
         const savedEndTime = parsed.endTime ? Date.parse(parsed.endTime) : Number.NaN;
+        const isWaitingStatus = ['chua_mo', 'waiting', 'scheduled'].includes(savedStatus);
         if (
           ['da_dong', 'da_huy', 'da_ket_thuc', 'completed', 'ended', 'closed', 'cancelled'].includes(savedStatus) ||
-          (Number.isFinite(savedEndTime) && savedEndTime <= Date.now())
+          (!isWaitingStatus && Number.isFinite(savedEndTime) && savedEndTime <= Date.now())
         ) {
           setIsRoomClosed(true);
         } else if (parsed.isLate || (parsed.status === "dang_dien_ra" || parsed.status === "in_progress")) {
@@ -115,12 +116,12 @@ export default function StudentWaitingRoomPage() {
           setIsLateEntry(false);
           return;
         }
+        const statusLower = String(res.status || '').toLowerCase();
+        const isWaiting = ['chua_mo', 'waiting', 'scheduled'].includes(statusLower);
         const expired =
-          ['da_dong', 'da_huy', 'da_ket_thuc', 'completed', 'ended', 'closed', 'cancelled'].includes(
-            String(res.status || '').toLowerCase()
-          ) ||
+          ['da_dong', 'da_huy', 'da_ket_thuc', 'completed', 'ended', 'closed', 'cancelled'].includes(statusLower) ||
           !res.is_active ||
-          (Number.isFinite(Date.parse(res.end_time)) && Date.parse(res.end_time) <= Date.now());
+          (!isWaiting && Number.isFinite(Date.parse(res.end_time)) && Date.parse(res.end_time) <= Date.now());
         setRoomStatus(expired ? 'completed' : res.status);
 
         if (expired) {

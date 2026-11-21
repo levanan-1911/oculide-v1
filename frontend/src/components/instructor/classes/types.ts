@@ -161,15 +161,12 @@ export function isRoomCurrentlyRunning(
   room: { status?: unknown; is_active?: unknown; end_time?: unknown },
   now: number = Date.now()
 ): boolean {
-  const status = String(room.status || '').toLowerCase();
+  const status = String(room.status || '').toLowerCase().trim();
+  const terminalStatuses = ['ended', 'completed', 'da_dong', 'da_huy', 'da_ket_thuc', 'closed', 'cancelled'];
+  if (terminalStatuses.includes(status)) return false;
   if (status !== 'in_progress' && status !== 'dang_dien_ra') return false;
   if (room.is_active === false || room.is_active === 0 || room.is_active === '0' || room.is_active === 'false') {
     return false;
-  }
-
-  if (room.end_time) {
-    const endTime = new Date(String(room.end_time)).getTime();
-    if (Number.isFinite(endTime) && endTime <= now) return false;
   }
 
   return true;

@@ -42,7 +42,9 @@ import {
   Sun,
   Moon,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  BellRing,
+  X
 } from "lucide-react";
 
 // Dữ liệu mẫu bài thi
@@ -370,6 +372,13 @@ export default function ExamWorkspacePage() {
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [aiViolationCount, setAiViolationCount] = useState(0);
   const [warningToast, setWarningToast] = useState<string | null>(null);
+  const [incomingAnnouncement, setIncomingAnnouncement] = useState<{
+    id: number;
+    message: string;
+    noticeType: string;
+    sender: string;
+    time: string;
+  } | null>(null);
 
   // Trạng thái Khóa / Treo Máy do vi phạm (Chỉ Giảng viên mới được mở khóa từ xa)
   const [isLocked, setIsLocked] = useState(false);
@@ -509,6 +518,24 @@ export default function ExamWorkspacePage() {
               setAiViolationCount(0);
               setTeacherPasscode("");
               showToast("ĐÃ MỞ KHÓA: Giảng viên đã phê duyệt mở khóa từ xa!");
+            } else if (msg.type === "announcement" || msg.type === "notice") {
+              const myIdStr = String(me.user_id);
+              const targetStr = msg.target_id ? String(msg.target_id) : "";
+              const isTargetMe = !targetStr || targetStr === myIdStr || targetStr.toLowerCase() === "all";
+              if (isTargetMe && msg.message) {
+                setIncomingAnnouncement({
+                  id: Date.now(),
+                  message: msg.message,
+                  noticeType: msg.notice_type || "info",
+                  sender: msg.instructor_name || "Giảng viên",
+                  time: msg.timestamp || new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
+                });
+              }
+            } else if (msg.type === "room_config_update" && typeof msg.requireCamera === "boolean") {
+              setIsCameraOffAllowed(!msg.requireCamera);
+              if (msg.requireCamera) {
+                toggleCamera(true).catch(() => null);
+              }
             }
           } catch {
             // ignore
@@ -746,6 +773,44 @@ export default function ExamWorkspacePage() {
         <div className="fixed top-18 right-6 z-50 flex items-center gap-3 rounded-md border border-rose-500/50 bg-rose-900 text-white px-4 py-3 text-xs font-semibold shadow-lg backdrop-blur-md">
           <ShieldAlert size={18} className="shrink-0 text-rose-300" />
           <span>{warningToast}</span>
+        </div>
+      )}
+
+      {/* Thông Báo từ Giảng viên Nổi ở Góc Màn Hình (Bottom-Right) */}
+      {incomingAnnouncement && (
+        <div className="fixed bottom-6 right-6 z-50 flex max-w-md w-full animate-in slide-in-from-bottom-5 duration-300">
+          <div className="flex w-full items-start gap-3.5 rounded-lg border-2 border-amber-500 bg-slate-900/95 p-4 text-white shadow-2xl backdrop-blur-md">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-400">
+              <BellRing className="h-5 w-5 animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-xs font-bold uppercase tracking-wider text-amber-400">
+                  {incomingAnnouncement.sender} • {incomingAnnouncement.time}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIncomingAnnouncement(null)}
+                  className="rounded p-1 text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                  title="Đóng thông báo"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="mt-1 text-sm font-medium text-slate-100 leading-relaxed break-words">
+                {incomingAnnouncement.message}
+              </p>
+              <div className="mt-2.5 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIncomingAnnouncement(null)}
+                  className="rounded bg-amber-500 hover:bg-amber-600 px-3.5 py-1 text-xs font-bold text-slate-950 transition cursor-pointer shadow-sm"
+                >
+                  Đã hiểu
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

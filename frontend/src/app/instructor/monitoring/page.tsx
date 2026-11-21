@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
@@ -188,6 +188,20 @@ function InstructorMonitoringContent() {
 
         setRealStudents(mappedAttendees);
 
+        let parsedConfig: any = { requireCamera: false };
+        if (data.proctoring_config) {
+          try {
+            parsedConfig = typeof data.proctoring_config === 'string'
+              ? JSON.parse(data.proctoring_config)
+              : data.proctoring_config;
+          } catch {}
+        }
+        if (typeof window !== 'undefined') {
+          const localSaved = localStorage.getItem(`oculide_room_${data.room_code}_require_cam`);
+          const finalCam = localSaved !== null ? localSaved === 'true' : Boolean(parsedConfig?.requireCamera);
+          setRequireCamera(finalCam);
+        }
+
         setActiveRoomSession({
           id: data.room_code,
           classId: data.class_code || '',
@@ -198,7 +212,7 @@ function InstructorMonitoringContent() {
           durationMinutes: data.duration_minutes || 60,
           status: 'in_progress',
           createdAt: data.created_at,
-          proctoringConfig: { lockdownFullscreen: true, aiFaceDetection: true, aiObjectDetection: true, allowTabSwitch: false },
+          proctoringConfig: parsedConfig,
           attendees: [],
         });
       } catch {
@@ -226,8 +240,10 @@ function InstructorMonitoringContent() {
   // State Giám sát chi tiết / Phóng to sinh viên (Màn hình + Webcam)
   const [focusedStudent, setFocusedStudent] = useState<StudentDetailInfo | null>(null);
 
-  // Filters & Search
-  const [statusFilter, setStatusFilter] = useState<'all' | 'warning' | 'normal' | 'submitted'>('all');
+  const wsRef = useRef<WebSocket | null>(null);
+
+  // Filters & Search: Mặc định là 'active' (chỉ hiển thị sinh viên đang làm bài; sinh viên nộp bài xong sẽ ẩn khỏi lưới)
+  const [statusFilter, setStatusFilter] = useState<'active' | 'warning' | 'submitted' | 'all'>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSideTab, setActiveSideTab] = useState<'violations' | 'announcements' | 'chat'>('violations');
   const [realViolations, setRealViolations] = useState<ViolationAlert[] | null>(null);
@@ -282,6 +298,7 @@ function InstructorMonitoringContent() {
           ? process.env.NEXT_PUBLIC_WS_URL.replace(/\/$/, '')
           : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
         ws = new WebSocket(`${baseWs}/ws/${realRoomId}/proctor_${me.user_id}?token=${encodeURIComponent(token)}`);
+        wsRef.current = ws;
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
@@ -323,6 +340,10 @@ function InstructorMonitoringContent() {
     return () => {
       cancelled = true;
       if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      if (wsRef.current) {
+        if (wsRef.current.readyState === WebSocket.OPEN) wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, [realRoomId, activeRoomSession?.classId, chatRoomCode]);
 
@@ -371,7 +392,63 @@ function InstructorMonitoringContent() {
     setIsSendNoticeModalOpen(true);
   };
 
+  // Gửi thông báo trực tiếp qua WebSocket tới toàn bộ sinh viên trong phòng
+  const handleSendNotice = (
+    targetType: 'all' | 'group' | 'individual',
+    targetLabel: string,
+    message: string,
+    type: 'info' | 'warning' | 'time' | 'urgent',
+    studentId?: string
+  ) => {
+    sendAnnouncement(targetType, targetLabel, message, type, studentId);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'announcement',
+          target_type: targetType,
+          target_id: studentId,
+          target_label: targetLabel,
+          message: message,
+          notice_type: type,
+          instructor_name: activeRoomSession?.title || 'Giảng viên',
+          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        })
+      );
+    }
+  };
+
+  // Giữ cấu hình Yêu cầu Webcam cố định không bị reset
+  const handleToggleRequireCamera = async (checked: boolean) => {
+    setRequireCamera(checked);
+    if (activeRoomSession?.id) {
+      localStorage.setItem(`oculide_room_${activeRoomSession.id}_require_cam`, String(checked));
+    }
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'room_config_update',
+          requireCamera: checked,
+        })
+      );
+    }
+    if (realRoomId) {
+      fetchWithAuth(`/api/v1/rooms/${realRoomId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          proctoring_config: {
+            ...((activeRoomSession?.proctoringConfig as any) || {}),
+            requireCamera: checked,
+          },
+        }),
+      }).catch(() => null);
+    }
+  };
+
   const camerasSource = realStudents ?? INITIAL_CAMERAS;
+
+  const activeCount = camerasSource.filter((c) => c.status !== 'submitted').length;
+  const warningCount = camerasSource.filter((c) => c.status === 'warning' || c.status === 'critical').length;
+  const submittedCount = camerasSource.filter((c) => c.status === 'submitted').length;
 
   const filteredCameras = camerasSource.filter((c) => {
     const matchesSearch =
@@ -380,10 +457,10 @@ function InstructorMonitoringContent() {
 
     if (!matchesSearch) return false;
 
+    if (statusFilter === 'active') return c.status !== 'submitted';
     if (statusFilter === 'warning') return c.status === 'warning' || c.status === 'critical';
-    if (statusFilter === 'normal') return c.status === 'normal';
     if (statusFilter === 'submitted') return c.status === 'submitted';
-    return true;
+    return true; // 'all'
   });
 
   const handleNextStudent = () => {
@@ -664,7 +741,7 @@ function InstructorMonitoringContent() {
                 <input
                   type="checkbox"
                   checked={session.requireCamera}
-                  onChange={(e) => setRequireCamera(e.target.checked)}
+                  onChange={(e) => handleToggleRequireCamera(e.target.checked)}
                   className="rounded accent-slate-900 dark:accent-white h-3.5 w-3.5"
                 />
                 <span>Yêu cầu Webcam</span>
@@ -718,10 +795,10 @@ function InstructorMonitoringContent() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-slate-300 bg-white p-3 dark:border-white/10 dark:bg-neutral-900">
             <div className="flex flex-wrap items-center gap-1.5">
               {[
-                { id: 'all', label: `Tất cả (${camerasSource.length})` },
-                { id: 'warning', label: `Cảnh báo AI (${camerasSource.filter((c) => c.status === 'warning' || c.status === 'critical').length})` },
-                { id: 'normal', label: `Bình thường (${camerasSource.filter((c) => c.status === 'normal').length})` },
-                { id: 'submitted', label: `Đã nộp (${camerasSource.filter((c) => c.status === 'submitted').length})` },
+                { id: 'active', label: `Đang làm bài (${activeCount})` },
+                { id: 'warning', label: `Cảnh báo AI (${warningCount})` },
+                { id: 'submitted', label: `Đã nộp bài (${submittedCount})` },
+                { id: 'all', label: `Tất cả danh sách (${camerasSource.length})` },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -1006,24 +1083,32 @@ function InstructorMonitoringContent() {
               <div className="col-span-full rounded-md border border-dashed border-slate-300 dark:border-white/10 p-10 text-center bg-white dark:bg-neutral-900 shadow-2xs">
                 <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500 mb-2" />
                 <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-                  {statusFilter === 'normal' && camerasSource.some((c) => c.status === 'submitted')
+                  {statusFilter === 'active' && submittedCount > 0
                     ? 'Tất cả sinh viên đã hoàn thành và nộp bài'
                     : 'Không tìm thấy sinh viên nào trong mục này'}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                  {statusFilter === 'normal' && camerasSource.some((c) => c.status === 'submitted')
-                    ? 'Toàn bộ sinh viên đã nộp bài thi thành công. Vui lòng bấm vào tab "Tất cả" hoặc "Đã nộp" ở phía trên để xem kết quả và bài nộp.'
+                  {statusFilter === 'active' && submittedCount > 0
+                    ? 'Toàn bộ sinh viên đã nộp bài thi thành công và rời phòng. Bấm vào tab "Đã nộp bài" để xem chi tiết.'
                     : 'Không có dữ liệu sinh viên nào khớp với bộ lọc hoặc từ khóa tìm kiếm.'}
                 </p>
-                {statusFilter !== 'all' && (
+                {statusFilter === 'active' && submittedCount > 0 ? (
                   <button
                     type="button"
-                    onClick={() => setStatusFilter('all')}
+                    onClick={() => setStatusFilter('submitted')}
                     className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-white dark:text-slate-900 text-white px-3.5 py-1.5 text-xs font-bold transition hover:opacity-90 cursor-pointer"
                   >
-                    Xem tất cả sinh viên ({camerasSource.length})
+                    Xem danh sách đã nộp ({submittedCount})
                   </button>
-                )}
+                ) : statusFilter !== 'active' ? (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('active')}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-white dark:text-slate-900 text-white px-3.5 py-1.5 text-xs font-bold transition hover:opacity-90 cursor-pointer"
+                  >
+                    Về danh sách đang làm bài ({activeCount})
+                  </button>
+                ) : null}
               </div>
             )}
           </div>
@@ -1324,9 +1409,7 @@ function InstructorMonitoringContent() {
               }
             : undefined
         }
-        onSend={(targetType, targetLabel, message, type, studentId) => {
-          sendAnnouncement(targetType, targetLabel, message, type, studentId);
-        }}
+        onSend={handleSendNotice}
       />
     </div>
   );

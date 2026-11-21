@@ -58,6 +58,7 @@ interface StudentDetailModalProps {
   sessionType: 'LAB' | 'EXAM';
   requireCamera: boolean;
   videoTrack?: any;
+  screenTrack?: any;
   onSendNotice: (studentId: string, studentName: string) => void;
   onRecordViolation: (studentId: string) => void;
   onNextStudent?: () => void;
@@ -71,6 +72,7 @@ export default function StudentDetailModal({
   sessionType,
   requireCamera,
   videoTrack,
+  screenTrack,
   onSendNotice,
   onRecordViolation,
   onNextStudent,
@@ -206,53 +208,75 @@ export default function StudentDetailModal({
         <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 overflow-y-auto">
           {/* CỘT TRÁI (8 Cột): Khung Màn hình sinh viên + Webcam */}
           <div className="lg:col-span-8 p-4 sm:p-5 border-b lg:border-b-0 lg:border-r border-white/10 flex flex-col justify-between space-y-4">
-            {/* KHUNG STREAM CHÍNH: MÀN HÌNH SINH VIÊN */}
+            {/* KHUNG STREAM CHÍNH: MÀN HÌNH HOẶC WEBCAM LIVE */}
             <div className="relative aspect-video w-full rounded-md bg-black overflow-hidden border border-white/10 shadow-2xl">
-              {/* Giả lập Màn hình làm bài của Sinh viên (Oculide Code IDE) */}
-              <div className="absolute inset-0 bg-neutral-950 flex flex-col font-mono text-xs">
-                {/* Thanh tab IDE của sinh viên */}
-                <div className="flex items-center justify-between bg-neutral-900 px-3 py-1.5 border-b border-white/10 text-[11px] text-stone-400">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-stone-600" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-stone-500" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-stone-400" />
-                    <span className="ml-2 px-2 py-0.5 rounded bg-black/40 text-stone-300 font-bold border border-white/10 flex items-center gap-1">
-                      <FileCode2 className="h-3 w-3 text-stone-400" />
-                      {student.currentFile}
-                    </span>
+              {screenTrack ? (
+                /* Có luồng Màn hình LiveKit thật */
+                <LiveKitVideoFeed
+                  track={screenTrack}
+                  muted
+                  className="h-full w-full object-contain bg-black"
+                />
+              ) : videoTrack && viewMode === 'screen-only' ? (
+                /* Nếu chọn chỉ xem và chỉ có webcam */
+                <LiveKitVideoFeed
+                  track={videoTrack}
+                  muted
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                /* Giả lập Màn hình làm bài của Sinh viên (Oculide Code IDE) nếu SV chưa bật share màn hình */
+                <div className="absolute inset-0 bg-neutral-950 flex flex-col font-mono text-xs">
+                  {/* Thanh tab IDE của sinh viên */}
+                  <div className="flex items-center justify-between bg-neutral-900 px-3 py-1.5 border-b border-white/10 text-[11px] text-stone-400">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-stone-600" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-stone-500" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-stone-400" />
+                      <span className="ml-2 px-2 py-0.5 rounded bg-black/40 text-stone-300 font-bold border border-white/10 flex items-center gap-1">
+                        <FileCode2 className="h-3 w-3 text-stone-400" />
+                        {student.currentFile}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px]">
+                      <span className="text-stone-300 font-bold">Docker Sandbox #dk-ready</span>
+                      <span className="text-stone-500">•</span>
+                      <span>Line 24, Col 12</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-[10px]">
-                    <span className="text-stone-300 font-bold">Docker Sandbox #dk-ready</span>
-                    <span className="text-stone-500">•</span>
-                    <span>Line 24, Col 12</span>
-                  </div>
-                </div>
 
-                {/* Code Editor Body */}
-                <div className="flex-1 p-3 overflow-hidden text-stone-300 space-y-1 text-[11px] font-mono leading-relaxed bg-neutral-950">
-                  <p className="text-stone-500">{`// Đề bài: ${sessionType === 'EXAM' ? 'Kiểm tra quá trình' : 'Bài thực hành Lab'} - Oculide`}</p>
-                  <pre className="text-stone-200 font-mono select-none">{student.codeSnippet}</pre>
-                </div>
-
-                {/* Terminal Test Runner ở đáy màn hình SV */}
-                <div className="h-20 bg-stone-950 border-t border-white/10 p-2.5 text-[10px] font-mono text-stone-400 flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-stone-400">
-                    <span className="flex items-center gap-1 font-bold text-stone-300">
-                      <Terminal className="h-3 w-3 text-stone-400" />
-                      Oculide Test Runner
-                    </span>
-                    <span className="text-stone-200 font-bold">Passed: {student.passedCases}</span>
+                  {/* Code Editor Body */}
+                  <div className="flex-1 p-3 overflow-hidden text-stone-300 space-y-1 text-[11px] font-mono leading-relaxed bg-neutral-950">
+                    <p className="text-stone-500">{`// Đề bài: ${sessionType === 'EXAM' ? 'Kiểm tra quá trình' : 'Bài thực hành Lab'} - Oculide`}</p>
+                    <pre className="text-stone-200 font-mono select-none">{student.codeSnippet}</pre>
                   </div>
-                  <p className="text-stone-400">
-                    $ g++ -O2 solution.cpp -o solution &amp;&amp; ./solution <span className="text-stone-300">✓ Testcase 1-4 OK</span>
-                  </p>
+
+                  {/* Terminal Test Runner ở đáy màn hình SV */}
+                  <div className="h-20 bg-stone-950 border-t border-white/10 p-2.5 text-[10px] font-mono text-stone-400 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-stone-400">
+                      <span className="flex items-center gap-1 font-bold text-stone-300">
+                        <Terminal className="h-3 w-3 text-stone-400" />
+                        Oculide Test Runner
+                      </span>
+                      <span className="text-stone-200 font-bold">Passed: {student.passedCases}</span>
+                    </div>
+                    <p className="text-stone-400">
+                      $ g++ -O2 solution.cpp -o solution &amp;&amp; ./solution <span className="text-stone-300">✓ Testcase 1-4 OK</span>
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Tag MÀN HÌNH CHIA SẺ LIVE */}
-              <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 rounded bg-black/80 px-2 py-0.5 text-[10px] font-mono text-white backdrop-blur-xs border border-white/10">
-                <span className="h-1.5 w-1.5 rounded-full bg-stone-300" />
-                <span>MÀN HÌNH SV • LIVE</span>
+              <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 rounded bg-black/80 px-2 py-0.5 text-[10px] font-mono text-white backdrop-blur-xs border border-white/10 z-10">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    screenTrack ? 'bg-emerald-400' : 'bg-stone-400'
+                  }`}
+                />
+                <span>
+                  {screenTrack ? 'MÀN HÌNH SV • LIVE STREAM' : 'MÀN HÌNH SOẠN THẢO SV'}
+                </span>
               </div>
 
               {/* WEBCAM SINH VIÊN (Picture-in-Picture ở góc dưới bên phải) */}

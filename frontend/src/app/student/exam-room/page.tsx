@@ -25,6 +25,7 @@ import {
   Lock,
   Maximize2,
   Minimize2,
+  Monitor,
   PhoneOff,
   Play,
   RotateCcw,
@@ -297,6 +298,10 @@ export default function ExamWorkspacePage() {
   const {
     connectionState: livekitState,
     localVideoTrack,
+    localScreenTrack,
+    isScreenSharing,
+    enableScreenShare,
+    disableScreenShare,
   } = useLiveKitRoom({
     roomId: activeRoomId,
     mode: "publish",
@@ -311,13 +316,28 @@ export default function ExamWorkspacePage() {
   const [selectedLanguage, setSelectedLanguage] = useState("cpp");
   const [timeLeft, setTimeLeft] = useState(mockExamData.durationMinutes * 60);
 
-  // Luồng camera vật lý trực tiếp từ trình duyệt
+  // Luồng camera vật lý trực tiếp
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Kích hoạt luồng webcam thật trực tiếp để thí sinh luôn thấy mặt mình
+  // Ưu tiên gắn trực tiếp localVideoTrack của LiveKit vào khung hình, tránh xung đột camera
   useEffect(() => {
-    if (examState !== "doing") return;
+    const videoEl = localVideoRef.current;
+    if (!videoEl) return;
+    if (localVideoTrack) {
+      localVideoTrack.attach(videoEl);
+      return () => {
+        localVideoTrack.detach(videoEl);
+      };
+    } else if (localStream) {
+      videoEl.srcObject = localStream;
+      videoEl.play().catch(() => {});
+    }
+  }, [localVideoTrack, localStream, isCameraExpanded]);
+
+  // Chỉ kích hoạt getUserMedia local nếu LiveKit chưa có track hoặc không hoạt động
+  useEffect(() => {
+    if (examState !== "doing" || localVideoTrack) return;
     let stream: MediaStream | null = null;
     let cancelled = false;
 
@@ -350,14 +370,7 @@ export default function ExamWorkspacePage() {
       }
       setLocalStream(null);
     };
-  }, [examState]);
-
-  useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
-      localVideoRef.current.play().catch(() => {});
-    }
-  }, [localStream, isCameraExpanded]);
+  }, [examState, localVideoTrack]);
 
   // Cảnh báo AI & Đếm Vi Phạm
   const [pasteCount, setPasteCount] = useState(0);
@@ -986,11 +999,34 @@ export default function ExamWorkspacePage() {
                 </button>
               </div>
 
-              {/* Tình trạng AI Vision & Nút bật/thu nhỏ Camera PIP */}
+              {/* Tình trạng AI Vision & Nút bật/thu nhỏ Camera PIP & Nút Chia sẻ Màn hình */}
               <div className="flex items-center gap-2">
+                {isScreenSharing ? (
+                  <button
+                    type="button"
+                    onClick={disableScreenShare}
+                    title="Đang chia sẻ màn hình làm bài - Nhấn để tạm dừng"
+                    className="flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300 transition-colors cursor-pointer"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <Monitor size={12} />
+                    <span>Đang chia sẻ MH</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => enableScreenShare()}
+                    title="Bấm để kích hoạt chia sẻ toàn màn hình cho Giám thị"
+                    className="flex items-center gap-1 rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 transition-colors cursor-pointer"
+                  >
+                    <Monitor size={12} />
+                    <span>Chia sẻ MH</span>
+                  </button>
+                )}
+
                 <div className="rounded-md bg-slate-50 border border-slate-300 px-2.5 py-1 text-[10px] font-mono text-[#5a565e] dark:bg-white/5 dark:border-white/10 dark:text-slate-300 flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-                  <span>AI Proctoring: Hoạt động</span>
+                  <span>AI Proctoring</span>
                 </div>
 
                 <button

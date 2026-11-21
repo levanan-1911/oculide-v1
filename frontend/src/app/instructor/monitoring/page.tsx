@@ -108,7 +108,7 @@ function InstructorMonitoringContent() {
   };
 
   // Kết nối LiveKit SFU (Chế độ Subscribe nhận video stream của tất cả sinh viên trong phòng)
-  const { connectionState: livekitState, remoteTracks } = useLiveKitRoom({
+  const { connectionState: livekitState, remoteTracks, participantTracks } = useLiveKitRoom({
     roomId: realRoomId,
     mode: 'subscribe',
     enabled: Boolean(realRoomId),
@@ -731,9 +731,10 @@ function InstructorMonitoringContent() {
             {filteredCameras.map((student) => {
               const hasAlert = student.status === 'warning' || student.status === 'critical';
               const isSubmitted = student.status === 'submitted';
-              const lkTrack = (student as any).userId
-                ? remoteTracks[`user_${(student as any).userId}`]
-                : undefined;
+              const pKey = (student as any).userId ? `user_${(student as any).userId}` : '';
+              const pTracks = pKey && participantTracks ? participantTracks[pKey] : undefined;
+              const camTrack = pTracks?.camera || (pKey ? remoteTracks[pKey] : undefined);
+              const screenTrack = pTracks?.screen;
 
               return (
                 <div
@@ -750,60 +751,88 @@ function InstructorMonitoringContent() {
                     className="aspect-video w-full rounded bg-stone-950 flex items-center justify-center relative overflow-hidden group cursor-pointer"
                     title="Nhấp để phóng to màn hình và webcam của sinh viên này"
                   >
-                    {/* Hiển thị Màn hình hoặc Webcam */}
-                    {session.type === 'LAB' && !session.requireCamera ? (
-                      <div className="absolute inset-0 bg-[#1e1e2e] p-2 flex flex-col justify-between font-mono text-[9px] text-slate-300">
-                        <div className="flex items-center justify-between text-slate-400 border-b border-slate-700/60 pb-1">
-                          <span className="text-slate-200 font-bold">{student.currentFile}</span>
-                          <span className="text-slate-200">{student.passedCases}</span>
-                        </div>
-                        <p className="line-clamp-2 text-slate-400 select-none">
-                          {student.codeSnippet.slice(0, 80)}...
-                        </p>
-                        <span className="text-slate-500 text-[8px]">Màn hình làm bài sinh viên</span>
-                      </div>
-                    ) : (
-                      <>
-                        {lkTrack ? (
-                          <LiveKitVideoFeed
-                            track={lkTrack}
-                            muted
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <Video className="h-9 w-9 text-slate-700" />
-                        )}
-                        {/* Giả lập khung nhận diện khuôn mặt */}
-                        {session.isAiActive && (
-                          <div
-                            className={`absolute inset-4 rounded-md border pointer-events-none ${
-                              hasAlert ? 'border-slate-300 bg-slate-900/10' : 'border-slate-500/40'
-                            }`}
-                          >
-                            <span
-                              className={`absolute -top-2.5 left-2 rounded px-1.5 py-0.5 text-[8px] font-mono font-bold text-white uppercase ${
-                                hasAlert ? 'bg-slate-800' : 'bg-slate-700'
-                              }`}
-                            >
-                              {hasAlert ? 'AI Alert' : 'Face Track'}
+                    {/* Hiển thị Màn hình và/hoặc Webcam trực tiếp từ LiveKit */}
+                    {screenTrack ? (
+                      /* Trường hợp có luồng Màn hình: chiếu Màn hình chính + Webcam góc PiP */
+                      <div className="relative h-full w-full">
+                        <LiveKitVideoFeed
+                          track={screenTrack}
+                          muted
+                          className="h-full w-full object-contain bg-black"
+                        />
+                        {camTrack && (
+                          <div className="absolute bottom-2 right-2 w-28 aspect-video rounded border border-white/40 shadow-lg overflow-hidden bg-black z-10">
+                            <LiveKitVideoFeed
+                              track={camTrack}
+                              muted
+                              className="h-full w-full object-cover"
+                            />
+                            <span className="absolute top-0.5 left-1 text-[7px] font-mono bg-black/70 px-1 rounded text-white">
+                              CAM
                             </span>
                           </div>
                         )}
-                      </>
+                      </div>
+                    ) : camTrack ? (
+                      /* Trường hợp có Webcam: chiếu Webcam full khung hình */
+                      <LiveKitVideoFeed
+                        track={camTrack}
+                        muted
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      /* Chưa có luồng video: hiển thị thông báo trạng thái kết nối rõ ràng */
+                      <div className="flex flex-col items-center justify-center gap-2 p-4 text-center text-slate-400">
+                        <Video className="h-8 w-8 text-slate-600 animate-pulse" />
+                        <span className="text-[11px] font-mono text-slate-400">
+                          {student.statusText === 'Đang làm bài (Live)'
+                            ? 'Đang chờ tín hiệu Camera/Màn hình...'
+                            : 'Sinh viên chưa vào phòng thi'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Giả lập khung nhận diện khuôn mặt */}
+                    {session.isAiActive && camTrack && (
+                      <div
+                        className={`absolute inset-4 rounded-md border pointer-events-none ${
+                          hasAlert ? 'border-slate-300 bg-slate-900/10' : 'border-slate-500/40'
+                        }`}
+                      >
+                        <span
+                          className={`absolute -top-2.5 left-2 rounded px-1.5 py-0.5 text-[8px] font-mono font-bold text-white uppercase ${
+                            hasAlert ? 'bg-slate-800' : 'bg-slate-700'
+                          }`}
+                        >
+                          {hasAlert ? 'AI Alert' : 'Face Track'}
+                        </span>
+                      </div>
                     )}
 
                     {/* Tag FPS / LiveKit góc trên trái */}
-                    <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded bg-black/80 px-2 py-0.5 text-[9px] text-white font-mono">
+                    <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded bg-black/80 px-2 py-0.5 text-[9px] text-white font-mono z-10">
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${
-                          hasAlert ? 'bg-slate-300' : lkTrack ? 'bg-slate-400' : 'bg-stone-400'
+                          hasAlert
+                            ? 'bg-rose-500'
+                            : (camTrack || screenTrack)
+                            ? 'bg-emerald-400'
+                            : 'bg-stone-500'
                         }`}
                       />
-                      <span>{lkTrack ? 'LIVE • LiveKit' : `${student.fps} FPS`}</span>
+                      <span>
+                        {screenTrack && camTrack
+                          ? 'LIVE • Màn hình + Cam'
+                          : screenTrack
+                          ? 'LIVE • Màn hình'
+                          : camTrack
+                          ? 'LIVE • Camera'
+                          : `${student.fps} FPS`}
+                      </span>
                     </div>
 
                     {/* Lớp phủ Hover: Bấm để phóng to */}
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-20">
                       <span className="inline-flex items-center gap-1.5 rounded-md bg-brand text-white px-3 py-1.5 text-xs font-bold shadow-md">
                         <Maximize2 className="h-3.5 w-3.5" />
                         Phóng to chi tiết
@@ -811,7 +840,7 @@ function InstructorMonitoringContent() {
                     </div>
 
                     {/* Tag góc dưới: Tên & MSSV */}
-                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between rounded bg-black/85 px-2 py-1 text-white">
+                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between rounded bg-black/85 px-2 py-1 text-white z-10">
                       <span className="text-[11px] font-medium truncate font-sans">
                         {student.id} • {student.name}
                       </span>
@@ -1116,7 +1145,16 @@ function InstructorMonitoringContent() {
         student={focusedStudent}
         sessionType={session.type}
         requireCamera={session.requireCamera}
-        videoTrack={focusedStudent?.userId ? remoteTracks[`user_${focusedStudent.userId}`] : undefined}
+        videoTrack={
+          focusedStudent?.userId
+            ? participantTracks[`user_${focusedStudent.userId}`]?.camera || remoteTracks[`user_${focusedStudent.userId}`]
+            : undefined
+        }
+        screenTrack={
+          focusedStudent?.userId
+            ? participantTracks[`user_${focusedStudent.userId}`]?.screen
+            : undefined
+        }
         onSendNotice={(studentId, studentName) => {
           handleOpenIndividualNotice(studentId, studentName);
         }}

@@ -38,21 +38,64 @@ export default function StudentDeviceCheckPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Trạng thái kiểm tra thiết bị
+  // Trạng thái kiểm tra thiết bị (Đã bỏ hoàn toàn Microphone theo yêu cầu)
   const [camStatus, setCamStatus] = useState<"testing" | "success" | "error">("testing");
-  const [micStatus, setMicStatus] = useState<"testing" | "success" | "error">("testing");
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [screenStatus, setScreenStatus] = useState<"idle" | "testing" | "success">("idle");
   const [networkStatus, setNetworkStatus] = useState<"testing" | "success">("testing");
-
-  // Giả lập volume micro
-  const [micVolume, setMicVolume] = useState(0);
 
   // Xác thực AI Face ID
   const [isVerifyingFace, setIsVerifyingFace] = useState(false);
   const [faceVerified, setFaceVerified] = useState(false);
   const [faceScore, setFaceScore] = useState<number | null>(null);
 
-  // Đọc dữ liệu phòng thi từ sessionStorage và kết nối Camera vật lý thật
+  // Khởi động Camera vật lý thật (không xin mic, hỗ trợ fallback tự động)
+  const startCamera = async () => {
+    setCamStatus("testing");
+    setCameraError(null);
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      try {
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+          });
+        } catch {
+          // Fallback nếu webcam không hỗ trợ 720p hoặc bị giới hạn độ phân giải
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
+
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setCamStatus("success");
+        setCameraError(null);
+      } catch (err: any) {
+        console.warn("Không thể truy cập camera thật:", err);
+        setCamStatus("error");
+        setCameraError(
+          "Không thể mở Webcam: Vui lòng đóng các ứng dụng đang chiếm camera (Google Meet, Zoom...) và bấm 'Cho phép' trên trình duyệt."
+        );
+      }
+    } else {
+      setCamStatus("error");
+      setCameraError("Trình duyệt hiện tại không hỗ trợ WebRTC Camera.");
+    }
+  };
+
+  // Đọc dữ liệu phòng thi từ sessionStorage và kết nối Camera
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem("oculide_student_pending_exam");
@@ -63,39 +106,10 @@ export default function StudentDeviceCheckPage() {
       // Bỏ qua nếu không đọc được
     }
 
-    // Yêu cầu quyền truy cập Camera thật từ trình duyệt
-    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: true
-      })
-      .then((stream) => {
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-        setCamStatus("success");
-        setMicStatus("success");
-      })
-      .catch((err) => {
-        console.warn("Không thể truy cập camera hoặc mic thật:", err);
-        setCamStatus("error");
-      });
-    } else {
-      setCamStatus("success");
-      setMicStatus("success");
-    }
-
+    startCamera();
     setNetworkStatus("success");
 
-    // Giả lập sóng mic động
-    const micInterval = setInterval(() => {
-      setMicVolume(Math.floor(Math.random() * 60) + 20);
-    }, 300);
-
     return () => {
-      clearInterval(micInterval);
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
@@ -111,15 +125,27 @@ export default function StudentDeviceCheckPage() {
       setIsVerifyingFace(false);
       setFaceVerified(true);
       setFaceScore(99.4);
-    }, 2000);
+    }, 1500);
   };
 
-  // Giả lập xin quyền Chia sẻ màn hình
-  const handleRequestScreenShare = () => {
+  // Xin quyền Chia sẻ màn hình thật
+  const handleRequestScreenShare = async () => {
     setScreenStatus("testing");
-    setTimeout(() => {
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getDisplayMedia) {
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false,
+        });
+        screenStream.getTracks().forEach((t) => t.stop());
+        setScreenStatus("success");
+      } catch (err) {
+        console.warn("Người dùng hủy hoặc không cấp quyền chia sẻ màn hình:", err);
+        setScreenStatus("idle");
+      }
+    } else {
       setScreenStatus("success");
-    }, 1000);
+    }
   };
 
   // Chuyển tiếp vào Phòng chờ thi và lưu trạng thái thiết bị về CSDL
@@ -133,7 +159,7 @@ export default function StudentDeviceCheckPage() {
           method: "POST",
           body: JSON.stringify({
             camera_ready: camStatus === "success",
-            mic_ready: micStatus === "success",
+            mic_ready: true,
             screen_ready: screenStatus === "success",
             network_latency_ms: 25,
             os_info: typeof navigator !== "undefined" ? navigator.platform : "Web",
@@ -151,8 +177,8 @@ export default function StudentDeviceCheckPage() {
 
   const isAllReady =
     camStatus === "success" &&
-    micStatus === "success" &&
     screenStatus === "success" &&
+    faceVerified;
     faceVerified;
 
   return (
@@ -215,33 +241,52 @@ export default function StudentDeviceCheckPage() {
               autoPlay
               playsInline
               muted
-              className="absolute inset-0 h-full w-full object-cover z-0"
+              className={`absolute inset-0 h-full w-full object-cover z-0 ${camStatus === 'success' ? 'opacity-100' : 'opacity-0'}`}
             />
 
-            {/* Lớp phủ AI Scanning khi đối soát khuôn mặt */}
-            <div className={`relative flex flex-col items-center justify-center text-center p-6 space-y-3 z-10 ${camStatus === 'success' ? 'bg-black/40 backdrop-blur-[2px] rounded-xl' : ''}`}>
-              <div className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-dashed border-[#e5a9b9]/80 bg-slate-900/30">
-                <ScanFace size={48} className="text-[#f0c2cf]" />
+            {/* Thông báo lỗi khi không thể mở Webcam */}
+            {camStatus === "error" && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-black/90 text-center space-y-3">
+                <AlertCircle className="h-12 w-12 text-rose-500" />
+                <p className="text-xs text-rose-200 font-medium max-w-md leading-relaxed">
+                  {cameraError || "Không thể truy cập Webcam. Vui lòng đóng các ứng dụng đang dùng camera (Meet, Zoom...) và cấp quyền."}
+                </p>
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="rounded-md bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500 transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <RefreshCw size={14} /> Thử lại kết nối Camera
+                </button>
               </div>
+            )}
 
-              {isVerifyingFace ? (
-                <p className="text-xs font-mono font-bold text-[#f0c2cf] flex items-center gap-1.5">
-                  <LoaderCircle size={14} className="animate-spin" />
-                  Đang đối soát AI Face ID...
-                </p>
-              ) : faceVerified ? (
-                <div className="space-y-1">
-                  <p className="text-xs font-bold text-emerald-400 flex items-center justify-center gap-1">
-                    <CheckCircle2 size={16} /> Khuôn mặt hợp lệ ({faceScore}%)
-                  </p>
-                  <p className="text-[11px] text-stone-300">Khớp dữ liệu thẻ sinh viên Oculide</p>
+            {/* Lớp phủ AI Scanning khi đối soát khuôn mặt */}
+            {camStatus !== "error" && (
+              <div className={`relative flex flex-col items-center justify-center text-center p-6 space-y-3 z-10 ${camStatus === 'success' ? 'bg-black/40 backdrop-blur-[2px] rounded-xl' : ''}`}>
+                <div className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-dashed border-[#e5a9b9]/80 bg-slate-900/30">
+                  <ScanFace size={48} className="text-[#f0c2cf]" />
                 </div>
-              ) : (
-                <p className="text-xs text-stone-200">
-                  Nhấn nút bên dưới để tiến hành quét sinh trắc học khuôn mặt
-                </p>
-              )}
-            </div>
+
+                {isVerifyingFace ? (
+                  <p className="text-xs font-mono font-bold text-[#f0c2cf] flex items-center gap-1.5">
+                    <LoaderCircle size={14} className="animate-spin" />
+                    Đang đối soát AI Face ID...
+                  </p>
+                ) : faceVerified ? (
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-emerald-400 flex items-center justify-center gap-1">
+                      <CheckCircle2 size={16} /> Khuôn mặt hợp lệ ({faceScore}%)
+                    </p>
+                    <p className="text-[11px] text-stone-300">Khớp dữ liệu thẻ sinh viên Oculide</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-stone-200">
+                    Nhấn nút bên dưới để tiến hành quét sinh trắc học khuôn mặt
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* HUD Cài đặt thông số AI */}
             <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[11px] font-mono text-stone-200 bg-black/80 px-3 py-1.5 rounded-md border border-stone-800 z-10">
@@ -259,7 +304,7 @@ export default function StudentDeviceCheckPage() {
             <button
               type="button"
               onClick={handleVerifyFace}
-              disabled={isVerifyingFace}
+              disabled={isVerifyingFace || camStatus !== "success"}
               className="system-primary-action w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 font-serif text-xs font-bold text-white shadow-2xs hover:bg-slate-800 transition disabled:opacity-60 cursor-pointer"
             >
               {isVerifyingFace ? (
@@ -298,47 +343,27 @@ export default function StudentDeviceCheckPage() {
                   </div>
                   <div>
                     <p className="font-serif font-bold text-[#2A282D] dark:text-white">Webcam HD</p>
-                    <p className="text-[11px] text-slate-500">Tự động giám sát góc nghiêng</p>
+                    <p className="text-[11px] text-slate-500">Giám sát hình ảnh trực tiếp qua AI</p>
                   </div>
                 </div>
                 {camStatus === "success" ? (
                   <span className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
                     <CheckCircle2 size={13} /> Sẵn sàng
                   </span>
+                ) : camStatus === "error" ? (
+                  <button
+                    type="button"
+                    onClick={startCamera}
+                    className="flex items-center gap-1 rounded bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600 border border-rose-200 hover:bg-rose-100 transition cursor-pointer"
+                  >
+                    <RefreshCw size={12} /> Thử lại
+                  </button>
                 ) : (
                   <LoaderCircle size={16} className="animate-spin text-slate-900" />
                 )}
               </div>
 
-              {/* ITEM 2: MICROPHONE */}
-              <div className="flex items-center justify-between p-3.5 rounded-md bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-white/10">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-100 text-[#5A5555] dark:bg-white/10 dark:text-stone-300">
-                    <Mic size={18} />
-                  </div>
-                  <div>
-                    <p className="font-serif font-bold text-[#2A282D] dark:text-white">Microphone thu âm</p>
-                    <div className="mt-1 flex items-center gap-1">
-                      <span className="text-[10px] text-slate-500">Tín hiệu:</span>
-                      <div className="h-1.5 w-16 rounded-full bg-stone-200 dark:bg-white/20 overflow-hidden">
-                        <div
-                          className="h-full bg-brand dark:bg-[#e5a9b9] transition-all duration-200"
-                          style={{ width: `${micVolume}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {micStatus === "success" ? (
-                  <span className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
-                    <CheckCircle2 size={13} /> Nhận âm thanh
-                  </span>
-                ) : (
-                  <LoaderCircle size={16} className="animate-spin text-slate-900" />
-                )}
-              </div>
-
-              {/* ITEM 3: CHIA SẺ MÀN HÌNH */}
+              {/* ITEM 2: CHIA SẺ MÀN HÌNH */}
               <div className="flex items-center justify-between p-3.5 rounded-md bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-white/10">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-100 text-[#5A5555] dark:bg-white/10 dark:text-stone-300">
@@ -365,7 +390,7 @@ export default function StudentDeviceCheckPage() {
                 )}
               </div>
 
-              {/* ITEM 4: ĐƯỜNG TRUYỀN MẠNG */}
+              {/* ITEM 3: ĐƯỜNG TRUYỀN MẠNG */}
               <div className="flex items-center justify-between p-3.5 rounded-md bg-slate-50 dark:bg-neutral-950 border border-slate-300 dark:border-white/10">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-100 text-[#5A5555] dark:bg-white/10 dark:text-stone-300">
@@ -387,7 +412,7 @@ export default function StudentDeviceCheckPage() {
           <div className="rounded-md border border-slate-300 bg-slate-900/5 p-4 flex items-start gap-3 dark:border-white/10 dark:bg-slate-900/15">
             <Info size={18} className="text-slate-900 dark:text-[#f0c2cf] shrink-0 mt-0.5" />
             <p className="text-xs text-[#2A282D] dark:text-[#E8E6E8] leading-relaxed">
-              Bạn cần hoàn thành đủ 4 mục kiểm tra trên (bao gồm Xác thực khuôn mặt) trước khi hệ thống cho phép vào <strong>Phòng chờ thi</strong>.
+              Bạn cần hoàn thành đủ 3 mục kiểm tra trên (bao gồm Xác thực khuôn mặt) trước khi hệ thống cho phép vào <strong>Phòng chờ thi</strong>.
             </p>
           </div>
 

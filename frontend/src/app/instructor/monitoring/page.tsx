@@ -154,11 +154,18 @@ function InstructorMonitoringContent() {
           studentClass: data.class_code || 'Lớp học phần',
           status: (a.status === 'completed' ? 'submitted' : 'normal') as 'normal' | 'warning' | 'critical' | 'submitted',
           statusText: a.status === 'waiting' ? 'Đang làm bài (Live)' : a.status === 'completed' ? 'Đã nộp bài' : 'Chưa vào phòng',
+          violationsCount: 0,
+          entryTime: a.joined_at ? new Date(a.joined_at).toLocaleTimeString('vi-VN') : 'Chưa vào phòng',
           fps: a.status === 'waiting' ? 30 : 0,
+          deviceInfo: 'Thiết bị thí sinh',
+          trustScore: 100,
           activeApp: 'Oculide Exam IDE',
           currentFile: 'main.cpp',
           passedCases: '0/0',
-          codeSnippet: '// Đang chờ dữ liệu đồng bộ từ trình soạn thảo...',
+          gazeStatus: 'Chính diện',
+          faceDetected: 1,
+          codeSnippet: '// Đang đồng bộ từ trình soạn thảo của thí sinh...',
+          timeline: [],
           logs: [],
         }));
 
@@ -780,6 +787,15 @@ function InstructorMonitoringContent() {
                         muted
                         className="h-full w-full object-cover"
                       />
+                    ) : isSubmitted ? (
+                      /* Trường hợp sinh viên đã nộp bài */
+                      <div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                          <CheckCircle2 className="h-6 w-6" />
+                        </div>
+                        <span className="text-xs font-bold text-white font-serif">Đã nộp bài thành công</span>
+                        <span className="text-[10px] font-mono text-slate-400">Sinh viên đã hoàn thành ca thi</span>
+                      </div>
                     ) : (
                       /* Chưa có luồng video: hiển thị thông báo trạng thái kết nối rõ ràng */
                       <div className="flex flex-col items-center justify-center gap-2 p-4 text-center text-slate-400">
@@ -793,7 +809,7 @@ function InstructorMonitoringContent() {
                     )}
 
                     {/* Giả lập khung nhận diện khuôn mặt */}
-                    {session.isAiActive && camTrack && (
+                    {session.isAiActive && camTrack && !isSubmitted && (
                       <div
                         className={`absolute inset-4 rounded-md border pointer-events-none ${
                           hasAlert ? 'border-slate-300 bg-slate-900/10' : 'border-slate-500/40'
@@ -813,7 +829,9 @@ function InstructorMonitoringContent() {
                     <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded bg-black/80 px-2 py-0.5 text-[9px] text-white font-mono z-10">
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${
-                          hasAlert
+                          isSubmitted
+                            ? 'bg-emerald-400'
+                            : hasAlert
                             ? 'bg-rose-500'
                             : (camTrack || screenTrack)
                             ? 'bg-emerald-400'
@@ -821,7 +839,9 @@ function InstructorMonitoringContent() {
                         }`}
                       />
                       <span>
-                        {screenTrack && camTrack
+                        {isSubmitted
+                          ? 'ĐÃ NỘP BÀI (HOÀN THÀNH)'
+                          : screenTrack && camTrack
                           ? 'LIVE • Màn hình + Cam'
                           : screenTrack
                           ? 'LIVE • Màn hình'
@@ -916,6 +936,31 @@ function InstructorMonitoringContent() {
                 </div>
               );
             })}
+
+            {filteredCameras.length === 0 && (
+              <div className="col-span-full rounded-md border border-dashed border-slate-300 dark:border-white/10 p-10 text-center bg-white dark:bg-neutral-900 shadow-2xs">
+                <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500 mb-2" />
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white">
+                  {statusFilter === 'normal' && camerasSource.some((c) => c.status === 'submitted')
+                    ? 'Tất cả sinh viên đã hoàn thành và nộp bài'
+                    : 'Không tìm thấy sinh viên nào trong mục này'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                  {statusFilter === 'normal' && camerasSource.some((c) => c.status === 'submitted')
+                    ? 'Toàn bộ sinh viên đã nộp bài thi thành công. Vui lòng bấm vào tab "Tất cả" hoặc "Đã nộp" ở phía trên để xem kết quả và bài nộp.'
+                    : 'Không có dữ liệu sinh viên nào khớp với bộ lọc hoặc từ khóa tìm kiếm.'}
+                </p>
+                {statusFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-white dark:text-slate-900 text-white px-3.5 py-1.5 text-xs font-bold transition hover:opacity-90 cursor-pointer"
+                  >
+                    Xem tất cả sinh viên ({camerasSource.length})
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

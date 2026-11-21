@@ -224,6 +224,17 @@ export default function StudentDetailModal({
                   muted
                   className="h-full w-full object-cover"
                 />
+              ) : student.status === 'submitted' ? (
+                /* Thí sinh đã nộp bài */
+                <div className="absolute inset-0 bg-neutral-950 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                    <CheckCircle2 className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-base font-bold text-white font-serif">Thí sinh đã nộp bài thành công</h3>
+                  <p className="text-xs text-stone-400 max-w-sm">
+                    Bài thi đã được ghi nhận vào hệ thống CSDL và đóng phiên làm bài. Thí sinh đã rời khỏi phòng thi.
+                  </p>
+                </div>
               ) : (
                 /* Giả lập Màn hình làm bài của Sinh viên (Oculide Code IDE) nếu SV chưa bật share màn hình */
                 <div className="absolute inset-0 bg-neutral-950 flex flex-col font-mono text-xs">
@@ -280,7 +291,7 @@ export default function StudentDetailModal({
               </div>
 
               {/* WEBCAM SINH VIÊN (Picture-in-Picture ở góc dưới bên phải) */}
-              {showWebcam && viewMode === 'screen-pip' && (
+              {showWebcam && viewMode === 'screen-pip' && student.status !== 'submitted' && (
                 <div className="absolute bottom-3 right-3 w-44 sm:w-52 aspect-video rounded-md bg-stone-950 border border-white/20 shadow-2xl overflow-hidden group/cam">
                   {videoTrack ? (
                     <LiveKitVideoFeed
@@ -464,7 +475,7 @@ export default function StudentDetailModal({
                   activeTab === 'timeline' ? 'bg-brand text-white' : 'text-stone-400 hover:text-white'
                 }`}
               >
-                Nhật ký sự kiện ({student.timeline.length})
+                Nhật ký sự kiện ({student.timeline?.length || 0})
               </button>
             </div>
 
@@ -507,24 +518,30 @@ export default function StudentDetailModal({
             {/* Tab 2: Timeline sự kiện */}
             {activeTab === 'timeline' && (
               <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
-                {student.timeline.map((evt, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-start gap-2 rounded-md border border-white/10 bg-stone-900/40 p-2.5 text-[11px]"
-                  >
-                    <span
-                      className={`mt-1 h-1.5 w-1.5 rounded-full shrink-0 ${
-                        evt.type === 'critical'
-                          ? 'bg-brand'
-                          : 'bg-stone-400'
-                      }`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-stone-200">{evt.text}</p>
-                      <span className="font-mono text-[10px] text-stone-500">{evt.time}</span>
+                {(student.timeline || []).length === 0 ? (
+                  <p className="text-center text-xs text-stone-500 py-6">
+                    Chưa ghi nhận sự kiện vi phạm hoặc cảnh báo nào.
+                  </p>
+                ) : (
+                  (student.timeline || []).map((evt, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-start gap-2 rounded-md border border-white/10 bg-stone-900/40 p-2.5 text-[11px]"
+                    >
+                      <span
+                        className={`mt-1 h-1.5 w-1.5 rounded-full shrink-0 ${
+                          evt.type === 'critical'
+                            ? 'bg-brand'
+                            : 'bg-stone-400'
+                        }`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-stone-200">{evt.text}</p>
+                        <span className="font-mono text-[10px] text-stone-500">{evt.time}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             )}
           </div>

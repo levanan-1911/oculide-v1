@@ -322,7 +322,7 @@ export default function InstructorClassManagerView() {
     return createdRooms.find(
       (r) =>
         isClassMatch(r.classId, currentClass.id) &&
-        (r.status === 'in_progress' || r.status === 'dang_dien_ra') &&
+        (r.status === 'in_progress' || (r.status as string) === 'dang_dien_ra') &&
         !isTerminalStatus(r.status)
     ) || null;
   }, [createdRooms, currentClass]);
@@ -628,7 +628,7 @@ export default function InstructorClassManagerView() {
                           const activeForC = createdRooms.find(
                             (r) =>
                               isClassMatch(r.classId, c.id) &&
-                              (r.status === 'in_progress' || r.status === 'dang_dien_ra') &&
+                              (r.status === 'in_progress' || (r.status as string) === 'dang_dien_ra') &&
                               !isTerminalStatus(r.status)
                           );
                           const waitingForC = createdRooms.find(

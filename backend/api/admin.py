@@ -388,9 +388,9 @@ async def batch_import_users(
         create_system_log(
             log_level="warning" if failed > 0 else "info",
             module="Nhập danh sách",
-            message=f"Nhập người dùng hàng loạt: Thành công {imported}, Thất bại {failed}. Tên miền áp dụng: '{allowed_domain}'",
+            message=f"Nhập người dùng hàng loạt: Thành công {imported}, Thất bại {failed}. Tên miền áp dụng: '{allowed_setting}'",
             ip_address=client_ip,
-            extra_data={"imported": imported, "failed": failed, "allowed_domain": allowed_domain, "errors": errors[:10]}
+            extra_data={"imported": imported, "failed": failed, "allowed_domain": allowed_setting, "errors": errors[:10]}
         )
     except Exception:
         pass

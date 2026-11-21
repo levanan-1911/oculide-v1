@@ -29,6 +29,7 @@ import {
   LogOut,
   ChevronDown,
   ArrowLeft,
+  CameraOff,
 } from 'lucide-react';
 import {
   RoomSession,
@@ -61,7 +62,6 @@ function InstructorMonitoringContent() {
     session,
     setSessionType,
     setRequireCamera,
-  CameraOff,
     violations,
     announcements,
     extendSession,

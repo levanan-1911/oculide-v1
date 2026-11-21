@@ -516,7 +516,6 @@ export default function ExamWorkspacePage() {
               setPasteCount(0);
               setTabSwitchCount(0);
               setAiViolationCount(0);
-              setTeacherPasscode("");
               showToast("ĐÃ MỞ KHÓA: Giảng viên đã phê duyệt mở khóa từ xa!");
             } else if (msg.type === "announcement" || msg.type === "notice") {
               const myIdStr = String(me.user_id);
@@ -532,7 +531,7 @@ export default function ExamWorkspacePage() {
                 });
               }
             } else if (msg.type === "room_config_update" && typeof msg.requireCamera === "boolean") {
-              setIsCameraOffAllowed(!msg.requireCamera);
+              setProctoringConfig((prev: any) => ({ ...prev, requireCamera: msg.requireCamera }));
               if (msg.requireCamera) {
                 toggleCamera(true).catch(() => null);
               }

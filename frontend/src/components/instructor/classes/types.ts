@@ -146,7 +146,7 @@ export interface RoomSession {
   startTime?: string; // Giờ bắt đầu ví dụ: '08:00'
   endTime?: string; // Giờ kết thúc ví dụ: '10:00'
   savedToSchedule?: boolean; // Đã lưu vào lịch giảng dạy
-  status: 'waiting' | 'in_progress' | 'ended';
+  status: 'waiting' | 'in_progress' | 'ended' | 'chua_mo' | 'dang_dien_ra' | 'da_ket_thuc' | string;
   createdAt: string;
   proctoringConfig: {
     lockdownFullscreen: boolean;

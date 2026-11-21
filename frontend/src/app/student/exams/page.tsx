@@ -48,6 +48,8 @@ interface JoinedRoomApiResponse {
   class_name?: string;
   course_name?: string;
   proctoring_config?: string | Record<string, unknown>;
+  is_late?: boolean;
+  attendance_status?: string;
 }
 
 function ExamJoinContent() {

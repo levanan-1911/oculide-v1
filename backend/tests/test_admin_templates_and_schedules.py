@@ -17,8 +17,21 @@ def admin_client():
 @pytest.fixture
 def instructor_client():
     client = TestClient(app)
-    # Token cho Giảng viên thật trong CSDL (user_id=2, role=instructor, username=instructor)
-    token = create_access_token({"user_id": 2, "role": "instructor", "username": "instructor"})
+    inst_id = 13
+    inst_name = "longpahm2005"
+    try:
+        from core.database import get_db_connection
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("SELECT user_id, username FROM Users WHERE role_id = 2")
+        row = c.fetchone()
+        conn.close()
+        if row:
+            inst_id = row[0]
+            inst_name = row[1]
+    except Exception:
+        pass
+    token = create_access_token({"user_id": inst_id, "role": "instructor", "username": inst_name})
     client.headers = {"Authorization": f"Bearer {token}"}
     return client
 

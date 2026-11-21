@@ -80,182 +80,28 @@ export interface ImportMappingInfo {
 
 const STORAGE_KEY_CACHED_USERS = 'oculide_cached_users_list';
 
-const SEED_FALLBACK_USERS: UserRow[] = [
-  {
-    id: 1,
-    username: 'admin',
-    userCode: 'ADM001',
-    fullName: 'Quản Trị Viên Hệ Thống',
-    email: 'admin@school.edu.vn',
-    phone: '0905 123 456',
-    role: 'admin',
-    status: 'active',
-    department: 'Phòng Đào tạo & Khảo thí',
-    lopSinhHoat: '',
-    lastLogin: 'Hôm nay',
-    lastLoginIp: '127.0.0.1',
-    lastPasswordChange: 'Đã lưu hệ thống',
-    password: '••••••••',
-  },
-  {
-    id: 30,
-    username: 'hbdieu',
-    userCode: 'MSGV_HBD01',
-    fullName: 'TS. Huỳnh Bá Diệu',
-    email: 'hbdieu@dtu.edu.vn',
-    phone: '0912 345 678',
-    role: 'instructor',
-    status: 'active',
-    department: 'Khoa Công nghệ Thông tin',
-    lopSinhHoat: '',
-    lastLogin: 'Hôm nay',
-    lastLoginIp: '127.0.0.1',
-    lastPasswordChange: 'Đã lưu hệ thống',
-    password: '••••••••',
-  },
-  {
-    id: 31,
-    username: 'pvlong',
-    userCode: 'MSGV_PVL01',
-    fullName: 'ThS. Phạm Vũ Long',
-    email: 'pvlong@dtu.edu.vn',
-    phone: '0913 888 999',
-    role: 'instructor',
-    status: 'active',
-    department: 'Khoa Công nghệ Thông tin',
-    lopSinhHoat: '',
-    lastLogin: 'Hôm nay',
-    lastLoginIp: '127.0.0.1',
-    lastPasswordChange: 'Đã lưu hệ thống',
-    password: '••••••••',
-  },
-  {
-    id: 32,
-    username: 'nttuyen',
-    userCode: 'MSGV_NTT01',
-    fullName: 'TS. Nguyễn Thị Tuyến',
-    email: 'nttuyen@dtu.edu.vn',
-    phone: '0912 345 678',
-    role: 'instructor',
-    status: 'active',
-    department: 'Khoa Kỹ thuật Phần mềm',
-    lopSinhHoat: '',
-    lastLogin: 'Hôm nay',
-    lastLoginIp: '127.0.0.1',
-    lastPasswordChange: 'Đã lưu hệ thống',
-    password: '••••••••',
-  },
-  {
-    id: 3,
-    username: 'student',
-    userCode: 'SV2026001',
-    fullName: 'Nguyễn Văn An',
-    email: 'student@school.edu.vn',
-    phone: '0987 654 321',
-    role: 'student',
-    status: 'active',
-    department: 'Khoa Kỹ thuật Phần mềm',
-    lopSinhHoat: 'K27-KTPM1',
-    lastLogin: 'Chưa đăng nhập',
-    lastLoginIp: 'Chưa ghi nhận',
-    lastPasswordChange: 'Đã lưu hệ thống',
-    password: '••••••••',
-  },
-  {
-    id: 26,
-    username: '29211200333',
-    userCode: '29211200333',
-    fullName: 'Hoàng Đình Khôi',
-    email: '29211200333@dtu.edu.vn',
-    phone: '0905 111 222',
-    role: 'student',
-    status: 'active',
-    department: 'Khoa Kỹ thuật Phần mềm',
-    lopSinhHoat: 'K29-KTPM2',
-    lastLogin: 'Chưa đăng nhập',
-    lastLoginIp: 'Chưa ghi nhận',
-    lastPasswordChange: 'Đã lưu hệ thống',
-    password: '••••••••',
-  },
-  {
-    id: 27,
-    username: '30211200555',
-    userCode: '30211200555',
-    fullName: 'Vũ Thị Thảo Nguyên',
-    email: '30211200555@dtu.edu.vn',
-    phone: '0905 333 444',
-    role: 'student',
-    status: 'active',
-    department: 'Khoa Kỹ thuật Phần mềm',
-    lopSinhHoat: 'K30-KTPM1',
-    lastLogin: 'Chưa đăng nhập',
-    lastLoginIp: 'Chưa ghi nhận',
-    lastPasswordChange: 'Đã lưu hệ thống',
-    password: '••••••••',
-  },
-  {
-    id: 28,
-    username: '28211200777',
-    userCode: '28211200777',
-    fullName: 'Bùi Thế Vinh',
-    email: '28211200777@dtu.edu.vn',
-    phone: '0905 555 666',
-    role: 'student',
-    status: 'active',
-    department: 'Khoa Kỹ thuật Phần mềm',
-    lopSinhHoat: 'K28-KTPM1',
-    lastLogin: 'Chưa đăng nhập',
-    lastLoginIp: 'Chưa ghi nhận',
-    lastPasswordChange: 'Đã lưu hệ thống',
-    password: '••••••••',
-  },
-  {
-    id: 33,
-    username: '29211200888',
-    userCode: '29211200888',
-    fullName: 'Trần Thu Hà',
-    email: '29211200888@dtu.edu.vn',
-    phone: '0905 777 888',
-    role: 'student',
-    status: 'active',
-    department: 'Khoa Kỹ thuật Phần mềm',
-    lopSinhHoat: 'K29-KTPM2',
-    lastLogin: 'Chưa đăng nhập',
-    lastLoginIp: 'Chưa ghi nhận',
-    lastPasswordChange: 'Đã lưu hệ thống',
-    password: '••••••••',
-  },
-  {
-    id: 34,
-    username: '29211200999',
-    userCode: '29211200999',
-    fullName: 'Lê Hải Nam',
-    email: '29211200999@dtu.edu.vn',
-    phone: '0905 999 000',
-    role: 'student',
-    status: 'active',
-    department: 'Khoa Kỹ thuật Phần mềm',
-    lopSinhHoat: 'K29-KTPM3',
-    lastLogin: 'Chưa đăng nhập',
-    lastLoginIp: 'Chưa ghi nhận',
-    lastPasswordChange: 'Đã lưu hệ thống',
-    password: '••••••••',
-  },
-];
+const SEED_FALLBACK_USERS: UserRow[] = [];
 
 function getStoredCachedUsers(): UserRow[] {
-  if (typeof window === 'undefined') return SEED_FALLBACK_USERS;
+  if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CACHED_USERS);
-    if (!raw) return SEED_FALLBACK_USERS;
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : SEED_FALLBACK_USERS;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      // Tự động loại bỏ bất kỳ dữ liệu mock cũ nào còn sót lại trong cache
+      const cleaned = parsed.filter(
+        (u: any) => !['hbdieu', 'pvlong', 'nttuyen', 'student', '29211200333', '30211200555', '28211200777', '29211200888', '29211200999'].includes(u.username)
+      );
+      return cleaned;
+    }
   } catch {
-    return SEED_FALLBACK_USERS;
+    // fallback
   }
+  return [];
 }
 
-const INITIAL_USERS: UserRow[] = SEED_FALLBACK_USERS;
+const INITIAL_USERS: UserRow[] = [];
 
 /**
  * Sinh mật khẩu ngẫu nhiên bảo mật cao (Cryptographically Secure Random Password)
@@ -515,6 +361,17 @@ export default function UserManagerPage() {
   }, []);
 
   useEffect(() => {
+    // Dọn sạch bộ nhớ cache chứa người dùng mock cũ nếu có
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_CACHED_USERS);
+        if (raw && (raw.includes('hbdieu') || raw.includes('SV2026001') || raw.includes('29211200333'))) {
+          localStorage.removeItem(STORAGE_KEY_CACHED_USERS);
+        }
+      } catch {
+        // ignore
+      }
+    }
     fetchUsers();
   }, [fetchUsers]);
 

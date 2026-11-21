@@ -49,12 +49,13 @@ export async function fetchWithAuth<T = any>(
         localStorage.removeItem('oculide_token');
         localStorage.removeItem('oculide_user');
         localStorage.removeItem('oculide_refresh_token');
+        localStorage.removeItem('oculide_last_activity');
         document.cookie = 'oculide_token=; path=/; max-age=0';
         document.cookie = 'oculide_role=; path=/; max-age=0';
 
         const currentPath = window.location.pathname;
         if (!currentPath.includes('/login')) {
-          window.location.replace(`/login?redirect=${encodeURIComponent(currentPath)}`);
+          window.location.replace(`/login?reason=token_expired&redirect=${encodeURIComponent(currentPath)}`);
         }
       }
     }

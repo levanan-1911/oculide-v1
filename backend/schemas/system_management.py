@@ -9,7 +9,7 @@ class SystemSettingsModel(BaseModel):
     audit_log_retention_days: int = Field(90, ge=15, le=365, description="Số ngày lưu trữ nhật ký kiểm toán")
     allowed_email_domain: str = Field("@gmail.com", description="Tên miền email trường cho phép")
     max_login_attempts: int = Field(5, ge=3, le=20, description="Số lần đăng nhập sai tối đa trước khi khóa")
-    jwt_token_expiry_minutes: int = Field(60, ge=15, le=1440, description="Thời hạn token phiên làm việc (phút)")
+    jwt_token_expiry_minutes: int = Field(30, ge=15, le=1440, description="Thời hạn token phiên làm việc (phút)")
     maintenance_mode: bool = Field(False, description="Chế độ bảo trì hệ thống")
     maintenance_message: str = Field(
         "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",

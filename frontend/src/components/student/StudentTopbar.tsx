@@ -240,6 +240,7 @@ export default function StudentTopbar({
     localStorage.removeItem("oculide_token");
     localStorage.removeItem("oculide_user");
     localStorage.removeItem("oculide_refresh_token");
+    localStorage.removeItem("oculide_last_activity");
     document.cookie = 'oculide_token=; path=/; max-age=0';
     document.cookie = 'oculide_role=; path=/; max-age=0';
     window.location.replace('/login');

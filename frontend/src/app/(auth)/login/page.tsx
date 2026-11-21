@@ -81,11 +81,25 @@ export default function LoginPage() {
     // Tiền phân giải IP Public ngầm để sẵn sàng khi bấm Đăng nhập
     getClientPublicIp().catch(() => { });
 
+    // Kiểm tra thông báo hết hạn phiên làm việc do treo máy
+    const urlParams = new URLSearchParams(window.location.search);
+    const logoutReason = urlParams.get('reason');
+    if (logoutReason === 'idle_timeout') {
+      setErrorMessage('Phiên làm việc đã tự động kết thúc do không có thao tác trong 30 phút. Vui lòng đăng nhập lại.');
+      return;
+    } else if (logoutReason === 'token_expired') {
+      setErrorMessage('Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.');
+      return;
+    }
+
     // Nếu đã có token hợp lệ còn hạn trong localStorage -> Chuyển hướng về Dashboard
     try {
       const token = localStorage.getItem('oculide_token');
       const rawUser = localStorage.getItem('oculide_user');
-      if (token && rawUser) {
+      const lastActivity = Number(localStorage.getItem('oculide_last_activity') || Date.now());
+      const isIdleTimeout = Date.now() - lastActivity > 30 * 60 * 1000;
+
+      if (token && rawUser && !isIdleTimeout) {
         const parts = token.split('.');
         if (parts.length === 3) {
           const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
@@ -184,8 +198,9 @@ export default function LoginPage() {
       if (data.access_token) {
         localStorage.setItem('oculide_token', data.access_token);
         localStorage.setItem('oculide_user', JSON.stringify(data.user));
-        document.cookie = `oculide_token=${data.access_token}; path=/; max-age=86400; SameSite=Lax`;
-        document.cookie = `oculide_role=${data.user?.role || ''}; path=/; max-age=86400; SameSite=Lax`;
+        localStorage.setItem('oculide_last_activity', Date.now().toString());
+        document.cookie = `oculide_token=${data.access_token}; path=/; max-age=1800; SameSite=Lax`;
+        document.cookie = `oculide_role=${data.user?.role || ''}; path=/; max-age=1800; SameSite=Lax`;
         if (data.refresh_token) {
           localStorage.setItem('oculide_refresh_token', data.refresh_token);
         }

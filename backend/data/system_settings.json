@@ -6,7 +6,7 @@
   "audit_log_retention_days": 90,
   "allowed_email_domain": "@gmail.com",
   "max_login_attempts": 5,
-  "jwt_token_expiry_minutes": 60,
+  "jwt_token_expiry_minutes": 30,
   "maintenance_mode": false,
   "maintenance_message": "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",
   "backup_schedule_enabled": true,
@@ -15,6 +15,6 @@
   "backup_on_maintenance": true,
   "backup_retention_days": 30,
   "backup_max_copies": 10,
-  "updated_at": "2026-11-20T18:41:05.581325",
+  "updated_at": "2026-11-21T20:50:10.464432",
   "updated_by": "test_teardown"
 }

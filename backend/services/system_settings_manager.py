@@ -20,7 +20,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "audit_log_retention_days": 90,
     "allowed_email_domain": "@gmail.com",
     "max_login_attempts": 5,
-    "jwt_token_expiry_minutes": 60,
+    "jwt_token_expiry_minutes": 30,
     "maintenance_mode": False,
     "maintenance_message": "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",
     "backup_schedule_enabled": True,

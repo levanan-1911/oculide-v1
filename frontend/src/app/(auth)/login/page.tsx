@@ -191,11 +191,12 @@ export default function LoginPage() {
         }
       }
 
-      const requiresPasswordChange = Boolean(data.user?.must_change_password);
-      if (requiresPasswordChange) {
-        window.location.href = '/reset-password';
-        return;
-      }
+      // Bỏ chuyển hướng trang trung gian reset-password sau khi tạo tài khoản, vào thẳng dashboard tương ứng
+      // const requiresPasswordChange = Boolean(data.user?.must_change_password);
+      // if (requiresPasswordChange) {
+      //   window.location.href = '/reset-password';
+      //   return;
+      // }
 
       const params = new URLSearchParams(window.location.search);
       const redirectUrl = params.get('redirect');

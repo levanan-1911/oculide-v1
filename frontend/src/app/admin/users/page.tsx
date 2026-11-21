@@ -1574,7 +1574,8 @@ export default function UserManagerPage() {
 
       // Tải lại danh sách người dùng mới nhất từ CSDL SQL Server
       await fetchUsers();
-      // Đóng modal tạo tài khoản, giữ nguyên danh sách hiện tại không chuyển qua trang hay mở modal nào khác
+      // Đóng modal tạo tài khoản, xóa selectedUserId để đảm bảo không bật trang/modal trung gian chi tiết
+      setSelectedUserId(null);
       setIsCreateModalOpen(false);
       setCreateError('');
       setCreatePassword('');
@@ -1889,6 +1890,7 @@ export default function UserManagerPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    setSelectedUserId(null);
                     setCreateError('');
                     setCreatePassword(generateRandomPassword());
                     setIsCreateModalOpen(true);

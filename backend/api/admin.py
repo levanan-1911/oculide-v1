@@ -122,6 +122,7 @@ async def create_user_by_admin(
         role=user_data.role,
         student_id=user_data.student_id,
         is_active=user_data.is_active,
+        must_change_password=False,
         department=user_data.department,
         lop_sinh_hoat=user_data.lop_sinh_hoat
     )
@@ -364,6 +365,7 @@ async def batch_import_users(
                 full_name=u.full_name,
                 role=data.role,
                 student_id=u.student_id,
+                must_change_password=False,
                 department=u.department,
                 lop_sinh_hoat=u.lop_sinh_hoat
             )

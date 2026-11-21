@@ -102,14 +102,19 @@ function InstructorMonitoringContent() {
         body: JSON.stringify({ status: 'da_dong' }),
       });
       try {
-        const raw = localStorage.getItem('oculide_instructor_rooms_mock');
-        if (raw) {
-          const list = JSON.parse(raw);
-          const updated = list.map((r: any) =>
-            r.id === activeRoomSession?.id || r.id === roomIdParam ? { ...r, status: 'da_dong' } : r
-          );
-          localStorage.setItem('oculide_instructor_rooms_mock', JSON.stringify(updated));
-        }
+        const updateStorageKey = (key: string) => {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const list = JSON.parse(raw);
+            const updated = list.map((r: any) =>
+              r.id === activeRoomSession?.id || r.id === roomIdParam ? { ...r, status: 'da_dong' } : r
+            );
+            localStorage.setItem(key, JSON.stringify(updated));
+          }
+        };
+        updateStorageKey('oculide_instructor_rooms_mock');
+        updateStorageKey('oculide_instructor_rooms');
+        window.dispatchEvent(new Event('storage'));
       } catch {}
       alert('Đã kết thúc sớm ca thực hành!');
       router.push('/instructor/classes');

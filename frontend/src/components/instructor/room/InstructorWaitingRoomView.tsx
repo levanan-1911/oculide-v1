@@ -275,7 +275,10 @@ export default function InstructorWaitingRoomView({
   const attendancePercent = attendees.length > 0 ? Math.round((waitingCount / attendees.length) * 100) : 0;
   const endTimeMs = room?.endTime ? Date.parse(room.endTime) : Number.NaN;
   const isRoomExpired = Boolean(
-    room && (room.status === 'ended' || (Number.isFinite(endTimeMs) && endTimeMs <= Date.now()))
+    room && (
+      room.status === 'ended' ||
+      (room.status === 'in_progress' && Number.isFinite(endTimeMs) && endTimeMs <= Date.now())
+    )
   );
 
   // Toggle điểm danh thủ công: đồng bộ tức thì với Backend CSDL
@@ -312,6 +315,20 @@ export default function InstructorWaitingRoomView({
 
   // Kích hoạt ca thi và chuyển sang màn hình giám sát trực tiếp
   const activateRoomMonitoring = (targetRoomId: string) => {
+    try {
+      const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+      if (raw) {
+        const list: RoomSession[] = JSON.parse(raw);
+        const updated = list.map((r) =>
+          r.id.toLowerCase() === targetRoomId.toLowerCase()
+            ? { ...r, status: 'in_progress' as const }
+            : r
+        );
+        localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(updated));
+        window.dispatchEvent(new Event('storage'));
+      }
+    } catch {}
+
     showToast('Đang chuyển hướng vào Trung tâm giám sát trực tiếp...');
     setTimeout(() => {
       router.push(`/instructor/monitoring?room=${encodeURIComponent(targetRoomId)}`);
@@ -404,12 +421,29 @@ export default function InstructorWaitingRoomView({
     if (!room) return;
     setIsActionLoading(true);
 
+    const syncCancelledState = () => {
+      try {
+        const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+        if (raw) {
+          const list: RoomSession[] = JSON.parse(raw);
+          const updated = list.map((r) =>
+            r.id.toLowerCase() === room.id.toLowerCase()
+              ? { ...r, status: 'da_dong' as any }
+              : r
+          );
+          localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(updated));
+          window.dispatchEvent(new Event('storage'));
+        }
+      } catch {}
+    };
+
     if (rawRoomId) {
       try {
         await fetchWithAuth(`/api/v1/rooms/${rawRoomId}/status`, {
           method: 'PATCH',
           body: JSON.stringify({ status: 'da_dong' }),
         });
+        syncCancelledState();
         showToast(`Đã hủy phòng chờ ${room.id} thành công! Lớp ${room.classId} đã sẵn sàng tạo ca mới.`);
         setIsCancelModalOpen(false);
         setTimeout(() => {
@@ -423,6 +457,7 @@ export default function InstructorWaitingRoomView({
       }
     }
 
+    syncCancelledState();
     setIsCancelModalOpen(false);
     setTimeout(() => {
       router.push(returnPath);

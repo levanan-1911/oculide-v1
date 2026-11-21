@@ -136,29 +136,38 @@ function timeStringToMinutes(timeStr: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
-function getDefaultStartTime(): string {
+function getInitialSchedule(leadMinutes = 15): { dateStr: string; startTime: string } {
   const now = new Date();
-  // Lấy thời điểm hiện tại cộng 15 phút và làm tròn lên mốc 15 phút tiếp theo
-  const futureMs = now.getTime() + 15 * 60 * 1000;
-  const futureDate = new Date(futureMs);
-  const hours = futureDate.getHours();
-  const minutes = futureDate.getMinutes();
-  const roundedM = Math.ceil(minutes / 15) * 15;
-  if (roundedM >= 60) {
-    const nextH = (hours + 1) % 24;
-    return `${String(nextH).padStart(2, '0')}:00`;
-  }
-  return `${String(hours).padStart(2, '0')}:${String(roundedM).padStart(2, '0')}`;
+  const target = new Date(now.getTime() + leadMinutes * 60 * 1000);
+  const m = target.getMinutes();
+  const roundedM = Math.ceil(m / 15) * 15;
+  target.setMinutes(roundedM, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    dateStr: `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}`,
+    startTime: `${pad(target.getHours())}:${pad(target.getMinutes())}`,
+  };
 }
 
-function calculateEndTime(startTime: string, durationMinutes: number): string {
-  if (!startTime || !startTime.includes(':')) return '10:00';
-  const [h, m] = startTime.split(':').map(Number);
-  if (isNaN(h) || isNaN(m)) return '10:00';
-  const totalMinutes = h * 60 + m + durationMinutes;
-  const endH = Math.floor(totalMinutes / 60) % 24;
-  const endM = totalMinutes % 60;
-  return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+function computeScheduleIso(dateStr: string, startTime: string, durationMinutes: number) {
+  const [year, month, day] = (dateStr || getTodayDateString()).split('-').map(Number);
+  const [hours, minutes] = (startTime || '08:00').split(':').map(Number);
+  const start = new Date(year, (month || 1) - 1, day || 1, hours || 0, minutes || 0, 0);
+  const end = new Date(start.getTime() + (durationMinutes || 60) * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const startIso = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}T${pad(start.getHours())}:${pad(start.getMinutes())}:00`;
+  const endIso = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}:00`;
+  const displayEndTime = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+  return { startIso, endIso, displayEndTime };
+}
+
+function getDefaultStartTime(): string {
+  return getInitialSchedule(15).startTime;
+}
+
+function calculateEndTime(startTime: string, durationMinutes: number, dateStr?: string): string {
+  const { displayEndTime } = computeScheduleIso(dateStr || getTodayDateString(), startTime, durationMinutes);
+  return displayEndTime;
 }
 
 export default function InstructorCreateRoomView() {
@@ -319,12 +328,13 @@ export default function InstructorCreateRoomView() {
   // Chỉ tạo mã phòng/PIN và lấy ngày giờ địa phương sau lần render đầu tiên.
   // Tránh Math.random()/Date dùng trong useState initializer gây hydration mismatch.
   useEffect(() => {
-    const initialStartTime = getDefaultStartTime();
+    const { dateStr, startTime: initialStartTime } = getInitialSchedule(15);
     setRoomCode(generateClassRoomCode());
     setRoomPassword(generateRandomAlphanumericPassword(6));
-    setScheduledDate(getTodayDateString());
+    setScheduledDate(dateStr);
     setStartTime(initialStartTime);
-    setEndTime(calculateEndTime(initialStartTime, 120));
+    const { displayEndTime } = computeScheduleIso(dateStr, initialStartTime, 120);
+    setEndTime(displayEndTime);
     setIsClientReady(true);
   }, [queryClass]);
 
@@ -517,12 +527,14 @@ export default function InstructorCreateRoomView() {
 
   const handleStartTimeChange = (newStart: string) => {
     setStartTime(newStart);
-    setEndTime(calculateEndTime(newStart, durationMinutes));
+    const { displayEndTime } = computeScheduleIso(scheduledDate, newStart, durationMinutes);
+    setEndTime(displayEndTime);
   };
 
   const handleDurationChange = (newMins: number) => {
     setDurationMinutes(newMins);
-    setEndTime(calculateEndTime(startTime, newMins));
+    const { displayEndTime } = computeScheduleIso(scheduledDate, startTime, newMins);
+    setEndTime(displayEndTime);
   };
 
   // RÀNG BUỘC CỦA PHÒNG (SETUP CONSTRAINTS)
@@ -562,8 +574,8 @@ export default function InstructorCreateRoomView() {
   // Cập nhật cấu hình ràng buộc mặc định khi đổi loại phòng (Lab vs Midterm)
   const handleApplyPreset = (type: 'lab' | 'midterm') => {
     setRoomType(type);
-    const curClass = classesList.find((c) => c.id === selectedClassId) || classesList[0];
-    const classLabel = selectedClassId === 'unassigned' ? 'Chưa gán lớp' : curClass.id;
+    const targetClass = classesList.find((c) => c.id === selectedClassId) || classesList[0];
+    const classLabel = selectedClassId === 'unassigned' ? 'Chưa gán lớp' : targetClass.id;
 
     if (type === 'lab') {
       setRoomTitle(`Buổi Thực Hành: ${classLabel} - Thao tác mảng & giải thuật`);
@@ -612,6 +624,41 @@ export default function InstructorCreateRoomView() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  // Nhận diện xem lớp đang chọn đã có phòng chờ hoặc ca live chưa
+  const existingWaitingRoomForClass = useMemo(() => {
+    if (!selectedClassId || selectedClassId === 'unassigned') return null;
+    const norm = selectedClassId.replace(/[\s\-_]/g, '').toLowerCase();
+    return (
+      existingSessions.find((s) => {
+        const sNorm = String(s.classId || '').replace(/[\s\-_]/g, '').toLowerCase();
+        const sStatus = String(s.status || '').toLowerCase().trim();
+        const isTerminal = ['ended', 'completed', 'da_dong', 'da_huy', 'da_ket_thuc', 'closed', 'cancelled', 'đã kết thúc'].includes(sStatus);
+        return (
+          (sNorm === norm || s.classId.toLowerCase() === selectedClassId.toLowerCase()) &&
+          (sStatus === 'chưa mở' || sStatus === 'waiting' || sStatus === 'chua_mo' || sStatus === 'scheduled') &&
+          !isTerminal
+        );
+      }) || null
+    );
+  }, [existingSessions, selectedClassId]);
+
+  const existingActiveSessionForClass = useMemo(() => {
+    if (!selectedClassId || selectedClassId === 'unassigned') return null;
+    const norm = selectedClassId.replace(/[\s\-_]/g, '').toLowerCase();
+    return (
+      existingSessions.find((s) => {
+        const sNorm = String(s.classId || '').replace(/[\s\-_]/g, '').toLowerCase();
+        const sStatus = String(s.status || '').toLowerCase().trim();
+        const isTerminal = ['ended', 'completed', 'da_dong', 'da_huy', 'da_ket_thuc', 'closed', 'cancelled', 'đã kết thúc'].includes(sStatus);
+        return (
+          (sNorm === norm || s.classId.toLowerCase() === selectedClassId.toLowerCase()) &&
+          (sStatus === 'đang diễn ra' || sStatus === 'in_progress' || sStatus === 'dang_dien_ra') &&
+          !isTerminal
+        );
+      }) || null
+    );
+  }, [existingSessions, selectedClassId]);
+
   const curClass = classesList.find((c) => c.id === selectedClassId) || classesList[0];
   const selectedTemplate =
     templatesList.find((t) => t.id === selectedTemplateId) || templatesList[0];
@@ -648,6 +695,8 @@ export default function InstructorCreateRoomView() {
           ? Number(selectedTemplateId)
           : null;
 
+      const { startIso, endIso } = computeScheduleIso(scheduledDate, startTime, durationMinutes);
+
       // 1. Gửi request tạo phòng lưu trực tiếp vào CSDL SQL Server (bảng Phong)
       const payload = {
         room_code: roomCode.trim(),
@@ -657,8 +706,8 @@ export default function InstructorCreateRoomView() {
         class_id: selectedClassId === 'unassigned' ? null : curClass.id,
         template_id: templateIdToSend,
         description: `${roomType === 'lab' ? 'Buổi thực hành Lab' : 'Thi giữa kỳ'} cho ${selectedClassId === 'unassigned' ? 'khung lịch tự do' : `lớp ${curClass.name}`}`,
-        start_time: `${scheduledDate}T${startTime}:00`,
-        end_time: `${scheduledDate}T${endTime}:00`,
+        start_time: startIso,
+        end_time: endIso,
         duration_minutes: durationMinutes,
         max_attempts: roomType === 'lab' ? 10 : 1,
         passcode: roomPassword,
@@ -855,6 +904,43 @@ export default function InstructorCreateRoomView() {
           </div>
         </div>
       </div>
+
+      {/* CẢNH BÁO NẾU LỚP NÀY ĐÃ CÓ PHÒNG CHỜ HOẶC PHIÊN LIVE */}
+      {existingWaitingRoomForClass && (
+        <div className="rounded-md border border-blue-300 bg-blue-50/80 p-4 shadow-2xs dark:border-blue-500/30 dark:bg-blue-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-xs text-blue-900 dark:text-blue-200">
+            <Users className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+            <div>
+              <span className="font-bold">Lớp {curClass.id} ({curClass.name})</span> hiện đã có 1 phòng chờ đang mở: <code className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded border border-blue-200">{existingWaitingRoomForClass.roomCode}</code>.
+              <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">Quy định hệ thống: Mỗi lớp học phần chỉ có 01 phòng chờ tại một thời điểm.</p>
+            </div>
+          </div>
+          <Link
+            href={`/instructor/room/${encodeURIComponent(existingWaitingRoomForClass.roomCode)}`}
+            className="system-primary-action inline-flex h-8 items-center gap-1.5 rounded-md bg-blue-700 hover:bg-blue-800 px-3.5 text-xs font-bold text-white shadow-2xs transition whitespace-nowrap shrink-0"
+          >
+            <span>Vào Phòng Chờ Hiện Có</span>
+          </Link>
+        </div>
+      )}
+
+      {existingActiveSessionForClass && (
+        <div className="rounded-md border border-emerald-300 bg-emerald-50/80 p-4 shadow-2xs dark:border-emerald-500/30 dark:bg-emerald-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-xs text-emerald-900 dark:text-emerald-200">
+            <Radio className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <div>
+              <span className="font-bold">Lớp {curClass.id} ({curClass.name})</span> hiện đang có phiên giám sát trực tiếp: <code className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded border border-emerald-200">{existingActiveSessionForClass.roomCode}</code>.
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">Vui lòng kết thúc phiên live này trước khi tạo phòng mới cho buổi tiếp theo.</p>
+            </div>
+          </div>
+          <Link
+            href={`/instructor/monitoring?room=${encodeURIComponent(existingActiveSessionForClass.roomCode)}`}
+            className="system-primary-action inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-700 hover:bg-emerald-800 px-3.5 text-xs font-bold text-white shadow-2xs transition whitespace-nowrap shrink-0"
+          >
+            <span>Đến Màn Hình Giám Sát</span>
+          </Link>
+        </div>
+      )}
 
       <form onSubmit={handleCreateRoomSubmit} className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12 xl:gap-5">
         {/* CỘT TRÁI (7 CỘT): CẤU HÌNH LỚP, MÃ PHÒNG VÀ CÁC RÀNG BUỘC */}

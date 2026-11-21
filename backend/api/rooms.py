@@ -41,8 +41,13 @@ def _is_room_expired(room: Dict[str, Any]) -> bool:
         "cancelled",
         "canceled",
     }
-    if not room.get("is_active", True) or str(room.get("status") or "").lower() in terminal_statuses:
+    status = str(room.get("status") or "").lower()
+    if not room.get("is_active", True) or status in terminal_statuses:
         return True
+
+    # Phòng chờ chưa bắt đầu thì không bao giờ bị tính là expired
+    if status in ("chua_mo", "waiting", "scheduled"):
+        return False
 
     end_time = room.get("end_time")
     if isinstance(end_time, str):

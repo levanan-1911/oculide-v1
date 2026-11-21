@@ -177,30 +177,41 @@ export default function InstructorClassManagerView() {
           }
         }
 
-        // Đồng bộ danh sách phòng thực tế từ backend để giải phóng phòng cũ đã kết thúc
-        try {
-          const apiRooms = await fetchWithAuth<any[]>('/api/v1/rooms');
-          if (!isCancelled && Array.isArray(apiRooms)) {
-            const mappedRooms: RoomSession[] = apiRooms.map((r) => ({
-              id: r.room_code,
-              classId: r.class_code || String(r.class_id || ''),
-              className: r.class_name || r.room_name,
-              password: r.passcode || '',
-              type: r.room_type === 'exam' ? 'exam' : 'lab',
-              title: r.room_name,
-              durationMinutes: r.duration_minutes || 60,
-              status: (r.status === 'in_progress' || r.status === 'dang_dien_ra')
-                ? 'in_progress'
-                : (r.status === 'scheduled' || r.status === 'waiting' || r.status === 'chua_mo')
-                ? 'waiting'
-                : 'ended',
-              createdAt: r.created_at || '',
-              proctoringConfig: { lockdownFullscreen: false, aiFaceDetection: false, aiObjectDetection: false, allowTabSwitch: true },
-              attendees: [],
-            }));
-            setCreatedRooms(mappedRooms);
+        // Đồng bộ danh sách phòng thực tế từ backend
+        const syncRooms = async () => {
+          try {
+            const apiRooms = await fetchWithAuth<any[]>('/api/v1/rooms');
+            if (!isCancelled && Array.isArray(apiRooms)) {
+              const mappedRooms: RoomSession[] = apiRooms.map((r) => ({
+                id: r.room_code,
+                classId: r.class_code || String(r.class_id || ''),
+                className: r.class_name || r.room_name,
+                password: r.passcode || '',
+                type: r.room_type === 'exam' ? 'exam' : 'lab',
+                title: r.room_name,
+                durationMinutes: r.duration_minutes || 60,
+                status: ['in_progress', 'dang_dien_ra'].includes(String(r.status || '').toLowerCase())
+                  ? 'in_progress'
+                  : ['scheduled', 'waiting', 'chua_mo'].includes(String(r.status || '').toLowerCase())
+                  ? 'waiting'
+                  : 'ended',
+                createdAt: r.created_at || '',
+                proctoringConfig: { lockdownFullscreen: false, aiFaceDetection: false, aiObjectDetection: false, allowTabSwitch: true },
+                attendees: [],
+              }));
+              setCreatedRooms(mappedRooms);
+            }
+          } catch {
+            if (typeof window !== 'undefined') {
+              try {
+                const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+                if (raw) setCreatedRooms(JSON.parse(raw));
+              } catch {}
+            }
           }
-        } catch {}
+        };
+
+        await syncRooms();
       } catch (err: any) {
         console.error('Lỗi khi tải danh sách lớp học phần:', err);
         showToast(err.message || 'Không thể kết nối CSDL lớp học phần');
@@ -211,25 +222,48 @@ export default function InstructorClassManagerView() {
 
     loadInstructorClasses();
 
-    // Lấy thông tin phòng ca học đang mở từ localStorage
-    if (typeof window !== 'undefined') {
+    // Lắng nghe thay đổi storage và định kỳ đồng bộ trạng thái phòng
+    const syncRoomsFromAllSources = async () => {
       try {
-        const rawRooms = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-        if (rawRooms) {
-          setCreatedRooms(JSON.parse(rawRooms));
+        const apiRooms = await fetchWithAuth<any[]>('/api/v1/rooms');
+        if (!isCancelled && Array.isArray(apiRooms)) {
+          const mappedRooms: RoomSession[] = apiRooms.map((r) => ({
+            id: r.room_code,
+            classId: r.class_code || String(r.class_id || ''),
+            className: r.class_name || r.room_name,
+            password: r.passcode || '',
+            type: r.room_type === 'exam' ? 'exam' : 'lab',
+            title: r.room_name,
+            durationMinutes: r.duration_minutes || 60,
+            status: ['in_progress', 'dang_dien_ra'].includes(String(r.status || '').toLowerCase())
+              ? 'in_progress'
+              : ['scheduled', 'waiting', 'chua_mo'].includes(String(r.status || '').toLowerCase())
+              ? 'waiting'
+              : 'ended',
+            createdAt: r.created_at || '',
+            proctoringConfig: { lockdownFullscreen: false, aiFaceDetection: false, aiObjectDetection: false, allowTabSwitch: true },
+            attendees: [],
+          }));
+          setCreatedRooms(mappedRooms);
         }
+      } catch {
+        if (typeof window !== 'undefined') {
+          try {
+            const rawRooms = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+            if (rawRooms) setCreatedRooms(JSON.parse(rawRooms));
+          } catch {}
+        }
+      }
+    };
 
-        const handleStorageChange = () => {
-          const updated = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-          if (updated) {
-            try {
-              setCreatedRooms(JSON.parse(updated));
-            } catch {}
-          }
-        };
-        window.addEventListener('storage', handleStorageChange);
-        return () => window.removeEventListener('storage', handleStorageChange);
-      } catch {}
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', syncRoomsFromAllSources);
+      const pollInterval = window.setInterval(syncRoomsFromAllSources, 4000);
+      return () => {
+        isCancelled = true;
+        window.removeEventListener('storage', syncRoomsFromAllSources);
+        window.clearInterval(pollInterval);
+      };
     }
 
     return () => {
@@ -276,11 +310,18 @@ export default function InstructorClassManagerView() {
     return ['ended', 'completed', 'da_dong', 'da_huy', 'da_ket_thuc', 'closed', 'cancelled'].includes(s);
   };
 
+  const isClassMatch = (roomClassId?: string, classId?: string) => {
+    if (!roomClassId || !classId) return false;
+    const c1 = roomClassId.replace(/[\s\-_]/g, '').toUpperCase();
+    const c2 = classId.replace(/[\s\-_]/g, '').toUpperCase();
+    return c1 === c2 || roomClassId.toUpperCase() === classId.toUpperCase();
+  };
+
   const activeRoomForCurrentClass = useMemo(() => {
     if (!currentClass) return null;
     return createdRooms.find(
       (r) =>
-        r.classId.toUpperCase() === currentClass.id.toUpperCase() &&
+        isClassMatch(r.classId, currentClass.id) &&
         (r.status === 'in_progress' || r.status === 'dang_dien_ra') &&
         !isTerminalStatus(r.status)
     ) || null;
@@ -290,7 +331,7 @@ export default function InstructorClassManagerView() {
     if (!currentClass) return null;
     return createdRooms.find(
       (r) =>
-        r.classId.toUpperCase() === currentClass.id.toUpperCase() &&
+        isClassMatch(r.classId, currentClass.id) &&
         (r.status === 'waiting' || r.status === 'chua_mo' || r.status === 'scheduled') &&
         !isTerminalStatus(r.status)
     ) || null;
@@ -583,7 +624,37 @@ export default function InstructorClassManagerView() {
                           </h3>
                         </div>
 
-                        <ClassStatusBadge status={c.status} />
+                        {(() => {
+                          const activeForC = createdRooms.find(
+                            (r) =>
+                              isClassMatch(r.classId, c.id) &&
+                              (r.status === 'in_progress' || r.status === 'dang_dien_ra') &&
+                              !isTerminalStatus(r.status)
+                          );
+                          const waitingForC = createdRooms.find(
+                            (r) =>
+                              isClassMatch(r.classId, c.id) &&
+                              (r.status === 'waiting' || r.status === 'chua_mo' || r.status === 'scheduled') &&
+                              !isTerminalStatus(r.status)
+                          );
+                          if (activeForC) {
+                            return (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-700 px-2 py-0.5 font-mono text-[10.5px] font-bold">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                Đang Live
+                              </span>
+                            );
+                          }
+                          if (waitingForC) {
+                            return (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded bg-blue-100 text-blue-800 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700 px-2 py-0.5 font-mono text-[10.5px] font-bold">
+                                <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                                Phòng Chờ
+                              </span>
+                            );
+                          }
+                          return <ClassStatusBadge status={c.status} />;
+                        })()}
                       </div>
 
                       <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-300 dark:border-white/10">
@@ -644,35 +715,36 @@ export default function InstructorClassManagerView() {
                     </p>
                   </div>
 
-                  {/* Tạo phòng và truy cập phòng hiện có */}
+                  {/* Tạo phòng và truy cập phòng hiện có: Tuân thủ nghiêm ngặt 3 trạng thái của vòng đời lớp */}
                   <div className="flex w-full flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:w-auto">
-                    <Link
-                      href={`/instructor/room?class=${encodeURIComponent(currentClass.id)}`}
-                      className="system-primary-action inline-flex h-9 w-full sm:w-auto items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800 whitespace-nowrap cursor-pointer shrink-0"
-                    >
-                      <Radio className="h-3.5 w-3.5 shrink-0" />
-                      <span>Tạo Phòng</span>
-                    </Link>
-
                     {activeRoomForCurrentClass ? (
-                      /* ĐÃ CÓ PHÒNG MỞ: Cho phép vào phòng giám sát trực tiếp */
+                      /* Trạng thái 3: ĐANG CÓ PHIÊN LIVE - Chỉ hiển thị nút Giám Sát, ẩn nút Tạo Phòng & Vào Phòng Chờ */
                       <Link
                         href={`/instructor/monitoring?room=${encodeURIComponent(activeRoomForCurrentClass.id)}`}
-                        className="system-primary-action inline-flex h-9 w-full sm:w-auto items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800 whitespace-nowrap cursor-pointer shrink-0"
+                        className="system-primary-action inline-flex h-9 w-full sm:w-auto items-center justify-center gap-2 rounded-md bg-emerald-700 hover:bg-emerald-800 px-4 text-xs font-bold text-white shadow-2xs transition whitespace-nowrap cursor-pointer shrink-0"
                       >
                         <Video className="h-3.5 w-3.5 shrink-0" />
-                        <span>Giám Sát</span>
+                        <span>Giám Sát ({activeRoomForCurrentClass.id})</span>
                       </Link>
                     ) : waitingRoomForCurrentClass ? (
-                      /* ĐANG Ở PHÒNG CHỜ: Điểm danh và bấm Bắt đầu trước khi giám sát */
+                      /* Trạng thái 2: ĐANG CÓ PHÒNG CHỜ - Chỉ hiển thị nút Vào Phòng Chờ (ẩn nút Tạo Phòng) */
                       <Link
                         href={`/instructor/room/${encodeURIComponent(waitingRoomForCurrentClass.id)}`}
-                        className="inline-flex h-9 w-full sm:w-auto items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-xs font-bold text-slate-700 shadow-2xs transition hover:bg-slate-100 whitespace-nowrap cursor-pointer shrink-0 dark:border-white/10 dark:bg-white/10 dark:text-slate-200"
+                        className="system-primary-action inline-flex h-9 w-full sm:w-auto items-center justify-center gap-2 rounded-md bg-blue-700 hover:bg-blue-800 px-4 text-xs font-bold text-white shadow-2xs transition whitespace-nowrap cursor-pointer shrink-0"
                       >
                         <Users className="h-3.5 w-3.5 shrink-0" />
-                        <span>Vào Phòng Chờ</span>
+                        <span>Vào Phòng Chờ ({waitingRoomForCurrentClass.id})</span>
                       </Link>
-                    ) : null}
+                    ) : (
+                      /* Trạng thái 1: TRỐNG / PHIÊN LIVE CŨ ĐÃ KẾT THÚC - Hiển thị nút Tạo Phòng để mở buổi tiếp theo */
+                      <Link
+                        href={`/instructor/room?class=${encodeURIComponent(currentClass.id)}`}
+                        className="system-primary-action inline-flex h-9 w-full sm:w-auto items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800 whitespace-nowrap cursor-pointer shrink-0"
+                      >
+                        <Radio className="h-3.5 w-3.5 shrink-0" />
+                        <span>Tạo Phòng</span>
+                      </Link>
+                    )}
                   </div>
                 </div>
 

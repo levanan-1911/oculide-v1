@@ -75,8 +75,8 @@ class BackupService:
             try:
                 create_system_log(
                     log_level="info",
-                    module="DATABASE_BACKUP",
-                    message=f"Tạo thành công bản sao lưu cơ sở dữ liệu {filename} ({size_mb} MB) [Loại: {backup_type}]",
+                    module="Tạo sao lưu CSDL",
+                    message=f"Tạo thành công bản sao lưu {filename} ({size_mb} MB) [{backup_type}]",
                     user_id=actor_id,
                     ip_address=ip_address,
                     extra_data=backup_info
@@ -158,8 +158,8 @@ class BackupService:
             try:
                 create_system_log(
                     log_level="warning",
-                    module="DATABASE_BACKUP",
-                    message=f"Xóa bản sao lưu cơ sở dữ liệu {safe_name} khỏi đĩa cứng",
+                    module="Xóa sao lưu CSDL",
+                    message=f"Xóa bản sao lưu {safe_name} khỏi đĩa cứng",
                     user_id=actor_id,
                     ip_address=ip_address,
                     extra_data={"filename": safe_name}
@@ -233,8 +233,8 @@ class BackupService:
             try:
                 create_system_log(
                     log_level="info",
-                    module="DATABASE_BACKUP",
-                    message=f"Dọn dẹp {len(deleted_files)} bản sao lưu CSDL quá hạn/vượt định mức (Giải phóng {freed_mb} MB)",
+                    module="Dọn dẹp sao lưu",
+                    message=f"Dọn dẹp {len(deleted_files)} bản sao lưu CSDL quá hạn (Giải phóng {freed_mb} MB)",
                     user_id=actor_id,
                     ip_address=ip_address,
                     extra_data={

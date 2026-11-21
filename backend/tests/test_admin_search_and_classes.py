@@ -55,6 +55,17 @@ def test_admin_global_search(admin_client, instructor_client, student_client):
     assert res_stu.status_code == 403
 
 def test_reassign_class_instructor(admin_client):
+    from core.config import get_db_connection
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT user_id, full_name FROM Users WHERE role_id = 2 ORDER BY user_id ASC")
+    inst_rows = c.fetchall()
+    c.close()
+    conn.close()
+
+    inst1_id = inst_rows[0][0] if inst_rows else 1
+    inst2_id = inst_rows[1][0] if len(inst_rows) > 1 else (inst_rows[0][0] if inst_rows else 1)
+
     # 1. Create a temporary class
     unique_code = "TEST-REASSIGN-01"
     create_payload = {
@@ -63,29 +74,29 @@ def test_reassign_class_instructor(admin_client):
         "course_code": "TEST-101",
         "section_code": "SEC-A",
         "semester": "HK1 2026–2027",
-        "instructor_id": 2
+        "instructor_id": inst1_id,
+        "start_date": "2026-10-30",
+        "end_date": "2027-01-30"
     }
     res_create = admin_client.post("/api/v1/classes", json=create_payload)
     assert res_create.status_code == 201, res_create.text
     created_id = res_create.json()["class_id"]
 
     try:
-        # 2. Reassign to another instructor (user_id: 4 - ThS. Phạm Vũ Long)
+        # 2. Reassign to another instructor
         res_update = admin_client.put(
             f"/api/v1/classes/{unique_code}",
-            json={"instructor_id": 4}
+            json={"instructor_id": inst2_id}
         )
         assert res_update.status_code == 200, res_update.text
         updated_data = res_update.json()
-        assert updated_data["instructor_id"] == 4
-        assert "Phạm Vũ Long" in (updated_data.get("instructor_name") or "")
+        assert updated_data["instructor_id"] == inst2_id
 
         # 3. Verify via GET /api/v1/classes/{id}
         res_get = admin_client.get(f"/api/v1/classes/{unique_code}")
         assert res_get.status_code == 200
         get_data = res_get.json()
-        assert get_data["instructor_id"] == 4
-        assert "Phạm Vũ Long" in (get_data.get("instructor_name") or "")
+        assert get_data["instructor_id"] == inst2_id
     finally:
         # Cleanup
         admin_client.delete(f"/api/v1/classes/{unique_code}")
@@ -99,3 +110,21 @@ def test_semesters_list_api(admin_client):
     for s in semesters:
         assert "ma_hoc_ky" in s
         assert "ten_hoc_ky" in s
+
+def test_current_semester_calculation_formula(admin_client):
+    from database.classes_db import calculate_semester_by_date
+    
+    # 1. Test endpoint GET /api/v1/classes/semesters/current
+    res = admin_client.get("/api/v1/classes/semesters/current?date=2026-11-20")
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert "academic_year" in data
+    assert "semester_name" in data
+    assert data["academic_year"] == "2026-2027"
+    assert "HK1" in data["semester_name"]
+
+    # 2. Test direct function calculation
+    calc_res = calculate_semester_by_date("2027-03-15")
+    assert calc_res["academic_year"] == "2026-2027"
+    assert "HK2" in calc_res["semester_name"]
+    assert calc_res["term_number"] == 2

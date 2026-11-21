@@ -45,7 +45,12 @@ const nextConfig = {
       },
       {
         source: '/join',
-        destination: '/student/join',
+        destination: '/student/exams',
+        permanent: true,
+      },
+      {
+        source: '/student/join',
+        destination: '/student/exams',
         permanent: true,
       },
     ];

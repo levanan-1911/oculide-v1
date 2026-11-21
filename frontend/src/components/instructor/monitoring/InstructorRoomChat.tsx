@@ -333,40 +333,40 @@ export default function InstructorRoomChat({ roomCode }: InstructorRoomChatProps
   const isConnected = connectionState === 'connected';
 
   return (
-    <section className="flex min-h-[440px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#121824]">
-      <header className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2.5 dark:border-white/10">
+    <section className="flex min-h-[440px] flex-col overflow-hidden rounded-md border border-slate-300 bg-white dark:border-white/10 dark:bg-neutral-900">
+      <header className="flex items-center justify-between gap-2 border-b border-slate-300 px-3 py-2.5 dark:border-white/10">
         <div className="min-w-0">
-          <h3 className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-slate-100">
-            <MessageSquare className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+          <h3 className="flex items-center gap-1.5 text-xs font-serif font-bold text-stone-900 dark:text-stone-100">
+            <MessageSquare className="h-3.5 w-3.5 text-brand-600 dark:text-rose-300" />
             Chat phòng
           </h3>
-          <p className="mt-0.5 truncate font-mono text-[10px] text-slate-500 dark:text-slate-400">{roomCode}</p>
+          <p className="mt-0.5 truncate font-mono text-[10px] text-stone-500 dark:text-stone-400">{roomCode}</p>
         </div>
-        <div className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${
+        <div className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-mono font-medium ${
           isConnected
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400'
+            ? 'border-slate-300 bg-white text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300'
             : connectionState === 'error'
-              ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400'
-              : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+              ? 'border-slate-800/30 bg-slate-800/10 text-slate-800 dark:border-slate-800 dark:text-rose-300'
+              : 'border-slate-300 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300'
         }`}>
           {isConnected ? <Wifi className="h-3 w-3" /> : connectionState === 'error' ? <WifiOff className="h-3 w-3" /> : <LoaderCircle className="h-3 w-3 animate-spin" />}
           {isConnected ? 'Trực tuyến' : connectionState === 'error' ? 'Lỗi kết nối' : 'Đang kết nối'}
         </div>
       </header>
 
-      <div ref={messageListRef} className="flex-1 space-y-2 overflow-y-auto bg-slate-50/70 p-3 dark:bg-white/[0.03]">
+      <div ref={messageListRef} className="flex-1 space-y-2 overflow-y-auto bg-stone-50/70 p-3 dark:bg-black/20">
         {connectionState === 'loading' && messages.length === 0 ? (
-          <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 text-center text-xs text-slate-500 dark:text-slate-400">
-            <LoaderCircle className="h-5 w-5 animate-spin text-blue-600" />
+          <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 text-center text-xs text-stone-500 dark:text-stone-400">
+            <LoaderCircle className="h-5 w-5 animate-spin text-brand-600 dark:text-rose-300" />
             {connectionMessage}
           </div>
         ) : messages.length === 0 ? (
           <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 text-center">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-rose-200">
               <MessageSquare className="h-5 w-5" />
             </div>
-            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Chưa có tin nhắn</p>
-            <p className="max-w-[220px] text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+            <p className="text-xs font-serif font-bold text-stone-700 dark:text-stone-200">Chưa có tin nhắn</p>
+            <p className="max-w-[220px] text-[10px] leading-relaxed text-stone-500 dark:text-stone-400">
               Gửi tin nhắn đầu tiên để trao đổi với sinh viên trong phòng.
             </p>
           </div>
@@ -375,16 +375,16 @@ export default function InstructorRoomChat({ roomCode }: InstructorRoomChatProps
             const isMine = message.senderId === senderIdRef.current;
             return (
               <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[88%] rounded-xl px-2.5 py-2 ${
+                <div className={`max-w-[88%] rounded-md px-2.5 py-2 ${
                   isMine
-                    ? 'rounded-br-sm bg-blue-600 text-white'
-                    : 'rounded-bl-sm border border-slate-200 bg-white text-slate-800 dark:border-white/10 dark:bg-[#1b2636] dark:text-slate-100'
+                    ? 'bg-brand text-white'
+                    : 'border border-slate-300 bg-white text-stone-800 dark:border-white/10 dark:bg-neutral-950 dark:text-stone-100'
                 }`}>
                   {!isMine && (
-                    <p className="mb-0.5 text-[10px] font-bold text-blue-700 dark:text-blue-300">{message.senderName}</p>
+                    <p className="mb-0.5 text-[10px] font-serif font-bold text-slate-900 dark:text-rose-300">{message.senderName}</p>
                   )}
                   <p className="whitespace-pre-wrap break-words text-xs leading-relaxed">{message.content}</p>
-                  <p className={`mt-1 text-right font-mono text-[9px] ${isMine ? 'text-blue-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                  <p className={`mt-1 text-right font-mono text-[9px] ${isMine ? 'text-rose-200' : 'text-stone-400 dark:text-stone-500'}`}>
                     {formatMessageTime(message.sentAt)}
                   </p>
                 </div>
@@ -395,14 +395,14 @@ export default function InstructorRoomChat({ roomCode }: InstructorRoomChatProps
       </div>
 
       {errorMessage && (
-        <div className="flex items-start gap-1.5 border-t border-amber-200 bg-amber-50 px-3 py-2 text-[10px] leading-relaxed text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+        <div className="flex items-start gap-1.5 border-t border-slate-300 bg-slate-50 px-3 py-2 text-[10px] leading-relaxed text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
           <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
           <span className="min-w-0 flex-1">{errorMessage}</span>
           {connectionState === 'error' && (
             <button
               type="button"
               onClick={() => setRetryKey((value) => value + 1)}
-              className="inline-flex shrink-0 items-center gap-1 font-bold text-amber-900 hover:underline dark:text-amber-100"
+              className="inline-flex shrink-0 items-center gap-1 font-serif font-bold text-slate-900 hover:underline dark:text-white"
             >
               <RefreshCw className="h-3 w-3" /> Thử lại
             </button>
@@ -410,7 +410,7 @@ export default function InstructorRoomChat({ roomCode }: InstructorRoomChatProps
         </div>
       )}
 
-      <form onSubmit={handleSendMessage} className="flex items-center gap-2 border-t border-slate-200 bg-white p-2.5 dark:border-white/10 dark:bg-[#121824]">
+      <form onSubmit={handleSendMessage} className="flex items-center gap-2 border-t border-slate-300 bg-white p-2.5 dark:border-white/10 dark:bg-neutral-900">
         <input
           ref={draftRef}
           value={draft}
@@ -418,13 +418,13 @@ export default function InstructorRoomChat({ roomCode }: InstructorRoomChatProps
           maxLength={1000}
           placeholder={isConnected ? 'Nhập tin nhắn cho cả phòng...' : 'Đang chờ kết nối...'}
           disabled={!isConnected || isSending}
-          className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
+          className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-stone-50 px-3 text-xs text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-neutral-950 dark:text-stone-100 dark:placeholder:text-stone-500"
           aria-label="Nội dung tin nhắn"
         />
         <button
           type="submit"
           disabled={!isConnected || !draft.trim() || isSending}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
+          className="system-primary-action inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-300 dark:disabled:bg-stone-800"
           aria-label="Gửi tin nhắn"
           title="Gửi tin nhắn"
         >

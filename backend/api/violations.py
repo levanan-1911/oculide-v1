@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi import APIRouter, HTTPException, Depends, status, Query, Body
 from typing import Optional, List, Dict, Any
 
 from schemas.violation import (
@@ -179,17 +179,31 @@ async def get_room_violations(
 @router.patch("/{violation_id}/review", response_model=ViolationResponse)
 async def review_violation(
     violation_id: int,
-    review_data: Optional[ViolationReviewRequest] = None,
+    review_data: Optional[ViolationReviewRequest] = Body(None),
     review_status: Optional[str] = Query(None),
     current_user: Dict[str, Any] = Depends(instructor_required)
 ):
-    """Giảng viên duyệt hoặc xác nhận sự kiện vi phạm (confirmed hoặc rejected) - Quyền học thuật độc quyền của Giảng viên"""
+    """Giảng viên duyệt / phúc khảo sự kiện vi phạm (confirmed hoặc rejected)"""
     status_val = (review_data.review_status if review_data else None) or review_status or "confirmed"
     if status_val not in ["confirmed", "rejected"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Trạng thái duyệt phải là confirmed hoặc rejected")
     updated = update_violation_review(violation_id, reviewed_by=current_user["user_id"], review_status=status_val)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bản ghi vi phạm")
+    
+    try:
+        from database.system_log_db import create_system_log
+        action_name = "Giải oan" if status_val == "rejected" else "Xác nhận phạt"
+        create_system_log(
+            log_level="info",
+            module="Phúc khảo",
+            message=f"{action_name} cho biên bản vi phạm #{violation_id}",
+            user_id=current_user.get("user_id"),
+            extra_data={"violation_id": violation_id, "review_status": status_val}
+        )
+    except Exception:
+        pass
+
     return updated
 
 @router.get("/room/{room_id}/stats", response_model=List[ViolationStatsItem])

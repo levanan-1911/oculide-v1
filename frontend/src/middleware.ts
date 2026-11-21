@@ -56,15 +56,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Ngoại lệ: trang /student/join có thể mở trước để xem giao diện nhập mã phòng thi
-  if (pathname === '/student/join') {
-    return NextResponse.next();
-  }
-
   // 3. Chưa đăng nhập hoặc Token đã hết hạn -> Chặn đứng và chuyển hướng về /login
   if (!tokenValid) {
     const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname);
+    loginUrl.searchParams.set('redirect', `${pathname}${request.nextUrl.search}`);
     const response = NextResponse.redirect(loginUrl);
     response.cookies.delete('oculide_token');
     response.cookies.delete('oculide_role');

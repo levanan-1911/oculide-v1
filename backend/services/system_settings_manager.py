@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -18,9 +19,10 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "max_livekit_bitrate_kbps": 350,
     "auto_cleanup_drafts_days": 30,
     "audit_log_retention_days": 90,
-    "allowed_email_domain": "@school.edu.vn",
+    "allowed_email_domain": "@gmail.com",
+    "allowed_email_domain": "",
     "max_login_attempts": 5,
-    "jwt_token_expiry_minutes": 60,
+    "jwt_token_expiry_minutes": 30,
     "maintenance_mode": False,
     "maintenance_message": "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",
     "backup_schedule_enabled": True,
@@ -33,8 +35,35 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "updated_by": None
 }
 
+def is_email_domain_allowed(email: str, allowed_setting: Optional[str]) -> bool:
+    """
+    Kiểm tra email có thuộc tên miền cho phép hay không.
+    - Nếu allowed_setting rỗng/None/chỉ khoảng trắng: Cho phép mọi email hợp lệ (không cấu hình sẵn mặc định).
+    - Nếu allowed_setting có giá trị (hỗ trợ nhiều domain cách nhau bởi dấu phẩy, chấm phẩy hoặc khoảng trắng, VD: '@school.edu.vn, @dtu.edu.vn, @gmail.com'):
+      Kiểm tra email xem có kết thúc bằng bất kỳ domain nào trong danh sách không.
+    """
+    clean_email = (email or "").strip().lower()
+    if not clean_email or "@" not in clean_email:
+        return False
+
+    clean_setting = (allowed_setting or "").strip()
+    if not clean_setting:
+        return True
+
+    domains = [d.strip().lower() for d in re.split(r"[,;\s]+", clean_setting) if d.strip()]
+    if not domains:
+        return True
+
+    for d in domains:
+        expected = d if d.startswith("@") else f"@{d}"
+        if clean_email.endswith(expected):
+            return True
+
+    return False
+
 class SystemSettingsManager:
     _cached_settings: Optional[SystemSettingsModel] = None
+    _last_mtime: float = 0.0
 
     @classmethod
     def _ensure_dir_and_file(cls) -> None:
@@ -44,8 +73,15 @@ class SystemSettingsManager:
                 json.dump(DEFAULT_SYSTEM_SETTINGS, f, ensure_ascii=False, indent=2)
 
     @classmethod
-    def get_settings(cls) -> SystemSettingsModel:
-        if cls._cached_settings is not None:
+    def get_settings(cls, force_reload: bool = False) -> SystemSettingsModel:
+        current_mtime = 0.0
+        try:
+            if SETTINGS_FILE.exists():
+                current_mtime = os.path.getmtime(SETTINGS_FILE)
+        except Exception:
+            pass
+
+        if not force_reload and cls._cached_settings is not None and cls._last_mtime == current_mtime:
             return cls._cached_settings
 
         cls._ensure_dir_and_file()
@@ -54,6 +90,7 @@ class SystemSettingsManager:
                 data = json.load(f)
             merged = {**DEFAULT_SYSTEM_SETTINGS, **data}
             cls._cached_settings = SystemSettingsModel(**merged)
+            cls._last_mtime = current_mtime
         except Exception as e:
             logger.error(f"Lỗi khi đọc file cấu hình hệ thống: {e}. Sử dụng cấu hình mặc định.")
             cls._cached_settings = SystemSettingsModel(**DEFAULT_SYSTEM_SETTINGS)

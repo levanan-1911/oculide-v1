@@ -45,7 +45,7 @@ async def run_exam_templates_e2e():
     student_user = {"user_id": student_id, "role": "student"}
 
     tpl_id = "E2E-TPL-999"
-    room_code = "E2E-EXAM-999"
+    room_code = "EXAM9999"
     created_room_id = None
 
     try:

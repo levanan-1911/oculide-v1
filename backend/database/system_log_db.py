@@ -89,7 +89,7 @@ def get_system_logs(
                n.message, 
                n.user_id, 
                n.ip_address,
-               COALESCE(u.full_name, N'Hệ thống') AS actor_name,
+               COALESCE(u.full_name, u.username, N'Hệ thống') AS actor_name,
                u.username,
                COALESCE(vt.role_name, 'system') AS actor_role,
                n.details AS extra_data, 

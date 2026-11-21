@@ -4,13 +4,13 @@ import React, { useEffect, useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
 
 export default function ThemeToggleFloating() {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
     const saved = localStorage.getItem('oculide_theme') as 'dark' | 'light' | null;
-    const initial = saved || 'dark';
+    const initial = saved || 'light';
     setTheme(initial);
     applyTheme(initial);
   }, []);

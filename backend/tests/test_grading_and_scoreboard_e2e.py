@@ -46,7 +46,7 @@ async def run_grading_and_scoreboard_e2e():
     student_user = {"user_id": student_id, "role": "student"}
 
     tpl_id = "E2E-GRADE-TPL-01"
-    room_code = "E2E-GRADE-ROOM-01"
+    room_code = "GRADE001"
     created_room_id = None
 
     try:

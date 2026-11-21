@@ -55,6 +55,8 @@ GO
 exit
 ```
 
+For an existing database, run `database/migrations/2026-11-20_room_session_type.sql` in SSMS against `ExamSystem` before deploying the updated backend. This migration adds the room session type and class metadata columns and updates the related class/template constraints. Do not rerun the full schema script on an existing database.
+
 ### 5. Access the Application
 
 - Frontend: http://localhost:3000

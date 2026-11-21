@@ -321,9 +321,9 @@ function AdminDashboardContent() {
       value: kpiData.totalUsers.value,
       subtext: kpiData.totalUsers.subtext,
       badge: `${kpiData.totalUsers.active} hoạt động`,
-      iconBg: 'bg-purple-50 dark:bg-purple-500/10',
-      iconColor: 'text-purple-600 dark:text-purple-400',
-      subtextColor: 'text-purple-600 dark:text-purple-400',
+      iconBg: 'bg-slate-900/10 dark:bg-slate-900/20',
+      iconColor: 'text-slate-900 dark:text-slate-500',
+      subtextColor: 'text-slate-500 dark:text-slate-400',
       icon: Users,
     },
     {
@@ -332,9 +332,9 @@ function AdminDashboardContent() {
       value: kpiData.activeClasses.value,
       subtext: kpiData.activeClasses.subtext,
       badge: 'Đang mở',
-      iconBg: 'bg-blue-50 dark:bg-blue-500/10',
-      iconColor: 'text-blue-600 dark:text-blue-400',
-      subtextColor: 'text-blue-600 dark:text-blue-400',
+      iconBg: 'bg-slate-800/10 dark:bg-slate-800/20',
+      iconColor: 'text-slate-800 dark:text-slate-500',
+      subtextColor: 'text-slate-500 dark:text-slate-400',
       icon: GraduationCap,
     },
     {
@@ -343,9 +343,9 @@ function AdminDashboardContent() {
       value: kpiData.systemStatus.value,
       subtext: kpiData.systemStatus.subtext,
       badge: 'Ổn định',
-      iconBg: 'bg-emerald-50 dark:bg-emerald-500/10',
-      iconColor: 'text-emerald-600 dark:text-emerald-400',
-      subtextColor: 'text-emerald-600 dark:text-emerald-400',
+      iconBg: 'bg-slate-50 dark:bg-white/5',
+      iconColor: 'text-slate-600 dark:text-slate-300',
+      subtextColor: 'text-slate-500 dark:text-slate-400',
       icon: Server,
     },
     {
@@ -355,14 +355,14 @@ function AdminDashboardContent() {
       subtext: kpiData.backupStatus.subtext,
       badge: 'Tự động',
       iconBg: 'bg-amber-50 dark:bg-amber-500/10',
-      iconColor: 'text-amber-600 dark:text-amber-400',
-      subtextColor: 'text-amber-600 dark:text-amber-400',
+      iconColor: 'text-amber-800 dark:text-amber-400',
+      subtextColor: 'text-slate-500 dark:text-slate-400',
       icon: Database,
     },
   ];
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#f4f7f9] dark:bg-[#090a0f] font-sans text-slate-800 dark:text-slate-100 transition-colors">
+    <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-neutral-950 font-sans text-slate-800 dark:text-slate-100 transition-colors">
       {/* ── CỘT TRÁI: SIDEBAR ĐIỀU HƯỚNG CÁC MODULE ── */}
       <AdminSidebar activeModule={activeModule} />
 
@@ -373,12 +373,12 @@ function AdminDashboardContent() {
         <main className="flex-1 overflow-y-auto px-6 py-6 lg:px-8 lg:py-7">
           <div className="mx-auto max-w-[1440px]">
             {/* ── TIÊU ĐỀ TRANG & NÚT LÀM MỚI ── */}
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center border-b border-slate-300 pb-4 dark:border-white/10">
               <div>
-                <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-[26px]">
+                <h2 className="text-2xl font-serif font-bold tracking-tight text-[#2A282D] dark:text-white sm:text-[26px]">
                   Bảng điều khiển Quản trị Hệ thống
                 </h2>
-                <p className="mt-1 text-xs text-slate-500 sm:text-[13.5px]">
+                <p className="mt-1 text-xs text-slate-500 dark:text-[#a59fa3] sm:text-[13.5px]">
                   Giám sát tài khoản người dùng, hạ tầng kỹ thuật, sao lưu và an ninh vận hành toàn trường theo thời gian thực.
                 </p>
               </div>
@@ -389,11 +389,11 @@ function AdminDashboardContent() {
                   type="button"
                   onClick={loadDashboardData}
                   disabled={isLoading}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200/90 bg-white px-4 text-xs font-semibold text-slate-700 shadow-xs transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-[#0d1017] dark:text-slate-200 dark:hover:bg-white/5 cursor-pointer disabled:opacity-60"
+                  className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3.5 text-xs font-semibold text-slate-800 shadow-xs transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-300 dark:hover:bg-white/5 cursor-pointer disabled:opacity-60"
                 >
                   <RefreshCw
                     className={`h-3.5 w-3.5 ${
-                      isLoading ? 'animate-spin text-purple-600' : 'text-slate-500'
+                      isLoading ? 'animate-spin text-slate-900' : 'text-slate-500'
                     }`}
                   />
                   <span>{isLoading ? 'Đang đồng bộ...' : 'Làm mới số liệu'}</span>
@@ -402,35 +402,35 @@ function AdminDashboardContent() {
             </div>
 
             {/* ── HÀNG 1: 4 THẺ CHỈ SỐ KPI CỐT LÕI DÀNH CHO ADMIN ── */}
-            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
               {kpiCardsList.map((card) => {
                 const IconComponent = card.icon;
                 return (
                   <div
                     key={card.id}
-                    className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] dark:border-white/10 dark:bg-[#0d1017] transition-colors"
+                    className="flex flex-col justify-between h-full rounded-md border border-slate-300 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-neutral-900 transition-colors"
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5">
                         <div
-                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${card.iconBg} ${card.iconColor}`}
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${card.iconBg} ${card.iconColor}`}
                         >
                           <IconComponent className="h-4 w-4" />
                         </div>
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        <span className="font-mono text-xs uppercase text-slate-500 dark:text-slate-400">
                           {card.label}
                         </span>
                       </div>
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                      <span className="inline-flex items-center rounded border border-slate-300 bg-slate-50 px-2 py-0.5 font-mono text-[10px] text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">
                         {card.badge}
                       </span>
                     </div>
 
-                    <div className="mt-4">
-                      <div className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white">
+                    <div className="mt-3">
+                      <div className="font-mono text-2xl font-bold leading-none tracking-tight text-slate-900 dark:text-white tabular-nums">
                         {card.value}
                       </div>
-                      <p className={`mt-2 text-xs font-medium ${card.subtextColor} truncate`}>
+                      <p className={`mt-1.5 text-xs font-medium ${card.subtextColor} truncate`}>
                         {card.subtext}
                       </p>
                     </div>
@@ -440,27 +440,27 @@ function AdminDashboardContent() {
             </div>
 
             {/* ── HÀNG 2: HOẠT ĐỘNG HỆ THỐNG & CƠ CẤU NGƯỜI DÙNG ── */}
-            <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-12">
+            <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-12 items-stretch">
               {/* Cột trái (8/12): Hoạt động hệ thống 7 ngày */}
-              <div className="rounded-2xl border border-slate-200/75 bg-white p-6 shadow-[0_2px_10px_rgba(15,23,42,0.02)] xl:col-span-8 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+              <div className="rounded-md border border-slate-300 bg-white p-5 shadow-sm xl:col-span-8 dark:border-white/10 dark:bg-neutral-900 transition-colors">
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                   <div>
-                    <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">
+                    <h3 className="font-serif text-base font-bold text-slate-900 dark:text-white">
                       Hoạt động & Tương tác Hệ thống (7 ngày qua)
                     </h3>
-                    <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                       Tần suất nhật ký kiểm toán và lượng tài khoản hoạt động trong tuần
                     </p>
                   </div>
 
-                  {/* Chú giải 2 đường biểu đồ */}
-                  <div className="flex items-center gap-2.5">
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-purple-50 dark:bg-purple-500/10 px-3 py-1.5 text-xs font-semibold text-purple-700 dark:text-purple-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-purple-600" />
-                      Nhật ký & Tác vụ
+                  {/* Chú giải 2 đường biểu đồ phân biệt rõ ràng màu sắc */}
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+                      <span className="h-2 w-3 rounded-xs bg-brand" />
+                      Nhật ký &amp; Tác vụ
                     </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 dark:bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300">
+                      <span className="h-2 w-3 rounded-xs bg-[#2563EB]" />
                       Tài khoản truy cập
                     </span>
                   </div>
@@ -486,7 +486,7 @@ function AdminDashboardContent() {
                           x="28"
                           y={row.y + 4}
                           textAnchor="end"
-                          className="fill-slate-400 text-[11px] font-medium"
+                          className="fill-slate-400 text-[11px] font-mono"
                         >
                           {row.label}
                         </text>
@@ -495,38 +495,38 @@ function AdminDashboardContent() {
                           y1={row.y}
                           x2="656"
                           y2={row.y}
-                          stroke="#f1f5f9"
-                          className="dark:stroke-white/5"
-                          strokeWidth="1.2"
+                          stroke="#ded7d9"
+                          className="dark:stroke-white/10"
+                          strokeWidth="1"
                         />
                       </g>
                     ))}
 
-                    {/* Đường polyline: Nhật ký & Tác vụ (Màu tím) */}
+                    {/* Đường polyline 1: Nhật ký & Tác vụ (Màu Đỏ Đô #91040A rõ nét) */}
                     {actionsPolyline && (
                       <polyline
                         fill="none"
-                        stroke="#8b5cf6"
-                        strokeWidth="2.5"
+                        stroke="#91040A"
+                        strokeWidth="3"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         points={actionsPolyline}
                       />
                     )}
 
-                    {/* Đường polyline: Tài khoản truy cập (Màu xanh dương) */}
+                    {/* Đường polyline 2: Tài khoản truy cập (Màu Xanh Dương #2563EB tương phản cao) */}
                     {usersPolyline && (
                       <polyline
                         fill="none"
-                        stroke="#3b82f6"
-                        strokeWidth="2.5"
+                        stroke="#2563EB"
+                        strokeWidth="3"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         points={usersPolyline}
                       />
                     )}
 
-                    {/* Nút tròn trên đường Tác vụ */}
+                    {/* Nút tròn trên đường Tác vụ (Đỏ Đô) */}
                     {LINE_CHART_X.slice(0, activityChart.length).map((x, idx) => (
                       <circle
                         key={`action-${x}`}
@@ -534,12 +534,12 @@ function AdminDashboardContent() {
                         cy={actionsYPoints[idx]}
                         r="4"
                         fill="#ffffff"
-                        stroke="#8b5cf6"
-                        strokeWidth="2.2"
+                        stroke="#91040A"
+                        strokeWidth="2.5"
                       />
                     ))}
 
-                    {/* Nút tròn trên đường Tài khoản */}
+                    {/* Nút tròn trên đường Tài khoản (Xanh Dương) */}
                     {LINE_CHART_X.slice(0, activityChart.length).map((x, idx) => (
                       <circle
                         key={`user-${x}`}
@@ -547,8 +547,8 @@ function AdminDashboardContent() {
                         cy={usersYPoints[idx]}
                         r="4"
                         fill="#ffffff"
-                        stroke="#3b82f6"
-                        strokeWidth="2.2"
+                        stroke="#2563EB"
+                        strokeWidth="2.5"
                       />
                     ))}
 
@@ -559,7 +559,7 @@ function AdminDashboardContent() {
                         x={LINE_CHART_X[idx]}
                         y="214"
                         textAnchor="middle"
-                        className="fill-slate-400 text-[11px] font-medium"
+                        className="fill-slate-400 text-[11px] font-mono"
                       >
                         {d.day} ({d.date})
                       </text>
@@ -569,12 +569,12 @@ function AdminDashboardContent() {
               </div>
 
               {/* Cột phải (4/12): Cơ cấu người dùng theo vai trò (Donut Chart) */}
-              <div className="flex flex-col justify-between rounded-2xl border border-slate-200/75 bg-white p-6 shadow-[0_2px_10px_rgba(15,23,42,0.02)] xl:col-span-4 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+              <div className="flex flex-col justify-between rounded-md border border-slate-300 bg-white p-5 shadow-sm xl:col-span-4 dark:border-white/10 dark:bg-neutral-900 transition-colors">
                 <div>
-                  <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">
+                  <h3 className="font-serif text-base font-bold text-slate-900 dark:text-white">
                     Cơ cấu Tài khoản
                   </h3>
-                  <p className="mt-0.5 text-xs text-slate-400">
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                     Phân bổ theo vai trò và trạng thái kích hoạt
                   </p>
                 </div>
@@ -609,7 +609,7 @@ function AdminDashboardContent() {
                               )}
                               fill={seg.color}
                               stroke="#ffffff"
-                              strokeWidth="2.5"
+                              strokeWidth="2"
                               strokeLinejoin="round"
                             />
                           ))
@@ -619,46 +619,46 @@ function AdminDashboardContent() {
                           cy="84"
                           r="62"
                           fill="none"
-                          stroke="#e2e8f0"
+                          stroke="#ded7d9"
                           strokeWidth="24"
                           className="dark:stroke-white/10"
                         />
                       )}
                     </svg>
                     <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-                      <span className="text-[20px] font-extrabold leading-none text-slate-900 dark:text-white">
+                      <span className="font-mono text-xl font-bold leading-none text-slate-900 dark:text-white tabular-nums">
                         {kpiData.totalUsers.value}
                       </span>
-                      <span className="mt-1 text-[11px] font-medium text-slate-400">
+                      <span className="mt-1 font-mono text-[11px] text-slate-500">
                         tài khoản
                       </span>
                     </div>
                   </div>
 
                   {/* Danh sách vai trò & tỷ lệ */}
-                  <div className="w-full flex-1 space-y-3.5">
+                  <div className="w-full flex-1 space-y-3">
                     {userDistribution.map((seg) => (
                       <div key={seg.role} className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2.5">
-                          <span className={`h-3 w-3 shrink-0 rounded-[4px] ${seg.dotClass}`} />
-                          <span className="font-medium text-slate-600 dark:text-slate-300">
+                        <div className="flex items-center gap-2">
+                          <span className={`h-2.5 w-2.5 shrink-0 rounded ${seg.dotClass}`} />
+                          <span className="font-medium text-slate-700 dark:text-slate-300">
                             {seg.label}
                           </span>
                         </div>
-                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                        <span className="font-mono font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                           {seg.count} ({seg.percent})
                         </span>
                       </div>
                     ))}
 
                     {/* Thống kê trạng thái Hoạt động vs Bị khóa */}
-                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/10 flex items-center justify-between text-[11px]">
-                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                    <div className="mt-3 pt-3 border-t border-slate-300 dark:border-white/10 flex items-center justify-between text-[11px] font-mono">
+                      <span className="text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         {kpiData.totalUsers.active} hoạt động
                       </span>
                       {kpiData.totalUsers.locked > 0 ? (
-                        <span className="text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1">
+                        <span className="text-rose-700 dark:text-rose-400 font-semibold flex items-center gap-1">
                           <Lock className="h-3.5 w-3.5" />
                           {kpiData.totalUsers.locked} đang khóa
                         </span>
@@ -672,21 +672,21 @@ function AdminDashboardContent() {
             </div>
 
             {/* ── HÀNG 3: NHẬT KÝ QUẢN TRỊ GẦN ĐÂY & THAO TÁC NHANH ── */}
-            <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-12">
+            <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-12 items-stretch">
               {/* Cột trái (8/12): Bảng Nhật ký kiểm toán gần đây */}
-              <div className="rounded-2xl border border-slate-200/75 bg-white p-6 shadow-[0_2px_10px_rgba(15,23,42,0.02)] xl:col-span-8 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+              <div className="rounded-md border border-slate-300 bg-white p-5 shadow-sm xl:col-span-8 dark:border-white/10 dark:bg-neutral-900 transition-colors">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">
+                    <h3 className="font-serif text-base font-bold text-slate-900 dark:text-white">
                       Nhật ký Quản trị & Kiểm toán gần đây
                     </h3>
-                    <p className="mt-0.5 text-xs text-slate-400">
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                       Ghi nhận các tác động và sự kiện bảo mật trực tiếp trên hệ thống
                     </p>
                   </div>
                   <Link
                     href="/admin/system"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 cursor-pointer"
+                    className="inline-flex items-center gap-1 text-xs font-serif font-bold text-slate-900 hover:text-slate-800 dark:text-slate-500 cursor-pointer"
                   >
                     <span>Xem toàn bộ nhật ký</span>
                     <ArrowUpRight className="h-3.5 w-3.5" />
@@ -694,7 +694,7 @@ function AdminDashboardContent() {
                 </div>
 
                 {/* Header của bảng nhật ký */}
-                <div className="mt-4 grid grid-cols-12 rounded-xl bg-[#f8fafc] dark:bg-white/5 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                <div className="mt-4 grid grid-cols-12 rounded border border-slate-300 bg-slate-50 dark:border-white/10 dark:bg-neutral-950 px-4 py-2 font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   <div className="col-span-2">THỜI GIAN</div>
                   <div className="col-span-2 text-center">MỨC ĐỘ / PHÂN HỆ</div>
                   <div className="col-span-5">NỘI DUNG TÁC ĐỘNG</div>
@@ -702,7 +702,7 @@ function AdminDashboardContent() {
                 </div>
 
                 {/* Danh sách các dòng nhật ký */}
-                <div className="divide-y divide-slate-100 dark:divide-white/5">
+                <div className="divide-y divide-slate-300 dark:divide-white/5">
                   {recentLogs.length > 0 ? (
                     recentLogs.map((log) => {
                       const isErr = log.level === 'error' || log.level === 'critical';
@@ -711,12 +711,12 @@ function AdminDashboardContent() {
                         ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20'
                         : isWarn
                         ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
-                        : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20';
+                        : 'bg-slate-900/10 text-slate-900 border-slate-900/20 dark:bg-slate-900/20 dark:text-slate-500';
 
                       return (
                         <div
                           key={log.id}
-                          className="grid grid-cols-12 items-center px-4 py-3.5 transition-colors hover:bg-slate-50/60 dark:hover:bg-white/5"
+                          className="grid grid-cols-12 items-center px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-white/5"
                         >
                           <div className="col-span-2 text-xs font-mono font-medium text-slate-500 dark:text-slate-400">
                             {log.time}
@@ -724,7 +724,7 @@ function AdminDashboardContent() {
 
                           <div className="col-span-2 flex flex-col items-center gap-1">
                             <span
-                              className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-extrabold uppercase border ${badgeCls}`}
+                              className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-mono font-bold uppercase border ${badgeCls}`}
                             >
                               {log.level}
                             </span>
@@ -734,7 +734,7 @@ function AdminDashboardContent() {
                           </div>
 
                           <div className="col-span-5 pr-2">
-                            <p className="text-[13px] font-medium text-slate-800 dark:text-slate-200 line-clamp-2">
+                            <p className="text-xs font-medium text-slate-800 dark:text-slate-200 line-clamp-2">
                               {log.message}
                             </p>
                           </div>
@@ -760,12 +760,12 @@ function AdminDashboardContent() {
               </div>
 
               {/* Cột phải (4/12): Thao tác Quản trị Nhanh & Tình trạng Dịch vụ */}
-              <div className="flex flex-col justify-between rounded-2xl border border-slate-200/75 bg-white p-6 shadow-[0_2px_10px_rgba(15,23,42,0.02)] xl:col-span-4 dark:border-white/10 dark:bg-[#0d1017] transition-colors space-y-6">
+              <div className="flex flex-col justify-between rounded-md border border-slate-300 bg-white p-5 shadow-sm xl:col-span-4 dark:border-white/10 dark:bg-neutral-900 transition-colors space-y-6">
                 <div>
-                  <h3 className="text-[16px] font-bold text-slate-900 dark:text-white">
+                  <h3 className="font-serif text-base font-bold text-slate-900 dark:text-white">
                     Thao tác Quản trị Nhanh
                   </h3>
-                  <p className="mt-0.5 text-xs text-slate-400">
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                     Lối tắt truy cập các tính năng quản lý cốt lõi
                   </p>
 
@@ -773,59 +773,59 @@ function AdminDashboardContent() {
                   <div className="mt-4 grid grid-cols-2 gap-2.5">
                     <Link
                       href="/admin/users"
-                      className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/80 bg-slate-50 hover:bg-white hover:border-purple-300 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10 transition group text-center"
+                      className="flex flex-col items-center justify-center p-3 rounded-md border border-slate-300 bg-slate-50 hover:bg-white hover:border-slate-800/40 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06] transition text-center"
                     >
-                      <UserPlus className="h-5 w-5 text-purple-600 dark:text-purple-400 mb-1 group-hover:scale-110 transition-transform" />
+                      <UserPlus className="h-5 w-5 text-slate-900 dark:text-slate-500 mb-1" />
                       <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                         Quản lý Người dùng
                       </span>
-                      <span className="text-[10px] text-slate-400">Thêm & duyệt tài khoản</span>
+                      <span className="text-[10px] text-slate-500">Thêm & duyệt tài khoản</span>
                     </Link>
 
                     <Link
                       href="/admin/classes"
-                      className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/80 bg-slate-50 hover:bg-white hover:border-blue-300 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10 transition group text-center"
+                      className="flex flex-col items-center justify-center p-3 rounded-md border border-slate-300 bg-slate-50 hover:bg-white hover:border-slate-800/40 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06] transition text-center"
                     >
-                      <GraduationCap className="h-5 w-5 text-blue-600 dark:text-blue-400 mb-1 group-hover:scale-110 transition-transform" />
+                      <GraduationCap className="h-5 w-5 text-slate-800 dark:text-slate-500 mb-1" />
                       <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                         Lớp học phần
                       </span>
-                      <span className="text-[10px] text-slate-400">Danh sách & tạo lớp</span>
+                      <span className="text-[10px] text-slate-500">Danh sách & tạo lớp</span>
                     </Link>
 
                     <Link
                       href="/admin/system"
-                      className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/80 bg-slate-50 hover:bg-white hover:border-amber-300 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10 transition group text-center"
+                      className="flex flex-col items-center justify-center p-3 rounded-md border border-slate-300 bg-slate-50 hover:bg-white hover:border-slate-800/40 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06] transition text-center"
                     >
-                      <Database className="h-5 w-5 text-amber-600 dark:text-amber-400 mb-1 group-hover:scale-110 transition-transform" />
+                      <Database className="h-5 w-5 text-amber-800 dark:text-amber-400 mb-1" />
                       <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                         Sao lưu CSDL
                       </span>
-                      <span className="text-[10px] text-slate-400">Tạo snapshot & khôi phục</span>
+                      <span className="text-[10px] text-slate-500">Tạo snapshot & khôi phục</span>
                     </Link>
 
                     <Link
                       href="/admin/system"
-                      className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200/80 bg-slate-50 hover:bg-white hover:border-emerald-300 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10 transition group text-center"
+                      className="flex flex-col items-center justify-center p-3 rounded-md border border-slate-300 bg-slate-50 hover:bg-white hover:border-slate-800/40 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06] transition text-center"
                     >
-                      <Settings className="h-5 w-5 text-emerald-600 dark:text-emerald-400 mb-1 group-hover:scale-110 transition-transform" />
+                      <Settings className="h-5 w-5 text-emerald-800 dark:text-emerald-400 mb-1" />
                       <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                         Cấu hình Hạ tầng
                       </span>
-                      <span className="text-[10px] text-slate-400">Bảo trì & thông số</span>
+                      <span className="text-[10px] text-slate-500">Bảo trì & thông số</span>
                     </Link>
                   </div>
                 </div>
 
                 {/* Khối Trạng thái Dịch vụ Cốt lõi */}
-                <div className="pt-4 border-t border-slate-100 dark:border-white/10">
+                <div className="pt-4 border-t border-slate-300 dark:border-white/10">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <Activity className="h-4 w-4 text-emerald-500" />
+                      <Activity className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                       Dịch vụ Hệ thống Cốt lõi
                     </span>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
                       Online
                     </span>
                   </div>
@@ -839,14 +839,14 @@ function AdminDashboardContent() {
                     ]).map((svc) => (
                       <div
                         key={svc.name}
-                        className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-white/5 px-3 py-2 text-xs"
+                        className="flex items-center justify-between rounded-md border border-slate-300 bg-slate-50 dark:border-white/10 dark:bg-white/[0.03] px-3 py-2 text-xs"
                       >
                         <span className="font-semibold text-slate-700 dark:text-slate-300">
                           {svc.name}
                         </span>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 font-mono">
                           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
                             {svc.status_text}
                           </span>
                         </div>

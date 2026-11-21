@@ -30,8 +30,8 @@ class ViolationReviewRequest(BaseModel):
 
 class ViolationResponse(BaseModel):
     violation_id: int
-    session_id: int
-    student_id: int
+    session_id: Optional[int] = None
+    student_id: Optional[int] = None
     room_id: Optional[int] = None
     room_code: Optional[str] = None
     room_name: Optional[str] = None

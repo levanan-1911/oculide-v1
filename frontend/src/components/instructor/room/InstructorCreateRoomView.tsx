@@ -104,17 +104,30 @@ function normalizeDateToIso(dateStr?: string): string {
   if (trimmed === 'Hôm nay' || trimmed.toLowerCase() === 'today') {
     return getTodayDateString();
   }
-  if (trimmed.includes('/')) {
-    const parts = trimmed.split('/');
-    if (parts.length === 3) {
-      const [d, m, y] = parts;
-      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-    }
-  }
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
     return trimmed;
   }
-  return getTodayDateString();
+  if (trimmed.includes('/')) {
+    const parts = trimmed.split('/');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      }
+      if (parts[2].length === 4) {
+        const p0 = parseInt(parts[0], 10);
+        const p1 = parseInt(parts[1], 10);
+        const y = parts[2];
+        if (p0 > 12) {
+          return `${y}-${String(p1).padStart(2, '0')}-${String(p0).padStart(2, '0')}`;
+        } else if (p1 > 12) {
+          return `${y}-${String(p0).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+        } else {
+          return `${y}-${String(p0).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+        }
+      }
+    }
+  }
+  return trimmed;
 }
 
 function timeStringToMinutes(timeStr: string): number {
@@ -123,29 +136,38 @@ function timeStringToMinutes(timeStr: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
-function getDefaultStartTime(): string {
+function getInitialSchedule(leadMinutes = 15): { dateStr: string; startTime: string } {
   const now = new Date();
-  // Lấy thời điểm hiện tại cộng 15 phút và làm tròn lên mốc 15 phút tiếp theo
-  const futureMs = now.getTime() + 15 * 60 * 1000;
-  const futureDate = new Date(futureMs);
-  const hours = futureDate.getHours();
-  const minutes = futureDate.getMinutes();
-  const roundedM = Math.ceil(minutes / 15) * 15;
-  if (roundedM >= 60) {
-    const nextH = (hours + 1) % 24;
-    return `${String(nextH).padStart(2, '0')}:00`;
-  }
-  return `${String(hours).padStart(2, '0')}:${String(roundedM).padStart(2, '0')}`;
+  const target = new Date(now.getTime() + leadMinutes * 60 * 1000);
+  const m = target.getMinutes();
+  const roundedM = Math.ceil(m / 15) * 15;
+  target.setMinutes(roundedM, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    dateStr: `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}`,
+    startTime: `${pad(target.getHours())}:${pad(target.getMinutes())}`,
+  };
 }
 
-function calculateEndTime(startTime: string, durationMinutes: number): string {
-  if (!startTime || !startTime.includes(':')) return '10:00';
-  const [h, m] = startTime.split(':').map(Number);
-  if (isNaN(h) || isNaN(m)) return '10:00';
-  const totalMinutes = h * 60 + m + durationMinutes;
-  const endH = Math.floor(totalMinutes / 60) % 24;
-  const endM = totalMinutes % 60;
-  return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+function computeScheduleIso(dateStr: string, startTime: string, durationMinutes: number) {
+  const [year, month, day] = (dateStr || getTodayDateString()).split('-').map(Number);
+  const [hours, minutes] = (startTime || '08:00').split(':').map(Number);
+  const start = new Date(year, (month || 1) - 1, day || 1, hours || 0, minutes || 0, 0);
+  const end = new Date(start.getTime() + (durationMinutes || 60) * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const startIso = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}T${pad(start.getHours())}:${pad(start.getMinutes())}:00`;
+  const endIso = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}:00`;
+  const displayEndTime = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+  return { startIso, endIso, displayEndTime };
+}
+
+function getDefaultStartTime(): string {
+  return getInitialSchedule(15).startTime;
+}
+
+function calculateEndTime(startTime: string, durationMinutes: number, dateStr?: string): string {
+  const { displayEndTime } = computeScheduleIso(dateStr || getTodayDateString(), startTime, durationMinutes);
+  return displayEndTime;
 }
 
 export default function InstructorCreateRoomView() {
@@ -154,11 +176,12 @@ export default function InstructorCreateRoomView() {
 
   const queryClass = searchParams?.get('class') || 'CS101';
   const queryType = searchParams?.get('type') === 'exam' ? 'exam' : 'lab';
+  const returnToSchedules = searchParams?.get('returnTo') === 'schedules';
 
   const [classesList, setClassesList] = useState(DEFAULT_CLASSES);
   const [selectedClassId, setSelectedClassId] = useState(queryClass);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [roomType, setRoomType] = useState<'lab' | 'exam'>(queryType);
+  const [roomType, setRoomType] = useState<'lab' | 'midterm'>(queryType === 'exam' ? 'midterm' : 'lab');
   const [roomTitle, setRoomTitle] = useState(() => {
     return queryType === 'exam'
       ? `Bài Kiểm Tra: ${queryClass} - Đánh giá quá trình`
@@ -188,7 +211,7 @@ export default function InstructorCreateRoomView() {
   ]);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  // Nạp danh sách bộ đề mẫu từ Backend
+  // Nạp danh sách bộ đề mẫu từ Backend theo loại phòng (Lab / Giữa kỳ)
   useEffect(() => {
     let isCancelled = false;
     async function loadTemplates() {
@@ -210,8 +233,14 @@ export default function InstructorCreateRoomView() {
           const mapped: QuestionTemplate[] = data.map((t: any) => ({
             id: String(t.id),
             title: t.title || t.code || `Bộ đề #${t.id}`,
-            type: (t.type === 'exam' ? 'exam' : 'lab') as 'lab' | 'exam',
-            category: t.type === 'exam' ? 'Kiểm tra' : 'Thực hành',
+            type: ['final_exam', 'final'].includes(String(t.type).toLowerCase())
+              ? 'final'
+              : ['midterm', 'midterm_exam'].includes(String(t.type).toLowerCase())
+                ? 'midterm'
+                : t.type === 'exam'
+                  ? 'exam'
+                  : 'lab',
+            category: t.type === 'lab' ? 'Thực hành' : 'Thi',
             language: 'C/C++/Java/Python',
             questionCount: t.question_count || 0,
             durationMinutes: t.duration_minutes || 60,
@@ -219,10 +248,10 @@ export default function InstructorCreateRoomView() {
           }));
           setTemplatesList([defaultOption, ...mapped]);
         } else {
-          setTemplatesList([defaultOption, ...SAMPLE_QUESTION_TEMPLATES.filter((t) => t.type === roomType)]);
+          setTemplatesList([defaultOption, ...SAMPLE_QUESTION_TEMPLATES.filter((t) => t.type === (roomType === 'lab' ? 'lab' : 'exam'))]);
         }
       } catch {
-        setTemplatesList([defaultOption, ...SAMPLE_QUESTION_TEMPLATES.filter((t) => t.type === roomType)]);
+        setTemplatesList([defaultOption, ...SAMPLE_QUESTION_TEMPLATES.filter((t) => t.type === (roomType === 'lab' ? 'lab' : 'exam'))]);
       }
     }
     loadTemplates();
@@ -261,10 +290,10 @@ export default function InstructorCreateRoomView() {
           );
           if (found) {
             setSelectedClassId(found.id);
-            setRoomCode(generateClassRoomCode(found.id));
+            setRoomCode(generateClassRoomCode());
           } else {
             setSelectedClassId(mapped[0].id);
-            setRoomCode(generateClassRoomCode(mapped[0].id));
+            setRoomCode(generateClassRoomCode());
           }
         }
       } catch (err) {
@@ -299,12 +328,13 @@ export default function InstructorCreateRoomView() {
   // Chỉ tạo mã phòng/PIN và lấy ngày giờ địa phương sau lần render đầu tiên.
   // Tránh Math.random()/Date dùng trong useState initializer gây hydration mismatch.
   useEffect(() => {
-    const initialStartTime = getDefaultStartTime();
-    setRoomCode(generateClassRoomCode(queryClass));
+    const { dateStr, startTime: initialStartTime } = getInitialSchedule(15);
+    setRoomCode(generateClassRoomCode());
     setRoomPassword(generateRandomAlphanumericPassword(6));
-    setScheduledDate(getTodayDateString());
+    setScheduledDate(dateStr);
     setStartTime(initialStartTime);
-    setEndTime(calculateEndTime(initialStartTime, 120));
+    const { displayEndTime } = computeScheduleIso(dateStr, initialStartTime, 120);
+    setEndTime(displayEndTime);
     setIsClientReady(true);
   }, [queryClass]);
 
@@ -409,46 +439,75 @@ export default function InstructorCreateRoomView() {
       }
     }
 
-    // 3. Giờ kết thúc <= Giờ bắt đầu
+    // 3. Kiểm tra giờ kết thúc (hỗ trợ ca học qua nửa đêm sang rạng sáng hôm sau)
     const startM = timeStringToMinutes(startTime);
-    const endM = timeStringToMinutes(endTime);
-    if (endM <= startM) {
+    let endM = timeStringToMinutes(endTime);
+    if (endM < startM) {
+      endM += 24 * 60; // Ca thi qua nửa đêm
+    }
+    const durationSpan = endM - startM;
+    if (durationSpan <= 0) {
       return {
         isPast: true,
-        message: `Giờ kết thúc (${endTime}) phải diễn ra sau giờ bắt đầu (${startTime}).`,
+        message: `Giờ kết thúc (${endTime}) không được trùng hoặc diễn ra trước giờ bắt đầu (${startTime}).`,
+      };
+    }
+    if (durationSpan > 18 * 60) {
+      return {
+        isPast: true,
+        message: `Thời lượng ca (${Math.round(durationSpan / 60)} tiếng) quá dài. Vui lòng kiểm tra lại giờ kết thúc (${endTime}).`,
       };
     }
 
     return { isPast: false, message: null };
   }, [isClientReady, scheduledDate, startTime, endTime]);
 
-  // Kiểm tra xung đột với ca học đang mở / phiên giám sát trực tiếp của TẤT CẢ các lớp phụ trách
+  // Kiểm tra xung đột lịch: CHỈ xung đột nếu CÙNG MỘT LỚP HỌC PHẦN
+  // (Quy tắc hệ thống: Trong 1 giờ có thể có nhiều phòng, lớp được kiểm tra cùng một lúc -> Các phòng có thể trùng giờ nhưng phải khác lớp)
   const conflictSession = useMemo(() => {
     if (!isClientReady || !roomCode || !scheduledDate || !startTime || !endTime) return null;
+    // Nếu ca tạo trước chưa gán lớp ('unassigned') thì không kiểm tra xung đột lớp
+    if (!selectedClassId || selectedClassId === 'unassigned') return null;
 
     const chosenDateIso = normalizeDateToIso(scheduledDate);
     const newStartM = timeStringToMinutes(startTime);
-    const newEndM = timeStringToMinutes(endTime);
+    let newEndM = timeStringToMinutes(endTime);
+    if (newEndM < newStartM) newEndM += 24 * 60; // Hỗ trợ ca qua nửa đêm
+
+    const targetClassId = String(selectedClassId).trim().toLowerCase();
+    const curClassItem = classesList.find((c) => c.id === selectedClassId);
+    const targetClassName = curClassItem?.name ? curClassItem.name.trim().toLowerCase() : '';
 
     return (
       existingSessions.find((s) => {
-        if (s.status === 'ended' || s.status === 'Đã kết thúc') return false;
+        if (['ended', 'completed', 'da_dong', 'da_huy', 'da_ket_thuc', 'closed', 'cancelled', 'đã kết thúc'].includes(String(s.status || '').toLowerCase().trim())) return false;
         if (s.roomCode.toLowerCase() === roomCode.toLowerCase()) return false;
 
         // Nếu khác ngày thì không trùng
         if (s.dateIso !== chosenDateIso) return false;
 
-        // Cùng ngày: kiểm tra giao thoa thời gian (Áp dụng cho TẤT CẢ các lớp của giảng viên)
-        const existStartM = timeStringToMinutes(s.startTime);
-        const existEndM = timeStringToMinutes(s.endTime);
+        // CHỈ XUNG ĐỘT NẾU CÙNG LỚP HỌC PHẦN:
+        const sClassId = String(s.classId || '').trim().toLowerCase();
+        const sClassName = String(s.className || '').trim().toLowerCase();
 
-        // Quy định: Phòng tiếp theo CHỈ được phép tạo khi setup thời gian sau khi phòng hiện tại đã kết thúc phiên giám sát (startTime >= s.endTime)
+        const isSameClass =
+          (sClassId && sClassId === targetClassId) ||
+          (targetClassName && sClassName && sClassName.includes(targetClassName));
+
+        // Khác lớp -> Cho phép trùng giờ bình thường!
+        if (!isSameClass) return false;
+
+        // Cùng lớp: kiểm tra giao thoa thời gian
+        const existStartM = timeStringToMinutes(s.startTime);
+        let existEndM = timeStringToMinutes(s.endTime);
+        if (existEndM < existStartM) existEndM += 24 * 60;
+
         // Giao thoa thời gian khi newStart < existEnd && newEnd > existStart
         const hasOverlap = newStartM < existEndM && newEndM > existStartM;
         return hasOverlap;
       }) || null
     );
-  }, [isClientReady, existingSessions, scheduledDate, startTime, endTime, roomCode]);
+  }, [isClientReady, existingSessions, scheduledDate, startTime, endTime, roomCode, selectedClassId, classesList]);
 
   const handleSetAfterConflict = (conflictEndTime: string) => {
     handleStartTimeChange(conflictEndTime);
@@ -468,12 +527,14 @@ export default function InstructorCreateRoomView() {
 
   const handleStartTimeChange = (newStart: string) => {
     setStartTime(newStart);
-    setEndTime(calculateEndTime(newStart, durationMinutes));
+    const { displayEndTime } = computeScheduleIso(scheduledDate, newStart, durationMinutes);
+    setEndTime(displayEndTime);
   };
 
   const handleDurationChange = (newMins: number) => {
     setDurationMinutes(newMins);
-    setEndTime(calculateEndTime(startTime, newMins));
+    const { displayEndTime } = computeScheduleIso(scheduledDate, startTime, newMins);
+    setEndTime(displayEndTime);
   };
 
   // RÀNG BUỘC CỦA PHÒNG (SETUP CONSTRAINTS)
@@ -510,16 +571,17 @@ export default function InstructorCreateRoomView() {
     }
   }, []);
 
-  // Cập nhật cấu hình ràng buộc mặc định khi đổi loại phòng (Lab vs Exam)
-  const handleApplyPreset = (type: 'lab' | 'exam') => {
+  // Cập nhật cấu hình ràng buộc mặc định khi đổi loại phòng (Lab vs Midterm)
+  const handleApplyPreset = (type: 'lab' | 'midterm') => {
     setRoomType(type);
-    const curClass = classesList.find((c) => c.id === selectedClassId) || classesList[0];
+    const targetClass = classesList.find((c) => c.id === selectedClassId) || classesList[0];
+    const classLabel = selectedClassId === 'unassigned' ? 'Chưa gán lớp' : targetClass.id;
 
     if (type === 'lab') {
-      setRoomTitle(`Buổi Thực Hành: ${curClass.id} - Thao tác mảng & giải thuật`);
+      setRoomTitle(`Buổi Thực Hành: ${classLabel} - Thao tác mảng & giải thuật`);
       setDurationMinutes(120);
       setEndTime(calculateEndTime(startTime, 120));
-      setSelectedTemplateId('TPL-LAB-01');
+      setSelectedTemplateId('none');
       // Ràng buộc cho Lab: Mở, tự do
       setRequireCamera(false);
       setAiFaceDetection(false);
@@ -528,24 +590,24 @@ export default function InstructorCreateRoomView() {
       setBlockTabSwitch(false);
       setWebAccessPolicy('open');
       setMaxTabSwitches(999);
-    } else {
-      setRoomTitle(`Bài Kiểm Tra: ${curClass.id} - Đánh giá năng lực lập trình`);
+    } else if (type === 'midterm') {
+      setRoomTitle(`Thi Giữa Kỳ: ${classLabel} - Đánh giá năng lực giữa kỳ`);
       setDurationMinutes(60);
       setEndTime(calculateEndTime(startTime, 60));
-      setSelectedTemplateId('TPL-EXAM-01');
-      // Ràng buộc cho Exam: Nghiêm ngặt
+      setSelectedTemplateId('none');
+      // Ràng buộc cho Giữa kỳ: Nghiêm ngặt
       setRequireCamera(true);
       setAiFaceDetection(true);
       setAiPhoneDetection(true);
       setLockdownFullscreen(true);
       setBlockTabSwitch(true);
       setWebAccessPolicy('strict');
-      setMaxTabSwitches(0);
+      setMaxTabSwitches(2);
     }
   };
 
-  const handleRegenerateCodes = (classId: string) => {
-    const newCode = generateClassRoomCode(classId);
+  const handleRegenerateCodes = () => {
+    const newCode = generateClassRoomCode();
     const newPass = generateRandomAlphanumericPassword(6);
     setRoomCode(newCode);
     setRoomPassword(newPass);
@@ -553,7 +615,7 @@ export default function InstructorCreateRoomView() {
 
   const handleClassChange = (newClassId: string) => {
     setSelectedClassId(newClassId);
-    handleRegenerateCodes(newClassId);
+    handleRegenerateCodes();
   };
 
   const copyToClipboard = (text: string, key: string) => {
@@ -561,6 +623,41 @@ export default function InstructorCreateRoomView() {
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2000);
   };
+
+  // Nhận diện xem lớp đang chọn đã có phòng chờ hoặc ca live chưa
+  const existingWaitingRoomForClass = useMemo(() => {
+    if (!selectedClassId || selectedClassId === 'unassigned') return null;
+    const norm = selectedClassId.replace(/[\s\-_]/g, '').toLowerCase();
+    return (
+      existingSessions.find((s) => {
+        const sNorm = String(s.classId || '').replace(/[\s\-_]/g, '').toLowerCase();
+        const sStatus = String(s.status || '').toLowerCase().trim();
+        const isTerminal = ['ended', 'completed', 'da_dong', 'da_huy', 'da_ket_thuc', 'closed', 'cancelled', 'đã kết thúc'].includes(sStatus);
+        return (
+          (sNorm === norm || s.classId.toLowerCase() === selectedClassId.toLowerCase()) &&
+          (sStatus === 'chưa mở' || sStatus === 'waiting' || sStatus === 'chua_mo' || sStatus === 'scheduled') &&
+          !isTerminal
+        );
+      }) || null
+    );
+  }, [existingSessions, selectedClassId]);
+
+  const existingActiveSessionForClass = useMemo(() => {
+    if (!selectedClassId || selectedClassId === 'unassigned') return null;
+    const norm = selectedClassId.replace(/[\s\-_]/g, '').toLowerCase();
+    return (
+      existingSessions.find((s) => {
+        const sNorm = String(s.classId || '').replace(/[\s\-_]/g, '').toLowerCase();
+        const sStatus = String(s.status || '').toLowerCase().trim();
+        const isTerminal = ['ended', 'completed', 'da_dong', 'da_huy', 'da_ket_thuc', 'closed', 'cancelled', 'đã kết thúc'].includes(sStatus);
+        return (
+          (sNorm === norm || s.classId.toLowerCase() === selectedClassId.toLowerCase()) &&
+          (sStatus === 'đang diễn ra' || sStatus === 'in_progress' || sStatus === 'dang_dien_ra') &&
+          !isTerminal
+        );
+      }) || null
+    );
+  }, [existingSessions, selectedClassId]);
 
   const curClass = classesList.find((c) => c.id === selectedClassId) || classesList[0];
   const selectedTemplate =
@@ -598,16 +695,19 @@ export default function InstructorCreateRoomView() {
           ? Number(selectedTemplateId)
           : null;
 
+      const { startIso, endIso } = computeScheduleIso(scheduledDate, startTime, durationMinutes);
+
       // 1. Gửi request tạo phòng lưu trực tiếp vào CSDL SQL Server (bảng Phong)
       const payload = {
         room_code: roomCode.trim(),
-        room_name: roomTitle.trim() || `${curClass.id} - ${roomType === 'lab' ? 'Thực hành' : 'Kiểm tra'}`,
-        room_type: roomType,
-        class_id: curClass.id,
+        room_name: roomTitle.trim() || `${selectedClassId === 'unassigned' ? 'Khung Lịch' : curClass.id} - ${roomType === 'lab' ? 'Thực hành' : 'Thi giữa kỳ'}`,
+        room_type: roomType === 'lab' ? 'lab' : 'exam',
+        session_type: roomType.toUpperCase(),
+        class_id: selectedClassId === 'unassigned' ? null : curClass.id,
         template_id: templateIdToSend,
-        description: `${roomType === 'lab' ? 'Buổi thực hành Lab' : 'Bài kiểm tra'} cho lớp ${curClass.name}`,
-        start_time: `${scheduledDate}T${startTime}:00`,
-        end_time: `${scheduledDate}T${endTime}:00`,
+        description: `${roomType === 'lab' ? 'Buổi thực hành Lab' : 'Thi giữa kỳ'} cho ${selectedClassId === 'unassigned' ? 'khung lịch tự do' : `lớp ${curClass.name}`}`,
+        start_time: startIso,
+        end_time: endIso,
         duration_minutes: durationMinutes,
         max_attempts: roomType === 'lab' ? 10 : 1,
         passcode: roomPassword,
@@ -660,7 +760,6 @@ export default function InstructorCreateRoomView() {
           studentEmail: s.email,
           status: (isJoined ? 'waiting' : 'absent') as 'waiting' | 'absent',
           joinedAt: isJoined ? `07:${30 + (idx % 15)}:${10 + (idx % 50)}` : undefined,
-          device: isJoined ? 'Laptop cá nhân (Windows 11 / Chrome 124)' : undefined,
           cameraReady: isJoined,
         };
       });
@@ -746,7 +845,11 @@ export default function InstructorCreateRoomView() {
 
       // Điều hướng vào phòng chờ để điểm danh sinh viên trước khi bắt đầu
       setTimeout(() => {
-        router.push(`/instructor/room/${encodeURIComponent(roomCode)}`);
+        router.push(
+          `/instructor/room/${encodeURIComponent(roomCode)}${
+            returnToSchedules ? '?returnTo=schedules' : ''
+          }`
+        );
       }, 400);
     } catch (err: any) {
       console.error('Lỗi tạo phòng:', err);
@@ -758,89 +861,149 @@ export default function InstructorCreateRoomView() {
 
   return (
     <div className="mx-auto w-full max-w-[1400px] space-y-6 pb-10 text-slate-900 dark:text-slate-100">
-      {/* Toast thông báo */}
+      {/* Toast thông báo phong cách Học thuật */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-xs font-medium text-white shadow-xl animate-in slide-in-from-bottom-2 duration-200">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-md border border-slate-300 border-l-4 border-l-[#91040A] bg-white px-4 py-3 text-xs shadow-lg dark:border-white/10 dark:border-l-[#fca5a5] dark:bg-neutral-900"
+        >
+          <div className="flex h-7 w-7 items-center justify-center rounded-xs bg-brand-50 text-brand-700 shrink-0 dark:bg-brand-500/10 dark:text-brand-200">
+            <CheckCircle2 className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="font-serif text-xs font-bold text-[#2A282D] dark:text-white">Thông báo</p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">{toastMessage}</p>
+          </div>
+        </aside>
       )}
 
       {/* Header bar */}
-      <div className="flex flex-col gap-3 border-b border-slate-200/90 pb-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-b border-slate-300 pb-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3.5">
           <Link
-            href="/instructor/classes"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] text-slate-600 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-white/[0.06] hover:text-slate-900 dark:hover:text-slate-100 transition-all cursor-pointer"
-            title="Quay lại danh sách lớp"
+            href="/instructor/schedules"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-50 dark:hover:bg-white/[0.06] hover:text-slate-900 dark:hover:text-slate-100 transition-colors cursor-pointer"
+            title="Quay lại Lịch & phiên kiểm tra"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
             <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-2xl">
+              <h1 className="font-serif text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
                 Thiết Lập Phòng Học &amp; Điểm Danh
               </h1>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-500/15 px-3 py-1 text-xs font-bold text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-500/30 shadow-sm">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
+              <span className="inline-flex items-center gap-1.5 rounded border border-slate-800/20 bg-slate-800/10 px-2.5 py-0.5 font-mono text-xs font-bold text-slate-800 dark:text-slate-500">
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-800" />
                 Quy trình: Setup &rarr; Phòng Chờ &rarr; Bắt Đầu &rarr; Giám Sát
               </span>
             </div>
-            <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400 sm:text-[13px]">
+            <p className="mt-1 text-xs text-slate-500">
               Cấu hình các ràng buộc kiểm soát camera, quản lý mở trang web khác, sinh mã phòng ngẫu nhiên và chọn bộ đề thi.
             </p>
           </div>
         </div>
       </div>
 
+      {/* CẢNH BÁO NẾU LỚP NÀY ĐÃ CÓ PHÒNG CHỜ HOẶC PHIÊN LIVE */}
+      {existingWaitingRoomForClass && (
+        <div className="rounded-md border border-blue-300 bg-blue-50/80 p-4 shadow-2xs dark:border-blue-500/30 dark:bg-blue-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-xs text-blue-900 dark:text-blue-200">
+            <Users className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+            <div>
+              <span className="font-bold">Lớp {curClass.id} ({curClass.name})</span> hiện đã có 1 phòng chờ đang mở: <code className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded border border-blue-200">{existingWaitingRoomForClass.roomCode}</code>.
+              <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">Quy định hệ thống: Mỗi lớp học phần chỉ có 01 phòng chờ tại một thời điểm.</p>
+            </div>
+          </div>
+          <Link
+            href={`/instructor/room/${encodeURIComponent(existingWaitingRoomForClass.roomCode)}`}
+            className="system-primary-action inline-flex h-8 items-center gap-1.5 rounded-md bg-blue-700 hover:bg-blue-800 px-3.5 text-xs font-bold text-white shadow-2xs transition whitespace-nowrap shrink-0"
+          >
+            <span>Vào Phòng Chờ Hiện Có</span>
+          </Link>
+        </div>
+      )}
+
+      {existingActiveSessionForClass && (
+        <div className="rounded-md border border-emerald-300 bg-emerald-50/80 p-4 shadow-2xs dark:border-emerald-500/30 dark:bg-emerald-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-xs text-emerald-900 dark:text-emerald-200">
+            <Radio className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <div>
+              <span className="font-bold">Lớp {curClass.id} ({curClass.name})</span> hiện đang có phiên giám sát trực tiếp: <code className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded border border-emerald-200">{existingActiveSessionForClass.roomCode}</code>.
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">Vui lòng kết thúc phiên live này trước khi tạo phòng mới cho buổi tiếp theo.</p>
+            </div>
+          </div>
+          <Link
+            href={`/instructor/monitoring?room=${encodeURIComponent(existingActiveSessionForClass.roomCode)}`}
+            className="system-primary-action inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-700 hover:bg-emerald-800 px-3.5 text-xs font-bold text-white shadow-2xs transition whitespace-nowrap shrink-0"
+          >
+            <span>Đến Màn Hình Giám Sát</span>
+          </Link>
+        </div>
+      )}
+
       <form onSubmit={handleCreateRoomSubmit} className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12 xl:gap-5">
         {/* CỘT TRÁI (7 CỘT): CẤU HÌNH LỚP, MÃ PHÒNG VÀ CÁC RÀNG BUỘC */}
         <div className="min-w-0 space-y-5 xl:col-span-7">
           {/* 1. Lớp học phần & Mã phòng ngẫu nhiên */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm transition-colors dark:border-white/10 dark:bg-[#121824] sm:p-6">
-            <div className="flex items-center gap-2 pb-1 border-b border-slate-100 dark:border-white/5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
+          <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-colors dark:border-white/10 dark:bg-neutral-900 sm:p-6">
+            <div className="flex items-center gap-2 pb-2 border-b border-slate-300 dark:border-white/10">
+              <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-slate-50 text-slate-900 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-500">
                 <Users className="h-3.5 w-3.5" />
               </div>
-              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 sm:text-base">
+              <h2 className="font-serif text-sm font-bold text-slate-900 dark:text-white sm:text-base">
                 1. Lớp Học Phần &amp; Mã Phòng Ngẫu Nhiên
               </h2>
             </div>
 
-            <div className="space-y-4">
-              {/* Thẻ Lớp học phần cố định rộng rãi không bị rút gọn N... */}
+            <div className="space-y-4 pt-3">
+              {/* Thẻ Lớp học phần cố định rộng rãi */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                    LỚP HỌC PHẦN PHỤ TRÁCH *
+                  <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    GÁN CHO LỚP HỌC PHẦN *
                   </label>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
-                    <Lock className="h-3 w-3 text-blue-600 dark:text-blue-400" />
-                    Cố định theo lớp đã chọn
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Có thể tạo trước lịch rồi gán lớp sau
                   </span>
                 </div>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-blue-200/90 dark:border-blue-500/30 bg-blue-50/70 dark:bg-blue-500/10 p-3.5 text-xs text-slate-800 dark:text-slate-100 shadow-sm">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="font-mono text-xs font-black bg-blue-600 text-white px-2.5 py-1 rounded-lg shadow-sm shrink-0">
-                      {curClass.id}
-                    </span>
-                    <span className="min-w-0 truncate text-xs font-bold text-slate-900 dark:text-slate-100 sm:text-sm">
-                      {curClass.name}
-                    </span>
-                    <span className="shrink-0 rounded-lg bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-[#121824]/90 dark:text-slate-400">
-                      {curClass.studentCount} Sinh viên
-                    </span>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white dark:bg-[#121824] px-3 py-1 text-xs font-extrabold text-blue-700 dark:text-blue-300 border border-blue-200/90 dark:border-blue-500/30 shrink-0 shadow-sm self-start sm:self-auto">
-                    <Lock className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                    Lớp Đã Khóa
-                  </span>
-                </div>
+                <select
+                  value={selectedClassId}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    handleClassChange(nextId);
+                    const c = classesList.find((item) => item.id === nextId);
+                    const lbl = nextId === 'unassigned' ? 'Khung Lịch' : (c ? c.id : nextId);
+                    if (roomType === 'lab') {
+                      setRoomTitle(`Buổi Thực Hành: ${lbl} - Lập trình & Thuật toán`);
+                    } else {
+                      setRoomTitle(`Thi Giữa Kỳ: ${lbl} - Đánh giá quá trình`);
+                    }
+                  }}
+                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-800 outline-none transition focus:border-slate-400 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-100"
+                >
+                  <option value="unassigned">Chưa gán lớp (Tạo khung lịch trước, gán lớp sau)</option>
+                  {classesList.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.id} - {c.name} ({c.studentCount} SV)
+                    </option>
+                  ))}
+                </select>
+                {selectedClassId !== 'unassigned' && curClass && (
+                  <p className="mt-1.5 text-[11px] text-slate-500 font-mono">
+                    Đã chọn lớp: <strong className="text-slate-700 dark:text-slate-300">{curClass.name}</strong> • Sĩ số: {curClass.studentCount} SV
+                  </p>
+                )}
+                {selectedClassId === 'unassigned' && (
+                  <p className="mt-1.5 text-[11px] text-slate-500 font-mono">
+                    Khung lịch trước: Bạn có thể chọn lớp và gán học phần bất kỳ lúc nào từ màn hình Quản lý Lịch Đào Tạo.
+                  </p>
+                )}
               </div>
 
-              {/* Tên buổi học / ca thi toàn chiều rộng */}
+              {/* Tên buổi học / ca thi */}
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                <label className="block font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
                   TÊN BUỔI HỌC / CA THI *
                 </label>
                 <input
@@ -849,22 +1012,22 @@ export default function InstructorCreateRoomView() {
                   placeholder="Ví dụ: Buổi thực hành Lab 03 - Vòng lặp For/While"
                   value={roomTitle}
                   onChange={(e) => setRoomTitle(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-50/70 dark:bg-white/[0.04] px-4 text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none transition-all hover:bg-slate-50 dark:hover:bg-white/[0.06] focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:focus:bg-[#121824] dark:focus:ring-blue-500/20 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                  className="h-9 w-full rounded-md border border-slate-300 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.04] px-3.5 text-xs font-medium text-slate-800 dark:text-slate-100 outline-none transition focus:border-slate-900 focus:bg-white dark:focus:bg-neutral-900 dark:focus:border-slate-800 placeholder:text-slate-500"
                 />
               </div>
             </div>
 
             {/* Mã phòng & Mật khẩu sinh tự động */}
-            <div className="rounded-xl bg-slate-50/80 p-4 space-y-3.5 dark:bg-white/[0.04]">
+            <div className="mt-4 rounded-md border border-slate-300 bg-slate-50/60 p-4 space-y-3 dark:border-white/10 dark:bg-white/[0.02]">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
-                  <Radio className="h-4 w-4 text-blue-600 dark:text-blue-400 animate-pulse" />
+                <span className="font-mono text-xs font-bold text-slate-900 dark:text-slate-500 flex items-center gap-1.5">
+                  <Radio className="h-4 w-4" />
                   Mã Phòng &amp; Mật Khẩu (Sinh Tự Động):
                 </span>
                 <button
                   type="button"
-                  onClick={() => handleRegenerateCodes(selectedClassId)}
-                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-blue-700 dark:text-blue-300 hover:text-blue-900 bg-white dark:bg-[#121824] border border-blue-200/90 dark:border-blue-500/30 hover:border-blue-300 px-3 py-1.5 rounded-lg shadow-sm hover:shadow-sm transition-all cursor-pointer"
+                  onClick={handleRegenerateCodes}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-900 dark:text-slate-500 bg-white dark:bg-neutral-900 border border-slate-300 dark:border-white/10 px-2.5 py-1 rounded shadow-2xs hover:bg-slate-50 dark:hover:bg-white/10 transition cursor-pointer"
                   title="Sinh lại mã ngẫu nhiên mới"
                 >
                   <RefreshCw className="h-3 w-3" />
@@ -873,74 +1036,74 @@ export default function InstructorCreateRoomView() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div className="rounded-lg bg-white p-3.5 shadow-none space-y-1.5 dark:bg-[#121824]">
-                  <div className="flex items-center justify-between text-[10.5px] uppercase font-bold text-slate-500 dark:text-slate-400">
+                <div className="rounded-md border border-slate-300 bg-white p-3 space-y-1 dark:border-white/10 dark:bg-neutral-900">
+                  <div className="flex items-center justify-between font-mono text-[10.5px] uppercase font-bold text-slate-500">
                     <span>MÃ PHÒNG (ROOM CODE)</span>
                     <button
                       type="button"
                       onClick={() => copyToClipboard(roomCode, 'code')}
                       disabled={!roomCode}
-                      className="rounded-lg p-1 text-slate-400 dark:text-slate-500 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                      className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer dark:hover:bg-white/10 dark:hover:text-white"
                       title="Sao chép mã phòng"
                     >
                       {copiedKey === 'code' ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <Check className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
                       ) : (
                         <Copy className="h-3.5 w-3.5" />
                       )}
                     </button>
                   </div>
                   <div className="flex items-center justify-between">
-                    <code className="font-mono text-lg font-black tabular-nums tracking-wider text-blue-700 dark:text-blue-300">
+                    <code className="font-mono text-lg font-bold tabular-nums tracking-wider text-brand dark:text-brand-200">
                       {roomCode || 'Đang tạo mã phòng...'}
                     </code>
                   </div>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-medium">Định dạng: {selectedClassId}xxx (3 ký tự hoa/thường/số)</span>
+                  <span className="text-[10px] text-slate-500 block font-mono">Mã ngẫu nhiên gồm 8 ký tự</span>
                 </div>
 
-                <div className="rounded-lg bg-white p-3.5 shadow-none space-y-1.5 dark:bg-[#121824]">
-                  <div className="flex items-center justify-between text-[10.5px] uppercase font-bold text-slate-500 dark:text-slate-400">
+                <div className="rounded-md border border-slate-300 bg-white p-3 space-y-1 dark:border-white/10 dark:bg-neutral-900">
+                  <div className="flex items-center justify-between font-mono text-[10.5px] uppercase font-bold text-slate-500">
                     <span>MẬT KHẨU PIN PHÒNG</span>
                     <button
                       type="button"
                       onClick={() => copyToClipboard(roomPassword, 'pin')}
                       disabled={!roomPassword}
-                      className="rounded-lg p-1 text-slate-400 dark:text-slate-500 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                      className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer dark:hover:bg-white/10 dark:hover:text-white"
                       title="Sao chép mã PIN"
                     >
                       {copiedKey === 'pin' ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <Check className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
                       ) : (
                         <Copy className="h-3.5 w-3.5" />
                       )}
                     </button>
                   </div>
                   <div className="flex items-center justify-between">
-                    <code className="font-mono text-lg font-black tabular-nums tracking-wider text-slate-900 dark:text-slate-100">
+                    <code className="font-mono text-lg font-bold tabular-nums tracking-wider text-slate-900 dark:text-slate-100">
                       {roomPassword || 'Đang tạo PIN...'}
                     </code>
                   </div>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500 block font-medium">6 ký tự ngẫu nhiên in hoa thường &amp; số</span>
+                  <span className="text-[10px] text-slate-500 block font-mono">6 ký tự ngẫu nhiên in hoa thường &amp; số</span>
                 </div>
               </div>
             </div>
           </div>
 
           {/* 2. Loại phòng & Preset */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm transition-colors dark:border-white/10 dark:bg-[#121824] sm:p-6">
-            <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-white/5">
+          <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-colors dark:border-white/10 dark:bg-neutral-900 sm:p-6">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-300 dark:border-white/10">
               <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
+                <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-slate-50 text-slate-900 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-500">
                   <Layers className="h-3.5 w-3.5" />
                 </div>
-                <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 sm:text-base">
+                <h2 className="font-serif text-sm font-bold text-slate-900 dark:text-white sm:text-base">
                   2. Loại Hình Phòng Học
                 </h2>
               </div>
-              <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">Chọn cấu hình mẫu</span>
+              <span className="font-mono text-[11px] font-bold text-slate-500">Chọn cấu hình mẫu</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-3">
               {/* Option 1: Buổi Thực Hành Lab */}
               <div
                 onClick={() => handleApplyPreset('lab')}
@@ -948,115 +1111,104 @@ export default function InstructorCreateRoomView() {
                 aria-pressed={roomType === 'lab'}
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleApplyPreset('lab'); } }}
-                className={`rounded-2xl border p-4 sm:p-5 cursor-pointer transition-all flex flex-col justify-between space-y-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#121824] ${
+                className={`rounded-md border p-4 cursor-pointer transition-all flex flex-col justify-between space-y-3 ${
                   roomType === 'lab'
-                    ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-500/10 shadow-sm ring-2 ring-blue-500/20'
-                    : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] hover:border-slate-300 dark:hover:border-white/20 hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                    ? 'border-slate-900 bg-slate-50 dark:border-white dark:bg-white/10 shadow-xs'
+                    : 'border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                 }`}
               >
-                <div className="space-y-2.5">
-                  {/* Top row: Icon on left, Badge on right */}
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100/90 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 shadow-sm">
-                      <Code2 className="h-5 w-5" />
-                    </div>
-                    <span className="shrink-0 whitespace-nowrap rounded-full bg-emerald-100 dark:bg-emerald-500/15 px-3 py-1 text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 shadow-sm">
-                      Chế độ mở
+                    <span className="rounded bg-slate-100 dark:bg-white/10 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                      Thực Hành
                     </span>
+                    <span className="text-[10px] font-mono text-slate-400">120 phút</span>
                   </div>
 
-                  {/* Title & subtitle */}
                   <div>
-                    <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                    <h3 className="font-serif text-sm font-bold text-slate-900 dark:text-white">
                       Phòng Thực Hành (Lab)
                     </h3>
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">
-                      Không phạt rời tab • Tra cứu tự do
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Tự do tra cứu • Chấm tự động
                     </p>
                   </div>
 
-                  {/* Description */}
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed min-h-[44px]">
-                    Sinh viên được tự do tra cứu tài liệu, không bị phạt khi chuyển Tab trình duyệt, camera tùy chọn theo giảng viên.
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Sinh viên tự do làm bài, code máy chấm ngay, có quyền kết thúc ca sớm.
                   </p>
                 </div>
 
-                {/* Footer checklist */}
-                <div className="text-[11px] font-bold text-blue-700 dark:text-blue-300 pt-2.5 border-t border-slate-100 dark:border-white/5 flex items-center gap-1.5">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <span className="truncate">Tra cứu tự do • Không phạt chuyển tab</span>
+                <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 pt-2 border-t border-slate-200 dark:border-white/10 flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-slate-500" />
+                  <span className="truncate">Chỉ gán đề thực hành</span>
                 </div>
               </div>
 
-              {/* Option 2: Phòng Kiểm Tra / Thi */}
+              {/* Option 2: Thi Giữa Kỳ */}
               <div
-                onClick={() => handleApplyPreset('exam')}
+                onClick={() => handleApplyPreset('midterm')}
                 role="button"
-                aria-pressed={roomType === 'exam'}
+                aria-pressed={roomType === 'midterm'}
                 tabIndex={0}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleApplyPreset('exam'); } }}
-                className={`rounded-2xl border p-4 sm:p-5 cursor-pointer transition-all flex flex-col justify-between space-y-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#121824] ${
-                  roomType === 'exam'
-                    ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-500/10 shadow-sm ring-2 ring-blue-500/20'
-                    : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] hover:border-slate-300 dark:hover:border-white/20 hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleApplyPreset('midterm'); } }}
+                className={`rounded-md border p-4 cursor-pointer transition-all flex flex-col justify-between space-y-3 ${
+                  roomType === 'midterm'
+                    ? 'border-slate-900 bg-slate-50 dark:border-white dark:bg-white/10 shadow-xs'
+                    : 'border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                 }`}
               >
-                <div className="space-y-2.5">
-                  {/* Top row: Icon on left, Badge on right */}
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100/90 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 shadow-sm">
-                      <FileCode2 className="h-5 w-5" />
-                    </div>
-                    <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-100 dark:bg-blue-500/15 px-3 py-1 text-[11px] font-extrabold text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-500/30 shadow-sm">
-                      Lockdown Fullscreen
+                    <span className="rounded bg-slate-100 dark:bg-white/10 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                      Giữa Kỳ
                     </span>
+                    <span className="text-[10px] font-mono text-slate-400">60 phút</span>
                   </div>
 
-                  {/* Title & subtitle */}
                   <div>
-                    <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
-                      Phòng Kiểm Tra / Thi
+                    <h3 className="font-serif text-sm font-bold text-slate-900 dark:text-white">
+                      Lịch Thi Giữa Kỳ
                     </h3>
-                    <p className="text-[11px] text-blue-700 dark:text-blue-300 font-semibold mt-0.5">
-                      Khóa toàn màn hình • AI Giám sát
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
+                      Khóa Fullscreen • AI Giám sát
                     </p>
                   </div>
 
-                  {/* Description */}
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed min-h-[44px]">
-                    Bắt buộc khóa toàn màn hình. Bật Camera AI nhận diện điện thoại, quay mặt đi, rời khỏi máy và quản lý tab khắt khe.
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Khóa toàn màn hình, AI giám sát. Điểm do GV công bố sau đối soát. Không kết thúc sớm.
                   </p>
                 </div>
 
-                {/* Footer checklist */}
-                <div className="text-[11px] font-bold text-blue-700 dark:text-blue-300 pt-2.5 border-t border-slate-100 dark:border-white/5 flex items-center gap-1.5">
-                  <ShieldAlert className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <span className="truncate">Khóa Fullscreen • AI Giám sát 100%</span>
+                <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 pt-2 border-t border-slate-200 dark:border-white/10 flex items-center gap-1.5">
+                  <ShieldAlert className="h-3.5 w-3.5 text-slate-500" />
+                  <span className="truncate">Chỉ gán đề giữa kỳ</span>
                 </div>
               </div>
+
             </div>
           </div>
 
           {/* 3. THIẾT LẬP THỜI GIAN CA HỌC & LƯU VÀO LỊCH */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm transition-colors dark:border-white/10 dark:bg-[#121824] sm:p-6">
-            <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-white/5">
+          <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-colors dark:border-white/10 dark:bg-neutral-900 sm:p-6">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-300 dark:border-white/10">
               <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
+                <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-slate-50 text-slate-900 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-500">
                   <Calendar className="h-3.5 w-3.5" />
                 </div>
-                <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 sm:text-base">
+                <h2 className="font-serif text-sm font-bold text-slate-900 dark:text-white sm:text-base">
                   3. Thiết Lập Thời Gian &amp; Lưu Vào Lịch Giảng Dạy
                 </h2>
               </div>
-              <span className="rounded-full bg-emerald-50 dark:bg-emerald-500/15 px-2.5 py-0.5 text-[10.5px] font-bold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30">
+              <span className="rounded border border-slate-300 bg-slate-50 px-2.5 py-0.5 font-mono text-[10.5px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
                 Đồng bộ Lịch Giảng Dạy
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-3">
               {/* Ngày diễn ra */}
               <div>
-                <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">
+                <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">
                   Ngày ca học / thi:
                 </label>
                 <input
@@ -1064,35 +1216,35 @@ export default function InstructorCreateRoomView() {
                   min={isClientReady ? getTodayDateString() : undefined}
                   value={scheduledDate}
                   onChange={(e) => setScheduledDate(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-50/70 dark:bg-white/[0.04] p-2.5 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none transition-all hover:bg-slate-50 dark:hover:bg-white/[0.06] focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:focus:bg-[#121824] dark:focus:ring-blue-500/20 cursor-pointer"
+                  className="h-9 w-full rounded-md border border-slate-300 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.04] p-2 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none transition focus:border-slate-900 focus:bg-white dark:focus:bg-neutral-900 dark:focus:border-slate-800 cursor-pointer"
                   required
                 />
               </div>
 
               {/* Giờ bắt đầu */}
               <div>
-                <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">
+                <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">
                   Giờ bắt đầu:
                 </label>
                 <input
                   type="time"
                   value={startTime}
                   onChange={(e) => handleStartTimeChange(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-50/70 dark:bg-white/[0.04] p-2.5 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none transition-all hover:bg-slate-50 dark:hover:bg-white/[0.06] focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:focus:bg-[#121824] dark:focus:ring-blue-500/20 cursor-pointer"
+                  className="h-9 w-full rounded-md border border-slate-300 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.04] p-2 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none transition focus:border-slate-900 focus:bg-white dark:focus:bg-neutral-900 dark:focus:border-slate-800 cursor-pointer"
                   required
                 />
               </div>
 
               {/* Giờ kết thúc */}
               <div>
-                <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1.5">
+                <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">
                   Giờ kết thúc:
                 </label>
                 <input
                   type="time"
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-50/70 dark:bg-white/[0.04] p-2.5 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none transition-all hover:bg-slate-50 dark:hover:bg-white/[0.06] focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:focus:bg-[#121824] dark:focus:ring-blue-500/20 cursor-pointer"
+                  className="h-9 w-full rounded-md border border-slate-300 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.04] p-2 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none transition focus:border-slate-900 focus:bg-white dark:focus:bg-neutral-900 dark:focus:border-slate-800 cursor-pointer"
                   required
                 />
               </div>
@@ -1100,10 +1252,10 @@ export default function InstructorCreateRoomView() {
 
             {/* CẢNH BÁO THỜI GIAN TRONG QUÁ KHỨ */}
             {pastTimeValidation.isPast && (
-              <div className="rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/15 p-3.5 text-xs text-red-800 dark:text-red-300 space-y-1 animate-in fade-in duration-150">
-                <div className="flex items-center gap-2 font-bold text-red-900 dark:text-red-300">
-                  <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0" />
-                  <span>Thời Gian Không Hợp Lệ (Trong quá khứ)</span>
+              <div className="mt-3.5 rounded-md border border-slate-300 dark:border-white/10 bg-slate-100 dark:bg-white/5 p-3 text-xs text-slate-800 dark:text-slate-200 space-y-1">
+                <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+                  <AlertTriangle className="h-4 w-4 text-slate-700 dark:text-slate-300 shrink-0" />
+                  <span>Thời Gian Không Hợp Lệ</span>
                 </div>
                 <p className="leading-relaxed pl-6">{pastTimeValidation.message}</p>
               </div>
@@ -1111,51 +1263,39 @@ export default function InstructorCreateRoomView() {
 
             {/* CẢNH BÁO TRÙNG LỊCH VỚI CA ĐANG MỞ / ĐANG GIÁM SÁT */}
             {conflictSession && (
-              <div className="rounded-xl border border-amber-300 dark:border-amber-500/30 bg-amber-50/90 dark:bg-amber-500/15 p-4 text-xs text-amber-900 dark:text-amber-200 space-y-3 animate-in fade-in duration-150 shadow-sm">
+              <div className="mt-3.5 rounded-md border border-slate-300 bg-slate-50 dark:border-white/10 dark:bg-white/5 p-4 text-xs text-slate-800 dark:text-slate-200 space-y-3 shadow-2xs">
                 <div className="flex items-start gap-2.5">
-                  <ShieldAlert className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <ShieldAlert className="h-5 w-5 text-slate-700 dark:text-slate-300 shrink-0 mt-0.5" />
                   <div className="space-y-1">
-                    <strong className="text-xs font-bold uppercase tracking-wider text-amber-950 dark:text-amber-200 block">
-                      {conflictSession.classId.toUpperCase() === selectedClassId.toUpperCase()
-                        ? 'Phát hiện trùng lịch với ca học đang mở của lớp này:'
-                        : `Phát hiện trùng lịch với ca học của lớp ${conflictSession.classId}:`}
+                    <strong className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white block">
+                      Phát hiện trùng lịch ca học/thi của cùng lớp {curClass.id}:
                     </strong>
                     <p className="leading-relaxed">
-                      {conflictSession.classId.toUpperCase() === selectedClassId.toUpperCase() ? (
-                        <>
-                          Lớp <strong className="font-extrabold">{curClass.id}</strong> đã có ca học{' '}
-                          <strong className="font-mono font-bold text-blue-800 dark:text-blue-200">[{conflictSession.roomCode}]</strong>{' '}
-                          (<i>{conflictSession.title}</i>) diễn ra trong khung giờ{' '}
-                          <strong className="text-amber-900 dark:text-amber-200 font-extrabold">{conflictSession.startTime} - {conflictSession.endTime}</strong> ngày{' '}
-                          <strong>{conflictSession.displayDate}</strong>.
-                        </>
-                      ) : (
-                        <>
-                          Giảng viên đã có ca học tại lớp{' '}
-                          <strong className="font-extrabold text-blue-900 dark:text-blue-200">{conflictSession.classId} — {conflictSession.className}</strong>:{' '}
-                          Mã phòng <strong className="font-mono font-bold text-blue-800 dark:text-blue-200">[{conflictSession.roomCode}]</strong>{' '}
-                          (<i>{conflictSession.title}</i>) diễn ra trong khung giờ{' '}
-                          <strong className="text-amber-900 dark:text-amber-200 font-extrabold">{conflictSession.startTime} - {conflictSession.endTime}</strong> ngày{' '}
-                          <strong>{conflictSession.displayDate}</strong>.
-                        </>
-                      )}
+                      Lớp <strong className="font-bold">{curClass.id}</strong> đã có ca học{' '}
+                      <strong className="font-mono font-bold text-slate-900 dark:text-white">[{conflictSession.roomCode}]</strong>{' '}
+                      (<i>{conflictSession.title}</i>) diễn ra trong khung giờ{' '}
+                      <strong className="font-mono font-bold text-slate-900 dark:text-white">{conflictSession.startTime} - {conflictSession.endTime}</strong> ngày{' '}
+                      <strong>{conflictSession.displayDate}</strong>.
                     </p>
                   </div>
                 </div>
 
-                <div className="rounded-lg bg-amber-100/60 p-3 text-[11.5px] text-amber-800 space-y-2 dark:bg-amber-500/10 dark:text-amber-200">
-                  <span className="font-bold flex items-center gap-1.5 text-amber-900 dark:text-amber-200">
-                    <Clock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                    Quy chế giám sát đa lớp:
+                <div className="rounded-md border border-slate-300 bg-white dark:border-white/10 dark:bg-neutral-900 p-3 text-[11.5px] text-slate-600 dark:text-slate-300 space-y-2">
+                  <span className="font-bold flex items-center gap-1.5 text-slate-900 dark:text-white">
+                    <Clock className="h-3.5 w-3.5" />
+                    Quy chế khảo thí &amp; phòng thi:
                   </span>
                   <p className="leading-relaxed">
-                    Giảng viên <strong>không thể giám sát song song nhiều ca/nhiều lớp cùng một thời điểm</strong> (áp dụng cho toàn bộ các lớp phụ trách). Bạn chỉ có thể tạo phòng chờ tiếp theo khi thiết lập thời gian <strong>sau {conflictSession.endTime}</strong> (khi ca của lớp {conflictSession.classId} kết thúc) hoặc chọn <strong>ngày khác</strong>.
+                    Hệ thống cho phép các lớp khác nhau kiểm tra/thi cùng một giờ. Tuy nhiên trong <strong>cùng một lớp</strong>, sinh viên không thể tham gia 2 ca thi cùng lúc. Vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian bắt đầu sau {conflictSession.endTime}.
+                  </p>
+                  <p className="leading-relaxed">
+                    Giảng viên có thể giám sát song song nhiều lớp khác nhau tại cùng một thời điểm. Tuy nhiên để tránh sinh viên bị trùng ca, phòng mới của lớp <strong>{curClass.id}</strong> cần thiết lập thời gian <strong>sau {conflictSession.endTime}</strong> hoặc chọn <strong>ngày khác</strong>.
                   </p>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => handleSetAfterConflict(conflictSession.endTime)}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-amber-100 px-3 text-xs font-semibold text-amber-900 transition hover:bg-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:hover:bg-amber-500/25"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:border-white/10 dark:bg-white/10 dark:text-slate-200"
                     >
                       <Clock className="h-3.5 w-3.5" />
                       <span>Đặt giờ bắt đầu thành {conflictSession.endTime}</span>
@@ -1163,7 +1303,7 @@ export default function InstructorCreateRoomView() {
                     <button
                       type="button"
                       onClick={handleSetTomorrow}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-800 transition hover:bg-blue-100 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-200 dark:hover:bg-blue-500/20"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-200"
                     >
                       <Calendar className="h-3.5 w-3.5" />
                       <span>Chuyển sang ngày mai</span>
@@ -1174,10 +1314,10 @@ export default function InstructorCreateRoomView() {
             )}
 
             {/* Lựa chọn thời lượng */}
-            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100 dark:border-white/5">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-300 dark:border-white/10">
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Clock className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-                Thời lượng ca học: <strong className="font-mono tabular-nums text-blue-700 dark:text-blue-300 ml-1">{durationMinutes} phút</strong>
+                <Clock className="h-4 w-4 text-slate-500" />
+                Thời lượng ca học: <strong className="font-mono tabular-nums text-slate-900 dark:text-white ml-1">{durationMinutes} phút</strong>
               </span>
               <div className="flex items-center gap-1.5">
                 {[45, 60, 90, 120, 150].map((mins) => (
@@ -1185,10 +1325,10 @@ export default function InstructorCreateRoomView() {
                     key={mins}
                     type="button"
                     onClick={() => handleDurationChange(mins)}
-                    className={`h-8 px-3 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                    className={`h-8 px-3 rounded-md font-mono text-xs font-bold transition cursor-pointer ${
                       durationMinutes === mins
-                        ? 'bg-blue-600 text-white shadow-sm scale-105'
-                        : 'bg-slate-100 dark:bg-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/[0.12] hover:text-slate-900 dark:hover:text-slate-100'
+                        ? 'system-selected-module shadow-2xs'
+                        : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300'
                     }`}
                   >
                     {mins}p
@@ -1198,22 +1338,22 @@ export default function InstructorCreateRoomView() {
             </div>
 
             {/* Checkbox lưu vào lịch */}
-            <label className={`flex items-start gap-3 rounded-xl border p-3.5 cursor-pointer transition-all ${
+            <label className={`mt-3 flex items-start gap-3 rounded-md border p-3.5 cursor-pointer transition ${
               saveToSchedule
-                ? 'border-blue-300 bg-blue-50/60 dark:bg-blue-500/10 shadow-sm'
-                : 'border-slate-200/80 dark:border-white/10 bg-slate-50/40 dark:bg-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+              ? 'border-brand-300 bg-brand-50 dark:border-brand-500/30 dark:bg-brand-500/10'
+                : 'border-slate-300 dark:border-white/10 bg-slate-50/40 dark:bg-white/[0.02] hover:bg-white'
             }`}>
               <input
                 type="checkbox"
                 checked={saveToSchedule}
                 onChange={(e) => setSaveToSchedule(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded text-blue-600 focus:ring-blue-500 dark:text-blue-400 cursor-pointer"
+                className="mt-0.5 h-4 w-4 rounded accent-brand focus:ring-brand cursor-pointer"
               />
               <div>
-                <span className="text-xs font-bold text-blue-900 dark:text-blue-200 block">
+                <span className="font-serif text-xs font-bold text-slate-900 dark:text-white block">
                   Tự động lưu ca học này vào Lịch Giảng Dạy (/instructor/schedules)
                 </span>
-                <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
+                <p className="text-[11px] text-slate-500 mt-0.5">
                   Ca học sẽ tự động xuất hiện trên Lịch ca dạy và giảng viên có thể xem lịch, gia hạn hoặc kích hoạt phòng thi theo kế hoạch.
                 </p>
               </div>
@@ -1221,147 +1361,153 @@ export default function InstructorCreateRoomView() {
           </div>
 
           {/* 4. THIẾT LẬP RÀNG BUỘC (SETUP CONSTRAINTS: CAM, QUẢN LÝ WEB, FULLSCREEN...) */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm transition-colors dark:border-white/10 dark:bg-[#121824] sm:p-6">
-            <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-white/5">
+          <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-colors dark:border-white/10 dark:bg-neutral-900 sm:p-6">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-300 dark:border-white/10">
               <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
+                <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-slate-50 text-slate-800 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
                   <Sliders className="h-3.5 w-3.5" />
                 </div>
-                <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 sm:text-base">
+                <h2 className="font-serif text-sm font-bold text-slate-900 dark:text-white sm:text-base">
                   4. Thiết Lập Ràng Buộc &amp; Giám Sát Chống Gian Lận
                 </h2>
               </div>
-              <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">Tùy chỉnh linh hoạt</span>
+              <span className="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-400">Tùy chỉnh linh hoạt</span>
             </div>
 
             {/* Nhóm A: Ràng buộc Camera & AI */}
-            <div className="space-y-3">
-              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block">
+            <div className="space-y-3 pt-3">
+              <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
                 A. Ràng Buộc Camera &amp; Trí Tuệ Nhân Tạo (AI)
               </span>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <label className={`flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer transition-all ${
+                <label className={`flex items-start gap-2.5 rounded-md border p-3 cursor-pointer transition ${
                   requireCamera
-                    ? 'border-blue-400 bg-blue-50/50 dark:bg-blue-500/10 shadow-sm ring-1 ring-blue-500/20'
-                    : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                    ? 'border-slate-900 bg-slate-100 dark:border-white dark:bg-white/10 shadow-2xs'
+                    : 'border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                 }`}>
                   <input
                     type="checkbox"
                     checked={requireCamera}
                     onChange={(e) => setRequireCamera(e.target.checked)}
-                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 dark:text-blue-400 cursor-pointer"
+                    className="mt-0.5 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
                   />
                   <div>
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                      <Camera className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                      Bật Camera
+                      <Camera className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" />
+                      {roomType === 'lab' ? 'Bắt buộc bật Camera trong phòng Lab' : 'Bắt buộc bật Camera'}
                     </span>
-                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5 leading-normal">Bắt buộc webcam sinh viên trước khi vào làm bài</p>
+                    <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">
+                      {roomType === 'lab'
+                        ? (requireCamera
+                            ? 'Bắt buộc sinh viên bật webcam suốt buổi thực hành'
+                            : 'Cho phép sinh viên tắt camera trong phòng Lab (nhưng vẫn phải kiểm tra ở bước Check-in)')
+                        : 'Bắt buộc webcam sinh viên trước khi vào làm bài'}
+                    </p>
                   </div>
                 </label>
 
-                <label className={`flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer transition-all ${
+                <label className={`flex items-start gap-2.5 rounded-md border p-3 cursor-pointer transition ${
                   aiFaceDetection
-                    ? 'border-blue-400 bg-blue-50/50 dark:bg-blue-500/10 shadow-sm ring-1 ring-blue-500/20'
-                    : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                    ? 'border-slate-900 bg-slate-100 dark:border-white dark:bg-white/10 shadow-2xs'
+                    : 'border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                 }`}>
                   <input
                     type="checkbox"
                     checked={aiFaceDetection}
                     onChange={(e) => setAiFaceDetection(e.target.checked)}
-                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 dark:text-blue-400 cursor-pointer"
+                    className="mt-0.5 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
                   />
                   <div>
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                      <Eye className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                      <Eye className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" />
                       AI Khuôn Mặt
                     </span>
-                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5 leading-normal">Phát hiện quay mặt, nhiều người hoặc rời màn hình</p>
+                    <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">Phát hiện quay mặt, nhiều người hoặc rời màn hình</p>
                   </div>
                 </label>
 
-                <label className={`flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer transition-all ${
+                <label className={`flex items-start gap-2.5 rounded-md border p-3 cursor-pointer transition ${
                   aiPhoneDetection
-                    ? 'border-red-300 dark:border-red-500/30 bg-rose-50/50 dark:bg-red-500/10 shadow-sm ring-1 ring-rose-500/20'
-                    : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                    ? 'border-slate-900 bg-slate-100 dark:border-white dark:bg-white/10 shadow-2xs'
+                    : 'border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                 }`}>
                   <input
                     type="checkbox"
                     checked={aiPhoneDetection}
                     onChange={(e) => setAiPhoneDetection(e.target.checked)}
-                    className="mt-0.5 rounded text-red-600 focus:ring-red-500 dark:text-red-400 cursor-pointer"
+                    className="mt-0.5 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
                   />
                   <div>
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                      <Smartphone className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
+                      <Smartphone className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" />
                       AI Điện Thoại
                     </span>
-                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5 leading-normal">Cảnh báo đỏ khi phát hiện dùng smartphone</p>
+                    <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">Cảnh báo khi phát hiện dùng smartphone</p>
                   </div>
                 </label>
               </div>
             </div>
 
             {/* Nhóm B: Quản lý các trang web khác & Toàn màn hình */}
-            <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-white/5">
-              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block">
+            <div className="space-y-3 pt-4 border-t border-slate-300 dark:border-white/10">
+              <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
                 B. Ràng Buộc Màn Hình &amp; Quản Lý Mở Trang Web Khác
               </span>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className={`flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer transition-all ${
+                <label className={`flex items-start gap-2.5 rounded-md border p-3 cursor-pointer transition ${
                   lockdownFullscreen
-                    ? 'border-blue-400 bg-blue-50/50 dark:bg-blue-500/10 shadow-sm ring-1 ring-blue-500/20'
-                    : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                    ? 'border-slate-900 bg-slate-100 dark:border-white dark:bg-white/10 shadow-2xs'
+                    : 'border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                 }`}>
                   <input
                     type="checkbox"
                     checked={lockdownFullscreen}
                     onChange={(e) => setLockdownFullscreen(e.target.checked)}
-                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 dark:text-blue-400 cursor-pointer"
+                    className="mt-0.5 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
                   />
                   <div>
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                      <Maximize className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                      <Maximize className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" />
                       Khóa Toàn Màn Hình (Lockdown)
                     </span>
-                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5 leading-normal">Ngăn thu nhỏ cửa sổ trình duyệt hoặc thoát fullscreen</p>
+                    <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">Ngăn thu nhỏ cửa sổ trình duyệt hoặc thoát fullscreen</p>
                   </div>
                 </label>
 
-                <label className={`flex items-start gap-2.5 rounded-xl border p-3 cursor-pointer transition-all ${
+                <label className={`flex items-start gap-2.5 rounded-md border p-3 cursor-pointer transition ${
                   blockTabSwitch
-                    ? 'border-blue-400 bg-blue-50/50 dark:bg-blue-500/10 shadow-sm ring-1 ring-blue-500/20'
-                    : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                    ? 'border-slate-900 bg-slate-100 dark:border-white dark:bg-white/10 shadow-2xs'
+                    : 'border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                 }`}>
                   <input
                     type="checkbox"
                     checked={blockTabSwitch}
                     onChange={(e) => setBlockTabSwitch(e.target.checked)}
-                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 dark:text-blue-400 cursor-pointer"
+                    className="mt-0.5 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
                   />
                   <div>
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                      <Lock className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                      <Lock className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" />
                       Chặn Chuyển Tab Trình Duyệt
                     </span>
-                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5 leading-normal">Cảnh báo vi phạm ngay khi mở tab hoặc ứng dụng khác</p>
+                    <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">Cảnh báo vi phạm ngay khi mở tab hoặc ứng dụng khác</p>
                   </div>
                 </label>
               </div>
 
               {/* Chính sách quản lý các trang web khác */}
-              <div className="rounded-xl border border-slate-200/90 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.04] p-3.5 space-y-2.5">
+              <div className="rounded-md border border-slate-300 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.02] p-3.5 space-y-2.5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                    <Globe className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                    <Globe className="h-3.5 w-3.5 text-slate-500" />
                     Chính Sách Quản Lý Trang Web Khác:
                   </span>
                   <select
                     value={webAccessPolicy}
                     onChange={(e) => setWebAccessPolicy(e.target.value as 'strict' | 'whitelist' | 'open')}
-                    className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs font-medium dark:border-white/15 dark:bg-[#121824] text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 cursor-pointer"
+                    className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium dark:border-white/15 dark:bg-neutral-900 text-slate-800 dark:text-slate-100 outline-none focus:border-slate-900 cursor-pointer"
                   >
                     <option value="strict">Cấm toàn bộ trang web khác (Block All External Web)</option>
                     <option value="whitelist">Chỉ cho phép tra cứu Whitelist kỹ thuật</option>
@@ -1370,12 +1516,12 @@ export default function InstructorCreateRoomView() {
                 </div>
 
                 {webAccessPolicy === 'whitelist' && (
-                  <p className="text-[11px] text-blue-700 dark:text-blue-300 bg-blue-50/90 dark:bg-blue-500/15 p-2.5 rounded-lg border border-blue-200 dark:border-blue-500/30 leading-relaxed font-medium">
-                    <strong>Whitelist cho phép:</strong> <code className="font-mono bg-white dark:bg-[#121824] px-1 py-0.5 rounded border border-blue-200 dark:border-blue-500/30">docs.oracle.com</code>, <code className="font-mono bg-white dark:bg-[#121824] px-1 py-0.5 rounded border border-blue-200 dark:border-blue-500/30">cppreference.com</code>, <code className="font-mono bg-white dark:bg-[#121824] px-1 py-0.5 rounded border border-blue-200 dark:border-blue-500/30">w3schools.com</code>. Mọi trang web khác bị chặn.
+                  <p className="text-[11px] text-slate-900 dark:text-slate-500 bg-white dark:bg-white/[0.04] p-2.5 rounded-md border border-slate-300 dark:border-white/10 leading-relaxed font-medium">
+                    <strong>Whitelist cho phép:</strong> <code className="font-mono bg-slate-50 dark:bg-white/10 px-1 py-0.5 rounded border border-slate-300 dark:border-white/10">docs.oracle.com</code>, <code className="font-mono bg-slate-50 dark:bg-white/10 px-1 py-0.5 rounded border border-slate-300 dark:border-white/10">cppreference.com</code>, <code className="font-mono bg-slate-50 dark:bg-white/10 px-1 py-0.5 rounded border border-slate-300 dark:border-white/10">w3schools.com</code>. Mọi trang web khác bị chặn.
                   </p>
                 )}
                 {webAccessPolicy === 'strict' && (
-                  <p className="text-[11px] text-blue-800 dark:text-blue-200 bg-blue-50/90 dark:bg-blue-500/15 p-2.5 rounded-lg border border-blue-200 dark:border-blue-500/30 leading-relaxed font-medium">
+                  <p className="text-[11px] text-slate-800 dark:text-slate-500 bg-white dark:bg-white/[0.04] p-2.5 rounded-md border border-slate-300 dark:border-white/10 leading-relaxed font-medium">
                     <strong>Cấm tuyệt đối:</strong> Mọi hành vi mở tab ngoài đều bị ghi nhận vi phạm AI và thông báo lên màn hình giám sát.
                   </p>
                 )}
@@ -1386,27 +1532,27 @@ export default function InstructorCreateRoomView() {
 
         {/* CỘT PHẢI (5 CỘT): CHỌN ĐỀ THI TỪ MODULE ĐỀ & KHỞI TẠO PHÒNG CHỜ (STICKY ON DESKTOP) */}
         <div className="min-w-0 space-y-5 xl:sticky xl:top-4 xl:col-span-5 xl:self-start">
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm transition-colors dark:border-white/10 dark:bg-[#121824] sm:p-6">
-            <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-white/5">
+          <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-colors dark:border-white/10 dark:bg-neutral-900 sm:p-6">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-300 dark:border-white/10">
               <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
+                <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-slate-50 text-slate-900 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-500">
                   <BookOpen className="h-3.5 w-3.5" />
                 </div>
-                <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 sm:text-base">
+                <h2 className="font-serif text-sm font-bold text-slate-900 dark:text-white sm:text-base">
                   5. Chọn Bộ Đề (Từ Module Đề)
                 </h2>
               </div>
-              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase bg-slate-100 dark:bg-white/[0.08] px-2 py-0.5 rounded-full">
-                {templatesList.length} Lựa Chọn Bộ Đề
+              <span className="font-mono text-[10px] font-bold text-slate-500 uppercase bg-slate-50 dark:bg-white/[0.08] px-2 py-0.5 rounded">
+                {templatesList.length} Lựa Chọn
               </span>
             </div>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500 pt-2">
               Chọn bộ đề thi / bài lab hoặc chọn &quot;Chưa gán đề&quot; để mở phòng trước và giao đề sau:
             </p>
 
-            {/* Danh sách đề thi với thanh cuộn hiện đại */}
-            <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-300">
+            {/* Danh sách đề thi */}
+            <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1.5 pt-1">
               {templatesList.map((tpl) => {
                 const isSelected = tpl.id === selectedTemplateId;
                 const isNone = tpl.id === 'none';
@@ -1419,52 +1565,40 @@ export default function InstructorCreateRoomView() {
                     aria-pressed={isSelected}
                     tabIndex={0}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedTemplateId(tpl.id); } }}
-                    className={`rounded-xl border p-3.5 cursor-pointer transition-all space-y-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#121824] ${
+                    className={`rounded-md border p-3.5 cursor-pointer transition space-y-2 ${
                       isSelected
-                        ? isNone 
-                          ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-500/10 shadow-sm ring-2 ring-emerald-500/20'
-                          : 'border-blue-500 bg-blue-50/70 dark:bg-blue-500/10 shadow-sm ring-2 ring-blue-500/20'
-                        : 'border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#121824] hover:border-slate-300 dark:hover:border-white/20 hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                        ? 'border-brand bg-brand-50 dark:border-brand-400 dark:bg-brand-500/10 shadow-2xs'
+                        : 'border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
-                        <span className={`font-mono text-[10.5px] font-black px-1.5 py-0.5 rounded ${
-                          isNone ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300' : 'bg-slate-100 dark:bg-white/[0.08] text-slate-700 dark:text-slate-300'
+                        <span className={`font-mono text-[10.5px] font-bold px-1.5 py-0.5 rounded ${
+                          isNone ? 'bg-slate-50 dark:bg-white/[0.08] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-white/10' : 'bg-slate-50 dark:bg-white/[0.08] text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-white/10'
                         }`}>
                           {isNone ? 'GÁN SAU' : tpl.id}
                         </span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                          isNone
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30'
-                            : tpl.language === 'C++'
-                            ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/30'
-                            : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30'
-                        }`}>
+                        <span className="rounded px-2 py-0.5 font-mono text-[10px] font-bold border bg-white text-slate-700 border-slate-300 dark:bg-white/10 dark:text-slate-200 dark:border-white/10">
                           {tpl.language}
                         </span>
                       </div>
                       {isSelected ? (
-                        <span className={`inline-flex items-center gap-1 text-[10.5px] font-extrabold px-2 py-0.5 rounded-full ${
-                          isNone
-                            ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/15'
-                            : 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-500/15'
-                        }`}>
+                        <span className="inline-flex items-center gap-1 rounded bg-brand-50 px-2 py-0.5 font-mono text-[10.5px] font-bold text-brand-700 dark:bg-brand-500/10 dark:text-brand-200">
                           <Check className="h-3 w-3 stroke-[3]" />
                           Đang chọn
                         </span>
                       ) : (
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold">Bấm để chọn</span>
+                        <span className="text-[10px] text-slate-500 font-semibold">Bấm để chọn</span>
                       )}
                     </div>
 
-                    <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 line-clamp-1">{tpl.title}</h3>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">{tpl.description}</p>
+                    <h3 className="font-serif text-xs font-bold text-slate-900 dark:text-white line-clamp-1">{tpl.title}</h3>
+                    <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">{tpl.description}</p>
 
-                    <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 dark:border-white/5 text-[10.5px] font-medium text-slate-500 dark:text-slate-400">
+                    <div className="flex items-center justify-between pt-1.5 border-t border-slate-300 dark:border-white/10 text-[10.5px] font-medium text-slate-500">
                       <span>{isNone ? 'Mở phòng không cần đề' : `${tpl.questionCount} câu hỏi lập trình`}</span>
-                      <span className={`font-bold ${isNone ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}`}>
-                        {isNone ? '✓ Khuyến nghị tạo phòng' : `Thời lượng: ${tpl.durationMinutes} phút`}
+                      <span className="font-bold font-mono text-slate-700 dark:text-slate-300">
+                        {isNone ? 'Khuyến nghị tạo phòng' : `Thời lượng: ${tpl.durationMinutes} phút`}
                       </span>
                     </div>
                   </div>
@@ -1473,51 +1607,51 @@ export default function InstructorCreateRoomView() {
             </div>
 
             {/* Tóm tắt & Nút khởi tạo phòng chờ */}
-            <div className="pt-3 border-t border-slate-100 dark:border-white/5 space-y-3.5">
-              <div className="rounded-xl bg-slate-50/80 p-3.5 text-xs space-y-2 dark:bg-white/[0.04]">
-                <div className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+            <div className="pt-3 border-t border-slate-300 dark:border-white/10 space-y-3.5">
+              <div className="rounded-md border border-slate-300 bg-slate-50/60 p-3.5 text-xs space-y-2 dark:border-white/10 dark:bg-white/[0.02]">
+                <div className="flex justify-between items-center text-slate-500">
                   <span className="text-[11px]">Lớp phụ trách:</span>
-                  <strong className="text-slate-900 dark:text-slate-100 font-extrabold">{curClass.id} ({curClass.studentCount} SV)</strong>
+                  <strong className="text-slate-900 dark:text-slate-100 font-bold">{curClass.id} ({curClass.studentCount} SV)</strong>
                 </div>
-                <div className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                <div className="flex justify-between items-center text-slate-500">
                   <span className="text-[11px]">Mã phòng ngẫu nhiên:</span>
-                  <code className="font-mono font-black tabular-nums text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-500/15 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-500/30">{roomCode}</code>
+                  <code className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-500 bg-white dark:bg-white/10 px-1.5 py-0.5 rounded border border-slate-300 dark:border-white/10">{roomCode}</code>
                 </div>
-                <div className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                <div className="flex justify-between items-center text-slate-500">
                   <span className="text-[11px]">Mật khẩu PIN:</span>
-                  <code className="font-mono font-black tabular-nums text-slate-900 dark:text-slate-100 bg-white dark:bg-[#121824] px-1.5 py-0.5 rounded border border-slate-200 dark:border-white/10">{roomPassword}</code>
+                  <code className="font-mono font-bold tabular-nums text-slate-900 dark:text-slate-100 bg-white dark:bg-neutral-900 px-1.5 py-0.5 rounded border border-slate-300 dark:border-white/10">{roomPassword}</code>
                 </div>
-                <div className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                <div className="flex justify-between items-center text-slate-500">
                   <span className="text-[11px]">Thời gian ca học:</span>
                   <strong className="font-mono tabular-nums text-slate-900 dark:text-slate-100 font-bold">
                     {startTime} - {endTime} ({durationMinutes}p)
                   </strong>
                 </div>
-                <div className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                <div className="flex justify-between items-center text-slate-500">
                   <span className="text-[11px]">Lịch giảng dạy:</span>
-                  <span className={`font-bold ${saveToSchedule ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'}`}>
-                    {saveToSchedule ? '✓ Đã bật lưu lịch' : 'Không lưu lịch'}
+                  <span className="font-bold font-mono text-slate-800 dark:text-slate-200">
+                    {saveToSchedule ? 'Đã bật lưu lịch' : 'Không lưu lịch'}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                <div className="flex justify-between items-center text-slate-500">
                   <span className="text-[11px]">Ràng buộc:</span>
                   <span className="font-bold text-slate-800 dark:text-slate-100 text-[11px]">
                     {requireCamera ? 'Camera' : 'Cam tùy chọn'} • {lockdownFullscreen ? 'Khóa Fullscreen' : 'Mở'}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-200/60 dark:border-white/10">
+                <div className="flex justify-between items-center text-slate-500 pt-1 border-t border-slate-300 dark:border-white/10">
                   <span className="text-[11px]">Bộ đề giao:</span>
-                  <strong className="text-slate-900 dark:text-slate-100 truncate max-w-[200px] text-right font-bold">{selectedTemplate.title}</strong>
+                  <strong className="font-serif text-slate-900 dark:text-slate-100 truncate max-w-[200px] text-right font-bold">{selectedTemplate.title}</strong>
                 </div>
               </div>
 
               {/* Cảnh báo trước khi bấm nút tạo phòng */}
               {pastTimeValidation.isPast ? (
-                <div className="rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/15 p-2.5 text-center text-xs font-bold text-red-700 dark:text-red-300 animate-in fade-in duration-150">
+                <div className="rounded-md border border-slate-300 bg-slate-100 dark:border-white/10 dark:bg-white/5 p-2.5 text-center text-xs font-bold text-slate-800 dark:text-slate-200">
                   ⚠️ Không thể tạo phòng: Thời gian thiết lập ở trong quá khứ!
                 </div>
               ) : conflictSession ? (
-                <div className="rounded-xl border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 p-2.5 text-center text-xs font-bold text-amber-900 dark:text-amber-200 animate-in fade-in duration-150">
+                <div className="rounded-md border border-slate-300 bg-slate-100 dark:border-white/10 dark:bg-white/5 p-2.5 text-center text-xs font-bold text-slate-800 dark:text-slate-200">
                   ⚠️ Trùng lịch giám sát ({conflictSession.startTime} - {conflictSession.endTime}) với ca {conflictSession.roomCode} (Lớp {conflictSession.classId})!
                 </div>
               ) : null}
@@ -1526,10 +1660,10 @@ export default function InstructorCreateRoomView() {
               <button
                 type="submit"
                 disabled={!isClientReady || !roomCode || !roomPassword || isSubmitting || Boolean(pastTimeValidation.isPast || conflictSession)}
-                className={`w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl px-4 text-xs font-semibold text-white shadow-sm transition-all active:scale-[0.99] ${
+                className={`w-full inline-flex items-center justify-center gap-2 h-10 rounded-md px-4 text-xs font-bold text-white shadow-2xs transition ${
                   !isClientReady || !roomCode || !roomPassword || isSubmitting || pastTimeValidation.isPast || conflictSession
                     ? 'bg-slate-400 cursor-not-allowed opacity-60'
-                    : 'bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-500/20 cursor-pointer'
+                    : 'system-primary-action bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
                 }`}
               >
                 {isSubmitting ? (
@@ -1539,12 +1673,12 @@ export default function InstructorCreateRoomView() {
                   </>
                 ) : (
                   <>
-                    <Radio className="h-4 w-4 animate-pulse shrink-0" />
+                    <Radio className="h-4 w-4 shrink-0" />
                     <span>{isClientReady ? 'Tạo Phòng Chờ & Lưu Vào Lịch' : 'Đang chuẩn bị thông tin phòng...'}</span>
                   </>
                 )}
               </button>
-              <p className="text-[10.5px] text-center text-slate-400 dark:text-slate-500 font-medium">
+              <p className="text-[10.5px] text-center text-slate-500">
                 {conflictSession || pastTimeValidation.isPast
                   ? 'Vui lòng điều chỉnh thời gian hợp lệ để tiếp tục tạo phòng chờ.'
                   : 'Phòng mới sẽ được lưu ở trạng thái Chờ (Waiting) trong Lịch Giảng Dạy cho đến khi bạn bắt đầu ca học.'}

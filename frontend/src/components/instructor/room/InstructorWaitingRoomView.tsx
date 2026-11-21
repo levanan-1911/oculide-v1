@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -18,7 +18,6 @@ import {
   ExternalLink,
   ShieldAlert,
   ShieldCheck,
-  Laptop,
   Camera,
   DoorOpen,
   Trash2,
@@ -27,6 +26,10 @@ import {
   AlertCircle,
   LogOut,
   Send,
+  FileCode2,
+  BookOpen,
+  Plus,
+  Sparkles,
 } from 'lucide-react';
 import {
   RoomSession,
@@ -37,29 +40,41 @@ import {
 } from '@/components/instructor/classes/types';
 import { fetchWithAuth } from '@/services/apiClient';
 import SendNotificationModal from '@/components/instructor/monitoring/SendNotificationModal';
+import AssignTemplateModal from './AssignTemplateModal';
 
 interface Props {
   roomId: string;
+  returnToSchedules?: boolean;
 }
 
-export default function InstructorWaitingRoomView({ roomId }: Props) {
+export default function InstructorWaitingRoomView({
+  roomId,
+  returnToSchedules = false,
+}: Props) {
   const router = useRouter();
+  const returnPath = returnToSchedules
+    ? '/instructor/schedules'
+    : '/instructor/classes';
 
   const [rawRoomId, setRawRoomId] = useState<number | null>(null);
   const [room, setRoom] = useState<RoomSession | null>(null);
   const [attendees, setAttendees] = useState<RoomAttendee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [lobbyLoadError, setLobbyLoadError] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'waiting' | 'absent'>('all');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const startRoomHandlerRef = useRef<() => Promise<void>>(async () => {});
 
   // Modal states
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [conflictSession, setConflictSession] = useState<RoomSession | null>(null);
   const [isConflictModalOpen, setIsConflictModalOpen] = useState(false);
   const [isNoticeModalOpen, setIsNoticeModalOpen] = useState(false);
+  const [isAssignTemplateModalOpen, setIsAssignTemplateModalOpen] = useState(false);
+  const [roomStartTime, setRoomStartTime] = useState<string | null>(null);
   const [noticeTarget, setNoticeTarget] = useState<{
     type: 'all' | 'group' | 'individual';
     studentId?: string;
@@ -71,17 +86,55 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
     setIsNoticeModalOpen(true);
   };
 
+  const handleAssignTemplateSuccess = (newTemplate: {
+    id: string;
+    code?: string;
+    title: string;
+    language?: string;
+    durationMinutes?: number;
+  }) => {
+    if (!room) return;
+    const updatedRoom: RoomSession = {
+      ...room,
+      templateId: newTemplate.id || undefined,
+      templateTitle: newTemplate.title,
+      templateLanguage: newTemplate.language || room.templateLanguage,
+      durationMinutes: newTemplate.durationMinutes || room.durationMinutes,
+    };
+    setRoom(updatedRoom);
+
+    try {
+      const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+      if (raw) {
+        const parsed: RoomSession[] = JSON.parse(raw);
+        const nextRooms = parsed.map((r) =>
+          r.id.toLowerCase() === room.id.toLowerCase() ? updatedRoom : r
+        );
+        localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(nextRooms));
+      }
+    } catch {}
+
+    showToast(`Đã gán thành công bộ đề: ${newTemplate.title}`);
+  };
+
   // Nạp dữ liệu phòng chờ và danh sách sinh viên thực tế từ Backend CSDL SQL Server
   useEffect(() => {
     let isCancelled = false;
+    let requestInFlight = false;
 
     async function loadLobbyData(silent = false) {
+      if (requestInFlight) return;
+      requestInFlight = true;
       if (!silent) setIsLoading(true);
       try {
         const data = await fetchWithAuth<any>(`/api/v1/rooms/lobby/${encodeURIComponent(roomId)}`);
         if (isCancelled || !data) return;
 
+        setLobbyLoadError(null);
         setRawRoomId(data.room_id);
+        if (data.start_time) {
+          setRoomStartTime(data.start_time);
+        }
 
         let parsedConfig = {
           lockdownFullscreen: false,
@@ -94,31 +147,47 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
             parsedConfig = typeof data.proctoring_config === 'string'
               ? JSON.parse(data.proctoring_config)
               : data.proctoring_config;
-          } catch {}
+          } catch { }
         }
 
         const realAttendees: RoomAttendee[] = (data.attendees || []).map((a: any) => ({
           studentId: String(a.student_id),
           studentName: a.student_name,
           studentEmail: a.student_email || '',
-          status: (a.status === 'waiting' || a.status === 'completed') ? 'waiting' : 'absent',
+          status: a.status === 'late' ? 'late' : (a.status === 'waiting' || a.status === 'completed') ? 'waiting' : 'absent',
           joinedAt: a.joined_at ? new Date(a.joined_at).toLocaleTimeString('vi-VN') : undefined,
-          device: a.device || 'Laptop cá nhân / Web Browser',
           cameraReady: Boolean(a.camera_ready),
         }));
+
+        const sessionType = String(data.session_type || '').toUpperCase();
+        const roomSessionType: RoomSession['type'] =
+          sessionType === 'MIDTERM'
+            ? 'midterm'
+            : sessionType === 'FINAL'
+              ? 'final'
+              : sessionType === 'LAB' || data.room_type !== 'exam'
+                ? 'lab'
+                : 'exam';
 
         const realRoom: RoomSession = {
           id: data.room_code,
           classId: data.class_code || (data.class_id ? String(data.class_id) : 'LỚP HỌC PHẦN'),
           className: data.class_name || data.course_name || 'Lớp học phần',
           password: data.passcode || '',
-          type: (data.room_type === 'exam' ? 'exam' : 'lab') as 'lab' | 'exam',
+          type: roomSessionType,
           title: data.room_name || `Phòng Chờ • ${data.room_code}`,
           templateId: data.template_code || (data.template_id ? String(data.template_id) : undefined),
           templateTitle: data.template_title || (data.template_id ? `Bộ đề #${data.template_id}` : 'Chưa gán đề (Tự do)'),
           templateLanguage: data.template_language || 'C/C++/Java/Python',
           durationMinutes: data.duration_minutes || 60,
-          status: data.status === 'dang_dien_ra' ? 'in_progress' : (data.status === 'da_dong' ? 'ended' : 'waiting'),
+          endTime: data.end_time || undefined,
+          status: ['da_dong', 'da_huy', 'da_ket_thuc', 'completed', 'ended', 'closed', 'cancelled'].includes(
+            String(data.status || '').toLowerCase()
+          )
+            ? 'ended'
+            : ['dang_dien_ra', 'in_progress'].includes(String(data.status || '').toLowerCase())
+              ? 'in_progress'
+              : 'waiting',
           createdAt: data.created_at ? new Date(data.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '08:00',
           proctoringConfig: parsedConfig,
           attendees: realAttendees,
@@ -127,34 +196,52 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
         setRoom(realRoom);
         setAttendees(realAttendees);
       } catch (err) {
-        // Fallback kiểm tra từ localStorage nếu truy cập offline
-        if (typeof window !== 'undefined') {
-          try {
-            const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-            if (raw) {
-              const parsed: RoomSession[] = JSON.parse(raw);
-              const found = parsed.find((r) => r.id.toLowerCase() === roomId.toLowerCase());
-              if (found) {
-                setRoom(found);
-                setAttendees(found.attendees || []);
-              }
-            }
-          } catch {}
+        if (!isCancelled) {
+          setLobbyLoadError(
+            err instanceof Error ? err.message : 'Không thể tải dữ liệu phòng chờ từ máy chủ.'
+          );
         }
       } finally {
+        requestInFlight = false;
         if (!isCancelled && !silent) setIsLoading(false);
       }
     }
 
     loadLobbyData();
-    // Tự động làm mới danh sách sinh viên vào phòng sau mỗi 8 giây
-    const pollInterval = setInterval(() => loadLobbyData(true), 8000);
+    // Đồng bộ trạng thái điểm danh từ máy chủ mỗi 3 giây.
+    const pollInterval = setInterval(() => loadLobbyData(true), 3000);
 
     return () => {
       isCancelled = true;
       clearInterval(pollInterval);
     };
   }, [roomId]);
+
+  // Tự động mở phòng cho phòng thi (giữa kỳ / cuối kỳ) khi đến thời gian thiết lập
+  useEffect(() => {
+    startRoomHandlerRef.current = handleStartExamAndMonitoring;
+  });
+
+  useEffect(() => {
+    if (
+      !room ||
+      room.status !== 'waiting' ||
+      !['exam', 'midterm', 'final'].includes(room.type) ||
+      !roomStartTime
+    ) return;
+
+    const checkAutoStart = () => {
+      const startMs = new Date(roomStartTime).getTime();
+      if (!isNaN(startMs) && Date.now() >= startMs) {
+        showToast('Đến giờ thi theo lịch đã thiết lập: Hệ thống tự động kích hoạt phòng thi!');
+        void startRoomHandlerRef.current();
+      }
+    };
+
+    checkAutoStart();
+    const timer = setInterval(checkAutoStart, 5000);
+    return () => clearInterval(timer);
+  }, [room, roomStartTime]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -177,15 +264,22 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
         a.studentEmail.toLowerCase().includes(search.toLowerCase());
 
       if (!matchSearch) return false;
-      if (filterStatus === 'waiting') return a.status === 'waiting';
+      if (filterStatus === 'waiting') return a.status === 'waiting' || a.status === 'late';
       if (filterStatus === 'absent') return a.status === 'absent';
       return true;
     });
   }, [attendees, search, filterStatus]);
 
-  const waitingCount = attendees.filter((a) => a.status === 'waiting').length;
+  const waitingCount = attendees.filter((a) => a.status === 'waiting' || a.status === 'late').length;
   const absentCount = attendees.filter((a) => a.status === 'absent').length;
   const attendancePercent = attendees.length > 0 ? Math.round((waitingCount / attendees.length) * 100) : 0;
+  const endTimeMs = room?.endTime ? Date.parse(room.endTime) : Number.NaN;
+  const isRoomExpired = Boolean(
+    room && (
+      room.status === 'ended' ||
+      (room.status === 'in_progress' && Number.isFinite(endTimeMs) && endTimeMs <= Date.now())
+    )
+  );
 
   // Toggle điểm danh thủ công: đồng bộ tức thì với Backend CSDL
   const handleToggleAttendance = async (studentId: string) => {
@@ -201,7 +295,7 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
           ...a,
           status: newStatus,
           joinedAt: newStatus === 'waiting' ? new Date().toLocaleTimeString('vi-VN') : undefined,
-          cameraReady: newStatus === 'waiting',
+          cameraReady: newStatus === 'waiting' ? a.cameraReady : false,
         };
       })
     );
@@ -221,6 +315,20 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
 
   // Kích hoạt ca thi và chuyển sang màn hình giám sát trực tiếp
   const activateRoomMonitoring = (targetRoomId: string) => {
+    try {
+      const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+      if (raw) {
+        const list: RoomSession[] = JSON.parse(raw);
+        const updated = list.map((r) =>
+          r.id.toLowerCase() === targetRoomId.toLowerCase()
+            ? { ...r, status: 'in_progress' as const }
+            : r
+        );
+        localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(updated));
+        window.dispatchEvent(new Event('storage'));
+      }
+    } catch {}
+
     showToast('Đang chuyển hướng vào Trung tâm giám sát trực tiếp...');
     setTimeout(() => {
       router.push(`/instructor/monitoring?room=${encodeURIComponent(targetRoomId)}`);
@@ -230,6 +338,14 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
   // Kiểm tra quy định: Được lên lịch trước nhưng KHÔNG được giám sát song song 2 phòng cùng lúc
   const handleStartExamAndMonitoring = async () => {
     if (!room) return;
+
+    // Quy định: Phòng thực hành không thể mở phòng khi chưa có sinh viên trong phòng chờ
+    const isLab = (room.type as string) === 'lab' || (room.type as string) === 'practice';
+    if (isLab && waitingCount === 0) {
+      showToast('Không thể mở phòng: Phòng thực hành yêu cầu có ít nhất 1 sinh viên trong phòng chờ trước khi bắt đầu.');
+      return;
+    }
+
     setIsActionLoading(true);
 
     if (rawRoomId) {
@@ -305,16 +421,33 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
     if (!room) return;
     setIsActionLoading(true);
 
+    const syncCancelledState = () => {
+      try {
+        const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
+        if (raw) {
+          const list: RoomSession[] = JSON.parse(raw);
+          const updated = list.map((r) =>
+            r.id.toLowerCase() === room.id.toLowerCase()
+              ? { ...r, status: 'da_dong' as any }
+              : r
+          );
+          localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(updated));
+          window.dispatchEvent(new Event('storage'));
+        }
+      } catch {}
+    };
+
     if (rawRoomId) {
       try {
         await fetchWithAuth(`/api/v1/rooms/${rawRoomId}/status`, {
           method: 'PATCH',
           body: JSON.stringify({ status: 'da_dong' }),
         });
+        syncCancelledState();
         showToast(`Đã hủy phòng chờ ${room.id} thành công! Lớp ${room.classId} đã sẵn sàng tạo ca mới.`);
         setIsCancelModalOpen(false);
         setTimeout(() => {
-          router.push('/instructor/classes');
+          router.push(returnPath);
         }, 400);
         return;
       } catch (err: any) {
@@ -324,9 +457,10 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
       }
     }
 
+    syncCancelledState();
     setIsCancelModalOpen(false);
     setTimeout(() => {
-      router.push('/instructor/classes');
+      router.push(returnPath);
     }, 400);
   };
 
@@ -342,11 +476,13 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
   if (!room) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-3 text-xs text-slate-500">
-        <AlertTriangle className="h-8 w-8 text-amber-500" />
-        <span className="font-bold">Không tìm thấy dữ liệu phòng chờ &quot;{roomId}&quot;</span>
+        <AlertTriangle className="h-8 w-8 text-slate-400" />
+        <span className="max-w-xl text-center font-bold">
+          {lobbyLoadError || `Không tìm thấy dữ liệu phòng chờ "${roomId}"`}
+        </span>
         <button
-          onClick={() => router.push('/instructor/classes')}
-          className="rounded-xl bg-slate-900 px-4 py-2 font-bold text-white hover:bg-slate-800"
+          onClick={() => router.push(returnPath)}
+          className="system-primary-action rounded-md bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition cursor-pointer"
         >
           Quay lại Quản lý Lớp học
         </button>
@@ -354,37 +490,51 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
     );
   }
 
-  const studentInviteLink = `http://localhost:3000/student/join?room=${room.id}&pin=${room.password}`;
+  const studentInviteLink = `/student/exams?code=${encodeURIComponent(room.id)}&pin=${encodeURIComponent(room.password)}`;
 
   return (
     <div className="mx-auto w-full max-w-[1400px] space-y-6 pb-12">
-      {/* Toast thông báo */}
+      {/* Toast thông báo mặc định hệ thống */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl bg-slate-900 px-4.5 py-3 text-xs font-medium text-white shadow-xl animate-in slide-in-from-bottom-2 duration-200 border border-slate-800">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-md border border-slate-300 border-l-4 border-l-slate-900 bg-white px-4.5 py-3 text-xs shadow-lg dark:border-white/10 dark:border-l-white dark:bg-neutral-900"
+        >
+          <div className="flex h-7 w-7 items-center justify-center rounded-xs bg-slate-100 text-slate-900 shrink-0 dark:bg-white/10 dark:text-white">
+            <CheckCircle2 className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="font-sans text-xs font-bold text-slate-900 dark:text-white">Thông báo</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300">{toastMessage}</p>
+          </div>
+        </aside>
+      )}
+      {lobbyLoadError && (
+        <p role="status" className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          Không thể làm mới dữ liệu điểm danh: {lobbyLoadError}
+        </p>
       )}
 
       {/* ── MODAL 1: XÁC NHẬN HỦY PHÒNG CHỜ ── */}
       {isCancelModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-2xl border border-red-200 bg-white p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-md border border-slate-300 bg-white p-6 shadow-2xl space-y-4 dark:border-white/10 dark:bg-neutral-900">
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-200">
                 <AlertTriangle className="h-5 w-5" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-base font-bold text-slate-900">Xác Nhận Hủy Phòng Chờ?</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Bạn có chắc chắn muốn hủy phòng chờ <strong className="font-mono text-slate-800">{room.id}</strong> của lớp{' '}
-                  <strong className="text-slate-800">{room.classId} — {room.className}</strong>?
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Xác Nhận Hủy Phòng Chờ?</h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Bạn có chắc chắn muốn hủy phòng chờ <strong className="font-mono text-slate-800 dark:text-slate-200">{room.id}</strong> của lớp{' '}
+                  <strong className="text-slate-800 dark:text-slate-200">{room.classId} — {room.className}</strong>?
                 </p>
               </div>
             </div>
 
-            <div className="rounded-xl bg-amber-50 p-3.5 border border-amber-200 text-xs text-amber-800 space-y-1">
-              <span className="font-bold flex items-center gap-1.5 text-amber-900">
+            <div className="rounded-md bg-slate-50 p-3.5 border border-slate-200 text-xs text-slate-700 space-y-1 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+              <span className="font-bold flex items-center gap-1.5 text-slate-900 dark:text-white">
                 <AlertCircle className="h-3.5 w-3.5" />
                 Lưu ý quan trọng:
               </span>
@@ -397,14 +547,14 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
               <button
                 type="button"
                 onClick={() => setIsCancelModalOpen(false)}
-                className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                className="h-9 rounded-md border border-slate-300 px-4 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10"
               >
                 Quay Lại
               </button>
               <button
                 type="button"
                 onClick={handleConfirmCancelRoom}
-                className="h-10 inline-flex items-center gap-1.5 rounded-xl bg-red-600 hover:bg-red-700 px-4 text-xs font-extrabold text-white shadow-md shadow-red-600/20 transition cursor-pointer"
+                className="system-primary-action h-9 inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800 cursor-pointer dark:hover:bg-slate-800"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 <span>Xác Nhận Hủy Phòng</span>
@@ -416,39 +566,39 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
 
       {/* ── MODAL 2: CẢNH BÁO QUY ĐỊNH GIÁM SÁT SONG SONG ── */}
       {isConflictModalOpen && conflictSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-lg rounded-2xl border border-amber-300 bg-white p-6 shadow-2xl space-y-4.5 animate-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-lg rounded-md border border-slate-300 bg-white p-6 shadow-2xl space-y-4.5 dark:border-white/10 dark:bg-neutral-900">
             <div className="flex items-start gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 border border-amber-200">
-                <ShieldAlert className="h-6 w-6" />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-200">
+                <ShieldAlert className="h-5 w-5" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-base font-black text-slate-900">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
                   Xung Đột Phiên Giám Sát Trực Tiếp
                 </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                   Theo quy định hệ thống Oculide, bạn được phép <strong>lên lịch trước</strong> cho nhiều lớp, nhưng <strong>chỉ được mở trực tiếp 01 phiên giám sát tại cùng một thời điểm</strong> để đảm bảo đường truyền WebRTC và tính tập trung.
                 </p>
               </div>
             </div>
 
             {/* Chi tiết ca đang chạy vs ca muốn mở */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3 text-xs">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                <span className="font-bold text-slate-500 uppercase text-[10.5px]">Ca học đang giám sát trực tiếp:</span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10.5px] font-extrabold text-emerald-800">
-                  <Radio className="h-3 w-3 animate-pulse text-emerald-600" />
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-4 space-y-3 text-xs dark:border-white/10 dark:bg-white/[0.02]">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/10">
+                <span className="font-mono font-bold text-slate-500 uppercase text-[10.5px]">Ca học đang giám sát trực tiếp:</span>
+                <span className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 font-mono text-[10.5px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
                   Đang diễn ra
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-bold text-slate-900">{conflictSession.className}</div>
-                  <div className="text-[11px] text-slate-500">Mã phòng: <code className="font-mono font-bold text-blue-700">{conflictSession.id}</code></div>
+                  <div className="font-bold text-slate-900 dark:text-white">{conflictSession.className}</div>
+                  <div className="text-[11px] text-slate-500">Mã phòng: <code className="font-mono font-bold text-slate-900 dark:text-slate-100">{conflictSession.id}</code></div>
                 </div>
                 <Link
                   href={`/instructor/monitoring?room=${encodeURIComponent(conflictSession.id)}`}
-                  className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 transition"
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 transition dark:border-white/10 dark:bg-white/10 dark:text-slate-200"
                 >
                   <ExternalLink className="h-3 w-3" />
                   <span>Xem Ca Này</span>
@@ -457,7 +607,7 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
             </div>
 
             <p className="text-xs text-slate-500 italic">
-              Để bắt đầu ca thi này (<strong className="font-mono text-slate-800">{room.id}</strong>), bạn có thể kết thúc ca cũ trước hoặc chuyển đến màn hình giám sát của ca đang chạy.
+              Để bắt đầu ca thi này (<strong className="font-mono text-slate-800 dark:text-slate-200">{room.id}</strong>), bạn có thể kết thúc ca cũ trước hoặc chuyển đến màn hình giám sát của ca đang chạy.
             </p>
 
             {/* Các lựa chọn hành động */}
@@ -465,14 +615,14 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
               <button
                 type="button"
                 onClick={() => setIsConflictModalOpen(false)}
-                className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                className="h-9 rounded-md border border-slate-300 px-4 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10"
               >
                 Giữ Phòng Chờ Này
               </button>
               <button
                 type="button"
                 onClick={handleResolveConflictAndStart}
-                className="h-10 inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 text-xs font-extrabold text-white shadow-md shadow-blue-500/20 transition cursor-pointer"
+                className="system-primary-action h-9 inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800 cursor-pointer"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 <span>Kết Thúc Ca Cũ &amp; Mở Ca Này</span>
@@ -483,210 +633,286 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
       )}
 
       {/* Header bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-300 dark:border-white/10">
         <div className="flex items-center gap-3.5">
           <Link
-            href="/instructor/classes"
-            className="flex h-9.5 w-9.5 shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white text-slate-600 shadow-2xs hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
+            href={returnPath}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 shadow-2xs hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-300 dark:hover:bg-white/10"
             title="Quay lại danh sách lớp"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
             <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
                 Phòng Chờ &amp; Điểm Danh
               </h1>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-extrabold text-emerald-800 border border-emerald-200 shadow-2xs">
-                <Radio className="h-3 w-3 animate-pulse text-emerald-600" />
-                Đang Mở Điểm Danh
-              </span>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-extrabold border ${
-                room.type === 'lab'
-                  ? 'bg-blue-50 text-blue-800 border-blue-200'
-                  : 'bg-purple-50 text-purple-800 border-purple-200'
+              <span className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-0.5 font-mono text-xs font-bold ${
+                isRoomExpired
+                  ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
+                  : 'border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300'
               }`}>
-                {room.type === 'lab' ? '💻 Thực Hành Lab (Mở)' : '📝 Kiểm Tra (Lockdown AI)'}
+                <span className={`h-1.5 w-1.5 rounded-full ${isRoomExpired ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                {isRoomExpired ? 'Đã kết thúc' : 'Đang Mở Điểm Danh'}
+              </span>
+              <span className="rounded px-2.5 py-0.5 font-mono text-xs font-bold border border-slate-300 bg-white text-slate-800 dark:border-white/10 dark:bg-white/10 dark:text-slate-200">
+                {room.type === 'lab'
+                  ? 'Thực Hành Lab'
+                  : room.type === 'final'
+                    ? 'Thi kết thúc học phần'
+                    : room.type === 'midterm'
+                      ? 'Thi giữa kỳ'
+                      : 'Kiểm Tra Trực Tuyến'}
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Lớp: <strong className="text-slate-800 font-extrabold">{room.classId} — {room.className}</strong> • Bộ đề thi: <strong className="text-blue-700 font-bold">{room.templateTitle}</strong>
-            </p>
+            <div className="text-xs text-slate-600 dark:text-slate-400 mt-1 flex items-center flex-wrap gap-1.5">
+              <span>Lớp: <strong className="text-slate-900 dark:text-slate-100 font-bold">{room.classId} — {room.className}</strong></span>
+              <span>•</span>
+              <span>Bộ đề: <strong className="font-semibold text-slate-900 dark:text-slate-100">{room.templateTitle}</strong></span>
+            </div>
           </div>
         </div>
 
-        {/* Nút Thông Báo, Hủy Phòng Chờ & Nút Bắt đầu làm bài */}
-        <div className="flex items-center gap-2.5">
+        {/* Nút Gán Đề, Phát Thông Báo, Hủy Phòng Chờ & Nút Bắt đầu làm bài */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsAssignTemplateModalOpen(true)}
+            disabled={isRoomExpired}
+            className="h-9 inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-3.5 text-xs font-semibold text-slate-700 shadow-2xs transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-white/10"
+            title="Gán hoặc đổi bộ đề thi cho phòng chờ"
+          >
+            <FileCode2 className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+            <span>{room.templateId ? 'Đổi Đề Thi' : 'Gán Đề Thi'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => handleOpenNotice({ type: 'all' })}
-            className="h-10 inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 hover:border-blue-300 px-4 text-xs font-extrabold text-blue-700 shadow-2xs transition-all active:scale-[0.99] cursor-pointer"
+            className="h-9 inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-3.5 text-xs font-semibold text-slate-700 shadow-2xs transition cursor-pointer dark:border-white/10 dark:bg-white/10 dark:text-slate-200"
             title="Phát thông báo nhanh cho sinh viên trong phòng chờ"
           >
-            <Send className="h-3.5 w-3.5 text-blue-600" />
+            <Send className="h-3.5 w-3.5" />
             <span>Phát Thông Báo</span>
           </button>
 
           <button
             type="button"
             onClick={() => setIsCancelModalOpen(true)}
-            className="h-10 inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50/80 hover:bg-red-100 hover:border-red-300 px-4 text-xs font-extrabold text-red-700 shadow-2xs transition-all active:scale-[0.99] cursor-pointer"
+            className="h-9 inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 px-3.5 text-xs font-bold text-slate-700 shadow-2xs transition cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-300 dark:hover:bg-white/10"
             title="Hủy phòng chờ này và giải phóng lớp học phần"
           >
-            <Trash2 className="h-3.5 w-3.5 text-red-600" />
+            <Trash2 className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400" />
             <span>Hủy Phòng Chờ</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleStartExamAndMonitoring}
-            className="h-10 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 px-5 text-xs font-extrabold text-white shadow-md shadow-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/25 transition-all active:scale-[0.99] cursor-pointer"
-          >
-            <Play className="h-3.5 w-3.5 fill-current" />
-            <span> Bắt Đầu </span>
-          </button>
+          {(() => {
+            const isLab = (room.type as string) === 'lab' || (room.type as string) === 'practice';
+            const isLabBlocked = isLab && waitingCount === 0;
+            return (
+              <button
+                type="button"
+                disabled={isActionLoading || isLabBlocked}
+                onClick={handleStartExamAndMonitoring}
+                title={
+                  isLabBlocked
+                    ? 'Phòng thực hành yêu cầu ít nhất 1 sinh viên vào phòng chờ trước khi bắt đầu'
+                    : 'Bắt đầu ca thi / thực hành và chuyển sang giám sát trực tiếp'
+                }
+                className={`h-9 inline-flex items-center gap-2 rounded-md px-4 text-xs font-bold text-white shadow-2xs transition ${
+                  isLabBlocked
+                    ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60'
+                    : 'system-primary-action bg-slate-900 hover:bg-black cursor-pointer dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100'
+                }`}
+              >
+                <Play className="h-3.5 w-3.5 fill-current" />
+                <span>Bắt Đầu</span>
+              </button>
+            );
+          })()}
         </div>
       </div>
 
-      {/* BANNER THÔNG TIN PHÒNG & MÃ PIN GỬI SINH VIÊN */}
-      <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-3">
+      {/* BANNER THÔNG TIN PHÒNG, ĐỀ THI & MÃ PIN GỬI SINH VIÊN (4 CỘT) */}
+      <div className="grid grid-cols-1 items-stretch gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {/* Box 1: Mã phòng & PIN */}
-        <div className="rounded-2xl border border-blue-200/90 bg-gradient-to-br from-blue-50/80 via-white to-indigo-50/30 p-5 shadow-xs hover:border-blue-300 transition-all flex flex-col justify-between space-y-4">
-          <div className="space-y-3">
-            <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-blue-900 block">
-              Thông Tin Vào Phòng Của Sinh Viên
-            </span>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-blue-200/90 bg-white p-3 shadow-2xs space-y-1">
-                <span className="text-[10px] text-slate-400 font-bold block uppercase">MÃ PHÒNG</span>
-                <div className="flex items-center justify-between">
-                  <code className="font-mono text-base font-black text-blue-700 tracking-wider">{room.id}</code>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(room.id, 'room', 'Mã phòng')}
-                    className="rounded-lg p-1 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-colors cursor-pointer"
-                    title="Sao chép mã phòng"
-                  >
-                    {copiedKey === 'room' ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                  </button>
+        <div className="min-w-0 rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-colors dark:border-white/10 dark:bg-neutral-900 flex flex-col justify-between space-y-4">
+          {isRoomExpired ? (
+            <div className="flex min-h-28 flex-col justify-center rounded-md border border-amber-200 bg-amber-50 p-4 text-center dark:border-amber-500/30 dark:bg-amber-500/10">
+              <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-200">
+                Phòng đã kết thúc
+              </span>
+              <p className="mt-2 text-xs leading-relaxed text-amber-800 dark:text-amber-100">
+                Mã phòng và mật khẩu đã hết hiệu lực.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-3">
+                <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-slate-500 block">
+                  Thông Tin Vào Phòng Của Sinh Viên
+                </span>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="min-w-0 rounded-md border border-slate-200 bg-slate-50 p-3 shadow-2xs space-y-1 dark:border-white/10 dark:bg-white/[0.02]">
+                    <span className="font-mono text-[10px] text-slate-500 font-bold block uppercase">MÃ PHÒNG</span>
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <code className="min-w-0 truncate font-mono text-base font-bold text-brand tracking-wider dark:text-brand-200" title={room.id}>{room.id}</code>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(room.id, 'room', 'Mã phòng')}
+                        className="shrink-0 rounded p-1 text-slate-500 hover:bg-brand-50 hover:text-brand transition-colors cursor-pointer dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
+                        title="Sao chép mã phòng"
+                      >
+                        {copiedKey === 'room' ? <Check className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="min-w-0 rounded-md border border-slate-200 bg-slate-50 p-3 shadow-2xs space-y-1 dark:border-white/10 dark:bg-white/[0.02]">
+                    <span className="font-mono text-[10px] text-slate-500 font-bold block uppercase">MẬT KHẨU PIN</span>
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <code className="min-w-0 truncate font-mono text-base font-bold text-slate-900 tracking-wider dark:text-white" title={room.password}>{room.password}</code>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(room.password, 'pin', 'Mã PIN')}
+                        className="shrink-0 rounded p-1 text-slate-500 hover:bg-brand-50 hover:text-brand transition-colors cursor-pointer dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
+                        title="Sao chép mã PIN"
+                      >
+                        {copiedKey === 'pin' ? <Check className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-xl border border-blue-200/90 bg-white p-3 shadow-2xs space-y-1">
-                <span className="text-[10px] text-slate-400 font-bold block uppercase">MẬT KHẨU PIN</span>
-                <div className="flex items-center justify-between">
-                  <code className="font-mono text-base font-black text-slate-900 tracking-wider">{room.password}</code>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(room.password, 'pin', 'Mã PIN')}
-                    className="rounded-lg p-1 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-colors cursor-pointer"
-                    title="Sao chép mã PIN"
-                  >
-                    {copiedKey === 'pin' ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(`${window.location.origin}${studentInviteLink}`, 'link', 'Link phòng chờ')}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white hover:bg-slate-50 py-2 text-xs font-bold text-slate-700 transition shadow-2xs cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-white/10"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                <span>Sao Chép Link Mời Sinh Viên</span>
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Box 2: Bộ Đề Thi & Bài Tập */}
+        <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-colors dark:border-white/10 dark:bg-neutral-900 flex flex-col justify-between space-y-4">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-slate-500 block">
+                Bộ Đề Thi / Thực Hành
+              </span>
+              <span className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded border ${
+                room.templateId
+                  ? 'border-slate-300 bg-slate-100 text-slate-800 dark:border-white/10 dark:bg-white/10 dark:text-slate-200'
+                  : 'border-slate-300 bg-slate-100 text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-slate-400'
+              }`}>
+                {room.templateId ? 'Đã Gán Đề' : 'Chưa Gán'}
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="font-bold text-sm text-slate-900 dark:text-white line-clamp-2" title={room.templateTitle}>
+                {room.templateTitle || 'Chưa gán bộ đề thi'}
+              </div>
+              <div className="text-xs text-slate-600 dark:text-slate-400 font-mono">
+                {room.templateId ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span>Mã: {room.templateId}</span>
+                    <span>•</span>
+                    <span>{room.templateLanguage || 'Đa ngôn ngữ'}</span>
+                  </div>
+                ) : (
+                  <span className="text-slate-500 italic">Nhấn nút bên dưới để chọn bộ đề</span>
+                )}
               </div>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => copyToClipboard(studentInviteLink, 'link', 'Link phòng chờ')}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200/90 bg-white hover:bg-blue-50 py-2.5 text-xs font-extrabold text-blue-700 transition shadow-2xs cursor-pointer"
-          >
-            <Copy className="h-3.5 w-3.5" />
-            <span>Sao Chép Link Mời Sinh Viên Vào Phòng</span>
-          </button>
         </div>
 
-        {/* Box 2: Tỷ lệ Điểm Danh Thời Gian Thực */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between space-y-4">
+        {/* Box 3: Tỷ lệ Điểm Danh Thời Gian Thực */}
+        <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-colors dark:border-white/10 dark:bg-neutral-900 flex flex-col justify-between space-y-4">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500">
-                Tiến Độ Điểm Danh Phòng Chờ
+              <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-slate-500">
+                Tiến Độ Điểm Danh
               </span>
-              <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+              <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-300 dark:border-white/10 dark:bg-white/10 dark:text-slate-200">
                 {attendancePercent}%
               </span>
             </div>
 
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-slate-900">{waitingCount}</span>
-              <span className="text-xs text-slate-500 font-bold">/ {attendees.length} sinh viên đã vào</span>
+              <span className="font-mono text-3xl font-bold tabular-nums text-slate-900 dark:text-white">{waitingCount}</span>
+              <span className="text-xs text-slate-500">/ {attendees.length} sinh viên đã vào</span>
             </div>
 
             {/* Progress bar */}
-            <div className="h-3 w-full rounded-full bg-slate-100 overflow-hidden shadow-inner">
+            <div className="h-2 w-full rounded bg-slate-100 overflow-hidden dark:bg-white/10">
               <div
-                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500 rounded-full"
+                className="h-full bg-slate-700 dark:bg-slate-300 transition-all duration-300"
                 style={{ width: `${attendancePercent}%` }}
               />
             </div>
           </div>
 
-          <div className="flex items-center justify-between text-xs font-bold text-slate-600 pt-2 border-t border-slate-100">
-            <span className="text-emerald-700 flex items-center gap-1">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 pt-2 border-t border-slate-200 dark:border-white/10">
+            <span className="text-slate-700 dark:text-slate-300 flex items-center gap-1 font-mono">
+              <CheckCircle2 className="h-3.5 w-3.5" />
               Đã vào: {waitingCount} SV
             </span>
-            <span className="text-slate-400">Chưa vào: {absentCount} SV</span>
+            <span className="font-mono">Chưa vào: {absentCount} SV</span>
           </div>
         </div>
 
-        {/* Box 3: Quy chế & Thiết bị phòng */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between space-y-4">
+        {/* Box 4: Quy chế & Thiết bị phòng */}
+        <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-colors dark:border-white/10 dark:bg-neutral-900 flex flex-col justify-between space-y-4">
           <div className="space-y-2.5">
-            <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-slate-500 block">
+            <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-slate-500 block">
               Cấu Hình Giám Sát &amp; Thời Lượng
             </span>
 
-            <div className="space-y-2 text-xs text-slate-700 pt-0.5">
+            <div className="space-y-2 text-xs text-slate-700 dark:text-slate-300 pt-0.5">
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Thời lượng ca học:</span>
-                <strong className="text-slate-900 font-bold">{room.durationMinutes} phút</strong>
+                <strong className="font-mono font-bold text-slate-900 dark:text-white">{room.durationMinutes} phút</strong>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Khóa Fullscreen:</span>
-                <span className={`font-bold px-2 py-0.5 rounded-full text-[10.5px] ${
-                  room.proctoringConfig.lockdownFullscreen
-                    ? 'bg-purple-100 text-purple-800'
-                    : 'bg-slate-100 text-slate-500'
-                }`}>
-                  {room.proctoringConfig.lockdownFullscreen ? 'Bật (Bắt buộc)' : 'Tắt (Cho phép rời tab)'}
+                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded border border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">
+                  {room.proctoringConfig.lockdownFullscreen ? 'Bật (Bắt buộc)' : 'Tắt'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Camera AI Proctoring:</span>
-                <span className={`font-bold px-2 py-0.5 rounded-full text-[10.5px] ${
-                  room.proctoringConfig.aiFaceDetection
-                    ? 'bg-red-100 text-red-800'
-                    : 'bg-blue-100 text-blue-800'
-                }`}>
+                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded border border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">
                   {room.proctoringConfig.aiFaceDetection ? 'Bật (Chống gian lận)' : 'Tùy chọn'}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 pt-2 border-t border-slate-100">
-            <span className="text-blue-700 font-bold flex items-center gap-1">
-              <Radio className="h-3 w-3 animate-pulse text-blue-600" />
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 pt-2 border-t border-slate-200 dark:border-white/10">
+            <span className="text-slate-700 dark:text-slate-300 font-bold flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
               Sẵn sàng làm bài
             </span>
-            <span className="font-mono text-slate-400 text-[11px]">PIN: {room.password}</span>
+            <span className="font-mono text-slate-500 text-[11px]">PIN: {room.password}</span>
           </div>
         </div>
       </div>
 
       {/* DANH SÁCH SINH VIÊN ĐIỂM DANH THỜI GIAN THỰC */}
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs space-y-4 hover:border-slate-300/80 transition-all">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+      <div className="rounded-md border border-slate-300 bg-white p-5 sm:p-6 shadow-2xs space-y-4 transition-colors dark:border-white/10 dark:bg-neutral-900">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-white/10">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 border border-blue-100">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-slate-100 text-slate-800 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
               <Users className="h-3.5 w-3.5" />
             </div>
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
               Danh Sách Sinh Viên Phòng Chờ ({attendees.length})
             </h2>
           </div>
@@ -700,120 +926,112 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
                 placeholder="Tìm MSSV, họ tên..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-9 w-48 sm:w-60 rounded-xl border border-slate-200/90 bg-slate-50/70 pl-10 pr-3.5 text-xs outline-none transition-all hover:bg-slate-50 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 placeholder:text-slate-400"
+                className="h-9 w-48 sm:w-60 rounded-md border border-slate-300 bg-slate-50 pl-10 pr-3.5 text-xs outline-none transition focus:border-slate-600 focus:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100"
               />
             </div>
 
             {/* Filter buttons */}
-            <div className="inline-flex rounded-xl bg-slate-100/90 p-1 text-xs font-semibold">
+            <div className="inline-flex rounded-md bg-slate-100 p-1 text-xs font-semibold dark:bg-white/[0.04]">
               <button
                 type="button"
                 onClick={() => setFilterStatus('all')}
-                className={`rounded-lg px-2.5 py-1 transition cursor-pointer ${
-                  filterStatus === 'all'
-                    ? 'bg-white text-blue-700 shadow-2xs font-extrabold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className={`rounded px-2.5 py-1 transition cursor-pointer font-mono text-[11px] ${filterStatus === 'all'
+                    ? 'system-selected-module shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 dark:hover:text-white'
+                  }`}
               >
                 Tất cả ({attendees.length})
               </button>
               <button
                 type="button"
                 onClick={() => setFilterStatus('waiting')}
-                className={`rounded-lg px-2.5 py-1 transition cursor-pointer ${
-                  filterStatus === 'waiting'
-                    ? 'bg-white text-emerald-700 shadow-2xs font-extrabold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className={`rounded px-2.5 py-1 transition cursor-pointer font-mono text-[11px] ${filterStatus === 'waiting'
+                    ? 'system-selected-module shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 dark:hover:text-white'
+                  }`}
               >
                 Có mặt ({waitingCount})
               </button>
               <button
                 type="button"
                 onClick={() => setFilterStatus('absent')}
-                className={`rounded-lg px-2.5 py-1 transition cursor-pointer ${
-                  filterStatus === 'absent'
-                    ? 'bg-white text-slate-900 shadow-2xs font-extrabold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className={`rounded px-2.5 py-1 transition cursor-pointer font-mono text-[11px] ${filterStatus === 'absent'
+                    ? 'system-selected-module shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 dark:hover:text-white'
+                  }`}
               >
                 Chưa vào ({absentCount})
               </button>
             </div>
 
-            {/* Thông báo dữ liệu điểm danh được quản lý ở Module Báo Cáo */}
-            <div className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-50/80 px-3 py-1.5 text-[11px] font-semibold text-slate-600">
-              <FileSpreadsheet className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-              <span>Dữ liệu điểm danh chi tiết được lưu trữ tại module Báo cáo</span>
+            {/* Thông báo dữ liệu điểm danh */}
+            <div className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.02]">
+              <FileSpreadsheet className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300 shrink-0" />
+              <span>Đồng bộ điểm danh tự động mỗi 3 giây</span>
             </div>
           </div>
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto rounded-xl border border-slate-200/80 shadow-2xs">
-          <table className="w-full text-left text-xs text-slate-600">
-            <thead className="bg-slate-50/90 border-b border-slate-200/80 text-slate-700 uppercase font-extrabold text-[10.5px] tracking-wider">
+        <div className="overflow-x-auto rounded-md border border-slate-200 shadow-2xs dark:border-white/10">
+          <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-mono font-bold text-[10.5px] tracking-wider dark:bg-neutral-950 dark:border-white/10">
               <tr>
                 <th className="px-4 py-3.5">MSSV</th>
                 <th className="px-4 py-3.5">Họ và Tên Sinh Viên</th>
                 <th className="px-4 py-3.5">Email Sinh Viên</th>
                 <th className="px-4 py-3.5 text-center">Trạng Thái Điểm Danh</th>
-                <th className="px-4 py-3.5">Thiết Bị &amp; Camera</th>
+                <th className="px-4 py-3.5">Camera</th>
                 <th className="px-4 py-3.5 text-right">Điểm Danh Thủ Công</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-sans">
+            <tbody className="divide-y divide-slate-200 font-sans dark:divide-white/10">
               {filteredAttendees.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-xs text-slate-400">
+                  <td colSpan={6} className="py-10 text-center text-xs text-slate-500">
                     Không tìm thấy sinh viên nào trong danh sách.
                   </td>
                 </tr>
               ) : (
                 filteredAttendees.map((a) => {
-                  const isPresent = a.status === 'waiting';
+                  const isPresent = a.status === 'waiting' || a.status === 'late';
 
                   return (
-                    <tr key={a.studentId} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="px-4 py-3 font-mono font-extrabold text-slate-900">
-                        <span className="bg-slate-100 px-2 py-0.5 rounded text-xs">{a.studentId}</span>
+                    <tr key={a.studentId} className="hover:bg-slate-50/50 transition-colors dark:hover:bg-white/[0.02]">
+                      <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
+                        <span className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-xs dark:bg-white/10 dark:border-white/10">{a.studentId}</span>
                       </td>
-                      <td className="px-4 py-3 font-bold text-slate-900">{a.studentName}</td>
+                      <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">{a.studentName}</td>
                       <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{a.studentEmail}</td>
                       <td className="px-4 py-3 text-center">
-                        {isPresent ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700 border border-emerald-200 shadow-2xs">
+                        {a.status === 'late' ? (
+                          <span className="inline-flex items-center gap-1.5 rounded border border-amber-300 bg-amber-50 px-2.5 py-0.5 font-mono text-[11px] font-bold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                            <Clock className="h-3 w-3" />
+                            Điểm danh muộn{a.joinedAt ? ` (${a.joinedAt})` : ''}
+                          </span>
+                        ) : isPresent ? (
+                          <span className="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
                             <CheckCircle2 className="h-3 w-3" />
-                            Có mặt ({a.joinedAt})
+                            Có mặt{a.joinedAt ? ` (${a.joinedAt})` : ''}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">
+                          <span className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-medium text-slate-500 dark:border-white/10 dark:bg-white/10 dark:text-slate-400">
                             Chưa vào phòng
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-[11px]">
-                        {isPresent ? (
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5 text-slate-700">
-                              <Laptop className="h-3 w-3 text-slate-400" />
-                              <span className="truncate max-w-[180px] font-medium">{a.device || 'Laptop cá nhân'}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-emerald-600 font-bold text-[10px]">
-                              <Camera className="h-3 w-3" />
-                              <span>Camera: Sẵn sàng</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-slate-400 italic">Chưa kết nối thiết bị</span>
-                        )}
+                        <span className={`inline-flex items-center gap-1.5 ${a.cameraReady ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-400'}`}>
+                          <Camera className="h-3 w-3" />
+                          {a.cameraReady ? 'Sẵn sàng' : isPresent ? 'Chưa kiểm tra' : '—'}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
                             onClick={() => handleOpenNotice({ type: 'individual', studentId: a.studentId, studentName: a.studentName })}
-                            className="rounded-lg p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
+                            className="rounded p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer dark:hover:text-white dark:hover:bg-white/10"
                             title={`Gửi thông báo riêng cho ${a.studentName}`}
                           >
                             <Send className="h-3.5 w-3.5" />
@@ -821,11 +1039,10 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
                           <button
                             type="button"
                             onClick={() => handleToggleAttendance(a.studentId)}
-                            className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer ${
-                              isPresent
-                                ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-700 border border-slate-200'
-                                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
-                            }`}
+                            className={`rounded px-2.5 py-1 text-[11px] font-bold transition cursor-pointer ${isPresent
+                                ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 dark:border-white/10 dark:bg-white/10 dark:text-slate-300'
+                                : 'system-primary-action bg-slate-900 text-white hover:bg-black dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100'
+                              }`}
                           >
                             {isPresent ? 'Hủy Điểm Danh' : 'Điểm Danh Nhanh'}
                           </button>
@@ -850,6 +1067,19 @@ export default function InstructorWaitingRoomView({ roomId }: Props) {
           showToast(`Đã phát thông báo tới ${targetLabel}: "${message}"`);
         }}
       />
+
+      {/* ── MODAL 4: GÁN BỘ ĐỀ THI VÀO PHÒNG ── */}
+      {room && (
+        <AssignTemplateModal
+          isOpen={isAssignTemplateModalOpen}
+          onClose={() => setIsAssignTemplateModalOpen(false)}
+          roomCode={room.id}
+          roomType={room.type}
+          currentTemplateId={room.templateId}
+          currentTemplateTitle={room.templateTitle}
+          onSuccess={handleAssignTemplateSuccess}
+        />
+      )}
     </div>
   );
 }

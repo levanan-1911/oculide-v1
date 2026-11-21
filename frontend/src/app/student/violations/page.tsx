@@ -199,378 +199,376 @@ export default function StudentViolationsPage() {
   );
 
   return (
-    <main className="min-h-screen bg-slate-50/80 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-[1600px] space-y-6">
-        {/* Navigation & Header */}
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto max-w-[1600px] space-y-6">
+      {/* Navigation & Header */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <nav className="flex items-center gap-2 font-mono text-xs font-medium text-slate-500 dark:text-[#9F9690]">
+            <Link href="/student" className="hover:text-slate-900 dark:hover:text-[#f0c2cf] transition">
+              Sinh viên
+            </Link>
+            <span>/</span>
+            <span className="text-slate-900 dark:text-[#f0c2cf] font-semibold">Nhật ký cảnh báo AI</span>
+          </nav>
+
+          <h1 className="mt-2 text-2xl font-serif font-bold tracking-tight text-[#2A282D] dark:text-white sm:text-3xl">
+            Nhật ký cảnh báo AI &amp; Vi phạm cá nhân
+          </h1>
+          <p className="mt-1 text-xs sm:text-sm text-[#5A5555] dark:text-[#9F9690]">
+            Minh bạch toàn bộ sự kiện cảnh báo từ hệ thống AI giám sát webcam và màn hình theo quy chuẩn học thuật.
+          </p>
+        </div>
+
+        <div className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-slate-900/10 px-3.5 py-2 text-xs font-serif font-semibold text-slate-900 border border-slate-900/20 dark:bg-slate-900/20 dark:text-[#f0c2cf] shadow-2xs">
+          <ShieldCheck className="h-4 w-4 text-slate-900 dark:text-[#f0c2cf]" />
+          Chính sách đạo đức AI Oculide
+        </div>
+      </header>
+
+      {/* Banner Thông báo Đạo đức AI */}
+      <div className="rounded-md border border-slate-300 bg-slate-900/5 p-4 sm:p-5 flex items-start gap-3.5 dark:border-white/10 dark:bg-slate-900/15">
+        <Info className="h-5 w-5 text-slate-900 dark:text-[#f0c2cf] shrink-0 mt-0.5" />
+        <div className="text-xs text-[#2A282D] dark:text-[#E8E6E8] leading-relaxed space-y-1">
+          <p>
+            <strong className="font-serif font-bold text-slate-900 dark:text-[#f0c2cf]">Lưu ý quan trọng:</strong> Hệ thống AI chỉ tự động ghi nhận các khoảnh khắc bất thường ở trạng thái tạm thời (<code className="rounded bg-white dark:bg-neutral-900 px-1.5 py-0.5 font-mono text-[11px] font-bold border border-slate-300 dark:border-white/10 text-slate-900 dark:text-[#f0c2cf]">Chờ GV xem xét</code>).
+          </p>
+          <p className="text-[#5A5555] dark:text-[#9F9690]">
+            AI <strong>không bao giờ</strong> tự ý trừ điểm bài thi của bạn. Quyết định cuối cùng luôn do chính Giảng viên bộ môn xem xét bằng chứng video/ảnh chụp và phê duyệt.
+          </p>
+        </div>
+      </div>
+
+      {/* Thẻ Thống Kê Tổng Quan */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3 items-stretch">
+        <div className="flex items-center justify-between rounded-md border border-slate-300 bg-white p-5 dark:border-white/10 dark:bg-neutral-900">
           <div>
-            <nav className="flex items-center gap-2 text-xs font-medium text-slate-500">
-              <Link href="/student" className="hover:text-blue-600 transition">
-                Sinh viên
-              </Link>
-              <span>/</span>
-              <span className="text-blue-600 font-semibold">Nhật ký cảnh báo AI</span>
-            </nav>
-
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              Nhật ký cảnh báo AI &amp; Vi phạm cá nhân
-            </h1>
-            <p className="mt-1 text-xs sm:text-sm text-slate-500">
-              Minh bạch toàn bộ sự kiện cảnh báo từ hệ thống AI giám sát webcam và màn hình.
-            </p>
+            <p className="text-xs font-mono font-medium text-slate-500 dark:text-[#9F9690]">Tổng ghi nhận cảnh báo</p>
+            <p className="mt-2 text-3xl font-serif font-bold text-[#2A282D] dark:text-white">{counts.all}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Tất cả bài thi</p>
           </div>
-
-          <div className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-blue-50 px-3.5 py-2 text-xs font-semibold text-blue-700 border border-blue-200/80 shadow-2xs">
-            <ShieldCheck className="h-4 w-4 text-blue-600" />
-            Chính sách đạo đức AI Oculide
-          </div>
-        </header>
-
-        {/* Banner Thông báo Đạo đức AI */}
-        <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 sm:p-5 flex items-start gap-3.5">
-          <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-          <div className="text-xs text-blue-900 leading-relaxed space-y-1">
-            <p>
-              <strong className="font-bold">Lưu ý quan trọng:</strong> Hệ thống AI chỉ tự động ghi nhận các khoảnh khắc bất thường ở trạng thái tạm thời (<code className="rounded bg-white/80 px-1.5 py-0.5 font-mono text-[11px] font-bold border border-blue-200/60 text-blue-800">Chờ GV xem xét</code>).
-            </p>
-            <p className="text-blue-800/90">
-              AI <strong>không bao giờ</strong> tự ý trừ điểm bài thi của bạn. Quyết định cuối cùng luôn do chính Giảng viên bộ môn xem xét bằng chứng video/ảnh chụp và phê duyệt.
-            </p>
+          <div className="flex h-12 w-12 items-center justify-center rounded-md bg-slate-900/10 text-slate-900 dark:bg-slate-900/20 dark:text-[#f0c2cf]">
+            <ShieldAlert size={22} />
           </div>
         </div>
 
-        {/* Thẻ Thống Kê Tổng Quan */}
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-            <div>
-              <p className="text-xs font-medium text-slate-500">Tổng ghi nhận cảnh báo</p>
-              <p className="mt-2 text-3xl font-bold text-slate-900">{counts.all}</p>
-              <p className="mt-1 text-[11px] text-slate-400">Tất cả bài thi</p>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-              <ShieldAlert size={22} />
-            </div>
+        <div className="flex items-center justify-between rounded-md border border-slate-300 bg-white p-5 dark:border-white/10 dark:bg-neutral-900">
+          <div>
+            <p className="text-xs font-mono font-medium text-slate-500 dark:text-[#9F9690]">Đang chờ GV xem xét</p>
+            <p className="mt-2 text-3xl font-serif font-bold text-amber-700 dark:text-amber-400">{counts.pending}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Trạng thái tạm thời</p>
+          </div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-md bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+            <Clock size={22} />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between rounded-md border border-slate-300 bg-white p-5 dark:border-white/10 dark:bg-neutral-900">
+          <div>
+            <p className="text-xs font-mono font-medium text-slate-500 dark:text-[#9F9690]">Đã miễn vi phạm (Đã hủy)</p>
+            <p className="mt-2 text-3xl font-serif font-bold text-slate-900 dark:text-[#f0c2cf]">{counts.rejected}</p>
+            <p className="mt-1 text-[11px] text-slate-500">GV đã xác nhận hợp lệ</p>
+          </div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-md bg-stone-100 text-stone-700 dark:bg-white/10 dark:text-stone-300">
+            <CheckCircle2 size={22} />
+          </div>
+        </div>
+      </section>
+
+      {/* Filter Controls */}
+      <section className="rounded-md border border-slate-300 bg-white p-4 sm:p-5 dark:border-white/10 dark:bg-neutral-900">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="font-serif text-base font-bold text-[#2A282D] dark:text-white">Danh sách nhật ký vi phạm</h2>
+            <p className="text-xs text-slate-500 dark:text-[#9F9690]">Tìm kiếm và tra cứu chi tiết ảnh chụp bằng chứng AI</p>
           </div>
 
-          <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-            <div>
-              <p className="text-xs font-medium text-slate-500">Đang chờ GV xem xét</p>
-              <p className="mt-2 text-3xl font-bold text-amber-600">{counts.pending}</p>
-              <p className="mt-1 text-[11px] text-slate-400">Trạng thái tạm thời</p>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-              <Clock size={22} />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-            <div>
-              <p className="text-xs font-medium text-slate-500">Đã miễn vi phạm (Đã hủy)</p>
-              <p className="mt-2 text-3xl font-bold text-slate-700">{counts.rejected}</p>
-              <p className="mt-1 text-[11px] text-slate-400">GV đã xác nhận hợp lệ</p>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-              <CheckCircle2 size={22} />
-            </div>
-          </div>
-        </section>
-
-        {/* Filter Controls */}
-        <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">Danh sách nhật ký vi phạm</h2>
-              <p className="text-xs text-slate-500">Tìm kiếm và tra cứu chi tiết ảnh chụp bằng chứng AI</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative sm:w-72">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Tìm tên môn, loại hành vi..."
+                className="w-full rounded-md border border-slate-300 bg-slate-50 py-2.5 pl-10 pr-4 text-xs sm:text-sm text-[#2A282D] outline-none transition placeholder:text-slate-500 focus:border-slate-900 focus:bg-white dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:placeholder:text-[#9F9690] dark:focus:border-slate-800"
+              />
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="relative sm:w-72">
-                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Tìm tên môn, loại hành vi..."
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2.5 pl-10 pr-4 text-xs sm:text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-                />
-              </div>
-
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-                <button
-                  type="button"
-                  onClick={() => setFilterStatus("all")}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition cursor-pointer ${
-                    filterStatus === "all"
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  Tất cả ({counts.all})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStatus("pending")}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition cursor-pointer ${
-                    filterStatus === "pending"
-                      ? "bg-amber-600 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  Chờ xem xét ({counts.pending})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStatus("rejected")}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition cursor-pointer ${
-                    filterStatus === "rejected"
-                      ? "bg-slate-800 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  Đã hủy ({counts.rejected})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterStatus("confirmed")}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition cursor-pointer ${
-                    filterStatus === "confirmed"
-                      ? "bg-rose-600 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  Đã xác nhận ({counts.confirmed})
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Table & Cards */}
-        <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-xs text-slate-500">
-              <LoaderCircle className="h-4 w-4 animate-spin text-blue-600" />
-              Đang tải nhật ký cảnh báo và vi phạm từ hệ thống...
-            </div>
-          ) : filteredViolations.length > 0 ? (
-            <>
-              {/* Desktop Table View */}
-              <div className="hidden overflow-x-auto md:block">
-                <table className="w-full text-left text-xs text-slate-600">
-                  <thead className="bg-slate-50/80 border-b border-slate-100 text-slate-500 uppercase font-semibold text-[11px] tracking-wider">
-                    <tr>
-                      <th className="px-6 py-3.5">Ca thi / Bài Lab</th>
-                      <th className="px-6 py-3.5">Thời gian ghi nhận</th>
-                      <th className="px-6 py-3.5">Loại hành vi cảnh báo</th>
-                      <th className="px-6 py-3.5">Mức độ</th>
-                      <th className="px-6 py-3.5">Trạng thái xử lý</th>
-                      <th className="px-6 py-3.5 text-right">Chi tiết Bằng chứng</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredViolations.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-50/70 transition">
-                        <td className="px-6 py-4 font-bold text-slate-900 text-sm">
-                          {item.examTitle}
-                        </td>
-                        <td className="px-6 py-4 font-mono text-slate-500">
-                          {item.timestamp}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="font-semibold text-slate-800">
-                            {item.typeName}
-                          </span>
-                          <p className="text-[11px] text-slate-400 mt-0.5">
-                            {item.evidenceNote}
-                          </p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                              item.severity === "high" || item.severity === "critical"
-                                ? "bg-rose-100 text-rose-700"
-                                : item.severity === "medium"
-                                ? "bg-amber-100 text-amber-700"
-                                : "bg-slate-100 text-slate-600"
-                            }`}
-                          >
-                            {item.severity}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-block rounded-full border px-2.5 py-1 text-[11px] font-semibold ${item.statusClass}`}
-                          >
-                            {item.statusText}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedEvidence(item)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-blue-600 transition cursor-pointer"
-                          >
-                            <Camera size={14} className="text-slate-400" />
-                            Xem bằng chứng
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile Card View */}
-              <div className="space-y-3 p-4 md:hidden">
-                {filteredViolations.map((item) => (
-                  <article
-                    key={item.id}
-                    className="rounded-xl border border-slate-200/80 p-4 space-y-3"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-bold text-slate-900 text-sm">
-                        {item.examTitle}
-                      </h3>
-                      <span
-                        className={`inline-block shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${item.statusClass}`}
-                      >
-                        {item.statusText}
-                      </span>
-                    </div>
-
-                    <div className="text-xs space-y-1">
-                      <p className="font-semibold text-slate-800">{item.typeName}</p>
-                      <p className="text-slate-500 text-[11px]">{item.evidenceNote}</p>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs text-slate-500 border-t border-slate-100 pt-2.5">
-                      <span className="font-mono">{item.timestamp}</span>
-                      <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase">
-                        {item.severity}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedEvidence(item)}
-                      className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-                    >
-                      <Camera size={14} className="text-slate-400" />
-                      Xem ảnh chụp bằng chứng
-                    </button>
-                  </article>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="px-6 py-14 text-center">
-              <ShieldAlert size={32} className="mx-auto text-slate-300" />
-              <h3 className="mt-3 font-semibold text-slate-900 text-sm">
-                Không tìm thấy ghi nhận cảnh báo
-              </h3>
-              <p className="mt-1 text-xs text-slate-400">
-                Không có sự kiện vi phạm nào phù hợp với từ khóa hoặc bộ lọc.
-              </p>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
               <button
                 type="button"
-                onClick={() => {
-                  setSearch("");
-                  setFilterStatus("all");
-                }}
-                className="mt-4 inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3.5 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+                onClick={() => setFilterStatus("all")}
+                className={`rounded-md px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  filterStatus === "all"
+                    ? "system-selected-module shadow-2xs"
+                    : "bg-slate-50 text-[#5A5555] hover:bg-stone-200/70 dark:bg-white/5 dark:text-stone-300 dark:hover:bg-white/10"
+                }`}
               >
-                <RotateCcw size={12} /> Xóa bộ lọc
+                Tất cả ({counts.all})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus("pending")}
+                className={`rounded-md px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  filterStatus === "pending"
+                    ? "system-selected-module shadow-2xs"
+                    : "bg-slate-50 text-[#5A5555] hover:bg-stone-200/70 dark:bg-white/5 dark:text-stone-300 dark:hover:bg-white/10"
+                }`}
+              >
+                Chờ xem xét ({counts.pending})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus("rejected")}
+                className={`rounded-md px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  filterStatus === "rejected"
+                    ? "system-selected-module shadow-2xs"
+                    : "bg-slate-50 text-[#5A5555] hover:bg-stone-200/70 dark:bg-white/5 dark:text-stone-300 dark:hover:bg-white/10"
+                }`}
+              >
+                Đã hủy ({counts.rejected})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus("confirmed")}
+                className={`rounded-md px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+                  filterStatus === "confirmed"
+                    ? "system-selected-module shadow-2xs"
+                    : "bg-slate-50 text-[#5A5555] hover:bg-stone-200/70 dark:bg-white/5 dark:text-stone-300 dark:hover:bg-white/10"
+                }`}
+              >
+                Đã xác nhận ({counts.confirmed})
               </button>
             </div>
-          )}
-        </section>
+          </div>
+        </div>
+      </section>
 
-        {/* Modal Xem Bằng Chứng */}
-        {selectedEvidence && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-            <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <ShieldAlert className="h-5 w-5 text-amber-600" />
-                  <h3 className="text-sm font-bold text-slate-900">Chi tiết bằng chứng cảnh báo AI</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedEvidence(null)}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                <div>
-                  <span className="text-slate-400">Ca thi:</span>
-                  <p className="font-bold text-slate-900 mt-0.5">{selectedEvidence.examTitle}</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <span className="text-slate-400">Thời gian:</span>
-                    <p className="font-mono font-semibold text-slate-700 mt-0.5">
-                      {selectedEvidence.timestamp}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">Trạng thái duyệt:</span>
-                    <p className="mt-0.5">
-                      <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold ${selectedEvidence.statusClass}`}>
-                        {selectedEvidence.statusText}
-                      </span>
-                    </p>
-                  </div>
-                </div>
-
-                <div>
-                  <span className="text-slate-400">Hành vi phát hiện:</span>
-                  <p className="font-semibold text-slate-800 mt-0.5">{selectedEvidence.typeName}</p>
-                  <p className="text-slate-500 text-[11px] mt-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                    {selectedEvidence.evidenceNote}
-                  </p>
-                </div>
-
-                {selectedEvidence.snapshotUrl ? (
-                  <div>
-                    <span className="text-slate-400 mb-1.5 block">Ảnh chụp bằng chứng:</span>
-                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-black flex items-center justify-center max-h-56">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={selectedEvidence.snapshotUrl}
-                        alt="Bằng chứng vi phạm"
-                        className="object-contain max-h-56 w-full"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-slate-400">
-                    <Camera className="mx-auto h-6 w-6 text-slate-300 mb-1" />
-                    Sự kiện nhật ký từ trình duyệt (Tab switch / Blur / Copy-paste) - Không yêu cầu ảnh chụp webcam.
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setSelectedEvidence(null)}
-                  className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 transition"
-                >
-                  Đóng
-                </button>
-              </div>
+      {/* Table & Cards */}
+      <section className="overflow-hidden rounded-md border border-slate-300 bg-white dark:border-white/10 dark:bg-neutral-900">
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-xs text-slate-500">
+            <LoaderCircle className="h-4 w-4 animate-spin text-slate-900 dark:text-[#f0c2cf]" />
+            Đang tải nhật ký cảnh báo và vi phạm từ hệ thống...
+          </div>
+        ) : filteredViolations.length > 0 ? (
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-left text-xs text-[#5A5555] dark:text-stone-300">
+                <thead className="bg-slate-50 dark:bg-neutral-950 border-b border-slate-300 dark:border-white/10 text-slate-500 uppercase font-mono font-semibold text-[11px] tracking-wider">
+                  <tr>
+                    <th className="px-6 py-3.5">Ca thi / Bài Lab</th>
+                    <th className="px-6 py-3.5">Thời gian ghi nhận</th>
+                    <th className="px-6 py-3.5">Loại hành vi cảnh báo</th>
+                    <th className="px-6 py-3.5">Mức độ</th>
+                    <th className="px-6 py-3.5">Trạng thái xử lý</th>
+                    <th className="px-6 py-3.5 text-right">Chi tiết Bằng chứng</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-300 dark:divide-white/10">
+                  {filteredViolations.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02] transition">
+                      <td className="px-6 py-4 font-serif font-bold text-[#2A282D] dark:text-white text-sm">
+                        {item.examTitle}
+                      </td>
+                      <td className="px-6 py-4 font-mono text-slate-500">
+                        {item.timestamp}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="font-semibold text-[#2A282D] dark:text-white">
+                          {item.typeName}
+                        </span>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {item.evidenceNote}
+                        </p>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-block rounded px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${
+                            item.severity === "high" || item.severity === "critical"
+                              ? "bg-slate-800/15 text-slate-800 dark:bg-slate-800/30 dark:text-[#e5a9b9]"
+                              : item.severity === "medium"
+                              ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                              : "bg-stone-100 text-stone-600 dark:bg-white/10 dark:text-stone-300"
+                          }`}
+                        >
+                          {item.severity}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-block rounded border px-2.5 py-1 font-serif text-[11px] font-semibold ${item.statusClass}`}
+                        >
+                          {item.statusText}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedEvidence(item)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-serif font-semibold text-[#2A282D] shadow-2xs hover:bg-slate-900/5 hover:text-slate-900 dark:border-white/10 dark:bg-neutral-900 dark:text-white dark:hover:bg-white/5 transition cursor-pointer"
+                        >
+                          <Camera size={14} className="text-slate-500" />
+                          Xem bằng chứng
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+
+            {/* Mobile Card View */}
+            <div className="space-y-3 p-4 md:hidden">
+              {filteredViolations.map((item) => (
+                <article
+                  key={item.id}
+                  className="rounded-md border border-slate-300 p-4 space-y-3 dark:border-white/10"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-serif font-bold text-[#2A282D] dark:text-white text-sm">
+                      {item.examTitle}
+                    </h3>
+                    <span
+                      className={`inline-block shrink-0 rounded border px-2.5 py-0.5 font-serif text-[10px] font-semibold ${item.statusClass}`}
+                    >
+                      {item.statusText}
+                    </span>
+                  </div>
+
+                  <div className="text-xs space-y-1">
+                    <p className="font-semibold text-[#2A282D] dark:text-white">{item.typeName}</p>
+                    <p className="text-slate-500 text-[11px]">{item.evidenceNote}</p>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-slate-500 border-t border-slate-300 dark:border-white/10 pt-2.5">
+                    <span className="font-mono">{item.timestamp}</span>
+                    <span className="rounded bg-stone-100 dark:bg-white/10 px-2 py-0.5 font-mono text-[10px] font-bold uppercase">
+                      {item.severity}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEvidence(item)}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white py-2 font-serif text-xs font-semibold text-[#2A282D] hover:bg-stone-50 dark:border-white/10 dark:bg-neutral-900 dark:text-white transition cursor-pointer"
+                  >
+                    <Camera size={14} className="text-slate-500" />
+                    Xem ảnh chụp bằng chứng
+                  </button>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="px-6 py-14 text-center">
+            <ShieldAlert size={32} className="mx-auto text-slate-500" />
+            <h3 className="mt-3 font-serif font-semibold text-[#2A282D] dark:text-white text-sm">
+              Không tìm thấy ghi nhận cảnh báo
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Không có sự kiện vi phạm nào phù hợp với từ khóa hoặc bộ lọc.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setFilterStatus("all");
+              }}
+              className="mt-4 inline-flex items-center gap-1 rounded-md bg-slate-900/10 px-3.5 py-1.5 font-serif text-xs font-bold text-slate-900 hover:bg-slate-900/20 dark:bg-slate-900/20 dark:text-[#f0c2cf] transition cursor-pointer"
+            >
+              <RotateCcw size={12} /> Xóa bộ lọc
+            </button>
           </div>
         )}
+      </section>
 
-        <footer className="pt-2 text-center text-xs text-slate-400">
-          Oculide · Hệ thống thi lập trình trực tuyến
-        </footer>
-      </div>
-    </main>
+      {/* Modal Xem Bằng Chứng */}
+      {selectedEvidence && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="relative w-full max-w-lg rounded-md border border-slate-300 bg-white p-6 shadow-2xl space-y-4 dark:border-white/10 dark:bg-neutral-900">
+            <div className="flex items-center justify-between border-b border-slate-300 dark:border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5 text-slate-800 dark:text-[#e5a9b9]" />
+                <h3 className="font-serif text-sm font-bold text-[#2A282D] dark:text-white">Chi tiết bằng chứng cảnh báo AI</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEvidence(null)}
+                className="rounded p-1 text-slate-500 hover:bg-stone-100 hover:text-[#2A282D] dark:hover:bg-white/10 dark:hover:text-white cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <span className="text-slate-500">Ca thi:</span>
+                <p className="font-serif font-bold text-[#2A282D] dark:text-white mt-0.5">{selectedEvidence.examTitle}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-slate-500">Thời gian:</span>
+                  <p className="font-mono font-semibold text-[#2A282D] dark:text-stone-300 mt-0.5">
+                    {selectedEvidence.timestamp}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-slate-500">Trạng thái duyệt:</span>
+                  <p className="mt-0.5">
+                    <span className={`inline-block rounded border px-2 py-0.5 font-serif text-[10px] font-semibold ${selectedEvidence.statusClass}`}>
+                      {selectedEvidence.statusText}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-slate-500">Hành vi phát hiện:</span>
+                <p className="font-semibold text-[#2A282D] dark:text-white mt-0.5">{selectedEvidence.typeName}</p>
+                <p className="text-[#5A5555] dark:text-[#9F9690] text-[11px] mt-1 bg-slate-50 dark:bg-neutral-950 p-2.5 rounded-md border border-slate-300 dark:border-white/10">
+                  {selectedEvidence.evidenceNote}
+                </p>
+              </div>
+
+              {selectedEvidence.snapshotUrl ? (
+                <div>
+                  <span className="text-slate-500 mb-1.5 block">Ảnh chụp bằng chứng:</span>
+                  <div className="overflow-hidden rounded-md border border-slate-300 dark:border-white/10 bg-black flex items-center justify-center max-h-56">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={selectedEvidence.snapshotUrl}
+                      alt="Bằng chứng vi phạm"
+                      className="object-contain max-h-56 w-full"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed border-slate-300 dark:border-white/10 p-4 text-center text-slate-500">
+                  <Camera className="mx-auto h-6 w-6 text-slate-500 mb-1" />
+                  Sự kiện nhật ký từ trình duyệt (Tab switch / Blur / Copy-paste) - Không yêu cầu ảnh chụp webcam.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-slate-300 dark:border-white/10 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedEvidence(null)}
+                className="rounded-md bg-stone-100 dark:bg-white/10 px-4 py-2 font-serif text-xs font-semibold text-[#2A282D] dark:text-white hover:bg-stone-200 dark:hover:bg-white/20 transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <footer className="pt-2 text-center font-mono text-xs text-slate-500">
+        Oculide · Hệ thống thi lập trình trực tuyến chuẩn học thuật
+      </footer>
+    </div>
   );
 }

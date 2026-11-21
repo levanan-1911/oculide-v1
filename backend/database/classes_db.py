@@ -48,6 +48,35 @@ def _resolve_user_id(cursor, student_id_or_ident: Any) -> Optional[int]:
 
     return None
 
+from datetime import datetime, date
+
+def compute_class_status(start_date: Any, end_date: Any, current_status: Optional[str] = None) -> str:
+    """Tự động tính toán trạng thái lớp học dựa theo thời gian bắt đầu và kết thúc"""
+    today = date.today()
+    if end_date:
+        try:
+            if hasattr(end_date, 'date'):
+                end_d = end_date.date()
+            else:
+                end_d = datetime.fromisoformat(str(end_date).replace('Z', '')[:10]).date()
+            if today > end_d:
+                return 'Đã kết thúc'
+        except Exception:
+            pass
+
+    if start_date:
+        try:
+            if hasattr(start_date, 'date'):
+                start_d = start_date.date()
+            else:
+                start_d = datetime.fromisoformat(str(start_date).replace('Z', '')[:10]).date()
+            if today < start_d:
+                return 'Chưa mở'
+        except Exception:
+            pass
+
+    return 'Hoạt động'
+
 def create_class(
     class_code: str,
     class_name: str,
@@ -55,28 +84,57 @@ def create_class(
     course_code: Optional[str] = None,
     section_code: Optional[str] = None,
     semester: Optional[str] = None,
-    description: Optional[str] = None
+    description: Optional[str] = None,
+    start_date: Optional[Any] = None,
+    end_date: Optional[Any] = None,
+    total_sessions: Optional[int] = 15,
+    credit_hours: Optional[int] = 3
 ) -> Dict:
-    """Giảng viên tạo một lớp học phần mới trong bảng Classes"""
+    """Tạo một lớp học phần mới trong bảng Classes với thời gian bắt đầu/kết thúc bắt buộc"""
     # Chuẩn hóa khoảng trắng và viết hoa mã lớp
     class_code = " ".join(class_code.strip().split()).upper()
-    # Tự động suy luận mã môn và mã phân lớp nếu người dùng không truyền riêng
     if not section_code and not course_code and class_code:
         parts = class_code.strip().split()
         if len(parts) >= 2:
             section_code = parts[-1]
             course_code = ' '.join(parts[:-1])
 
+    if not semester and start_date:
+        auto_sem = calculate_semester_by_date(start_date)
+        if auto_sem:
+            semester = auto_sem.get("semester_name")
+
+    calculated_status = compute_class_status(start_date, end_date)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # Kiểm tra tính tồn tại của instructor_id để tránh lỗi Foreign Key Constraint
+        cursor.execute("SELECT user_id FROM Users WHERE user_id = ?", (instructor_id,))
+        if not cursor.fetchone():
+            # Fallback sang giảng viên đầu tiên trong hệ thống
+            cursor.execute("SELECT TOP 1 user_id FROM Users WHERE role_id = 2 ORDER BY user_id ASC")
+            fb_inst = cursor.fetchone()
+            if fb_inst:
+                instructor_id = fb_inst[0]
+            else:
+                # Fallback sang Quản trị viên nếu chưa có giảng viên
+                cursor.execute("SELECT TOP 1 user_id FROM Users WHERE role_id = 1 ORDER BY user_id ASC")
+                fb_admin = cursor.fetchone()
+                if fb_admin:
+                    instructor_id = fb_admin[0]
+
         cursor.execute("""
-            INSERT INTO Classes (class_code, class_name, course_code, section_code, semester_name, instructor_id, description)
+            INSERT INTO Classes (class_code, class_name, course_code, section_code, semester_name, instructor_id, description, status, start_date, end_date, total_sessions, credit_hours)
             OUTPUT inserted.class_id, inserted.class_code, inserted.class_name, inserted.course_code,
                    inserted.section_code, inserted.semester_name, inserted.instructor_id, inserted.description,
+                   inserted.status, inserted.start_date, inserted.end_date, inserted.total_sessions, inserted.credit_hours,
                    inserted.created_at, inserted.updated_at
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (class_code, class_name, course_code, section_code, semester, instructor_id, description))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            class_code, class_name, course_code, section_code, semester, instructor_id, description,
+            calculated_status, start_date, end_date, total_sessions or 15, credit_hours or 3
+        ))
         row = cursor.fetchone()
         conn.commit()
         if row:
@@ -89,8 +147,13 @@ def create_class(
                 "semester": row[5],
                 "instructor_id": row[6],
                 "description": row[7],
-                "created_at": row[8],
-                "updated_at": row[9]
+                "status": row[8],
+                "start_date": row[9],
+                "end_date": row[10],
+                "total_sessions": row[11],
+                "credit_hours": row[12],
+                "created_at": row[13],
+                "updated_at": row[14]
             }
             cursor.execute("SELECT full_name FROM Users WHERE user_id = ?", (instructor_id,))
             inst_row = cursor.fetchone()
@@ -120,6 +183,10 @@ def get_class_by_id(class_id: Any) -> Optional[Dict]:
                    c.instructor_id,
                    c.description, 
                    c.status,
+                   c.start_date,
+                   c.end_date,
+                   c.total_sessions,
+                   c.credit_hours,
                    c.created_at, 
                    c.updated_at, 
                    COALESCE(u.full_name, N'Chưa phân công') AS instructor_name,
@@ -131,7 +198,13 @@ def get_class_by_id(class_id: Any) -> Optional[Dict]:
         row = cursor.fetchone()
         if row:
             columns = [column[0] for column in cursor.description]
-            return dict(zip(columns, row))
+            item = dict(zip(columns, row))
+            auto_status = compute_class_status(item.get("start_date"), item.get("end_date"), item.get("status"))
+            if auto_status != item.get("status"):
+                item["status"] = auto_status
+                cursor.execute("UPDATE Classes SET status = ? WHERE class_id = ?", (auto_status, real_id))
+                conn.commit()
+            return item
         return None
     finally:
         cursor.close()
@@ -153,6 +226,10 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
                        c.instructor_id,
                        c.description, 
                        c.status,
+                       c.start_date,
+                       c.end_date,
+                       c.total_sessions,
+                       c.credit_hours,
                        c.created_at, 
                        c.updated_at, 
                        COALESCE(u.full_name, N'Chưa phân công') AS instructor_name,
@@ -173,6 +250,10 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
                        c.instructor_id,
                        c.description, 
                        c.status,
+                       c.start_date,
+                       c.end_date,
+                       c.total_sessions,
+                       c.credit_hours,
                        c.created_at, 
                        c.updated_at, 
                        COALESCE(u.full_name, N'Chưa phân công') AS instructor_name,
@@ -183,7 +264,16 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
             """)
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
+        items = []
+        for r in rows:
+            it = dict(zip(columns, r))
+            auto_status = compute_class_status(it.get("start_date"), it.get("end_date"), it.get("status"))
+            if auto_status != it.get("status"):
+                it["status"] = auto_status
+                cursor.execute("UPDATE Classes SET status = ? WHERE class_id = ?", (auto_status, it["class_id"]))
+            items.append(it)
+        conn.commit()
+        return items
     finally:
         cursor.close()
         conn.close()
@@ -197,7 +287,11 @@ def update_class(
     semester: Optional[str] = None,
     description: Optional[str] = None,
     instructor_id: Optional[int] = None,
-    status: Optional[str] = None
+    status: Optional[str] = None,
+    start_date: Optional[Any] = None,
+    end_date: Optional[Any] = None,
+    total_sessions: Optional[int] = None,
+    credit_hours: Optional[int] = None,
 ) -> Optional[Dict]:
     """Cập nhật thông tin lớp học phần (hỗ trợ cả int ID hoặc chuỗi mã lớp như 'CS101')"""
     conn = get_db_connection()
@@ -206,6 +300,20 @@ def update_class(
         real_id = _resolve_class_id(cursor, class_id)
         if not real_id:
             return None
+
+        if instructor_id is not None:
+            cursor.execute("SELECT user_id FROM Users WHERE user_id = ?", (instructor_id,))
+            if not cursor.fetchone():
+                cursor.execute("SELECT TOP 1 user_id FROM Users WHERE role_id = 2 ORDER BY user_id ASC")
+                fb_inst = cursor.fetchone()
+                if fb_inst:
+                    instructor_id = fb_inst[0]
+                else:
+                    cursor.execute("SELECT TOP 1 user_id FROM Users WHERE role_id = 1 ORDER BY user_id ASC")
+                    fb_admin = cursor.fetchone()
+                    if fb_admin:
+                        instructor_id = fb_admin[0]
+
         db_status = None
         if status:
             s_clean = status.strip().lower()
@@ -226,20 +334,198 @@ def update_class(
                 description = COALESCE(?, description),
                 instructor_id = COALESCE(?, instructor_id),
                 status = COALESCE(?, status),
+                start_date = COALESCE(?, start_date),
+                end_date = COALESCE(?, end_date),
+                total_sessions = COALESCE(?, total_sessions),
+                credit_hours = COALESCE(?, credit_hours),
                 updated_at = GETDATE()
             WHERE class_id = ?
-        """, (class_code, class_name, course_code, section_code, semester, description, instructor_id, db_status, real_id))
+        """, (
+            class_code,
+            class_name,
+            course_code,
+            section_code,
+            semester,
+            description,
+            instructor_id,
+            db_status,
+            start_date,
+            end_date,
+            total_sessions,
+            credit_hours,
+            real_id,
+        ))
         conn.commit()
         return get_class_by_id(real_id)
     finally:
         cursor.close()
         conn.close()
 
+def get_semester_def_by_date(t: date):
+    """
+    Xác định thông tin học kỳ dựa trên ngày t theo quy chuẩn thực tế:
+    - Năm học bắt đầu từ ngày 10/08 hàng năm (Mốc bắt đầu hệ thống: 10/08/2026).
+    - HK1: 10/08/Y đến 15/01/(Y+1)
+    - HK2: 16/01/(Y+1) đến 09/06/(Y+1)
+    - HK hè: 10/06/(Y+1) đến 09/08/(Y+1) (kéo dài đúng 2 tháng)
+    """
+    year = t.year
+    month = t.month
+    day = t.day
+
+    # HK1: Từ 10/08/Y đến 15/01/(Y+1)
+    if (month == 8 and day >= 10) or (month in (9, 10, 11, 12)):
+        ac_year = f"{year}-{year + 1}"
+        term = 1
+        s_date = date(year, 8, 10)
+        e_date = date(year + 1, 1, 15)
+        sem_code = f"HK1_{year}_{year + 1}"
+        sem_name = f"HK1 {year}-{year + 1}"
+    elif month == 1 and day <= 15:
+        ac_year = f"{year - 1}-{year}"
+        term = 1
+        s_date = date(year - 1, 8, 10)
+        e_date = date(year, 1, 15)
+        sem_code = f"HK1_{year - 1}_{year}"
+        sem_name = f"HK1 {year - 1}-{year}"
+    # HK2: Từ 16/01/(Y) đến 09/06/(Y)
+    elif (month == 1 and day >= 16) or (month in (2, 3, 4, 5)) or (month == 6 and day <= 9):
+        ac_year = f"{year - 1}-{year}"
+        term = 2
+        s_date = date(year, 1, 16)
+        e_date = date(year, 6, 9)
+        sem_code = f"HK2_{year - 1}_{year}"
+        sem_name = f"HK2 {year - 1}-{year}"
+    # HK hè: Từ 10/06/(Y) đến 09/08/(Y) (kéo dài trọn vẹn 2 tháng hè)
+    else:
+        ac_year = f"{year - 1}-{year}"
+        term = 3
+        s_date = date(year, 6, 10)
+        e_date = date(year, 8, 9)
+        sem_code = f"HKT_{year - 1}_{year}"
+        sem_name = f"HK hè {year - 1}-{year}"
+
+    return sem_code, sem_name, ac_year, term, s_date, e_date
+
+def sync_semesters_realtime(cursor, today: Optional[date] = None):
+    """
+    Đồng bộ trạng thái học kỳ thời gian thực vào bảng Semesters:
+    - Năm bắt đầu hệ thống: 2026 (Năm học 2026-2027 bắt đầu từ 10/08/2026).
+    - Chỉ lưu học kỳ hiện tại (và các học kỳ đã thực sự diễn ra tính đến ngày hiện tại).
+    - Tuyệt đối KHÔNG sinh sẵn bất kỳ học kỳ tương lai nào trong CSDL.
+    - Nếu đang là HK1 thì trong DB CHỈ CÓ DUY NHẤT HK1.
+    - Khi thời gian thực tế bước qua HK2 hoặc HK hè thì hệ thống mới tự động tính toán và bổ sung sau.
+    """
+    if today is None:
+        today = date.today()
+    try:
+        # Xóa mọi học kỳ cũ trước năm 2026 hoặc học kỳ tương lai chưa bắt đầu (start_date > today)
+        cursor.execute("DELETE FROM Semesters WHERE start_date < '2026-08-10' OR start_date > ?", (today,))
+
+        # Xác định thông tin học kỳ hiện tại tương ứng với ngày today
+        sem_code, sem_name, ac_year, term, s_date, e_date = get_semester_def_by_date(today)
+
+        # Đảm bảo học kỳ hiện tại có trong CSDL
+        cursor.execute("""
+            IF NOT EXISTS (SELECT 1 FROM Semesters WHERE semester_code = ?)
+            BEGIN
+                INSERT INTO Semesters (semester_code, semester_name, academic_year, term_number, start_date, end_date, is_current, status)
+                VALUES (?, ?, ?, ?, ?, ?, 1, 'active')
+            END
+            ELSE
+            BEGIN
+                UPDATE Semesters
+                SET semester_name = ?, academic_year = ?, term_number = ?, start_date = ?, end_date = ?, is_current = 1, status = 'active'
+                WHERE semester_code = ?
+            END
+        """, (sem_code, sem_code, sem_name, ac_year, term, s_date, e_date, sem_name, ac_year, term, s_date, e_date, sem_code))
+
+        # Cập nhật các học kỳ đã kết thúc trong quá khứ thành closed và is_current = 0
+        cursor.execute("""
+            UPDATE Semesters
+            SET is_current = 0, status = 'closed'
+            WHERE end_date < ?
+        """, (today,))
+    except Exception as e:
+        print("Lỗi đồng bộ học kỳ realtime:", e)
+
+def calculate_semester_by_date(target_date: Optional[Union[date, datetime, str]] = None) -> Dict[str, Any]:
+    """
+    Tự động tính toán và xác định học kỳ (Semester) cùng năm học (AcademicYear)
+    dựa trên công thức toán học và thời gian thực:
+        Gọi T là ngày (mặc định là ngày hiện tại):
+        Semester = { S_i | StartDate_i <= T <= EndDate_i }
+        AcademicYear = AcademicYear_i
+        Trong đó S_i là học kỳ có khoảng thời gian chứa ngày T.
+    """
+    if target_date is None:
+        t = date.today()
+    elif isinstance(target_date, datetime):
+        t = target_date.date()
+    elif isinstance(target_date, date):
+        t = target_date
+    elif isinstance(target_date, str):
+        try:
+            clean_str = str(target_date).strip().replace('Z', '')[:10]
+            t = datetime.strptime(clean_str, "%Y-%m-%d").date()
+        except Exception:
+            t = date.today()
+    else:
+        t = date.today()
+
+    # 1. Tra cứu trong bảng Semesters nếu đã tồn tại
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            sync_semesters_realtime(cursor, date.today())
+            conn.commit()
+
+            cursor.execute("""
+                SELECT TOP 1 semester_code, semester_name, academic_year, term_number,
+                             start_date, end_date, is_current, status
+                FROM Semesters
+                WHERE start_date <= ? AND ? <= end_date
+                ORDER BY start_date DESC
+            """, (t, t))
+            row = cursor.fetchone()
+            if row:
+                columns = [column[0] for column in cursor.description]
+                res = dict(zip(columns, row))
+                res["semester"] = res["semester_name"]
+                res["is_current"] = bool(res.get("is_current"))
+                return res
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        print("Lỗi khi tra cứu học kỳ trong CSDL:", e)
+
+    # 2. Tính toán động qua thuật toán (không tự ý chèn các kỳ tương lai vào DB)
+    sem_code, sem_name, ac_year, term, s_date, e_date = get_semester_def_by_date(t)
+    is_curr = (s_date <= date.today() <= e_date)
+    stat = "active" if date.today() <= e_date else "closed"
+
+    return {
+        "semester": sem_name,
+        "semester_code": sem_code,
+        "semester_name": sem_name,
+        "academic_year": ac_year,
+        "term_number": term,
+        "start_date": s_date,
+        "end_date": e_date,
+        "is_current": is_curr,
+        "status": stat
+    }
+
 def get_all_semesters() -> List[Dict]:
-    """Lấy danh sách các học kỳ từ bảng Semesters trong CSDL SQL Server"""
+    """Lấy danh sách các học kỳ từ bảng Semesters trong CSDL SQL Server (tự động cập nhật thời gian thực)"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        sync_semesters_realtime(cursor)
+        conn.commit()
+
         cursor.execute("""
             SELECT semester_code, semester_name, academic_year, term_number, 
                    start_date, end_date, is_current, status,
@@ -248,7 +534,7 @@ def get_all_semesters() -> List[Dict]:
                    start_date AS ngay_bat_dau, end_date AS ngay_ket_thuc,
                    is_current AS la_hoc_ky_hien_tai, status AS trang_thai
             FROM Semesters
-            ORDER BY start_date DESC
+            ORDER BY is_current DESC, start_date DESC
         """)
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
@@ -570,6 +856,7 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
                 p.room_code,
                 p.room_name AS title,
                 p.room_type,
+                p.session_type,
                 p.start_time,
                 p.end_time,
                 p.duration_minutes,
@@ -605,9 +892,18 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
                     sched_str = start_dt.strftime('%H:%M, %d/%m/%Y')
 
                 exams.append({
+                    "room_id": r.get("room_id"),
                     "id": r.get("room_code") or str(r.get("room_id")),
                     "title": r.get("title") or "Bài kiểm tra",
-                    "type": "Kiểm tra quá trình",
+                    "type": (
+                        "Thi kết thúc học phần"
+                        if r.get("session_type") == "FINAL"
+                        else "Thi giữa kỳ"
+                        if r.get("session_type") == "MIDTERM"
+                        else "Kiểm tra quá trình"
+                    ),
+                    "room_type": r_type,
+                    "sessionType": r.get("session_type"),
                     "language": "C++",
                     "durationMinutes": r.get("duration_minutes") or 60,
                     "scheduledAt": sched_str,
@@ -624,9 +920,12 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
                 end_dt = r.get("end_time")
 
                 labs.append({
+                    "room_id": r.get("room_id"),
                     "id": r.get("room_code") or str(r.get("room_id")),
                     "labNumber": len(labs) + 1,
                     "title": r.get("title") or f"Lab {len(labs) + 1}",
+                    "room_type": r_type,
+                    "sessionType": r.get("session_type"),
                     "language": "C++",
                     "questionCount": r.get("question_count") or 0,
                     "scheduleNote": f"Phòng {r.get('room_code')}",

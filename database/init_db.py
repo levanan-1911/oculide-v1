@@ -35,10 +35,6 @@ except Exception:
     DRIVER = "ODBC Driver 18 for SQL Server"
 
 SCHEMA_PATH = PROJECT_ROOT / "database" / "schema.sql"
-SAMPLE_PATHS = [
-    PROJECT_ROOT / "database" / "seeds" / "sample_data.sql",
-    PROJECT_ROOT / "database" / "sample_data.sql"
-]
 
 def connect_to_sqlserver():
     """Tự động dò tìm phương thức kết nối SQL Server máy host phù hợp nhất (Windows Auth, sa/passwords, drivers)"""
@@ -123,24 +119,7 @@ def init_database_ssms():
                 if "already exists" not in err_msg.lower() and "drop database" not in err_msg.lower():
                     pass
 
-        print("🎉 [SSMS] XẢ CSDL THÀNH CÔNG! Đã khởi tạo hoàn tất 21 bảng vào CSDL ExamSystem.")
-
-        # Tự động nạp dữ liệu mẫu
-        sample_file = next((p for p in SAMPLE_PATHS if p.exists()), None)
-        if sample_file:
-            print(f"📦 [SSMS] Đang nạp dữ liệu mẫu từ {sample_file.name}...")
-            with open(sample_file, "r", encoding="utf-8") as f:
-                sample_content = f.read()
-            sample_batches = [b.strip() for b in sample_content.split("GO") if b.strip()]
-            for idx, batch in enumerate(sample_batches, 1):
-                if not batch:
-                    continue
-                try:
-                    cursor.execute(batch)
-                except Exception:
-                    pass
-            print("✨ [SSMS] ĐÃ NẠP DỮ LIỆU MẪU ĐẦY ĐỦ (Người dùng, Lớp học, Phòng thi, Đề bài, Testcases, Vi phạm AI)!")
-
+        print("🎉 [SSMS] XẢ CSDL THÀNH CÔNG! Đã khởi tạo hoàn tất 21 bảng vào CSDL ExamSystem (Sạch sẽ, không nạp dữ liệu mẫu).")
         conn.close()
         print("💡 [SSMS] Bạn chỉ cần mở SSMS lên và bấm Refresh (F5) là sẽ thấy ngay toàn bộ CSDL và dữ liệu!")
         return True
@@ -171,20 +150,7 @@ def init_database_docker():
         if sub_schema.returncode != 0:
             print(f"❌ [Docker] Lỗi xả schema: {sub_schema.stderr or sub_schema.stdout}")
             return False
-        print("🎉 [Docker] XẢ CSDL THÀNH CÔNG! Đã khởi tạo hoàn tất 21 bảng trong container!")
-
-        # 2. Chạy sample_data.sql
-        sample_file = next((p for p in SAMPLE_PATHS if p.exists()), None)
-        if sample_file:
-            print(f"📦 [Docker] Đang copy và nạp dữ liệu mẫu từ {sample_file.name}...")
-            subprocess.run(["docker", "cp", str(sample_file), "exam-sqlserver:/sample_data.sql"], check=True)
-            cmd_sample = [
-                "docker", "exec", "-i", "exam-sqlserver",
-                "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", sa_pwd,
-                "-No", "-d", "ExamSystem", "-i", "/sample_data.sql"
-            ]
-            sub_sample = subprocess.run(cmd_sample, capture_output=True, text=True)
-            print("✨ [Docker] ĐÃ NẠP DỮ LIỆU MẪU ĐẦY ĐỦ VÀO CONTAINER DOCKER THÀNH CÔNG!")
+        print("🎉 [Docker] XẢ CSDL THÀNH CÔNG! Đã khởi tạo hoàn tất 21 bảng trong container (Sạch sẽ, không nạp dữ liệu mẫu).")
         return True
     except Exception as e:
         print(f"❌ [Docker] Lỗi kết nối hoặc thực thi Docker: {e}")

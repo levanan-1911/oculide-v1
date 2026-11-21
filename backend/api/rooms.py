@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Query, Request
+from fastapi import APIRouter, HTTPException, Depends, status, Query, Request, Body
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from schemas.room import (
     RoomCreateRequest, RoomUpdateRequest, RoomResponse, PublicRoomResponse,
@@ -15,8 +15,8 @@ from database.room_db import (
     get_all_rooms, get_rooms_for_student, update_room, delete_room, get_room_dashboard_data,
     get_exam_templates, get_room_lobby_details, check_instructor_active_room,
     update_room_status, toggle_manual_attendance,
-    is_student_in_class, get_class_metadata, upsert_student_lobby_session,
-    save_student_device_check
+    is_student_in_class, get_class_metadata, upsert_student_lobby_session, get_student_exam_session,
+    save_student_device_check, is_student_already_submitted, finalize_student_submission
 )
 from database.scoreboard_db import get_room_scoreboard
 from database.template_db import get_exam_content_for_room
@@ -25,8 +25,59 @@ from database.session_db import get_sessions_by_room
 from database.violation_db import get_violations_by_session
 from services.livekit_service import livekit_service
 from core.config import settings
+from api.auth import extract_client_ip
 
 router = APIRouter()
+
+
+def _is_room_expired(room: Dict[str, Any]) -> bool:
+    terminal_statuses = {
+        "da_dong",
+        "da_huy",
+        "da_ket_thuc",
+        "closed",
+        "completed",
+        "ended",
+        "cancelled",
+        "canceled",
+    }
+    status = str(room.get("status") or "").lower()
+    if not room.get("is_active", True) or status in terminal_statuses:
+        return True
+
+    # Phòng chờ chưa bắt đầu thì không bao giờ bị tính là expired
+    if status in ("chua_mo", "waiting", "scheduled"):
+        return False
+
+    end_time = room.get("end_time")
+    if isinstance(end_time, str):
+        try:
+            end_time = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+    if not isinstance(end_time, datetime):
+        return False
+
+    now = datetime.now(end_time.tzinfo) if end_time.tzinfo else datetime.now()
+    return now >= end_time
+
+
+def _room_lobby_opens_at(room: Dict[str, Any]) -> Optional[datetime]:
+    start_time = room.get("start_time")
+    if isinstance(start_time, str):
+        try:
+            start_time = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if not isinstance(start_time, datetime):
+        return None
+    return start_time - timedelta(minutes=15)
+
+
+def _is_before_lobby_open(open_time: datetime) -> bool:
+    now = datetime.now(open_time.tzinfo) if open_time.tzinfo else datetime.now()
+    return now < open_time
+
 
 @router.get("/templates")
 async def list_exam_templates(
@@ -46,6 +97,20 @@ async def get_lobby_room_info(
     lobby_data = get_room_lobby_details(room_code)
     if not lobby_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng chờ")
+    if _is_room_expired(lobby_data):
+        lobby_data["passcode"] = None
+
+    lobby_open_time = _room_lobby_opens_at(lobby_data)
+    if (
+        lobby_open_time
+        and _is_before_lobby_open(lobby_open_time)
+        and current_user.get("role") == "student"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Phòng chờ sẽ mở từ {lobby_open_time.strftime('%H:%M %d/%m/%Y')} (15 phút trước giờ bắt đầu)."
+        )
+
     return lobby_data
 
 @router.patch("/{room_id}/status")
@@ -61,6 +126,18 @@ async def change_room_status(
     if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền thay đổi trạng thái phòng này")
 
+    # Đối với các ca thi (giữa kỳ / kết thúc học phần): Giám thị chỉ giám sát, không thể kết thúc sớm!
+    # Đối với phòng thực hành (lab/practice): Giảng viên có quyền kết thúc ca sớm.
+    target_status = status_data.status.lower()
+    if target_status in ("ended", "da_dong", "da_ket_thuc", "closed", "completed") and current_user["role"] != "admin":
+        r_type = (room.get("room_type") or "").lower()
+        r_name = str(room.get("room_name", "")).lower()
+        if r_type in ("exam", "midterm", "final", "final_exam") or "thi" in r_name or "cuối kỳ" in r_name or "kết thúc" in r_name or "giữa kỳ" in r_name:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Đối với các ca thi (giữa kỳ / kết thúc học phần), quy chế thi không cho phép kết thúc sớm. Hệ thống sẽ tự động đóng phòng khi hết thời gian làm bài."
+            )
+
     # Kiểm tra xung đột nếu chuyển sang dang_dien_ra / in_progress
     target_status = status_data.status.lower()
     if target_status in ("dang_dien_ra", "in_progress"):
@@ -69,7 +146,11 @@ async def change_room_status(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
-                    "message": f"Giảng viên hiện đang có phòng [{active_conflict['room_code']}] đang diễn ra.",
+                    "message": (
+                        f"Chỉ có thể giám sát một phòng tại một thời điểm. "
+                        f"Phòng [{active_conflict['room_code']}] vẫn đang diễn ra; "
+                        "hãy kết thúc phòng đó trước khi bắt đầu phiên mới."
+                    ),
                     "conflict_room": active_conflict
                 }
             )
@@ -105,6 +186,35 @@ async def create_new_room(
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Tạo phòng thi hoặc phòng thực hành mới"""
+    if room_data.room_type == "lab" and room_data.session_type not in (None, "LAB"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Phòng thực hành phải dùng session_type LAB",
+        )
+    if room_data.room_type == "exam" and room_data.session_type not in (None, "MIDTERM", "FINAL"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Phòng thi phải dùng session_type MIDTERM hoặc FINAL",
+        )
+    if room_data.room_type == "classroom" and room_data.session_type is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Phòng học không nhận session_type",
+        )
+
+    if current_user.get("role") != "admin":
+        is_legacy_unspecified_exam = room_data.room_type == "exam" and room_data.session_type is None
+        is_final_exam = room_data.session_type == "FINAL"
+        exam_title_mentions_final = (
+            "cuối kỳ" in str(room_data.room_name).lower()
+            or "kết thúc" in str(room_data.room_name).lower()
+        )
+        if is_legacy_unspecified_exam or is_final_exam or exam_title_mentions_final:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Giảng viên không có quyền tạo kỳ thi kết thúc học phần (cuối kỳ). Kỳ thi kết thúc học phần do Phòng Đào tạo & Quản trị viên khởi tạo."
+            )
+
     if get_room_by_code(room_data.room_code):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mã phòng (room_code) đã tồn tại")
     
@@ -120,7 +230,7 @@ async def create_new_room(
         else:
             cfg_str = json.dumps(room_data.proctoring_config)
     
-    return create_room(
+    new_room = create_room(
         room_code=room_data.room_code,
         room_name=room_data.room_name,
         room_type=room_data.room_type,
@@ -135,8 +245,11 @@ async def create_new_room(
         class_id=room_data.class_id,
         template_id=room_data.template_id,
         proctoring_config=cfg_str,
-        status=room_data.status or "chua_mo"
+        status=room_data.status or "chua_mo",
+        session_type=room_data.session_type,
     )
+
+    return new_room
 
 @router.post("/join", response_model=StudentJoinRoomResponse)
 async def join_room_authenticated(
@@ -155,18 +268,52 @@ async def join_room_authenticated(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Phòng với mã '{join_data.room_code}' không tồn tại"
         )
-    if not room.get("is_active", True) or room.get("status") in ("da_dong", "da_huy"):
+    if _is_room_expired(room):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phòng học/thi này đã kết thúc hoặc bị hủy"
+            status_code=status.HTTP_410_GONE,
+            detail="Phòng học/thi đã kết thúc hoặc bị hủy; mã phòng và mật khẩu đã hết hiệu lực."
         )
-    if room.get("passcode") and room["passcode"] != join_data.passcode.strip():
+    if room.get("passcode"):
+        provided_passcode = (join_data.passcode or "").strip()
+        if not provided_passcode:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Phòng thi này yêu cầu nhập mật khẩu vào phòng (passcode)"
+            )
+        if room["passcode"].strip() != provided_passcode:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Mật khẩu vào phòng (passcode) không chính xác"
+            )
+
+    lobby_open_time = _room_lobby_opens_at(room)
+    if (
+        current_user.get("role") == "student"
+        and lobby_open_time
+        and _is_before_lobby_open(lobby_open_time)
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Mật khẩu vào phòng (passcode) không chính xác"
+            detail=f"Phòng chờ sẽ mở từ {lobby_open_time.strftime('%H:%M %d/%m/%Y')} (15 phút trước giờ bắt đầu)."
         )
 
+    # Khi giảng viên đã mở lớp (phòng đang diễn ra), đóng phòng chờ; sinh viên vào sau sẽ được ghi nhận là điểm danh muộn.
+    is_late_entry = False
+    if current_user.get("role") == "student":
+        r_status = (room.get("status") or "").lower()
+        if r_status in ("dang_dien_ra", "in_progress"):
+            is_late_entry = True
+
     student_id = current_user["user_id"]
+
+    # Quy chế khảo thí: Thí sinh đã nộp bài thì tuyệt đối không được phép vào lại phòng thi
+    if current_user.get("role") == "student":
+        if is_student_already_submitted(room["room_id"], student_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bạn đã hoàn thành và nộp bài thi cho phòng này. Theo quy chế khảo thí, thí sinh không thể vào lại phòng thi sau khi đã nộp bài."
+            )
+
     class_meta = None
     if room.get("class_id"):
         if current_user.get("role") == "student" and not is_student_in_class(room["class_id"], student_id):
@@ -182,13 +329,14 @@ async def join_room_authenticated(
         except Exception:
             pass
 
-    client_ip = request.client.host if request.client else None
+    client_ip = extract_client_ip(request)
     user_agent = request.headers.get("user-agent")
     session_id = upsert_student_lobby_session(
         room_id=room["room_id"],
         student_id=student_id,
         ip_address=client_ip,
         user_agent=user_agent,
+        is_late=is_late_entry,
     )
 
     return {
@@ -197,6 +345,8 @@ async def join_room_authenticated(
         "class_code": class_meta.get("class_code") if class_meta else None,
         "class_name": class_meta.get("class_name") if class_meta else None,
         "course_name": class_meta.get("course_name") if class_meta else None,
+        "is_late": is_late_entry,
+        "attendance_status": "muon" if is_late_entry else "co_mat",
     }
 
 
@@ -233,16 +383,39 @@ async def get_student_room_status(
     room = get_room_by_code(room_code.strip().upper())
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    is_expired = _is_room_expired(room)
+    has_sub = False
+    is_late = False
+    att_status = "co_mat"
+
+    if current_user.get("role") == "student":
+        student_id = current_user["user_id"]
+        has_sub = is_student_already_submitted(room["room_id"], student_id)
+        sess = get_student_exam_session(room["room_id"], student_id)
+        if sess:
+            if str(sess.get("status", "")).lower() in ("late", "muon", "diem_danh_muon"):
+                is_late = True
+                att_status = "muon"
+        else:
+            r_st = (room.get("status") or "").lower()
+            if r_st in ("dang_dien_ra", "in_progress"):
+                is_late = True
+                att_status = "muon"
+
     return {
         "room_id": room["room_id"],
-        "room_code": room["room_code"],
+        "room_code": "" if is_expired else room["room_code"],
         "room_name": room["room_name"],
         "room_type": room["room_type"],
-        "status": room.get("status") or "chua_mo",
-        "is_active": bool(room.get("is_active", True)),
+        "session_type": room.get("session_type"),
+        "status": "completed" if is_expired else (room.get("status") or "chua_mo"),
+        "is_active": bool(room.get("is_active", True)) and not is_expired,
         "duration_minutes": room.get("duration_minutes") or 60,
         "start_time": room["start_time"],
         "end_time": room["end_time"],
+        "has_submitted": has_sub,
+        "is_late": is_late,
+        "attendance_status": att_status,
     }
 
 @router.get("", response_model=List[RoomResponse])
@@ -267,11 +440,17 @@ async def get_public_room_info(room_code: str):
     room = get_room_by_code(room_code.strip().upper())
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    if _is_room_expired(room):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Phòng thi đã kết thúc hoặc bị hủy; mã phòng và mật khẩu đã hết hiệu lực."
+        )
     return {
         "room_id": room["room_id"],
         "room_code": room["room_code"],
         "room_name": room["room_name"],
         "room_type": room["room_type"],
+        "session_type": room.get("session_type"),
         "start_time": room["start_time"],
         "end_time": room["end_time"],
         "duration_minutes": room["duration_minutes"],
@@ -308,8 +487,97 @@ async def update_room_details(
     if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa phòng này")
     
-    updated = update_room(room_id, **room_data.model_dump(exclude_unset=True))
+    dumped = room_data.model_dump(exclude_unset=True)
+    target_room_type = str(dumped.get("room_type") or room.get("room_type") or "").lower()
+    session_type = dumped.get("session_type", room.get("session_type"))
+    if target_room_type in ("lab", "practice") and session_type not in (None, "LAB"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Phòng thực hành phải dùng session_type LAB",
+        )
+    if target_room_type == "exam" and session_type not in (None, "MIDTERM", "FINAL"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Phòng thi phải dùng session_type MIDTERM hoặc FINAL",
+        )
+    if target_room_type == "classroom" and session_type is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Phòng học không nhận session_type",
+        )
+
+    # Quy chế khảo thí: Các kỳ thi không cho phép gia hạn thêm thời gian làm bài
+    if "duration_minutes" in dumped and room.get("room_type") == "exam":
+        new_dur = dumped["duration_minutes"]
+        old_dur = room.get("duration_minutes") or 0
+        if new_dur > old_dur:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Quy chế khảo thí: Các kỳ thi không cho phép gia hạn thêm thời gian làm bài."
+            )
+
+    updated = update_room(room_id, **dumped)
     return updated
+
+@router.patch("/{room_id}/template")
+async def assign_room_template(
+    room_id: int,
+    payload: Dict[str, Any] = Body(...),
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Gán hoặc đổi đề thi cho phòng thi / phòng chờ theo ID"""
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa phòng này")
+
+    template_id = payload.get("template_id") or payload.get("templateId")
+    updated = update_room(room_id, template_id=template_id)
+    return {
+        "success": True,
+        "message": "Đã cập nhật bộ đề thành công cho phòng",
+        "room": updated
+    }
+
+@router.patch("/by-code/{room_code}/template")
+async def assign_room_template_by_code(
+    room_code: str,
+    payload: Dict[str, Any] = Body(...),
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Gán hoặc đổi đề thi cho phòng thi / phòng chờ theo room_code"""
+    room = get_room_by_code(room_code)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa phòng này")
+
+    template_id = payload.get("template_id") or payload.get("templateId")
+    updated = update_room(room["room_id"], template_id=template_id)
+    return {
+        "success": True,
+        "message": "Đã cập nhật bộ đề thành công cho phòng",
+        "room": updated
+    }
+
+
+@router.delete("/by-code/{room_code}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_room_by_code(
+    room_code: str,
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Xóa phòng thi theo mã phòng (room_code)"""
+    room = get_room_by_code(room_code)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xóa phòng này")
+    
+    if room.get("livekit_room_name"):
+        livekit_service.delete_room(room["livekit_room_name"])
+    delete_room(room["room_id"])
+    return None
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_room(
@@ -356,6 +624,7 @@ async def get_room_dashboard(
         "room_code": room["room_code"],
         "room_name": room["room_name"],
         "room_type": room["room_type"],
+        "session_type": room.get("session_type"),
         "active_students_count": len([st for st in students_list if st.status == "active"]),
         "students": students_list
     }
@@ -380,8 +649,51 @@ async def get_room_exam_content(
     room = get_room_by_id(room_id)
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+
+    # Quy chế khảo thí: Nếu sinh viên đã nộp bài, không cho phép truy cập lại nội dung đề thi để làm tiếp
+    if current_user.get("role") == "student":
+        if is_student_already_submitted(room_id, current_user["user_id"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bạn đã hoàn thành và nộp bài thi cho phòng này. Không thể truy cập lại môi trường làm bài."
+            )
+
     include_hidden = current_user.get("role") in ("instructor", "admin")
     return get_exam_content_for_room(room_id, include_hidden_tests=include_hidden)
+
+
+@router.post("/{room_id}/submit-exam")
+async def submit_exam_endpoint(
+    room_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Xác nhận nộp bài thi chính thức và kết thúc phiên làm bài của thí sinh"""
+    if current_user["role"] != "student":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ sinh viên mới thực hiện nộp bài thi")
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+
+    finalize_student_submission(room_id, current_user["user_id"])
+
+    # Broadcast thông báo sinh viên đã nộp bài qua WebSocket để Giảng viên giám sát cập nhật ngay
+    try:
+        from websocket.connection_manager import manager
+        await manager.broadcast_json(room_id, {
+            "type": "student_submitted",
+            "student_id": current_user["user_id"],
+            "full_name": current_user.get("full_name") or current_user.get("username"),
+            "room_id": room_id
+        })
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "message": "Bài thi đã được nộp thành công. Phiên làm bài kết thúc.",
+        "room_id": room_id,
+        "student_id": current_user["user_id"]
+    }
 
 
 @router.get("/{room_id}/config")
@@ -398,6 +710,7 @@ async def get_room_config(
         "room_code": room["room_code"],
         "room_name": room["room_name"],
         "room_type": room["room_type"],
+        "session_type": room.get("session_type"),
         "duration_minutes": room["duration_minutes"],
         "max_attempts": room["max_attempts"],
         "allowed_languages": ["python", "cpp", "java"],

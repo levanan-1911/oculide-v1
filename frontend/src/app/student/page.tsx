@@ -18,7 +18,6 @@ import {
   Play,
   RotateCcw,
   ShieldCheck,
-  Sparkles,
   TrendingUp,
 } from "lucide-react";
 
@@ -57,9 +56,9 @@ const LANGUAGE_META: Record<string, { label: string; color: string }> = {
 };
 
 const statusStyles: Record<string, string> = {
-  "Sắp diễn ra": "bg-amber-50 text-amber-700 border-amber-200/80",
-  "Đang diễn ra": "bg-emerald-50 text-emerald-700 border-emerald-200/80 animate-pulse",
-  "Đã hoàn thành": "bg-slate-100 text-slate-600 border-slate-200",
+  "Sắp diễn ra": "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30",
+  "Đang diễn ra": "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30",
+  "Đã hoàn thành": "bg-slate-100 text-slate-600 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10",
 };
 
 export default function StudentDashboardPage() {
@@ -228,22 +227,22 @@ export default function StudentDashboardPage() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
-              <Sparkles className="h-3 w-3" />
-              KHÔNG GIAN SINH VIÊN
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-brand-300 bg-brand-50 px-2.5 py-0.5 text-[11px] font-semibold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-[#f0c2cf]">
+              <GraduationCap className="h-3.5 w-3.5" />
+              KHÔNG GIAN HỌC TẬP &amp; KHẢO THÍ
             </span>
           </div>
-          <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-[26px]">
-            Xin chào, {studentName}!
+          <h1 className="mt-2 text-2xl font-serif font-bold tracking-tight text-[#2A282D] dark:text-white sm:text-3xl">
+            Xin chào, {studentName}
           </h1>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 sm:text-[13.5px]">
-            Theo dõi tiến độ học tập, chuẩn bị thiết bị và tham gia các ca thi lập trình trực tuyến an toàn.
+          <p className="mt-1 text-xs text-slate-500 dark:text-[#a59fa3] sm:text-[13px]">
+            Theo dõi tiến độ học phần, chuẩn bị thiết bị kiểm tra và tham gia phòng thi trực tuyến an toàn.
           </p>
         </div>
 
         <Link
           href="/student/exams"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+          className="system-primary-action inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-slate-800"
         >
           <Code2 className="h-4 w-4" />
           Vào phòng thi
@@ -251,49 +250,51 @@ export default function StudentDashboardPage() {
         </Link>
       </div>
 
-      {/* 1. THẺ THỐNG KÊ TƯƠNG TÁC (Đồng bộ chuẩn Admin) */}
+      {/* 1. THẺ THỐNG KÊ TƯƠNG TÁC (CÂN ĐỐI TUYỆT ĐỐI CẢ 4 THẺ) */}
       <section className="space-y-3" aria-label="Tổng quan kỳ thi">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">Tổng quan kỳ thi</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Nhấn vào từng thẻ để lọc nhanh danh sách bên dưới</p>
+            <h2 className="text-sm font-serif font-bold text-[#2A282D] dark:text-white uppercase tracking-wider">Tổng quan ca thi &amp; bài tập</h2>
+            <p className="text-xs text-slate-500 dark:text-[#a59fa3]">Chọn thẻ bên dưới để lọc nhanh danh sách phòng thi tương ứng</p>
           </div>
           {activeFilter !== "Tất cả" && (
             <button
               type="button"
               onClick={() => setActiveFilter("Tất cả")}
-              className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition"
+              className="inline-flex items-center gap-1 text-xs font-medium text-slate-900 hover:underline dark:text-[#e5a9b9] transition-colors"
             >
               <RotateCcw className="h-3 w-3" /> Bỏ lọc ({activeFilter})
             </button>
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
           {/* Thẻ 1: Tất cả */}
           <button
             type="button"
             onClick={() => setActiveFilter("Tất cả")}
-            className={`rounded-2xl border p-5 text-left transition-all cursor-pointer ${
+            className={`flex flex-col justify-between h-full rounded-md border p-5 text-left transition-colors cursor-pointer ${
               activeFilter === "Tất cả"
-                ? "border-blue-500 bg-blue-50/40 ring-2 ring-blue-500/20 shadow-sm dark:bg-blue-500/10 dark:border-blue-500/40"
-                : "border-slate-200/75 bg-white hover:border-slate-300 shadow-[0_2px_10px_rgba(15,23,42,0.02)] dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-white/20"
+                ? "border-brand bg-brand-50 ring-1 ring-brand shadow-sm dark:bg-brand-500/10 dark:border-brand-500/40"
+                : "border-slate-300 bg-white hover:border-[#b8b0b3] shadow-sm dark:border-white/10 dark:bg-neutral-900 dark:hover:border-white/20"
             }`}
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400">
-                <BookOpen className="h-4 w-4" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-[#f0c2cf]">
+                  <BookOpen className="h-4 w-4" />
+                </div>
+                <span className="text-xs font-semibold text-[#5a565e] dark:text-[#b0a7aa]">
+                  Tổng ca thi &amp; lab
+                </span>
               </div>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Tổng số kỳ thi
-              </span>
             </div>
-            <div className="mt-4 flex items-baseline gap-3">
-              <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+            <div className="mt-4 flex items-baseline justify-between">
+              <span className="text-[28px] font-bold leading-none tracking-tight text-[#2A282D] dark:text-white font-mono">
                 {counts.all}
               </span>
-              <span className="text-xs font-semibold text-[#2563eb] dark:text-blue-400">
-                Bài thi cá nhân
+              <span className="text-xs font-semibold text-slate-900 dark:text-[#e5a9b9]">
+                Toàn bộ danh sách
               </span>
             </div>
           </button>
@@ -302,26 +303,28 @@ export default function StudentDashboardPage() {
           <button
             type="button"
             onClick={() => setActiveFilter("Sắp diễn ra")}
-            className={`rounded-2xl border p-5 text-left transition-all cursor-pointer ${
+            className={`flex flex-col justify-between h-full rounded-md border p-5 text-left transition-colors cursor-pointer ${
               activeFilter === "Sắp diễn ra"
-                ? "border-amber-500 bg-amber-50/40 ring-2 ring-amber-500/20 shadow-sm dark:bg-amber-500/10 dark:border-amber-500/40"
-                : "border-slate-200/75 bg-white hover:border-slate-300 shadow-[0_2px_10px_rgba(15,23,42,0.02)] dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-white/20"
+                ? "border-brand bg-brand-50 ring-1 ring-brand shadow-sm dark:bg-brand-500/10 dark:border-brand-500/40"
+                : "border-slate-300 bg-white hover:border-[#b8b0b3] shadow-sm dark:border-white/10 dark:bg-neutral-900 dark:hover:border-white/20"
             }`}
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fefce8] text-[#ca8a04] dark:bg-amber-500/15 dark:text-amber-400">
-                <CalendarDays className="h-4 w-4" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+                  <CalendarDays className="h-4 w-4" />
+                </div>
+                <span className="text-xs font-semibold text-[#5a565e] dark:text-[#b0a7aa]">
+                  Sắp diễn ra
+                </span>
               </div>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Sắp diễn ra
-              </span>
             </div>
-            <div className="mt-4 flex items-baseline gap-3">
-              <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+            <div className="mt-4 flex items-baseline justify-between">
+              <span className="text-[28px] font-bold leading-none tracking-tight text-[#2A282D] dark:text-white font-mono">
                 {counts.upcoming}
               </span>
-              <span className="text-xs font-semibold text-[#ca8a04] dark:text-amber-400">
-                Chuẩn bị thi
+              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                Chuẩn bị thiết bị
               </span>
             </div>
           </button>
@@ -330,25 +333,30 @@ export default function StudentDashboardPage() {
           <button
             type="button"
             onClick={() => setActiveFilter("Đang diễn ra")}
-            className={`rounded-2xl border p-5 text-left transition-all cursor-pointer ${
+            className={`flex flex-col justify-between h-full rounded-md border p-5 text-left transition-colors cursor-pointer ${
               activeFilter === "Đang diễn ra"
-                ? "border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20 shadow-sm dark:bg-emerald-500/10 dark:border-emerald-500/40"
-                : "border-slate-200/75 bg-white hover:border-slate-300 shadow-[0_2px_10px_rgba(15,23,42,0.02)] dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-white/20"
+                ? "border-brand bg-brand-50 ring-1 ring-brand shadow-sm dark:bg-brand-500/10 dark:border-brand-500/40"
+                : "border-slate-300 bg-white hover:border-[#b8b0b3] shadow-sm dark:border-white/10 dark:bg-neutral-900 dark:hover:border-white/20"
             }`}
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#ecfdf5] text-[#059669] dark:bg-emerald-500/15 dark:text-emerald-400">
-                <Clock3 className="h-4 w-4" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+                  <Clock3 className="h-4 w-4" />
+                </div>
+                <span className="text-xs font-semibold text-[#5a565e] dark:text-[#b0a7aa]">
+                  Đang diễn ra
+                </span>
               </div>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Đang diễn ra
-              </span>
+              {counts.ongoing > 0 && (
+                <span className="h-2 w-2 rounded-full bg-emerald-600" />
+              )}
             </div>
-            <div className="mt-4 flex items-baseline gap-3">
-              <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+            <div className="mt-4 flex items-baseline justify-between">
+              <span className="text-[28px] font-bold leading-none tracking-tight text-[#2A282D] dark:text-white font-mono">
                 {counts.ongoing}
               </span>
-              <span className="text-xs font-semibold text-[#059669] dark:text-emerald-400">
+              <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
                 Tham gia ngay
               </span>
             </div>
@@ -358,119 +366,124 @@ export default function StudentDashboardPage() {
           <button
             type="button"
             onClick={() => setActiveFilter("Đã hoàn thành")}
-            className={`rounded-2xl border p-5 text-left transition-all cursor-pointer ${
+            className={`flex flex-col justify-between h-full rounded-md border p-5 text-left transition-colors cursor-pointer ${
               activeFilter === "Đã hoàn thành"
-                ? "border-violet-500 bg-violet-50/40 ring-2 ring-violet-500/20 shadow-sm dark:bg-violet-500/10 dark:border-violet-500/40"
-                : "border-slate-200/75 bg-white hover:border-slate-300 shadow-[0_2px_10px_rgba(15,23,42,0.02)] dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-white/20"
+                ? "border-brand bg-brand-50 ring-1 ring-brand shadow-sm dark:bg-brand-500/10 dark:border-brand-500/40"
+                : "border-slate-300 bg-white hover:border-[#b8b0b3] shadow-sm dark:border-white/10 dark:bg-neutral-900 dark:hover:border-white/20"
             }`}
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f5f3ff] text-[#7c3aed] dark:bg-violet-500/15 dark:text-violet-400">
-                <CheckCircle2 className="h-4 w-4" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+                <span className="text-xs font-semibold text-[#5a565e] dark:text-[#b0a7aa]">
+                  Đã nộp bài
+                </span>
               </div>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Đã hoàn thành
-              </span>
             </div>
-            <div className="mt-4 flex items-baseline gap-3">
-              <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+            <div className="mt-4 flex items-baseline justify-between">
+              <span className="text-[28px] font-bold leading-none tracking-tight text-[#2A282D] dark:text-white font-mono">
                 {counts.completed}
               </span>
-              <span className="text-xs font-semibold text-[#7c3aed] dark:text-violet-400">
-                Bài thi đã nộp
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Xem lịch sử điểm
               </span>
             </div>
           </button>
         </div>
       </section>
 
-      {/* 2. BIỂU ĐỒ THỐNG KÊ */}
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Biểu đồ điểm số */}
-        <div className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] lg:col-span-2 space-y-4 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/5">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400">
-                <BarChart3 className="h-4 w-4" />
+      {/* 2. BIỂU ĐỒ THỐNG KÊ (CÂN ĐỐI CHIỀU CAO CẢ 2 BOX CÙNG HÀNG) */}
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3 items-stretch">
+
+        {/* Biểu đồ điểm số (2 cột) */}
+        <div className="flex flex-col justify-between rounded-md border border-slate-300 bg-white p-5 lg:col-span-2 dark:border-white/10 dark:bg-neutral-900 transition-colors shadow-sm">
+          <div>
+            <div className="flex items-center justify-between border-b border-slate-300 pb-3 dark:border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-[#f0c2cf]">
+                  <BarChart3 className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-serif font-bold text-[#2A282D] dark:text-white">Biểu đồ kết quả làm bài gần nhất</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-[#a59fa3]">Điểm số phân bổ theo các lượt nộp bài gần đây</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Biểu đồ kết quả làm bài</h3>
-                <p className="text-xs text-slate-400 dark:text-slate-500">Điểm số 5 bài thi gần nhất</p>
+
+              <div className="flex items-center gap-1.5 rounded-md bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-800 border border-slate-300 dark:bg-[#221e27] dark:border-white/10 dark:text-slate-300">
+                <TrendingUp className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
+                ĐTB:{" "}
+                <span className="text-slate-900 dark:text-[#e5a9b9] font-bold font-mono">
+                  {avgScore !== null ? `${avgScore}/100` : "--/100"}
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 border border-slate-200/60 dark:bg-white/5 dark:border-white/10 dark:text-slate-300">
-              <TrendingUp className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-              ĐTB:{" "}
-              <span className="text-blue-600 dark:text-blue-400 font-bold">
-                {avgScore !== null ? `${avgScore}/100` : "--/100"}
-              </span>
+            <div className="pt-4">
+              {scoreHistory.length > 0 ? (
+                <div className="grid h-44 grid-cols-5 items-end gap-3 sm:gap-6 border-b border-slate-300 pb-2 dark:border-white/10">
+                  {scoreHistory.map((item) => (
+                    <div key={item.id} className="group relative flex h-full flex-col justify-end items-center">
+                      <div className="absolute -top-9 hidden rounded-md bg-[#2A282D] px-2.5 py-1 text-[11px] font-semibold text-white shadow-md group-hover:block transition z-10 whitespace-nowrap dark:bg-slate-800">
+                        {item.exam}: {item.score} điểm
+                      </div>
+
+                      <div className="w-full max-w-[42px] h-full rounded-t bg-slate-50 dark:bg-white/5 flex flex-col justify-end overflow-hidden">
+                        <div
+                          style={{ height: `${Math.max(item.score, 6)}%` }}
+                          className={`w-full rounded-t ${
+                            item.score >= 90
+                              ? "bg-emerald-700 dark:bg-emerald-600"
+                              : item.score >= 70
+                              ? "bg-slate-900 dark:bg-slate-800"
+                              : "bg-amber-600"
+                          }`}
+                        />
+                      </div>
+                      <span className="mt-2 text-[11px] font-medium text-slate-500 dark:text-[#a59fa3] truncate max-w-full">
+                        {item.date}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex h-44 flex-col items-center justify-center rounded-md border border-dashed border-slate-300 dark:border-white/10 text-xs text-slate-500 dark:text-[#a59fa3]">
+                  Chưa có lịch sử nộp bài chấm điểm.
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="pt-2">
-            {scoreHistory.length > 0 ? (
-              <div className="grid h-44 grid-cols-5 items-end gap-3 sm:gap-6 border-b border-slate-100 pb-2 dark:border-white/5">
-                {scoreHistory.map((item) => (
-                  <div key={item.id} className="group relative flex h-full flex-col justify-end items-center">
-                    <div className="absolute -top-9 hidden rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white shadow-md group-hover:block transition z-10 whitespace-nowrap dark:bg-slate-800">
-                      {item.exam}: {item.score} điểm
-                    </div>
-
-                    <div className="w-full max-w-[42px] h-full rounded-t-lg bg-slate-100 dark:bg-white/5 flex flex-col justify-end overflow-hidden">
-                      <div
-                        style={{ height: `${Math.max(item.score, 6)}%` }}
-                        className={`w-full transition-all duration-500 rounded-t-lg ${
-                          item.score >= 90
-                            ? "bg-emerald-500 group-hover:bg-emerald-600"
-                            : item.score >= 70
-                            ? "bg-blue-600 group-hover:bg-blue-700"
-                            : "bg-amber-500 group-hover:bg-amber-600"
-                        }`}
-                      />
-                    </div>
-                    <span className="mt-2 text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-full">
-                      {item.date}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex h-44 flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 dark:border-white/10 text-xs text-slate-400 dark:text-slate-500">
-                Chưa có lịch sử nộp bài chấm điểm.
-              </div>
-            )}
-
-            <div className="mt-3 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Xuất sắc (&ge;90)
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-blue-600" /> Đạt (&ge;70)
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Trung bình
-              </span>
-            </div>
+          <div className="mt-4 pt-3 border-t border-slate-300 dark:border-white/10 flex items-center justify-between text-xs text-slate-500 dark:text-[#a59fa3]">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-emerald-700" /> Xuất sắc (&ge;90)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-brand" /> Đạt yêu cầu (&ge;70)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-600" /> Cần cải thiện
+            </span>
           </div>
         </div>
 
-        {/* Biểu đồ Ngôn ngữ */}
-        <div className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] space-y-4 flex flex-col justify-between dark:border-white/10 dark:bg-[#0d1017] transition-colors">
+        {/* Biểu đồ Ngôn ngữ (1 cột) */}
+        <div className="flex flex-col justify-between rounded-md border border-slate-300 bg-white p-5 dark:border-white/10 dark:bg-neutral-900 transition-colors shadow-sm">
           <div>
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-3 dark:border-white/5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#f5f3ff] text-[#7c3aed] dark:bg-violet-500/15 dark:text-violet-400">
+            <div className="flex items-center gap-2.5 border-b border-slate-300 pb-3 dark:border-white/10">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-[#f0c2cf]">
                 <PieChart className="h-4 w-4" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Ngôn ngữ nộp bài</h3>
-                <p className="text-xs text-slate-400 dark:text-slate-500">Tỷ lệ sử dụng trong các bài thi</p>
+                <h3 className="text-sm font-serif font-bold text-[#2A282D] dark:text-white">Ngôn ngữ nộp bài</h3>
+                <p className="text-[11px] text-slate-500 dark:text-[#a59fa3]">Tỷ lệ các bài giải đã nộp</p>
               </div>
             </div>
 
             {languageDistribution.length > 0 ? (
-              <>
-                <div className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+              <div className="pt-3">
+                <div className="flex h-2.5 w-full overflow-hidden rounded bg-slate-50 dark:bg-white/10">
                   {languageDistribution.map((lang) => (
                     <div
                       key={lang.name}
@@ -481,106 +494,106 @@ export default function StudentDashboardPage() {
                   ))}
                 </div>
 
-                <div className="mt-5 space-y-3">
+                <div className="mt-5 space-y-2.5">
                   {languageDistribution.map((lang) => (
                     <div key={lang.name} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
                         <span className={`h-2.5 w-2.5 rounded-full ${lang.color}`} />
-                        <span className="font-semibold text-slate-700 dark:text-slate-300">{lang.name}</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-300">{lang.name}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400 dark:text-slate-500">{lang.count}</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">{lang.percentage}%</span>
+                      <div className="flex items-center gap-2 font-mono">
+                        <span className="text-slate-500 dark:text-[#a59fa3]">{lang.count}</span>
+                        <span className="font-bold text-[#2A282D] dark:text-white">{lang.percentage}%</span>
                       </div>
                     </div>
                   ))}
                 </div>
-              </>
+              </div>
             ) : (
-              <div className="mt-4 flex h-36 items-center justify-center rounded-xl border border-dashed border-slate-200 dark:border-white/10 text-xs text-slate-400 dark:text-slate-500">
-                Chưa có bài nộp nào được ghi nhận.
+              <div className="mt-4 flex h-36 items-center justify-center rounded-md border border-dashed border-slate-300 dark:border-white/10 text-xs text-slate-500 dark:text-[#a59fa3]">
+                Chưa có dữ liệu ngôn ngữ.
               </div>
             )}
           </div>
 
-          <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 flex items-center justify-between text-xs dark:bg-white/5 dark:border-white/10">
-            <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1">
-              <Award className="h-3.5 w-3.5 text-amber-500" /> Ngôn ngữ sở trường:
+          <div className="mt-4 rounded-md bg-slate-50 p-3 border border-slate-300 flex items-center justify-between text-xs dark:bg-[#221e27] dark:border-white/10">
+            <span className="text-[#5a565e] dark:text-[#b0a7aa] flex items-center gap-1">
+              <Award className="h-3.5 w-3.5 text-amber-600" /> Ngôn ngữ chủ đạo:
             </span>
-            <span className="font-bold text-slate-900 dark:text-white">{favoriteLanguage}</span>
+            <span className="font-bold text-[#2A282D] dark:text-white font-mono">{favoriteLanguage}</span>
           </div>
         </div>
       </section>
 
       {/* 3. DANH SÁCH BÀI THI & CỘT TIỆN ÍCH */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 items-start">
         
         {/* Cột trái (2/3): Bảng bài thi */}
-        <section className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] sm:p-6 xl:col-span-2 space-y-4 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
-          <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-white/5">
+        <section className="rounded-md border border-slate-300 bg-white p-5 sm:p-6 xl:col-span-2 space-y-4 dark:border-white/10 dark:bg-neutral-900 transition-colors shadow-sm">
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-300 dark:border-white/10">
             <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                {activeFilter === "Tất cả" ? "Tất cả kỳ thi" : `Kỳ thi: ${activeFilter}`}
+              <Filter className="h-4 w-4 text-slate-900 dark:text-[#e5a9b9]" />
+              <h2 className="text-sm font-serif font-bold text-[#2A282D] dark:text-white uppercase tracking-wider">
+                {activeFilter === "Tất cả" ? "Danh sách ca thi & phòng thực hành" : `Ca thi: ${activeFilter}`}
               </h2>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
+              <span className="rounded bg-slate-50 px-2 py-0.5 text-xs font-semibold text-[#5a565e] border border-slate-300 dark:border-white/10 dark:bg-white/10 dark:text-slate-300 font-mono">
                 {filteredExams.length}
               </span>
             </div>
 
             <Link
               href="/student/schedule"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-900 hover:underline dark:text-[#e5a9b9] transition-colors"
             >
-              Xem lịch thi <ArrowRight className="h-3.5 w-3.5" />
+              Lịch thi chi tiết <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
 
-          <div className="divide-y divide-slate-100 dark:divide-white/5">
+          <div className="divide-y divide-slate-300 dark:divide-white/10">
             {loading ? (
-              <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-400 dark:text-slate-500">
-                <LoaderCircle className="h-4 w-4 animate-spin text-blue-600" />
-                Đang tải danh sách kỳ thi và phòng thực hành...
+              <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500 dark:text-[#a59fa3]">
+                <LoaderCircle className="h-4 w-4 animate-spin text-slate-900" />
+                Đang nạp dữ liệu ca thi...
               </div>
             ) : filteredExams.length > 0 ? (
               filteredExams.map((exam: StudentExam) => (
                 <article
                   key={exam.id}
-                  className="flex flex-col justify-between gap-4 py-4 transition hover:bg-slate-50/70 dark:hover:bg-white/[0.02] sm:flex-row sm:items-center"
+                  className="flex flex-col justify-between gap-4 py-4 transition-colors hover:bg-[#FAF9F9] dark:hover:bg-white/[0.02] sm:flex-row sm:items-center px-2 rounded-md"
                 >
                   <div className="flex min-w-0 items-start gap-3.5">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400 mt-0.5">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-[#f0c2cf] mt-0.5">
                       <Code2 className="h-5 w-5" />
                     </div>
 
                     <div className="min-w-0 space-y-1">
-                      <h3 className="font-bold text-slate-900 dark:text-white text-sm truncate">
+                      <h3 className="font-serif font-bold text-[#2A282D] dark:text-white text-sm truncate">
                         {exam.title}
                       </h3>
 
-                      <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <p className="text-xs text-slate-500 dark:text-[#a59fa3] flex items-center gap-1.5">
                         <span>{exam.subject}</span>
                         <span>•</span>
                         <span className="flex items-center gap-1">
-                          <GraduationCap className="h-3.5 w-3.5 text-slate-400" />
+                          <GraduationCap className="h-3.5 w-3.5 text-slate-500" />
                           {exam.instructor}
                         </span>
                       </p>
 
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 dark:text-slate-400 pt-1">
-                        <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300">
-                          <CalendarDays className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 dark:text-[#a59fa3] pt-1">
+                        <span className="inline-flex items-center gap-1 text-[#5a565e] dark:text-[#b0a7aa] font-mono">
+                          <CalendarDays className="h-3.5 w-3.5 text-slate-900 dark:text-[#e5a9b9]" />
                           {exam.startTime}
                         </span>
 
-                        <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300">
-                          <Clock3 className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+                        <span className="inline-flex items-center gap-1 text-[#5a565e] dark:text-[#b0a7aa] font-mono">
+                          <Clock3 className="h-3.5 w-3.5 text-slate-800 dark:text-[#d48b9f]" />
                           {exam.duration} phút
                         </span>
 
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="text-slate-400 dark:text-slate-500">Mã phòng:</span>
-                          <code className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                          <span className="text-slate-500 dark:text-[#a59fa3]">Mã phòng:</span>
+                          <code className="rounded border border-slate-300 bg-slate-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                             {exam.roomCode}
                           </code>
                         </span>
@@ -590,7 +603,7 @@ export default function StudentDashboardPage() {
 
                   <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end">
                     <span
-                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold border ${statusStyles[exam.status]}`}
+                      className={`inline-flex rounded px-2.5 py-1 text-xs font-semibold border ${statusStyles[exam.status]}`}
                     >
                       {exam.status}
                     </span>
@@ -598,19 +611,19 @@ export default function StudentDashboardPage() {
                     {exam.status !== "Đã hoàn thành" ? (
                       <Link
                         href={`/student/exams?code=${encodeURIComponent(exam.roomCode)}`}
-                        className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition"
+                        className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-slate-900 hover:underline dark:text-[#e5a9b9] transition-colors"
                       >
                         {exam.status === "Đang diễn ra" ? (
                           <>
                             <Play className="h-3.5 w-3.5" /> Vào thi
                           </>
                         ) : (
-                          "Chi tiết"
+                          "Chi tiết ca thi"
                         )}
                         <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     ) : (
-                      <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                      <span className="text-xs text-slate-500 dark:text-[#a59fa3] font-medium">
                         Đã kết thúc
                       </span>
                     )}
@@ -618,7 +631,7 @@ export default function StudentDashboardPage() {
                 </article>
               ))
             ) : (
-              <div className="py-8 text-center text-xs text-slate-400 dark:text-slate-500">
+              <div className="py-8 text-center text-xs text-slate-500 dark:text-[#a59fa3]">
                 Không có kỳ thi nào ở trạng thái &quot;{activeFilter}&quot;.
               </div>
             )}
@@ -628,63 +641,63 @@ export default function StudentDashboardPage() {
         {/* Cột phải (1/3): Checklist & Quy chế */}
         <div className="space-y-5">
           {/* Checklist chuẩn bị */}
-          <section className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] space-y-4 dark:border-white/10 dark:bg-[#0d1017] transition-colors">
-            <div className="flex items-center gap-3 pb-2 border-b border-slate-100 dark:border-white/5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
-                <ShieldCheck className="h-5 w-5" />
+          <section className="rounded-md border border-slate-300 bg-white p-5 shadow-sm space-y-4 dark:border-white/10 dark:bg-neutral-900 transition-colors">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-slate-300 dark:border-white/10">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-emerald-50 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+                <ShieldCheck className="h-4 w-4" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
-                  Chuẩn bị trước khi thi
+                <h3 className="font-serif font-bold text-[#2A282D] dark:text-white text-xs uppercase tracking-wider">
+                  Chuẩn bị trước ca thi
                 </h3>
-                <p className="text-xs text-slate-400 dark:text-slate-500">
+                <p className="text-[11px] text-slate-500 dark:text-[#a59fa3]">
                   Yêu cầu kỹ thuật bắt buộc
                 </p>
               </div>
             </div>
 
-            <ul className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
+            <ul className="space-y-2.5 text-xs text-[#5a565e] dark:text-[#b0a7aa]">
               <li className="flex items-start gap-2">
-                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
                 <span>Webcam hoạt động rõ nét và đủ ánh sáng</span>
               </li>
               <li className="flex items-start gap-2">
-                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
                 <span>Kết nối Internet ổn định suốt ca thi</span>
               </li>
               <li className="flex items-start gap-2">
-                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
                 <span>Sử dụng trình duyệt Chrome hoặc Edge</span>
               </li>
               <li className="flex items-start gap-2">
-                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
                 <span>Sẵn sàng cấp quyền chia sẻ màn hình</span>
               </li>
             </ul>
 
             <Link
               href="/student/device-check"
-              className="block text-center text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition pt-1"
+              className="block text-center text-xs font-semibold text-slate-900 hover:underline dark:text-[#e5a9b9] transition-colors pt-1"
             >
               Kiểm tra thiết bị ngay →
             </Link>
           </section>
 
           {/* Thẻ lưu ý quy chế */}
-          <section className="rounded-2xl border border-blue-200/80 bg-blue-50/70 p-5 space-y-2 dark:border-blue-500/30 dark:bg-blue-500/10">
-            <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200">
-              <Code2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              <h3 className="font-bold text-xs">Lưu ý khi làm bài</h3>
+          <section className="rounded-md border border-slate-900/30 bg-slate-900/5 p-5 space-y-2 dark:border-slate-800/40 dark:bg-slate-800/15">
+            <div className="flex items-center gap-2 text-slate-900 dark:text-[#e5a9b9]">
+              <Code2 className="h-4 w-4" />
+              <h3 className="font-serif font-bold text-xs uppercase tracking-wider">Lưu ý khi làm bài</h3>
             </div>
-            <p className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
-              Chỉ nộp bài khi đã hoàn thành các câu hỏi. Hệ thống sẽ tự động ghi nhận nhật ký thao tác và vi phạm nếu chuyển tab/cửa sổ.
+            <p className="text-xs text-[#5a565e] dark:text-slate-300 leading-relaxed">
+              Mỗi lượt nộp sẽ được chạy thử qua bộ test case tự động. Hệ thống sẽ ghi nhận lịch sử vi phạm nếu phát hiện hành vi chuyển tab hoặc dán code từ bên ngoài.
             </p>
           </section>
         </div>
       </div>
 
-      <footer className="pt-2 text-center text-xs text-slate-400 dark:text-slate-600">
-        Oculide · Hệ thống thi lập trình trực tuyến
+      <footer className="pt-2 text-center text-xs text-slate-500 dark:text-[#a59fa3]">
+        Oculide · Nền tảng Đánh giá Năng lực Lập trình Trực tuyến
       </footer>
     </div>
   );

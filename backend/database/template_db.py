@@ -144,9 +144,9 @@ def get_template_detail(identifier: Union[int, str], include_hidden_tests: bool 
             "id": row[1],
             "template_code": row[1],
             "title": row[2],
-            "type": row[3] if row[3] in ("lab", "exam") else "lab",
-            "room_type": row[3] if row[3] in ("lab", "exam") else "lab",
-            "category": "Kiểm tra & Đánh giá" if row[3] == "exam" else "Thực hành Lab",
+            "type": row[3] if row[3] in ("lab", "exam", "final_exam", "midterm") else (row[3] or "lab"),
+            "room_type": row[3] if row[3] in ("lab", "exam", "final_exam", "midterm") else (row[3] or "lab"),
+            "category": "Thi Kết Thúc Học Phần" if row[3] in ("final", "final_exam") else ("Kiểm tra Giữa kỳ" if row[3] in ("midterm", "midterm_exam", "exam") else "Thực hành Lab"),
             "language": main_lang,
             "durationMinutes": row[4] or 60,
             "duration_minutes": row[4] or 60,
@@ -173,9 +173,17 @@ def list_templates_full(instructor_id: Optional[int] = None, room_type: Optional
         if instructor_id is not None:
             conditions.append("created_by = ?")
             params.append(instructor_id)
-        if room_type in ("lab", "exam"):
-            conditions.append("template_type = ?")
-            params.append(room_type)
+        if room_type:
+            rt = room_type.lower()
+            if rt in ("lab", "practice"):
+                conditions.append("template_type IN ('lab', 'practice')")
+            elif rt in ("midterm", "midterm_exam"):
+                conditions.append("template_type IN ('midterm', 'midterm_exam')")
+            elif rt in ("final", "final_exam"):
+                conditions.append("template_type IN ('final', 'final_exam', 'exam')")
+            else:
+                conditions.append("template_type = ?")
+                params.append(room_type)
 
         where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         cursor.execute(
@@ -193,6 +201,55 @@ def list_templates_full(instructor_id: Optional[int] = None, room_type: Optional
         if detail:
             results.append(detail)
     return results
+
+
+def list_template_usage(
+    instructor_id: Optional[int] = None,
+    final_only: bool = False,
+) -> List[Dict[str, Any]]:
+    """Lấy các lớp đang gắn với bộ đề qua phòng thi/lab trong CSDL."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        conditions = ["r.class_id IS NOT NULL", "r.template_id IS NOT NULL"]
+        params: List[Any] = []
+        if instructor_id is not None:
+            conditions.extend(["t.created_by = ?", "c.instructor_id = ?"])
+            params.extend([instructor_id, instructor_id])
+        if final_only:
+            conditions.append("t.template_type IN ('final_exam', 'final', 'exam')")
+
+        cursor.execute(
+            f"""
+            SELECT r.template_id, t.template_code, r.class_id, c.class_code, c.class_name,
+                   CASE
+                       WHEN MAX(CASE WHEN r.room_type IN ('lab', 'practice') THEN 1 ELSE 0 END) = 1
+                       THEN 'lab'
+                       ELSE 'exam'
+                   END AS activity_type
+            FROM Rooms r
+            INNER JOIN ExamTemplates t ON t.template_id = r.template_id
+            INNER JOIN Classes c ON c.class_id = r.class_id
+            WHERE {' AND '.join(conditions)}
+            GROUP BY r.template_id, t.template_code, r.class_id, c.class_code, c.class_name
+            ORDER BY r.template_id, c.class_code
+            """,
+            tuple(params),
+        )
+        return [
+            {
+                "template_id": row[0],
+                "template_code": row[1],
+                "class_id": row[2],
+                "class_code": row[3],
+                "class_name": row[4],
+                "activity_type": row[5],
+            }
+            for row in cursor.fetchall()
+        ]
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def _insert_questions_for_template(
@@ -281,13 +338,30 @@ def _insert_questions_for_template(
     return total_points if total_points > 0 else 10.0
 
 
+def _normalize_template_type(template_type: Optional[str]) -> str:
+    normalized = (template_type or "lab").strip().lower()
+    aliases = {
+        "cuoi_ky": "final_exam",
+        "final": "final_exam",
+        "midterm": "midterm_exam",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized not in ("lab", "exam", "final_exam", "midterm_exam", "practice", "homework"):
+        raise ValueError(f"Unsupported template type: {template_type}")
+    return normalized
+
+
 def create_template_full(instructor_id: int, data: Dict[str, Any]) -> Dict:
     """Tạo mới Bộ đề mẫu kèm Câu hỏi và Test cases"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        tpl_type = "exam" if data.get("type") == "exam" else "lab"
-        prefix = "EXAM" if tpl_type == "exam" else "LAB"
+        tpl_type = _normalize_template_type(data.get("type"))
+        prefix = {
+            "final_exam": "FINAL",
+            "midterm_exam": "MIDTERM",
+            "exam": "EXAM",
+        }.get(tpl_type, "LAB")
         tpl_code = (data.get("code") or f"TPL-{prefix}-{uuid.uuid4().hex[:6].upper()}").strip().upper()
 
         cursor.execute("SELECT template_id FROM ExamTemplates WHERE template_code = ?", (tpl_code,))
@@ -343,9 +417,9 @@ def update_template_full(identifier: Union[int, str], instructor_id: int, data: 
         if data.get("title") is not None:
             updates.append("title = ?")
             params.append(data["title"])
-        if data.get("type") in ("lab", "exam"):
+        if data.get("type") is not None:
             updates.append("template_type = ?")
-            params.append(data["type"])
+            params.append(_normalize_template_type(data["type"]))
         if data.get("duration_minutes") is not None:
             updates.append("duration_minutes = ?")
             params.append(int(data["duration_minutes"]))

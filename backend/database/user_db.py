@@ -130,7 +130,7 @@ USER_SELECT_SQL = """
                SELECT TOP 1 ip_address 
                FROM SystemAuditLogs 
                WHERE user_id = u.user_id 
-                 AND action = 'USER_LOGIN'
+                 AND (action = 'USER_LOGIN' OR action = 'AUTH_LOGIN' OR action = N'Đăng nhập' OR action = N'Đăng nhập từ IP lạ')
                  AND ip_address IS NOT NULL 
                  AND ip_address != '' 
                ORDER BY created_at DESC
@@ -288,16 +288,6 @@ def update_last_login(user_id: int, client_ip: Optional[str] = None):
                 SET last_login = GETDATE() 
                 WHERE user_id = ?
             """, (user_id,))
-            
-            # 2. Ghi nhận lịch sử và địa chỉ IP đăng nhập vào bảng nhật ký SystemAuditLogs
-            try:
-                cursor.execute("""
-                    INSERT INTO SystemAuditLogs (user_id, log_level, action, message, ip_address)
-                    VALUES (?, 'info', 'USER_LOGIN', N'Đăng nhập hệ thống thành công', ?)
-                """, (user_id, client_ip or '127.0.0.1'))
-            except Exception as log_err:
-                print(f"Warning: Failed to insert login audit log: {log_err}")
-
             conn.commit()
         finally:
             cursor.close()

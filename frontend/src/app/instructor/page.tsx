@@ -27,7 +27,11 @@ import {
   Video,
 } from 'lucide-react';
 import { useMonitoring } from '@/components/instructor/monitoring/MonitoringContext';
-import { INSTRUCTOR_ROOMS_STORAGE_KEY, RoomSession } from '@/components/instructor/classes/types';
+import {
+  INSTRUCTOR_ROOMS_STORAGE_KEY,
+  isRoomCurrentlyRunning,
+  RoomSession,
+} from '@/components/instructor/classes/types';
 import { fetchWithAuth } from '@/services/apiClient';
 import {
   DEFAULT_INSTRUCTOR_PROFILE_NAME,
@@ -52,12 +56,13 @@ interface TodaySessionItem {
   isAiProctored: boolean;
   pendingViolationsCount?: number;
   isSample?: boolean;
+  hasClass: boolean;
 }
 
 const panelClass =
-  'rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-white/10 dark:bg-[#121824]';
-const mutedTextClass = 'text-slate-500 dark:text-slate-400';
-const primaryTextClass = 'text-slate-900 dark:text-slate-100';
+  'rounded-md border border-slate-300 bg-white shadow-2xs dark:border-white/10 dark:bg-neutral-900 transition-colors';
+const mutedTextClass = 'text-stone-500 dark:text-stone-400';
+const primaryTextClass = 'text-stone-900 dark:text-stone-100';
 
 function formatTimeDisplay(isoDateStr?: string): string {
   if (!isoDateStr) return 'Hôm nay';
@@ -74,11 +79,13 @@ function formatTimeDisplay(isoDateStr?: string): string {
   }
 }
 
-function mapBackendRoomToDashboardSession(room: any): TodaySessionItem {
+function mapBackendRoomToDashboardSession(room: any, trustRunningStatus = true): TodaySessionItem {
   let status: TodaySessionItem['status'] = 'upcoming';
   const rawStatus = (room.status || '').toLowerCase();
-  if (rawStatus === 'dang_dien_ra' || rawStatus === 'in_progress') {
+  if (trustRunningStatus && isRoomCurrentlyRunning(room)) {
     status = 'active';
+  } else if (rawStatus === 'dang_dien_ra' || rawStatus === 'in_progress') {
+    status = 'completed';
   } else if (rawStatus === 'chua_mo' || rawStatus === 'waiting') {
     status = 'waiting';
   } else if (rawStatus === 'da_dong' || rawStatus === 'ended' || rawStatus === 'completed') {
@@ -107,7 +114,7 @@ function mapBackendRoomToDashboardSession(room: any): TodaySessionItem {
   return {
     id: String(room.room_id || room.room_code),
     roomId: room.room_id,
-    classCode: room.class_code || 'Lớp HP',
+    classCode: room.class_code || room.classId || 'Lớp HP',
     className: room.class_name || room.room_name || 'Phòng học',
     title: room.room_name,
     type: room.room_type === 'exam' ? 'EXAM' : 'LAB',
@@ -121,6 +128,7 @@ function mapBackendRoomToDashboardSession(room: any): TodaySessionItem {
     isAiProctored,
     pendingViolationsCount: room.pending_violations || 0,
     isSample: false,
+    hasClass: room.class_id != null || Boolean(room.class_code || room.classId),
   };
 }
 
@@ -146,7 +154,12 @@ export default function InstructorDashboardPage() {
     () => sessions.filter((session) => session.status === 'active'),
     [sessions]
   );
-  const activeSession = activeSessions[0];
+  const visibleSessions = useMemo(
+    () => sessions.filter((session) => session.status !== 'completed'),
+    [sessions]
+  );
+  const lockSession = activeSessions[0];
+  const activeSession = activeSessions.find((session) => session.hasClass);
   const hasActiveSessionConflict = activeSessions.length > 1;
 
   const totalStudents = sessions.reduce((total, session) => total + session.totalStudents, 0);
@@ -162,12 +175,12 @@ export default function InstructorDashboardPage() {
     window.setTimeout(() => setToastText(null), 3500);
   }, []);
 
-  const loadRooms = useCallback(async () => {
+  const loadRooms = useCallback(async (showLoading = true) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const data = await fetchWithAuth<any[]>('/api/v1/rooms');
       if (Array.isArray(data)) {
-        const mapped = data.map(mapBackendRoomToDashboardSession);
+        const mapped = data.map((room) => mapBackendRoomToDashboardSession(room));
         const statusPriority: Record<TodaySessionItem['status'], number> = {
           active: 0,
           waiting: 1,
@@ -184,14 +197,14 @@ export default function InstructorDashboardPage() {
         if (storedRooms) {
           const parsed = JSON.parse(storedRooms);
           if (Array.isArray(parsed)) {
-            setSessions(parsed.map(mapBackendRoomToDashboardSession));
+            setSessions(parsed.map((room: RoomSession) => mapBackendRoomToDashboardSession(room, false)));
           }
         }
       } catch {
         // ignore
       }
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, []);
 
@@ -205,8 +218,10 @@ export default function InstructorDashboardPage() {
     window.addEventListener(INSTRUCTOR_PROFILE_UPDATED_EVENT, syncInstructorName);
 
     loadRooms();
+    const interval = window.setInterval(() => loadRooms(false), 10000);
 
     return () => {
+      window.clearInterval(interval);
       window.removeEventListener('storage', syncInstructorName);
       window.removeEventListener(INSTRUCTOR_PROFILE_UPDATED_EVENT, syncInstructorName);
     };
@@ -266,29 +281,34 @@ export default function InstructorDashboardPage() {
   return (
     <div className="mx-auto w-full max-w-[1440px] space-y-6">
       {toastText && (
-        <div
+        <aside
           role="status"
           aria-live="polite"
-          className="fixed bottom-5 right-5 z-50 flex max-w-[calc(100vw-2.5rem)] items-start gap-2.5 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-xs font-medium leading-normal text-white shadow-xl"
+          className="fixed bottom-5 right-5 z-50 flex max-w-[calc(100vw-2.5rem)] items-center gap-3 rounded-md border border-slate-300 border-l-4 border-l-[#91040A] bg-white px-4 py-3 text-xs shadow-lg dark:border-white/10 dark:border-l-[#fca5a5] dark:bg-neutral-900"
         >
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-          <span>{toastText}</span>
-        </div>
+          <div className="flex h-7 w-7 items-center justify-center rounded-xs bg-brand-50 text-brand-700 shrink-0 dark:bg-brand-500/10 dark:text-brand-200">
+            <CheckCircle2 className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="font-serif text-xs font-bold text-[#2A282D] dark:text-white">Thông báo</p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">{toastText}</p>
+          </div>
+        </aside>
       )}
 
       {/* Page heading - Đồng bộ hoàn hảo với Admin */}
       <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-[22px] font-extrabold tracking-tight text-slate-900 dark:text-white">
+          <h2 className="text-[22px] font-serif font-bold tracking-tight text-[#2A282D] dark:text-white">
             Tổng quan giảng dạy
           </h2>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-xs text-slate-500 dark:text-[#a59fa3]">
             Xin chào, {instructorName}. Theo dõi lịch giảng dạy, tình trạng phòng và các công việc cần xử lý trong ngày.
           </p>
         </div>
         <Link
           href="/instructor/room"
-          className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700"
+          className="system-primary-action inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-slate-800"
         >
           <Plus className="h-4 w-4" />
           <span>Tạo phòng mới</span>
@@ -297,19 +317,19 @@ export default function InstructorDashboardPage() {
 
       {/* One-room monitoring status */}
       {activeSession ? (
-        <section className="rounded-2xl border border-red-200 bg-red-50/80 p-4 sm:p-5 dark:border-red-500/30 dark:bg-red-500/10" aria-label="Phòng đang được giám sát">
+        <section className="rounded-md border border-red-200 bg-red-50/80 p-4 sm:p-5 dark:border-red-500/30 dark:bg-red-500/10" aria-label="Phòng đang được giám sát">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-600 dark:bg-red-400" />
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-600 dark:bg-red-400" />
                   ĐANG GIÁM SÁT
                 </span>
-                <code className="rounded-lg bg-white/80 px-2.5 py-1 font-mono text-[11px] font-bold tabular-nums text-slate-800 dark:bg-white/5 dark:text-slate-200">
+                <code className="rounded bg-white/80 px-2.5 py-1 font-mono text-[11px] font-bold tabular-nums text-slate-800 dark:bg-white/5 dark:text-slate-200">
                   {activeSession.roomCode}
                 </code>
                 {hasActiveSessionConflict && (
-                  <span className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                  <span className="inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                     <AlertTriangle className="h-3 w-3" />
                     Dữ liệu có nhiều phiên đang mở
                   </span>
@@ -328,7 +348,7 @@ export default function InstructorDashboardPage() {
               </p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:shrink-0">
-              <div className="rounded-xl bg-white/80 px-3 py-2 text-xs dark:bg-white/5">
+              <div className="rounded-md bg-white/80 px-3 py-2 text-xs dark:bg-white/5">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Sinh viên đã vào phòng</p>
                 <p className="mt-0.5 font-mono text-lg font-extrabold tabular-nums text-slate-900 dark:text-slate-100">
                   {activeSession.attendedStudents}/{activeSession.totalStudents}
@@ -336,7 +356,7 @@ export default function InstructorDashboardPage() {
               </div>
               <Link
                 href={`/instructor/monitoring?room=${encodeURIComponent(activeSession.roomCode)}`}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-red-700"
+                className="system-primary-action inline-flex h-11 items-center justify-center gap-2 rounded-md bg-red-600 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-red-700"
               >
                 <Video className="h-4 w-4" />
                 Vào phòng giám sát
@@ -345,21 +365,21 @@ export default function InstructorDashboardPage() {
           </div>
         </section>
       ) : (
-        <section className="flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 dark:border-blue-500/30 dark:bg-blue-500/10">
+        <section className="flex flex-col gap-3 rounded-md border border-slate-900/30 bg-slate-900/5 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 dark:border-slate-900/40 dark:bg-slate-900/15">
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-200">
               <Radio className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">Chưa có phòng nào đang giám sát</h2>
-              <p className="mt-0.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+              <h2 className="text-sm font-serif font-bold text-stone-900 dark:text-stone-100">Chưa có phòng nào đang giám sát</h2>
+              <p className="mt-0.5 text-xs leading-relaxed text-stone-600 dark:text-stone-300">
                 Bạn có thể chuẩn bị nhiều phòng, nhưng chỉ kích hoạt giám sát cho một phòng tại một thời điểm.
               </p>
             </div>
           </div>
           <Link
             href="/instructor/room"
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-3.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/30 dark:bg-white/5 dark:text-blue-300 dark:hover:bg-blue-500/10"
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3.5 text-xs font-serif font-semibold text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
           >
             <Plus className="h-3.5 w-3.5" />
             Chuẩn bị phòng
@@ -367,26 +387,26 @@ export default function InstructorDashboardPage() {
         </section>
       )}
 
-      {/* KPI cards - Chuẩn hóa đồng bộ 100% với Admin */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Tổng quan số liệu">
+      {/* KPI cards - Chuẩn hóa đồng bộ 100% với phong cách cổ điển học thuật */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch" aria-label="Tổng quan số liệu">
         {/* Card 1: Ca giảng dạy */}
         <Link
           href="/instructor/schedules"
-          className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] transition-all hover:border-blue-400 hover:shadow-md dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-blue-500/40"
+          className="flex flex-col justify-between h-full rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-all hover:border-slate-900 dark:border-white/10 dark:bg-neutral-900"
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eff6ff] text-[#2563eb] dark:bg-blue-500/15 dark:text-blue-400">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
               <CalendarDays className="h-4 w-4" />
             </div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-serif font-semibold text-stone-500 dark:text-stone-400">
               Ca giảng dạy
             </span>
           </div>
           <div className="mt-4 flex items-baseline gap-3">
-            <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+            <span className="text-[30px] font-extrabold leading-none tracking-tight text-stone-900 dark:text-white font-mono">
               {sessions.length}
             </span>
-            <span className="text-xs font-semibold text-[#2563eb] dark:text-blue-400">
+            <span className="text-xs font-serif font-semibold text-slate-900 dark:text-rose-300">
               Trong danh sách hiện tại
             </span>
           </div>
@@ -395,21 +415,21 @@ export default function InstructorDashboardPage() {
         {/* Card 2: Cảnh báo AI chờ duyệt */}
         <Link
           href="/instructor/reports"
-          className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] transition-all hover:border-amber-400 hover:shadow-md dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-amber-500/40"
+          className="flex flex-col justify-between h-full rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-all hover:border-slate-800 dark:border-white/10 dark:bg-neutral-900"
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fffbeb] text-[#d97706] dark:bg-amber-500/15 dark:text-amber-400">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
               <ShieldAlert className="h-4 w-4" />
             </div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-serif font-semibold text-stone-500 dark:text-stone-400">
               Cảnh báo AI chờ duyệt
             </span>
           </div>
           <div className="mt-4 flex items-baseline gap-3">
-            <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+            <span className="text-[30px] font-extrabold leading-none tracking-tight text-stone-900 dark:text-white font-mono">
               {totalPendingViolations}
             </span>
-            <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+            <span className="text-xs font-serif font-semibold text-slate-800 dark:text-rose-300">
               Cần giảng viên thẩm định
             </span>
           </div>
@@ -418,21 +438,21 @@ export default function InstructorDashboardPage() {
         {/* Card 3: Phòng đang giám sát */}
         <Link
           href="/instructor/monitoring"
-          className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] transition-all hover:border-red-400 hover:shadow-md dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-red-500/40"
+          className="flex flex-col justify-between h-full rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-all hover:border-slate-900 dark:border-white/10 dark:bg-neutral-900"
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#ecfdf5] text-[#059669] dark:bg-emerald-500/15 dark:text-emerald-400">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
               <Activity className="h-4 w-4" />
             </div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-serif font-semibold text-stone-500 dark:text-stone-400">
               Phòng đang giám sát
             </span>
           </div>
           <div className="mt-4 flex items-baseline gap-3">
-            <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
-              {activeSessions.length}<span className="text-sm font-bold text-slate-400">/1</span>
+            <span className="text-[30px] font-extrabold leading-none tracking-tight text-stone-900 dark:text-white font-mono">
+              {activeSessions.length}<span className="text-sm font-bold text-stone-400 font-mono">/1</span>
             </span>
-            <span className="text-xs font-semibold text-[#059669] dark:text-emerald-400">
+            <span className="text-xs font-serif font-semibold text-slate-900 dark:text-rose-300">
               Giới hạn một phiên đồng thời
             </span>
           </div>
@@ -441,21 +461,21 @@ export default function InstructorDashboardPage() {
         {/* Card 4: Tỷ lệ điểm danh */}
         <Link
           href="/instructor/classes"
-          className="rounded-2xl border border-slate-200/75 bg-white p-5 shadow-[0_2px_10px_rgba(15,23,42,0.02)] transition-all hover:border-emerald-400 hover:shadow-md dark:border-white/10 dark:bg-[#0d1017] dark:hover:border-emerald-500/40"
+          className="flex flex-col justify-between h-full rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-all hover:border-slate-900/40 dark:border-white/10 dark:bg-neutral-900"
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f0fdf4] text-[#16a34a] dark:bg-emerald-500/15 dark:text-emerald-400">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-700 dark:bg-white/5 dark:text-slate-300 border border-slate-300 dark:border-white/10">
               <UserCheck className="h-4 w-4" />
             </div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-serif font-semibold text-stone-500 dark:text-stone-400">
               Tỷ lệ điểm danh
             </span>
           </div>
           <div className="mt-4 flex items-baseline gap-3">
-            <span className="text-[30px] font-extrabold leading-none tracking-tight text-slate-900 dark:text-white font-mono">
+            <span className="text-[30px] font-extrabold leading-none tracking-tight text-stone-900 dark:text-white font-mono">
               {attendanceRate.toFixed(1)}%
             </span>
-            <span className="text-xs font-semibold text-[#16a34a] dark:text-emerald-400">
+            <span className="text-xs font-serif font-semibold text-slate-600 dark:text-slate-400">
               {attendedStudents}/{totalStudents} sinh viên đã vào
             </span>
           </div>
@@ -470,7 +490,7 @@ export default function InstructorDashboardPage() {
               <h2 className="text-[16px] font-bold text-slate-900 dark:text-white">Lịch thực hành và kiểm tra</h2>
               <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">Theo dõi trạng thái phòng, điểm danh và thao tác giám sát.</p>
             </div>
-            <Link href="/instructor/schedules" className="inline-flex h-9 items-center gap-1.5 self-start rounded-lg px-2.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-500/10 sm:self-center">
+            <Link href="/instructor/schedules" className="inline-flex h-9 items-center gap-1.5 self-start rounded px-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10 sm:self-center">
               Xem lịch đầy đủ <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
@@ -479,30 +499,36 @@ export default function InstructorDashboardPage() {
             <div className="flex h-36 items-center justify-center text-xs font-semibold text-slate-400">
               Đang tải danh sách ca giảng dạy...
             </div>
-          ) : sessions.length === 0 ? (
+          ) : visibleSessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400"><CalendarDays className="h-6 w-6" /></div>
-              <h3 className={`mt-3 text-sm font-bold ${primaryTextClass}`}>Chưa có ca giảng dạy</h3>
-              <p className={`mt-1 max-w-sm text-xs leading-relaxed ${mutedTextClass}`}>Các phòng bạn tạo sẽ xuất hiện tại đây để tiện theo dõi và quản lý.</p>
-              <Link href="/instructor/room" className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white transition hover:bg-blue-700"><Plus className="h-4 w-4" />Tạo phòng đầu tiên</Link>
+              <div className="flex h-12 w-12 items-center justify-center rounded-md bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-200"><CalendarDays className="h-6 w-6" /></div>
+              <h3 className={`mt-3 font-serif text-sm font-bold ${primaryTextClass}`}>
+                {sessions.length > 0 ? 'Không có phòng cần theo dõi' : 'Chưa có ca giảng dạy'}
+              </h3>
+              <p className={`mt-1 max-w-sm text-xs leading-relaxed ${mutedTextClass}`}>
+                {sessions.length > 0
+                  ? 'Các phòng đã kết thúc được lưu trong tab Lịch sử.'
+                  : 'Các phòng bạn tạo sẽ xuất hiện tại đây để tiện theo dõi và quản lý.'}
+              </p>
+              <Link
+                href={sessions.length > 0 ? '/instructor/schedules' : '/instructor/room'}
+                className="system-primary-action mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-4 text-xs font-semibold text-white transition hover:bg-slate-800"
+              >
+                {sessions.length > 0 ? <CalendarDays className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                {sessions.length > 0 ? 'Xem lịch sử' : 'Tạo phòng đầu tiên'}
+              </Link>
             </div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-white/5">
-              {sessions.map((item) => {
+              {visibleSessions.map((item) => {
                 const isActive = item.status === 'active';
-                const isCurrentActive = isActive && activeSession?.id === item.id;
+                const isCurrentActive = isActive && lockSession?.id === item.id;
                 const isDuplicateActive = isActive && !isCurrentActive;
                 const isWaiting = item.status === 'waiting';
                 const isCompleted = item.status === 'completed';
-                const isBlockedByActive = Boolean(activeSession) && !isActive && !isCompleted;
+                const isBlockedByActive = Boolean(lockSession) && !isActive && !isCompleted;
 
-                const statusClass = isCurrentActive
-                  ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300'
-                  : isDuplicateActive || isWaiting
-                    ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
-                    : isCompleted
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
-                      : 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300';
+                const statusClass = 'border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300';
 
                 return (
                   <article key={item.id} className="py-4 first:pt-4 last:pb-0">
@@ -510,16 +536,16 @@ export default function InstructorDashboardPage() {
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                            <span className={`rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${item.type === 'EXAM' ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300' : 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'}`}>
+                            <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:bg-white/10 dark:text-slate-300">
                               {item.type === 'EXAM' ? 'Kiểm tra' : 'Thực hành Lab'}
                             </span>
                             {item.isSample && (
-                              <span className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                              <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 dark:bg-white/10 dark:text-slate-300">
                                 Lịch minh họa
                               </span>
                             )}
-                            <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] font-bold ${statusClass}`}>
-                              <span className={`h-1.5 w-1.5 rounded-full ${isCurrentActive ? 'animate-pulse bg-red-600 dark:bg-red-400' : isWaiting || isDuplicateActive ? 'bg-amber-500' : isCompleted ? 'bg-emerald-600' : 'bg-blue-600'}`} />
+                            <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-bold ${statusClass}`}>
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
                               {isCurrentActive ? 'Đang giám sát' : isDuplicateActive ? 'Trùng trạng thái giám sát' : isWaiting ? 'Đang chờ điểm danh' : isCompleted ? 'Đã kết thúc' : 'Chưa mở'}
                             </span>
                           </div>
@@ -529,25 +555,25 @@ export default function InstructorDashboardPage() {
                         <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs ${mutedTextClass}`}><Clock3 className="h-3.5 w-3.5" />{item.time}</span>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-slate-50/80 px-3 py-2.5 text-xs dark:bg-white/[0.04]">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md bg-slate-50/80 px-3 py-2.5 text-xs dark:bg-white/[0.04]">
                         <div className="flex items-center gap-1.5">
                           <span className={mutedTextClass}>Mã phòng</span>
                           <code className="font-mono font-bold tabular-nums text-slate-800 dark:text-slate-200">{item.roomCode}</code>
-                          <button type="button" onClick={() => copyToClipboard(item.roomCode, `${item.id}-room`, 'mã phòng')} aria-label={`Sao chép mã phòng ${item.roomCode}`} className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white hover:text-blue-700 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-blue-300">
-                            {copiedId === `${item.id}-room` ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                          <button type="button" onClick={() => copyToClipboard(item.roomCode, `${item.id}-room`, 'mã phòng')} aria-label={`Sao chép mã phòng ${item.roomCode}`} className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-500 transition hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white">
+                            {copiedId === `${item.id}-room` ? <Check className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" /> : <Copy className="h-3.5 w-3.5" />}
                           </button>
                         </div>
                         <span className="hidden h-4 w-px bg-slate-200 dark:bg-white/10 sm:block" />
                         <div className="flex items-center gap-1.5">
                           <span className={mutedTextClass}>PIN</span>
                           <code className="font-mono font-bold tabular-nums text-slate-800 dark:text-slate-200">{item.pin}</code>
-                          <button type="button" onClick={() => copyToClipboard(item.pin, `${item.id}-pin`, 'mã PIN')} aria-label={`Sao chép PIN phòng ${item.roomCode}`} className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white hover:text-blue-700 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-blue-300">
-                            {copiedId === `${item.id}-pin` ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                          <button type="button" onClick={() => copyToClipboard(item.pin, `${item.id}-pin`, 'mã PIN')} aria-label={`Sao chép PIN phòng ${item.roomCode}`} className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-500 transition hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white">
+                            {copiedId === `${item.id}-pin` ? <Check className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" /> : <Copy className="h-3.5 w-3.5" />}
                           </button>
                         </div>
                         <span className="hidden h-4 w-px bg-slate-200 dark:bg-white/10 sm:block" />
                         <div className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-slate-400" /><span className={mutedTextClass}>Điểm danh</span><strong className="font-mono font-bold tabular-nums text-slate-800 dark:text-slate-200">{item.attendedStudents}/{item.totalStudents}</strong></div>
-                        <span className={`inline-flex items-center gap-1 ${item.isAiProctored ? 'text-violet-700 dark:text-violet-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                        <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300">
                           {item.isAiProctored ? <ShieldAlert className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
                           {item.isAiProctored ? 'AI Proctoring' : 'Lab tiêu chuẩn'}
                         </span>
@@ -555,24 +581,24 @@ export default function InstructorDashboardPage() {
 
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <p className={`text-[11px] leading-relaxed ${mutedTextClass}`}>
-                          {isBlockedByActive ? `Phòng ${activeSession?.roomCode} đang giám sát. Bạn vẫn có thể chuẩn bị phòng này nhưng chưa thể kích hoạt.` : isDuplicateActive ? 'Cần kiểm tra dữ liệu vì đang có hơn một phòng mang trạng thái giám sát.' : isCurrentActive ? 'Đây là phòng giám sát duy nhất đang hoạt động.' : 'Có thể vào phòng chờ để điểm danh hoặc chuẩn bị cấu hình.'}
+                          {isBlockedByActive ? `Tạm khóa vì mỗi giảng viên chỉ có thể giám sát một phòng tại một thời điểm. Hãy kết thúc phòng ${lockSession?.roomCode} trước khi kích hoạt phiên này.` : isDuplicateActive ? 'Dữ liệu đang ghi nhận nhiều phòng cùng hoạt động; chỉ một phòng có thể được giám sát tại một thời điểm.' : isCurrentActive ? 'Đây là phòng giám sát duy nhất đang hoạt động.' : 'Có thể vào phòng chờ để điểm danh hoặc chuẩn bị cấu hình.'}
                         </p>
                         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                           {isCurrentActive ? (
-                            <Link href={`/instructor/monitoring?room=${encodeURIComponent(item.roomCode)}`} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 text-xs font-semibold text-white transition hover:bg-red-700"><Video className="h-3.5 w-3.5" />Vào giám sát</Link>
+                            <Link href={`/instructor/monitoring?room=${encodeURIComponent(item.roomCode)}`} className="system-primary-action inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-slate-800 px-3 text-xs font-serif font-bold text-white transition hover:bg-slate-900"><Video className="h-3.5 w-3.5" />Vào giám sát</Link>
                           ) : isDuplicateActive ? (
-                            <button type="button" disabled className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-400 dark:bg-white/5 dark:text-slate-500"><LockKeyhole className="h-3.5 w-3.5" />Tạm khóa do trùng phiên</button>
+                            <button type="button" disabled className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-md bg-stone-100 px-3 text-xs font-serif font-semibold text-stone-400 dark:bg-white/5 dark:text-stone-500"><LockKeyhole className="h-3.5 w-3.5" />Tạm khóa do trùng phiên</button>
                           ) : isWaiting ? (
-                            <Link href={`/instructor/room/${encodeURIComponent(item.roomCode)}`} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/15"><Users className="h-3.5 w-3.5" />Vào phòng chờ</Link>
+                            <Link href={`/instructor/room/${encodeURIComponent(item.roomCode)}`} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-serif font-semibold text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"><Users className="h-3.5 w-3.5" />Vào phòng chờ</Link>
                           ) : !isCompleted ? (
                             <>
-                              <Link href={`/instructor/room?class=${encodeURIComponent(item.classCode.split('-')[0])}`} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"><Radio className="h-3.5 w-3.5" />Thiết lập</Link>
-                              <button type="button" onClick={() => handleOpenEarly(item.id)} disabled={isBlockedByActive} title={isBlockedByActive ? `Phòng ${activeSession?.roomCode} đang được giám sát` : 'Mở nhanh phòng này'} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none dark:disabled:bg-white/10 dark:disabled:text-slate-500">
+                              <Link href={`/instructor/room?class=${encodeURIComponent(item.classCode.split('-')[0])}`} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-serif font-semibold text-stone-700 transition hover:bg-stone-50 dark:border-white/10 dark:bg-white/5 dark:text-stone-200"><Radio className="h-3.5 w-3.5" />Thiết lập</Link>
+                              <button type="button" onClick={() => handleOpenEarly(item.id)} disabled={isBlockedByActive} title={isBlockedByActive ? `Phòng ${lockSession?.roomCode} đang được giám sát` : 'Mở nhanh phòng này'} className="system-primary-action inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-slate-900 px-3 text-xs font-serif font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-500 dark:disabled:bg-white/10 dark:disabled:text-stone-500">
                                 {isBlockedByActive ? <LockKeyhole className="h-3.5 w-3.5" /> : <Radio className="h-3.5 w-3.5" />}{isBlockedByActive ? 'Đang bị khóa' : 'Mở phòng nhanh'}
                               </button>
                             </>
                           ) : (
-                            <span className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" />Đã hoàn tất</span>
+                            <span className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-100 px-3 text-xs font-serif font-semibold text-slate-700 dark:bg-white/10 dark:text-slate-300 border border-slate-200 dark:border-white/10"><CheckCircle2 className="h-3.5 w-3.5" />Đã hoàn tất</span>
                           )}
                         </div>
                       </div>
@@ -586,45 +612,45 @@ export default function InstructorDashboardPage() {
 
         <div className="space-y-5">
           <section className={`${panelClass} p-5 sm:p-6`}>
-            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-white/10">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-300 pb-3 dark:border-white/10">
               <div>
-                <h2 className="flex items-center gap-2 text-[16px] font-bold text-slate-900 dark:text-white">
-                  <BellRing className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                <h2 className="flex items-center gap-2 font-serif text-[16px] font-bold text-slate-900 dark:text-white">
+                  <BellRing className="h-4 w-4 text-slate-800 dark:text-[#b4687d]" />
                   Việc cần xử lý
                 </h2>
-                <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">Các đầu việc cần giảng viên chú ý</p>
+                <p className="mt-0.5 text-xs text-slate-500">Các đầu việc cần giảng viên chú ý</p>
               </div>
-              <span className="rounded-lg bg-amber-50 px-2.5 py-1 font-mono text-[11px] font-bold tabular-nums text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">3 việc</span>
+              <span className="rounded border border-slate-800/20 bg-slate-800/10 px-2 py-0.5 font-mono text-[11px] font-bold tabular-nums text-slate-800 dark:text-slate-500">3 việc</span>
             </div>
             <div className="space-y-3 pt-3">
-              <div className="rounded-xl border-l-4 border-red-500 bg-slate-50/80 p-3 dark:bg-white/[0.04]">
-                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className={`text-xs font-bold ${primaryTextClass}`}>Thẩm định cảnh báo AI</h3><span className="rounded-lg bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:bg-red-500/10 dark:text-red-300">Ưu tiên cao</span></div>
+              <div className="rounded-md border border-slate-300 border-l-2 border-l-[#7a0308] bg-slate-50/50 p-3 dark:border-white/10 dark:border-l-[#7a0308] dark:bg-white/[0.02]">
+                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className={`text-xs font-bold ${primaryTextClass}`}>Thẩm định cảnh báo AI</h3><span className="rounded border border-slate-800/20 bg-slate-800/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-800 dark:text-slate-500">Ưu tiên cao</span></div>
                 <p className={`mt-1 text-xs leading-relaxed ${mutedTextClass}`}>{pendingViolations.length} cảnh báo đang chờ giảng viên xem xét và xử lý.</p>
-                <Link href="/instructor/reports" className="mt-2 inline-flex h-8 items-center gap-1 text-xs font-semibold text-blue-700 hover:underline dark:text-blue-300">Xem cảnh báo <ArrowRight className="h-3.5 w-3.5" /></Link>
+                <Link href="/instructor/reports" className="mt-2 inline-flex h-8 items-center gap-1 text-xs font-bold text-slate-900 hover:underline dark:text-slate-500">Xem cảnh báo <ArrowRight className="h-3.5 w-3.5" /></Link>
               </div>
-              <div className="rounded-xl border-l-4 border-amber-500 bg-slate-50/80 p-3 dark:bg-white/[0.04]">
-                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className={`text-xs font-bold ${primaryTextClass}`}>Kiểm tra kết quả bài làm</h3><span className="rounded-lg bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">Chờ xử lý</span></div>
+              <div className="rounded-md border border-slate-300 border-l-2 border-l-[#7D7571] bg-slate-50/50 p-3 dark:border-white/10 dark:border-l-[#7D7571] dark:bg-white/[0.02]">
+                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className={`text-xs font-bold ${primaryTextClass}`}>Kiểm tra kết quả bài làm</h3><span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">Chờ xử lý</span></div>
                 <p className={`mt-1 text-xs leading-relaxed ${mutedTextClass}`}>Kiểm tra kết quả chấm và trạng thái công bố điểm của các ca đã hoàn thành.</p>
-                <Link href="/instructor/reports" className="mt-2 inline-flex h-8 items-center gap-1 text-xs font-semibold text-blue-700 hover:underline dark:text-blue-300">Mở báo cáo <ArrowRight className="h-3.5 w-3.5" /></Link>
+                <Link href="/instructor/reports" className="mt-2 inline-flex h-8 items-center gap-1 text-xs font-bold text-slate-900 hover:underline dark:text-slate-500">Mở báo cáo <ArrowRight className="h-3.5 w-3.5" /></Link>
               </div>
-              <div className="rounded-xl border-l-4 border-blue-500 bg-slate-50/80 p-3 dark:bg-white/[0.04]">
-                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className={`text-xs font-bold ${primaryTextClass}`}>Rà soát đề và test case</h3><span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-white/10 dark:text-slate-300">Chuẩn bị</span></div>
+              <div className="rounded-md border border-slate-300 border-l-2 border-l-slate-400 bg-slate-50/50 p-3 dark:border-white/10 dark:border-l-white/20 dark:bg-white/[0.02]">
+                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className={`text-xs font-bold ${primaryTextClass}`}>Rà soát đề và test case</h3><span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">Chuẩn bị</span></div>
                 <p className={`mt-1 text-xs leading-relaxed ${mutedTextClass}`}>Kiểm tra câu hỏi, test case công khai và test case ẩn trước khi mở ca.</p>
-                <Link href="/instructor/questions" className="mt-2 inline-flex h-8 items-center gap-1 text-xs font-semibold text-blue-700 hover:underline dark:text-blue-300">Mở ngân hàng câu hỏi <ArrowRight className="h-3.5 w-3.5" /></Link>
+                <Link href="/instructor/questions" className="mt-2 inline-flex h-8 items-center gap-1 text-xs font-bold text-slate-900 hover:underline dark:text-slate-500">Mở ngân hàng câu hỏi <ArrowRight className="h-3.5 w-3.5" /></Link>
               </div>
             </div>
           </section>
 
           <section className={`${panelClass} p-4 sm:p-5`}>
-            <div className="border-b border-slate-100 pb-3 dark:border-white/10">
-              <h2 className={`text-sm font-bold ${primaryTextClass}`}>Truy cập nhanh</h2>
+            <div className="border-b border-slate-300 pb-3 dark:border-white/10">
+              <h2 className={`font-serif text-sm font-bold ${primaryTextClass}`}>Truy cập nhanh</h2>
               <p className={`mt-0.5 text-[11px] ${mutedTextClass}`}>Đi đến các khu vực thường dùng</p>
             </div>
             <div className="space-y-1.5 pt-3">
-              <Link href="/instructor/classes" className="group flex min-h-10 items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700 dark:text-slate-300 dark:hover:bg-blue-500/10 dark:hover:text-blue-300"><span className="flex min-w-0 items-center gap-2.5"><Table2 className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" /><span className="truncate">Lớp học và điểm danh</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-0.5" /></Link>
-              <Link href="/instructor/questions" className="group flex min-h-10 items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700 dark:text-slate-300 dark:hover:bg-blue-500/10 dark:hover:text-blue-300"><span className="flex min-w-0 items-center gap-2.5"><FileCode2 className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" /><span className="truncate">Ngân hàng câu hỏi</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-0.5" /></Link>
-              <Link href="/instructor/schedules" className="group flex min-h-10 items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700 dark:text-slate-300 dark:hover:bg-blue-500/10 dark:hover:text-blue-300"><span className="flex min-w-0 items-center gap-2.5"><Clock3 className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" /><span className="truncate">Lịch và phiên kiểm tra</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-0.5" /></Link>
-              <Link href="/instructor/reports" className="group flex min-h-10 items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700 dark:text-slate-300 dark:hover:bg-blue-500/10 dark:hover:text-blue-300"><span className="flex min-w-0 items-center gap-2.5"><BookOpen className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" /><span className="truncate">Kết quả và báo cáo</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-0.5" /></Link>
+              <Link href="/instructor/classes" className="group flex min-h-10 items-center justify-between gap-3 rounded-md px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-brand-50 hover:text-brand-700 dark:text-slate-300 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"><span className="flex min-w-0 items-center gap-2.5"><Table2 className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" /><span className="truncate">Lớp học và điểm danh</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></Link>
+              <Link href="/instructor/questions" className="group flex min-h-10 items-center justify-between gap-3 rounded-md px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-brand-50 hover:text-brand-700 dark:text-slate-300 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"><span className="flex min-w-0 items-center gap-2.5"><FileCode2 className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" /><span className="truncate">Ngân hàng câu hỏi</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></Link>
+              <Link href="/instructor/schedules" className="group flex min-h-10 items-center justify-between gap-3 rounded-md px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-brand-50 hover:text-brand-700 dark:text-slate-300 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"><span className="flex min-w-0 items-center gap-2.5"><Clock3 className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" /><span className="truncate">Lịch và phiên kiểm tra</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></Link>
+              <Link href="/instructor/reports" className="group flex min-h-10 items-center justify-between gap-3 rounded-md px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-brand-50 hover:text-brand-700 dark:text-slate-300 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"><span className="flex min-w-0 items-center gap-2.5"><BookOpen className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" /><span className="truncate">Kết quả và báo cáo</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></Link>
             </div>
           </section>
         </div>

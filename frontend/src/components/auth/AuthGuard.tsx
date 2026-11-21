@@ -7,6 +7,9 @@ interface AuthGuardProps {
   allowedRoles: ('admin' | 'instructor' | 'student')[];
 }
 
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 phút tự động đăng xuất khi không thao tác
+const TOKEN_COOKIE_MAX_AGE = 1800; // Cookie 30 phút
+
 function parseJwtPayload(token: string): any | null {
   try {
     const parts = token.split('.');
@@ -28,6 +31,22 @@ function isTokenExpired(token: string): boolean {
   return Date.now() >= payload.exp * 1000;
 }
 
+function clearSessionAndRedirect(reason?: string) {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('oculide_token');
+  localStorage.removeItem('oculide_user');
+  localStorage.removeItem('oculide_refresh_token');
+  localStorage.removeItem('oculide_last_activity');
+  document.cookie = 'oculide_token=; path=/; max-age=0';
+  document.cookie = 'oculide_role=; path=/; max-age=0';
+
+  const currentPath = window.location.pathname;
+  const reasonParam = reason ? `reason=${encodeURIComponent(reason)}` : '';
+  const redirectParam = currentPath && !currentPath.includes('/login') ? `redirect=${encodeURIComponent(currentPath)}` : '';
+  const query = [reasonParam, redirectParam].filter(Boolean).join('&');
+  window.location.replace(`/login${query ? `?${query}` : ''}`);
+}
+
 export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
   const [isAuthorized, setIsAuthorized] = useState(false);
 
@@ -37,15 +56,14 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
     const rawUser = localStorage.getItem('oculide_user');
 
     if (!token || !rawUser || isTokenExpired(token)) {
-      // Chưa đăng nhập hoặc token đã hết hạn -> Xóa sạch và đá về login
-      localStorage.removeItem('oculide_token');
-      localStorage.removeItem('oculide_user');
-      localStorage.removeItem('oculide_refresh_token');
-      document.cookie = 'oculide_token=; path=/; max-age=0';
-      document.cookie = 'oculide_role=; path=/; max-age=0';
+      clearSessionAndRedirect();
+      return;
+    }
 
-      const currentPath = window.location.pathname;
-      window.location.replace(`/login?redirect=${encodeURIComponent(currentPath)}`);
+    // Kiểm tra thời gian treo máy không hoạt động (idle timeout 30 phút)
+    const lastActivity = Number(localStorage.getItem('oculide_last_activity') || Date.now());
+    if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+      clearSessionAndRedirect('idle_timeout');
       return;
     }
 
@@ -55,7 +73,6 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
 
       // 2. Kiểm tra quyền hạn theo vai trò (Role-Based Access Control)
       if (!userRole || !allowedRoles.includes(userRole)) {
-        // Đăng nhập rồi nhưng không có quyền vào module này
         if (userRole === 'admin') {
           window.location.replace('/admin/dashboard');
         } else if (userRole === 'instructor') {
@@ -66,21 +83,56 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
         return;
       }
 
-      // Đảm bảo Cookie luôn đồng bộ với localStorage cho server-side middleware
-      document.cookie = `oculide_token=${token}; path=/; max-age=86400; SameSite=Lax`;
-      document.cookie = `oculide_role=${userRole}; path=/; max-age=86400; SameSite=Lax`;
+      // Đảm bảo Cookie luôn đồng bộ với localStorage (max-age 1800 giây = 30 phút)
+      document.cookie = `oculide_token=${token}; path=/; max-age=${TOKEN_COOKIE_MAX_AGE}; SameSite=Lax`;
+      document.cookie = `oculide_role=${userRole}; path=/; max-age=${TOKEN_COOKIE_MAX_AGE}; SameSite=Lax`;
+
+      // Cập nhật timestamp hoạt động ban đầu
+      localStorage.setItem('oculide_last_activity', Date.now().toString());
 
       // Xác thực thành công -> Cho phép hiển thị giao diện
       setIsAuthorized(true);
     } catch {
-      localStorage.removeItem('oculide_token');
-      localStorage.removeItem('oculide_user');
-      localStorage.removeItem('oculide_refresh_token');
-      document.cookie = 'oculide_token=; path=/; max-age=0';
-      document.cookie = 'oculide_role=; path=/; max-age=0';
-      window.location.replace('/login');
+      clearSessionAndRedirect();
     }
   }, [allowedRoles]);
+
+  // Lắng nghe sự kiện thao tác của người dùng để reset thời gian treo máy
+  useEffect(() => {
+    if (!isAuthorized) return;
+
+    let lastRecorded = Date.now();
+    const handleUserActivity = () => {
+      const now = Date.now();
+      // Throttle cập nhật mỗi 5 giây một lần để tối ưu hiệu năng
+      if (now - lastRecorded > 5000) {
+        lastRecorded = now;
+        localStorage.setItem('oculide_last_activity', now.toString());
+      }
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach((ev) => window.addEventListener(ev, handleUserActivity, { passive: true }));
+
+    // Định kỳ 15 giây kiểm tra một lần xem tài khoản có bị treo quá 30 phút hoặc token hết hạn không
+    const checkInterval = setInterval(() => {
+      const token = localStorage.getItem('oculide_token');
+      if (!token || isTokenExpired(token)) {
+        clearSessionAndRedirect('token_expired');
+        return;
+      }
+
+      const lastActivity = Number(localStorage.getItem('oculide_last_activity') || Date.now());
+      if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+        clearSessionAndRedirect('idle_timeout');
+      }
+    }, 15000);
+
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, handleUserActivity));
+      clearInterval(checkInterval);
+    };
+  }, [isAuthorized]);
 
   if (!isAuthorized) {
     return (

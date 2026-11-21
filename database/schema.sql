@@ -138,13 +138,17 @@ CREATE TABLE Classes (
     semester_name NVARCHAR(50) NULL,
     instructor_id INT NOT NULL,
     description NVARCHAR(500) NULL,
-    status NVARCHAR(20) DEFAULT 'open' NOT NULL,   -- 'open', 'closed', 'dang_mo', 'da_dong'
+    status NVARCHAR(50) DEFAULT 'open' NOT NULL,   -- 'open', 'closed', 'active', 'dang_mo', 'da_dong', 'Hoạt động', 'Đã kết thúc'
+    start_date DATETIME2 NULL,
+    end_date DATETIME2 NULL,
+    total_sessions INT DEFAULT 15,
+    credit_hours INT DEFAULT 3,
     created_at DATETIME2 DEFAULT GETDATE() NOT NULL,
     updated_at DATETIME2 DEFAULT GETDATE() NOT NULL,
 
     CONSTRAINT FK_Classes_Instructors FOREIGN KEY (instructor_id) 
         REFERENCES Users(user_id),
-    CONSTRAINT CHK_Classes_Status CHECK (status IN ('open', 'closed', 'active', 'dang_mo', 'da_dong'))
+    CONSTRAINT CHK_Classes_Status CHECK (status IN ('open', 'closed', 'active', 'dang_mo', 'da_dong', N'Hoạt động', N'Đang mở', N'Đã đóng', N'Đã kết thúc', N'Tạm dừng', N'Chưa bắt đầu', N'Chưa mở'))
 );
 GO
 CREATE INDEX IDX_Classes_InstructorId ON Classes(instructor_id);
@@ -227,7 +231,7 @@ CREATE TABLE ExamTemplates (
     template_id INT IDENTITY(1,1) PRIMARY KEY,
     template_code NVARCHAR(50) UNIQUE NOT NULL,      -- e.g. 'DE_LAB_01', 'THI_CUOIKY_CS101'
     title NVARCHAR(200) NOT NULL,
-    template_type NVARCHAR(20) NOT NULL,             -- 'lab' or 'exam'
+    template_type NVARCHAR(50) NOT NULL,             -- 'lab', 'exam', 'final_exam', 'midterm_exam', 'practice'
     duration_minutes INT NOT NULL,
     total_points DECIMAL(5,2) DEFAULT 10.00 NOT NULL,
     created_by INT NOT NULL,
@@ -235,7 +239,7 @@ CREATE TABLE ExamTemplates (
 
     CONSTRAINT FK_ExamTemplates_Creators FOREIGN KEY (created_by) 
         REFERENCES Users(user_id),
-    CONSTRAINT CHK_ExamTemplates_Type CHECK (template_type IN ('lab', 'exam', 'practice'))
+    CONSTRAINT CHK_ExamTemplates_Type CHECK (template_type IN ('lab', 'exam', 'practice', 'final', 'final_exam', 'midterm', 'midterm_exam', 'homework'))
 );
 GO
 CREATE INDEX IDX_ExamTemplates_CreatedBy ON ExamTemplates(created_by);
@@ -269,6 +273,7 @@ CREATE TABLE Rooms (
     room_code NVARCHAR(50) UNIQUE NOT NULL,          -- Room PIN / Code (e.g. 'EXAM_FINAL_CS404')
     room_name NVARCHAR(200) NOT NULL,
     room_type NVARCHAR(20) NOT NULL,                 -- 'lab', 'exam', 'practice', 'classroom'
+    session_type NVARCHAR(20) NULL,                  -- 'LAB', 'MIDTERM', 'FINAL'
     creator_id INT NOT NULL,                         -- Instructor who created the room
     description NVARCHAR(500) NULL,
     start_time DATETIME2 NOT NULL,
@@ -290,7 +295,8 @@ CREATE TABLE Rooms (
     CONSTRAINT FK_Rooms_Templates FOREIGN KEY (template_id) 
         REFERENCES ExamTemplates(template_id),
     CONSTRAINT FK_Rooms_Creators FOREIGN KEY (creator_id) 
-        REFERENCES Users(user_id)
+        REFERENCES Users(user_id),
+    CONSTRAINT CHK_Rooms_SessionType CHECK (session_type IS NULL OR session_type IN ('LAB', 'MIDTERM', 'FINAL'))
 );
 GO
 CREATE INDEX IDX_Rooms_RoomCode ON Rooms(room_code);
@@ -660,39 +666,17 @@ IF NOT EXISTS (SELECT 1 FROM Roles WHERE role_name = 'student')
     INSERT INTO Roles (role_name, description) VALUES ('student', N'Sinh viên tham gia thực hành và thi cử');
 GO
 
--- Default accounts
+-- Default admin account (Tài khoản quản trị viên duy nhất để đăng nhập khởi tạo hệ thống)
 -- Password hash for 'admin123': $2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6
--- Password hash for 'Password123!': $2b$12$t/59jV7LxFjvjku/dRjkzO/NuiUXgNxE4rJnC8oboFt3wN1AxZcti
 IF NOT EXISTS (SELECT 1 FROM Users WHERE username = 'admin')
     INSERT INTO Users (username, email, password_hash, full_name, identifier_code, department, role_id, is_active, must_change_password, email_status)
     VALUES ('admin', 'admin@school.edu.vn', '$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6', N'Quản Trị Viên Hệ Thống', 'ADM001', N'Phòng CNTT & Đào Tạo', 1, 1, 0, 'sent');
-
-IF NOT EXISTS (SELECT 1 FROM Users WHERE username = 'instructor')
-    INSERT INTO Users (username, email, password_hash, full_name, identifier_code, department, role_id, is_active, must_change_password, email_status)
-    VALUES ('instructor', 'instructor@school.edu.vn', '$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6', N'Giảng Viên Hướng Dẫn', 'MSGV001', N'Khoa Công Nghệ Thông Tin', 2, 1, 0, 'sent');
-
-IF NOT EXISTS (SELECT 1 FROM Users WHERE username = 'student')
-    INSERT INTO Users (username, email, password_hash, full_name, identifier_code, department, role_id, is_active, must_change_password, email_status)
-    VALUES ('student', 'student@school.edu.vn', '$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6', N'Sinh Viên Nguyễn Văn A', 'SV2026001', N'Kỹ Thuật Phần Mềm', 3, 1, 0, 'sent');
-
-IF NOT EXISTS (SELECT 1 FROM Users WHERE username = 'pvlong')
-    INSERT INTO Users (username, email, password_hash, full_name, identifier_code, department, role_id, is_active, must_change_password, email_status)
-    VALUES ('pvlong', 'pvlong@dtu.edu.vn', '$2b$12$t/59jV7LxFjvjku/dRjkzO/NuiUXgNxE4rJnC8oboFt3wN1AxZcti', N'Phạm Vũ Long', 'MSGV_PVL01', N'Khoa CNTT - Đại học Duy Tân', 2, 1, 0, 'sent');
 GO
 
--- Standard Semesters
+-- Standard Semesters (Chỉ lưu kỳ học hiện tại thời gian thực; các kỳ tiếp theo do hệ thống tự động tính khi đến hạn)
 IF NOT EXISTS (SELECT 1 FROM Semesters WHERE semester_code = 'HK1_2026_2027')
     INSERT INTO Semesters (semester_code, semester_name, academic_year, term_number, start_date, end_date, is_current, status) VALUES
-    ('HK1_2026_2027', N'HK1 2026–2027', '2026-2027', 1, '2026-09-01', '2027-01-15', 1, 'active');
-IF NOT EXISTS (SELECT 1 FROM Semesters WHERE semester_code = 'HK2_2026_2027')
-    INSERT INTO Semesters (semester_code, semester_name, academic_year, term_number, start_date, end_date, is_current, status) VALUES
-    ('HK2_2026_2027', N'HK2 2026–2027', '2026-2027', 2, '2027-02-01', '2027-06-15', 0, 'active');
-IF NOT EXISTS (SELECT 1 FROM Semesters WHERE semester_code = 'HKT_2026_2027')
-    INSERT INTO Semesters (semester_code, semester_name, academic_year, term_number, start_date, end_date, is_current, status) VALUES
-    ('HKT_2026_2027', N'HKT 2026–2027', '2026-2027', 3, '2027-06-20', '2027-08-15', 0, 'active');
-IF NOT EXISTS (SELECT 1 FROM Semesters WHERE semester_code = 'HKT_2025_2026')
-    INSERT INTO Semesters (semester_code, semester_name, academic_year, term_number, start_date, end_date, is_current, status) VALUES
-    ('HKT_2025_2026', N'HKT 2025–2026', '2025-2026', 3, '2026-06-20', '2026-08-15', 0, 'closed');
+    ('HK1_2026_2027', N'HK1 2026–2027', '2026-2027', 1, '2026-08-10', '2027-01-15', 1, 'active');
 GO
 
 PRINT N'====================================================================';

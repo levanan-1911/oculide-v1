@@ -3,22 +3,26 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import InstitutionalFooter from '@/components/common/InstitutionalFooter';
-import { 
-  Eye, 
-  EyeOff, 
-  AlertCircle, 
-  CheckCircle2, 
-  Sparkles, 
+import BrandLogo from '@/components/common/BrandLogo';
+import {
+  Eye,
+  EyeOff,
+  AlertCircle,
+  CheckCircle2,
   ArrowLeft,
   Sun,
   Moon,
-  Terminal
+  ShieldCheck,
+  Server,
+  Lock,
+  GraduationCap,
+  Clock3
 } from 'lucide-react';
 import { getClientIpHeader, getClientPublicIp } from '@/utils/ipResolver';
 
 export default function LoginPage() {
   // ── THEME STATE ──
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [mounted, setMounted] = useState(false);
 
   // ── FORM STATE ──
@@ -27,7 +31,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [maintenanceInfo, setMaintenanceInfo] = useState<{
     isActive: boolean;
     message: string;
@@ -48,7 +51,6 @@ export default function LoginPage() {
         }
       })
       .catch(() => {
-        // Fallback đọc từ localStorage nếu mất mạng
         try {
           const raw = localStorage.getItem('oculide_admin_system_settings');
           if (raw) {
@@ -72,18 +74,32 @@ export default function LoginPage() {
   useEffect(() => {
     setMounted(true);
     const saved = localStorage.getItem('oculide_theme') as 'dark' | 'light' | null;
-    const initial = saved || 'dark';
+    const initial = saved || 'light';
     setTheme(initial);
     applyTheme(initial);
 
     // Tiền phân giải IP Public ngầm để sẵn sàng khi bấm Đăng nhập
-    getClientPublicIp().catch(() => {});
+    getClientPublicIp().catch(() => { });
+
+    // Kiểm tra thông báo hết hạn phiên làm việc do treo máy
+    const urlParams = new URLSearchParams(window.location.search);
+    const logoutReason = urlParams.get('reason');
+    if (logoutReason === 'idle_timeout') {
+      setErrorMessage('Phiên làm việc đã tự động kết thúc do không có thao tác trong 30 phút. Vui lòng đăng nhập lại.');
+      return;
+    } else if (logoutReason === 'token_expired') {
+      setErrorMessage('Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.');
+      return;
+    }
 
     // Nếu đã có token hợp lệ còn hạn trong localStorage -> Chuyển hướng về Dashboard
     try {
       const token = localStorage.getItem('oculide_token');
       const rawUser = localStorage.getItem('oculide_user');
-      if (token && rawUser) {
+      const lastActivity = Number(localStorage.getItem('oculide_last_activity') || Date.now());
+      const isIdleTimeout = Date.now() - lastActivity > 30 * 60 * 1000;
+
+      if (token && rawUser && !isIdleTimeout) {
         const parts = token.split('.');
         if (parts.length === 3) {
           const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
@@ -94,8 +110,8 @@ export default function LoginPage() {
               role === 'admin'
                 ? '/admin/dashboard'
                 : role === 'instructor'
-                ? '/instructor/dashboard'
-                : '/student/dashboard';
+                  ? '/instructor/dashboard'
+                  : '/student/dashboard';
             window.location.replace(target);
           }
         }
@@ -123,18 +139,17 @@ export default function LoginPage() {
     applyTheme(next);
   };
 
-  // ── XỬ LÝ ĐĂNG NHẬP (BẢO TOÀN 100% LUỒNG XÁC THỰC & PHÂN QUYỀN) ──
+  // ── XỬ LÝ ĐĂNG NHẬP ──
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    setSuccessMessage(null);
 
     if (!email.trim()) {
-      setErrorMessage('Vui lòng nhập Email hoặc tài khoản.');
+      setErrorMessage('Chưa nhập Email hoặc Tên đăng nhập');
       return;
     }
     if (!password) {
-      setErrorMessage('Vui lòng nhập Mật khẩu.');
+      setErrorMessage('Chưa nhập Mật khẩu');
       return;
     }
 
@@ -160,7 +175,7 @@ export default function LoginPage() {
         throw new Error(data.detail || 'Email/tài khoản hoặc mật khẩu không chính xác.');
       }
 
-      // Kiểm tra Chế độ Bảo trì: Nếu đang bật bảo trì, chỉ duy nhất Admin được đăng nhập
+      // Kiểm tra Chế độ Bảo trì
       if (typeof window !== 'undefined') {
         try {
           const rawSettings = localStorage.getItem('oculide_admin_system_settings');
@@ -169,7 +184,7 @@ export default function LoginPage() {
             if (parsed.maintenanceMode && data.user?.role !== 'admin') {
               throw new Error(
                 parsed.maintenanceMessage ||
-                  'Hệ thống đang trong chế độ bảo trì định kỳ. Cổng đăng nhập tạm thời chỉ dành riêng cho Quản trị viên.'
+                'Hệ thống đang trong chế độ bảo trì định kỳ. Cổng đăng nhập tạm thời chỉ dành riêng cho Quản trị viên.'
               );
             }
           }
@@ -183,43 +198,36 @@ export default function LoginPage() {
       if (data.access_token) {
         localStorage.setItem('oculide_token', data.access_token);
         localStorage.setItem('oculide_user', JSON.stringify(data.user));
-        document.cookie = `oculide_token=${data.access_token}; path=/; max-age=86400; SameSite=Lax`;
-        document.cookie = `oculide_role=${data.user?.role || ''}; path=/; max-age=86400; SameSite=Lax`;
+        localStorage.setItem('oculide_last_activity', Date.now().toString());
+        document.cookie = `oculide_token=${data.access_token}; path=/; max-age=1800; SameSite=Lax`;
+        document.cookie = `oculide_role=${data.user?.role || ''}; path=/; max-age=1800; SameSite=Lax`;
         if (data.refresh_token) {
           localStorage.setItem('oculide_refresh_token', data.refresh_token);
         }
       }
 
-      const requiresPasswordChange = Boolean(data.user?.must_change_password);
-      setSuccessMessage(
-        requiresPasswordChange
-          ? 'Mật khẩu tạm hợp lệ. Đang chuyển đến bước đặt mật khẩu mới...'
-          : 'Đăng nhập thành công! Đang chuyển hướng...',
-      );
+      // Bỏ chuyển hướng trang trung gian reset-password sau khi tạo tài khoản, vào thẳng dashboard tương ứng
+      // const requiresPasswordChange = Boolean(data.user?.must_change_password);
+      // if (requiresPasswordChange) {
+      //   window.location.href = '/reset-password';
+      //   return;
+      // }
 
-      setTimeout(() => {
-        if (requiresPasswordChange) {
-          window.location.href = '/reset-password';
-          return;
-        }
+      const params = new URLSearchParams(window.location.search);
+      const redirectUrl = params.get('redirect');
+      if (redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//')) {
+        window.location.href = redirectUrl;
+        return;
+      }
 
-        // Kiểm tra xem có URL redirect trước đó không
-        const params = new URLSearchParams(window.location.search);
-        const redirectUrl = params.get('redirect');
-        if (redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//')) {
-          window.location.href = redirectUrl;
-          return;
-        }
-
-        const role = data.user?.role;
-        if (role === 'admin') {
-          window.location.href = '/admin/dashboard';
-        } else if (role === 'instructor') {
-          window.location.href = '/instructor/dashboard';
-        } else {
-          window.location.href = '/student/dashboard';
-        }
-      }, 1000);
+      const role = data.user?.role;
+      if (role === 'admin') {
+        window.location.href = '/admin/dashboard';
+      } else if (role === 'instructor') {
+        window.location.href = '/instructor/dashboard';
+      } else {
+        window.location.href = '/student/dashboard';
+      }
 
     } catch (err: any) {
       setErrorMessage(err.message || 'Không thể kết nối đến máy chủ. Vui lòng thử lại sau.');
@@ -229,181 +237,165 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
-      
-      {/* ── NÚT CHUYỂN ĐEN/TRẮNG ICON NHỎ GÓC TRÊN BÊN PHẢI ── */}
+    <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-neutral-950 dark:text-slate-300 transition-colors duration-200">
+
+      {/* ── NÚT CHUYỂN THEME CÂN ĐỐI ── */}
       {mounted && (
-        <div className="fixed top-4 right-4 z-50">
+        <div className="fixed top-3.5 right-4 z-50">
           <button
             type="button"
             onClick={toggleTheme}
-            title={theme === 'dark' ? 'Chuyển sang giao diện Sáng (Light)' : 'Chuyển sang giao diện Tối (Dark)'}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white/90 text-slate-700 shadow-md backdrop-blur-md transition-all hover:scale-105 hover:bg-white active:scale-95 dark:border-white/15 dark:bg-[#121620]/90 dark:text-amber-400 dark:hover:bg-[#1a202c] cursor-pointer"
+            title={theme === 'dark' ? 'Chuyển sang giao diện Sáng (Light Mode)' : 'Chuyển sang giao diện Tối (Dark Mode)'}
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-800 shadow-sm backdrop-blur-md transition-colors hover:bg-[#ece7e9] dark:border-white/10 dark:bg-neutral-900 dark:text-amber-300 dark:hover:bg-[#25202b] cursor-pointer"
             aria-label="Chuyển đổi giao diện Sáng / Tối"
           >
             {theme === 'dark' ? (
-              <Sun className="h-4 w-4 text-amber-400 transition-transform rotate-0 hover:rotate-45" />
+              <Sun className="h-4 w-4 text-amber-300" />
             ) : (
-              <Moon className="h-4 w-4 text-slate-700 transition-transform rotate-0 hover:-rotate-12" />
+              <Moon className="h-4 w-4 text-slate-800" />
             )}
           </button>
         </div>
       )}
 
-      {/* ── HEADER CỦA TRANG LOGIN ── */}
-      <header className="border-b border-slate-200/80 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#090a0f]/80 transition-colors">
+      {/* ── HEADER CỦA CỔNG ĐĂNG NHẬP ── */}
+      <header className="border-b border-slate-300 bg-white/95 backdrop-blur-md dark:border-white/10 dark:bg-neutral-900/95 transition-colors">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 transition-transform group-hover:scale-105">
-              <Eye className="h-5 w-5" strokeWidth={2.3} />
-            </div>
+          <Link href="/" className="flex items-center gap-3">
+            <BrandLogo size={50} className="h-[50px] w-[50px] shrink-0 rounded-md object-cover shadow-sm" />
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-lg font-black tracking-tight text-slate-900 dark:text-white">OCULIDE</span>
-                <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                <span className="rounded border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
                   NCKH 2026
                 </span>
               </div>
-              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">AI Proctoring &amp; Lab LMS</p>
+              <p className="text-[11px] font-medium text-slate-500 dark:text-[#a59fa3]">AI Proctoring &amp; Programming LMS</p>
             </div>
           </Link>
 
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-400 hover:bg-slate-50 dark:border-white/15 dark:bg-[#141824] dark:text-slate-200 dark:hover:bg-[#1a2030] pr-3 mr-12"
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-800 shadow-sm transition-colors hover:bg-[#eae5e7] dark:border-white/15 dark:bg-[#221e27] dark:text-slate-300 dark:hover:bg-[#2b2532] pr-3 mr-12"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            <span>Về trang giới thiệu</span>
+            <span>Về trang chủ</span>
           </Link>
         </div>
       </header>
 
-      {/* ── BỐ CỤC CHUẨN XÁC THEO ẢNH 1: BÊN TRÁI NỘI DUNG, BÊN PHẢI CARD ĐĂNG NHẬP ẢNH 2 ── */}
+      {/* ── BỐ CỤC 2 CỘT CÂN ĐỐI ── */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
         <div className="grid gap-10 lg:grid-cols-12 lg:items-start">
-          
-          {/* ── CỘT TRÁI (7 CỘT): NỀN TẢNG THI & HỌC LẬP TRÌNH (ẢNH 1) ── */}
+
+          {/* ── CỘT TRÁI (7 CỘT): THÔNG TIN HỌC THUẬT & TRẠNG THÁI HỆ THỐNG ── */}
           <div className="lg:col-span-7 space-y-6">
-            
-            {/* Tag Brand */}
-            <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/25 bg-blue-500/10 px-3.5 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400">
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>HỆ THỐNG QUẢN LÝ THI &amp; THỰC HÀNH LẬP TRÌNH</span>
+
+            {/* Tag Cổng xác thực */}
+            <div className="inline-flex items-center gap-2 rounded border border-brand-300 bg-brand-50 px-3 py-1 text-[11px] font-semibold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
+              <GraduationCap className="h-3.5 w-3.5" />
+              <span>CỔNG XÁC THỰC KHẢO THÍ &amp; THỰC HÀNH LẬP TRÌNH</span>
             </div>
 
-            {/* Tiêu đề chính lớn */}
-            <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl lg:text-[42px] lg:leading-[1.18] dark:text-white">
-              Nền tảng dạy và học Tin học<br />
-              <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-sky-400 bg-clip-text text-transparent">
-                cho trường học Việt Nam
+            {/* Tiêu đề chính */}
+            <h1 className="text-3xl font-serif font-bold tracking-tight text-[#2A282D] sm:text-4xl dark:text-white leading-tight">
+              Nền tảng kiểm tra &amp; đánh giá <br />
+              <span className="text-brand-600 dark:text-brand-200">
+                Năng lực Lập trình Trực tuyến
               </span>
             </h1>
 
             {/* Mô tả phụ */}
-            <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300 max-w-xl">
-              Từ bài tập Scratch, C++ đến lập trình Python nâng cao — một hệ thống bao phủ toàn bộ chương trình thực hành lập trình, chấm test case và giám sát thi trực tuyến bằng AI.
+            <p className="text-sm leading-relaxed text-[#5a565e] dark:text-[#b0a7aa] max-w-xl">
+              Hệ thống cung cấp môi trường thực hành thuật toán, phòng thi cách ly Sandbox và giám sát thi tự động ứng dụng Trí tuệ Nhân tạo cho sinh viên và giảng viên đại học.
             </p>
 
-            {/* Khung Showcase tính năng Sandbox (như khung card lớn ở Ảnh 1) */}
-            <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-[#0d1017] transition-all">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/5 mb-4">
-                <span className="rounded bg-blue-500/10 px-2.5 py-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
-                  DOCKER SANDBOX CÔ LẬP
+            {/* Khung Thông tin Quy chuẩn & Môi trường */}
+            <div className="rounded-md border border-slate-300 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-neutral-900">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-300 dark:border-white/10 mb-4">
+                <span className="rounded border border-brand-300 bg-brand-50 px-2.5 py-1 text-[11px] font-bold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200 uppercase tracking-wider">
+                  MÔI TRƯỜNG SANDBOX CÔ LẬP
                 </span>
-                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                  C++ 17 • Python 3.11 • Java 21
+                <span className="text-xs text-slate-500 dark:text-[#a59fa3] font-mono">
+                  G++ 17 • Python 3.11 • OpenJDK 21
                 </span>
               </div>
 
-              <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">
-                Chấm bài thi &amp; bài tập tự động tức thì
+              <h3 className="text-base font-serif font-bold text-[#2A282D] dark:text-white mb-2">
+                Hệ thống chấm thi tự động theo chuẩn IEEE 830-1998
               </h3>
-              <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-                Mã nguồn sinh viên tự chạy trong Sandbox cô lập hoàn toàn, so khớp kết quả stdout, kiểm tra giới hạn thời gian (Time Limit) và bộ nhớ (Memory Limit) — kết hợp AI giám sát webcam phát hiện bất thường theo thời gian thực.
+              <p className="text-xs leading-relaxed text-[#5a565e] dark:text-[#b0a7aa]">
+                Mã nguồn của sinh viên được biên dịch và chạy thử nghiệm trong các container Docker cô lập hoàn toàn tài nguyên, kiểm tra giới hạn thời gian (Time Limit), bộ nhớ (Memory Limit) và đối soát với bộ test case ẩn.
               </p>
 
-              <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100 dark:border-white/5 text-xs">
-                <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-300 dark:border-white/10 text-xs">
+                <span className="font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
                   <CheckCircle2 className="h-4 w-4" />
-                  Đạt chuẩn bảo mật IEEE 830-1998
+                  Mã hóa đường truyền WebRTC SFU
                 </span>
-                <span className="text-slate-500 dark:text-slate-400 text-[11px]">
-                  Thời gian phản hồi &lt; 2s
+                <span className="text-[#5a565e] dark:text-[#b0a7aa] flex items-center gap-1.5">
+                  <ShieldCheck className="h-4 w-4 text-brand-600 dark:text-brand-200" />
+                  Phân quyền tập trung ở máy chủ
                 </span>
               </div>
             </div>
 
-            {/* Bàn phím ảo Animation mô phỏng gõ code Sandbox tự động */}
-            <AnimatedVirtualKeyboard />
-
-            {/* Dải 3 thông số thống kê lớn (như góc dưới của Ảnh 1) */}
-            <div className="grid grid-cols-3 gap-4 pt-1">
-              <div>
-                <p className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">7</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">Chủ đề NCKH</p>
-              </div>
-              <div>
-                <p className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">6+</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">Ngôn ngữ lập trình</p>
-              </div>
-              <div>
-                <p className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">100%</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">Sandbox cô lập</p>
-              </div>
-            </div>
-
-            {/* Hàng Tags công nghệ (như thanh tag ở Ảnh 1) */}
-            <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-              {['Python', 'C++', 'Java', 'Docker Sandbox', 'LiveKit WebRTC', 'MediaPipe', 'YOLOv8', 'IEEE 830', 'Ngân hàng câu hỏi'].map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-lg border border-slate-200 bg-slate-100/80 px-2.5 py-1 dark:border-white/10 dark:bg-white/5"
-                >
-                  {tag}
-                </span>
-              ))}
+            {/* Bảng Quy chế phòng thi ngắn gọn cho thí sinh */}
+            <div className="rounded-md border border-slate-300 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-neutral-900">
+              <h4 className="text-xs font-serif font-bold uppercase tracking-wider text-[#2A282D] dark:text-white mb-3 flex items-center gap-2">
+                <Clock3 className="h-4 w-4 text-brand-600 dark:text-brand-200" />
+                Lưu ý quan trọng khi vào ca thi
+              </h4>
+              <ul className="space-y-2 text-xs text-[#5a565e] dark:text-[#b0a7aa]">
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-brand shrink-0" />
+                  <span>Sử dụng trình duyệt Chrome hoặc Edge phiên bản mới nhất, chuẩn bị sẵn webcam và kết nối ổn định.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-brand shrink-0" />
+                  <span>Không rời khỏi cửa sổ làm bài hoặc mở tab mới trong suốt thời gian diễn ra ca thi có giám sát.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-brand shrink-0" />
+                  <span>Mọi sự cố kỹ thuật sẽ được lưu vết vào nhật ký kiểm toán hệ thống để giảng viên xem xét.</span>
+                </li>
+              </ul>
             </div>
 
           </div>
 
-          {/* ── CỘT PHẢI (5 CỘT): CARD ĐĂNG NHẬP CHUẨN XÁC NHƯ ẢNH 2 (TỰ MATCH MÀU DARK / LIGHT) ── */}
+          {/* ── CỘT PHẢI (5 CỘT): CARD ĐĂNG NHẬP CÂN ĐỐI ── */}
           <div className="lg:col-span-5">
-            <div className="rounded-3xl border border-slate-200/80 bg-white p-7 sm:p-9 shadow-xl shadow-slate-200/50 transition-all dark:border-white/10 dark:bg-[#0d1017] dark:shadow-black/60">
-              
-              {/* Header của Card Đăng nhập (Ảnh 2) */}
+            <div className="rounded-md border border-slate-300 bg-white p-6 sm:p-8 shadow-sm dark:border-white/10 dark:bg-neutral-900">
+
+              {/* Header của Card Đăng nhập */}
               <div className="mb-6 text-left">
-                <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-                  Đăng nhập hệ thống
+                <h2 className="text-2xl font-serif font-bold tracking-tight text-[#2A282D] dark:text-white">
+                  Đăng nhập tài khoản
                 </h2>
-                <p className="mt-1.5 text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400">
-                  Sử dụng email do nhà trường cung cấp để tiếp tục
+                <p className="mt-1 text-xs text-slate-500 dark:text-[#a59fa3]">
+                  Sử dụng tài khoản hoặc Email do nhà trường cấp
                 </p>
               </div>
 
-              {/* Thông báo lỗi nếu có */}
-              {errorMessage && (
-                <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 sm:text-sm">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-                  <span className="leading-snug">{errorMessage}</span>
-                </div>
-              )}
-
-              {/* Thông báo thành công */}
-              {successMessage && (
-                <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-400 sm:text-sm">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                  <span className="leading-snug">{successMessage}</span>
+              {/* Banner Bảo trì nếu có */}
+              {maintenanceInfo.isActive && (
+                <div className="mb-4 flex items-start gap-2.5 rounded-md border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <div>
+                    <strong className="block font-bold">Chế độ bảo trì hệ thống</strong>
+                    <span className="mt-0.5 block leading-relaxed">{maintenanceInfo.message}</span>
+                  </div>
                 </div>
               )}
 
               {/* Form Đăng nhập */}
               <form onSubmit={handleSubmit} className="space-y-4 text-left">
-                
+
                 {/* Input 1: Email hoặc tên đăng nhập */}
                 <div className="space-y-1.5">
-                  <label 
-                    htmlFor="login-email" 
-                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300 sm:text-sm"
+                  <label
+                    htmlFor="login-email"
+                    className="block text-xs font-semibold text-slate-800 dark:text-slate-300"
                   >
                     Email hoặc Tên đăng nhập
                   </label>
@@ -412,24 +404,32 @@ export default function LoginPage() {
                     type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="VD: phamvanlong@dtu.edu.vn hoặc phamvanlong"
+                    placeholder="VD: sinhvien@school.edu.vn hoặc giangvien"
                     disabled={isLoading}
                     autoComplete="username"
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 disabled:bg-slate-50 disabled:text-slate-400 dark:border-white/15 dark:bg-[#121622] dark:text-slate-100 dark:placeholder-slate-500"
+                    className="w-full h-11 rounded-md border border-slate-300 bg-slate-50 px-3.5 text-xs text-slate-800 placeholder-[#7a7376] transition-colors focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:bg-[#f1edee] disabled:text-[#a59fa3] dark:border-white/15 dark:bg-[#221e27] dark:text-slate-300 dark:placeholder-[#7a7376] dark:focus:border-brand-400 dark:focus:ring-[#7a0308]"
                   />
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                    * Đăng nhập bằng Email trường hoặc Tên đăng nhập (không sử dụng Mã SV/GV).
+                  <p className="text-[11px] text-slate-500 dark:text-[#a59fa3]">
+                    * Nhập Email định danh hoặc Tên đăng nhập hệ thống.
                   </p>
                 </div>
 
-                {/* Input 2: Mật khẩu (Ảnh 2) */}
+                {/* Input 2: Mật khẩu */}
                 <div className="space-y-1.5">
-                  <label 
-                    htmlFor="login-password" 
-                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300 sm:text-sm"
-                  >
-                    Mật khẩu
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="login-password"
+                      className="block text-xs font-semibold text-slate-800 dark:text-slate-300"
+                    >
+                      Mật khẩu
+                    </label>
+                    <Link
+                      href="/forgot-password"
+                      className="text-[11px] font-semibold text-brand-700 hover:underline dark:text-brand-200 transition-colors"
+                    >
+                      Quên mật khẩu?
+                    </Link>
+                  </div>
                   <div className="relative">
                     <input
                       id="login-password"
@@ -439,13 +439,13 @@ export default function LoginPage() {
                       placeholder="••••••••••"
                       disabled={isLoading}
                       autoComplete="current-password"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 pr-11 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 disabled:bg-slate-50 disabled:text-slate-400 dark:border-white/15 dark:bg-[#121622] dark:text-slate-100 dark:placeholder-slate-500"
+                      className="w-full h-11 rounded-md border border-slate-300 bg-slate-50 px-3.5 pr-10 text-xs text-slate-800 placeholder-[#7a7376] transition-colors focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:bg-[#f1edee] disabled:text-[#a59fa3] dark:border-white/15 dark:bg-[#221e27] dark:text-slate-300 dark:placeholder-[#7a7376] dark:focus:border-brand-400 dark:focus:ring-[#7a0308]"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       tabIndex={-1}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 cursor-pointer"
                       aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
                     >
                       {showPassword ? (
@@ -455,44 +455,38 @@ export default function LoginPage() {
                       )}
                     </button>
                   </div>
-
-                  {/* Link Quên mật khẩu? (Ảnh 2) */}
-                  <div className="pt-0.5 text-right">
-                    <a 
-                      href="/forgot-password" 
-                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 transition-colors"
-                    >
-                      Quên mật khẩu?
-                    </a>
-                  </div>
                 </div>
 
-                {/* Nút Đăng nhập màu xanh (Ảnh 2) */}
+                {/* Nút Đăng nhập */}
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="mt-1 flex w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-blue-500/25 transition-all hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer sm:text-base"
+                  className="system-primary-action mt-2 flex w-full h-11 items-center justify-center rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
                 >
                   {isLoading ? (
-                    <>
-                      <svg className="-ml-1 mr-2 h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <span>Đang đăng nhập...</span>
-                    </>
+                    <span className="flex items-center gap-2">
+                      <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Đang xác thực tài khoản...
+                    </span>
                   ) : (
                     <span>Đăng nhập</span>
                   )}
                 </button>
 
-                {/* Khối dải màu xanh thông báo phân quyền (Ảnh 2) */}
-                <div className="mt-5 rounded-xl border border-blue-100/90 bg-blue-50/80 p-3.5 text-left dark:border-blue-900/30 dark:bg-blue-950/20">
-                  <p className="text-xs font-semibold leading-snug text-blue-600 dark:text-blue-400 sm:text-sm">
-                    Hệ thống tự xác định vai trò và quyền.
+                {/* Dòng thông báo lỗi nhỏ gọn ngay bên dưới button đăng nhập */}
+                {errorMessage && (
+                  <p className="mt-2 text-xs font-bold text-red-600 dark:text-red-400 text-left">
+                    {errorMessage}
                   </p>
-                  <p className="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400">
-                    Không hiển thị bộ chọn vai trò.
+                )}
+
+                {/* Khối ghi chú phân quyền tự động */}
+                <div className="mt-4 rounded-md border border-slate-300 bg-slate-50 p-3 text-left dark:border-white/10 dark:bg-[#221e27]">
+                  <p className="text-xs font-semibold leading-snug text-slate-900 dark:text-[#e5a9b9]">
+                    Phân quyền tự động theo vai trò người dùng
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-normal text-slate-500 dark:text-[#a59fa3]">
+                    Hệ thống tự nhận diện Sinh viên, Giảng viên hoặc Quản trị viên sau khi đăng nhập.
                   </p>
                 </div>
 
@@ -504,116 +498,9 @@ export default function LoginPage() {
         </div>
       </main>
 
-      {/* ── FOOTER 4 CỘT CHUẨN NCKH ── */}
+      {/* ── FOOTER HỌC THUẬT ── */}
       <InstitutionalFooter />
 
-    </div>
-  );
-}
-
-
-// ── BÀN PHÍM ẢO MINI ANIMATION (NHỎ GỌN TINH TẾ NHƯ MẪU MONTINHOC.VN) ──
-function AnimatedVirtualKeyboard() {
-  const [activeKey, setActiveKey] = useState<string | null>(null);
-
-  const WORDS = [
-    'PYTHON',
-    'SCRATCH',
-    'DOCKER',
-    'OCULIDE',
-    'SANDBOX',
-    'TEST',
-  ];
-
-  const KEY_ROWS = [
-    ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
-    ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
-    ['Z', 'X', 'C', 'V', 'B', 'N', 'M'],
-  ];
-
-  useEffect(() => {
-    let wordIdx = 0;
-    let charIdx = 0;
-    let isWaiting = false;
-    let timeoutId: NodeJS.Timeout;
-
-    const tick = () => {
-      const currentWord = WORDS[wordIdx];
-
-      if (!isWaiting) {
-        if (charIdx < currentWord.length) {
-          const char = currentWord[charIdx];
-          setActiveKey(char);
-          charIdx++;
-          timeoutId = setTimeout(() => {
-            setActiveKey(null);
-            timeoutId = setTimeout(tick, 90);
-          }, 150);
-        } else {
-          // Bấm phím SPACE kết thúc từ
-          setActiveKey('SPACE');
-          isWaiting = true;
-          timeoutId = setTimeout(() => {
-            setActiveKey(null);
-            timeoutId = setTimeout(() => {
-              isWaiting = false;
-              charIdx = 0;
-              wordIdx = (wordIdx + 1) % WORDS.length;
-              tick();
-            }, 900);
-          }, 200);
-        }
-      }
-    };
-
-    timeoutId = setTimeout(tick, 500);
-    return () => clearTimeout(timeoutId);
-  }, []);
-
-  const handleManualKeyPress = (key: string) => {
-    setActiveKey(key);
-    setTimeout(() => setActiveKey(null), 200);
-  };
-
-  return (
-    <div className="w-fit mx-auto my-2 rounded-2xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-2.5 shadow-sm dark:border-white/5 dark:bg-[#0c0f17]/80 backdrop-blur-sm transition-all select-none">
-      {/* 3 Hàng phím chữ QWERTY mini */}
-      <div className="flex flex-col items-center gap-1">
-        {KEY_ROWS.map((row, rIdx) => (
-          <div key={rIdx} className="flex justify-center gap-1">
-            {row.map((k) => {
-              const isPressed = activeKey === k;
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => handleManualKeyPress(k)}
-                  className={`flex h-5 w-5 sm:h-5.5 sm:w-5.5 items-center justify-center rounded-md font-mono text-[9px] font-bold transition-all duration-75 cursor-pointer ${
-                    isPressed
-                      ? 'bg-white text-slate-950 shadow-[0_0_10px_rgba(255,255,255,0.95)] scale-90 dark:bg-white dark:text-slate-950 ring-1 ring-white/60'
-                      : 'border border-slate-200/60 bg-white/90 text-slate-500 shadow-[0_1px_0_rgba(0,0,0,0.05)] hover:bg-white dark:border-white/5 dark:bg-[#161a24] dark:text-slate-400 dark:shadow-[0_1px_0_rgba(0,0,0,0.5)] dark:hover:border-white/15 dark:hover:text-white'
-                  }`}
-                >
-                  {k}
-                </button>
-              );
-            })}
-          </div>
-        ))}
-
-        {/* Phím Spacebar thu nhỏ */}
-        <div className="mt-0.5 flex justify-center">
-          <button
-            type="button"
-            onClick={() => handleManualKeyPress('SPACE')}
-            className={`h-4 w-24 sm:w-32 rounded-full border transition-all duration-75 cursor-pointer ${
-              activeKey === 'SPACE'
-                ? 'bg-white shadow-[0_0_10px_rgba(255,255,255,0.95)] scale-95 dark:bg-white ring-1 ring-white/60'
-                : 'border-slate-200/60 bg-white/80 dark:border-white/5 dark:bg-[#161a24] hover:bg-white dark:hover:border-white/15'
-            }`}
-          />
-        </div>
-      </div>
     </div>
   );
 }

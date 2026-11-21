@@ -16,6 +16,7 @@ import {
   Plus,
   Search,
   ShieldCheck,
+  Trash2,
   Users,
   Video,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ import { fetchWithAuth } from '@/services/apiClient';
 interface InstructorSession {
   id: string;
   roomId?: number;
+  sortTimestamp: number;
   classCode: string;
   className: string;
   title: string;
@@ -47,7 +49,7 @@ interface InstructorSession {
   demoRemainingMinutes?: number;
 }
 
-type DateFilter = 'ALL' | 'TODAY' | 'TOMORROW' | 'NEXT_7_DAYS' | 'CUSTOM';
+type DateFilter = 'ALL' | 'TODAY' | 'TOMORROW' | 'NEXT_7_DAYS' | 'PAST_7_DAYS' | 'CUSTOM';
 
 const getLocalDateKey = (date = new Date()) => {
   const year = date.getFullYear();
@@ -233,17 +235,15 @@ function mapBackendRoomToScheduleSession(room: any): InstructorSession {
 
   let status: InstructorSession['status'] = 'Sắp diễn ra';
   const rawStatus = (room.status || '').toLowerCase();
-  if (rawStatus === 'dang_dien_ra' || rawStatus === 'in_progress') {
-    status = 'Đang diễn ra';
-  } else if (rawStatus === 'da_dong' || rawStatus === 'ended' || rawStatus === 'completed') {
+  const now = new Date();
+  if (rawStatus === 'da_dong' || rawStatus === 'ended' || rawStatus === 'completed' || rawStatus === 'da_huy') {
     status = 'Đã kết thúc';
+  } else if (endD && endD < now) {
+    status = 'Đã kết thúc';
+  } else if (rawStatus === 'dang_dien_ra' || rawStatus === 'in_progress') {
+    status = 'Đang diễn ra';
   } else {
-    const now = new Date();
-    if (endD < now && rawStatus !== 'dang_dien_ra') {
-      status = 'Đã kết thúc';
-    } else {
-      status = 'Sắp diễn ra';
-    }
+    status = 'Sắp diễn ra';
   }
 
   let proctoringCfg: any = null;
@@ -260,10 +260,14 @@ function mapBackendRoomToScheduleSession(room: any): InstructorSession {
   const isAiProctored = Boolean(
     proctoringCfg?.aiFaceDetection || proctoringCfg?.aiObjectDetection
   );
+  const parsedSortTimestamp = Date.parse(
+    String(room.end_time || room.updated_at || room.created_at || startD.toISOString())
+  );
 
   return {
     id: String(room.room_id || room.room_code),
     roomId: room.room_id,
+    sortTimestamp: Number.isFinite(parsedSortTimestamp) ? parsedSortTimestamp : startD.getTime(),
     classCode: room.class_code || 'Lớp HP',
     className: room.class_name || room.room_name || 'Phòng học',
     title: room.room_name,
@@ -286,10 +290,12 @@ function SessionDetailModal({
   session,
   onClose,
   onExtend,
+  onDelete,
 }: {
   session: InstructorSession | null;
   onClose: () => void;
   onExtend: () => void;
+  onDelete?: (session: InstructorSession) => void;
 }) {
   if (!session) return null;
 
@@ -299,41 +305,36 @@ function SessionDetailModal({
   const attendance = getAttendanceSummary(session);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]">
-      <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between border-b border-slate-100 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-2xl overflow-hidden rounded-md border border-slate-300 bg-white shadow-2xl dark:border-white/10 dark:bg-neutral-900">
+        <div className="flex items-start justify-between border-b border-slate-300 p-6 dark:border-white/10">
           <div>
+            <p className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wider text-brand-700 dark:text-brand-200">
+              Chi tiết phòng
+            </p>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">
+              <span className="rounded border border-slate-300 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-bold text-slate-800 dark:border-white/10 dark:bg-white/10 dark:text-slate-200">
                 {session.classCode}
               </span>
-              <span
-                className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${
-                  session.status === 'Đang diễn ra'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : session.status === 'Sắp diễn ra'
-                    ? 'border-amber-200 bg-amber-50 text-amber-700'
-                    : 'border-slate-200 bg-slate-100 text-slate-600'
-                }`}
-              >
+              <span className="rounded border border-slate-300 bg-slate-50 px-2.5 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                 {session.status}
               </span>
               {session.isAiProctored && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700">
+                <span className="inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-800 dark:border-white/10 dark:bg-white/10 dark:text-slate-200">
                   <ShieldCheck className="h-3 w-3" />
                   AI Proctor
                 </span>
               )}
             </div>
 
-            <h2 className="mt-2 text-lg font-black text-slate-900">{session.title}</h2>
+            <h2 className="mt-2 font-serif text-lg font-bold text-slate-900 dark:text-white">{session.title}</h2>
             <p className="mt-1 text-xs text-slate-500">{session.className}</p>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl px-3 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100"
+            className="rounded-md p-1.5 text-sm font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10 dark:hover:text-white"
             aria-label="Đóng chi tiết phiên"
           >
             ✕
@@ -341,37 +342,48 @@ function SessionDetailModal({
         </div>
 
         <div className="grid gap-4 p-6 sm:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="rounded-md border border-slate-300 bg-slate-50/60 p-4 dark:border-white/10 dark:bg-white/[0.02]">
+            <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Thời gian
             </p>
-            <p className="mt-2 text-lg font-black text-slate-900">
+            <p className="mt-2 font-serif text-lg font-bold text-slate-900 dark:text-white">
               {session.startTime} - {session.endTime}
             </p>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 font-mono text-xs text-slate-500">
               {formatDateDisplay(getSessionDateKey(session))}
             </p>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Phòng & Ngôn ngữ
-            </p>
-            <p className="mt-2 font-mono text-sm font-black text-blue-700">{session.roomCode}</p>
-            <p className="mt-1 text-xs text-slate-500">
-              {session.language} • Passcode {session.passcode}
-            </p>
-          </div>
+          {session.status === 'Đã kết thúc' ? (
+            <div className="rounded-md border border-slate-300 bg-slate-50/60 p-4 dark:border-white/10 dark:bg-white/[0.02]">
+              <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Thông tin phòng
+              </p>
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                Mã phòng và mật khẩu đã được ẩn sau khi kết thúc giám sát.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-md border border-slate-300 bg-slate-50/60 p-4 dark:border-white/10 dark:bg-white/[0.02]">
+              <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Phòng & Ngôn ngữ
+              </p>
+              <p className="mt-2 font-mono text-sm font-bold text-slate-900 dark:text-white">{session.roomCode}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {session.language} • Passcode <span className="font-mono font-bold">{session.passcode}</span>
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="px-6 pb-2">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="rounded-md border border-slate-300 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   Tiến độ phiên
                 </p>
-                <p className="mt-1 text-sm font-black text-slate-900">
+                <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
                   {session.status === 'Đang diễn ra'
                     ? `Còn khoảng ${formatDuration(remainingMinutes)}`
                     : session.status === 'Sắp diễn ra'
@@ -379,16 +391,14 @@ function SessionDetailModal({
                     : 'Phiên đã kết thúc'}
                 </p>
               </div>
-              <span className="text-sm font-black text-slate-700">{progress}%</span>
+              <span className="font-mono text-sm font-bold tabular-nums text-slate-700 dark:text-slate-300">{progress}%</span>
             </div>
 
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-3 h-1.5 overflow-hidden rounded bg-slate-100 dark:bg-white/10">
               <div
-                className={`h-full rounded-full transition-all ${
+                className={`h-full transition-all ${
                   session.status === 'Đang diễn ra'
-                    ? 'bg-emerald-500'
-                    : session.status === 'Sắp diễn ra'
-                    ? 'bg-blue-500'
+                    ? 'bg-slate-900 dark:bg-white'
                     : 'bg-slate-400'
                 }`}
                 style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
@@ -398,42 +408,42 @@ function SessionDetailModal({
         </div>
 
         <div className="grid gap-3 p-6 sm:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="rounded-md border border-slate-300 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500">
               Tổng
             </p>
-            <p className="mt-2 text-2xl font-black text-slate-900">{session.enrolledStudents}</p>
+            <p className="mt-2 font-mono text-2xl font-bold tabular-nums text-slate-900 dark:text-white">{session.enrolledStudents}</p>
             <p className="text-[11px] text-slate-500">SV đăng ký</p>
           </div>
 
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+          <div className="rounded-md border border-slate-300 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500">
               Đúng giờ
             </p>
-            <p className="mt-2 text-2xl font-black text-emerald-700">{attendance.onTime}</p>
-            <p className="text-[11px] text-emerald-700">SV</p>
+            <p className="mt-2 font-mono text-2xl font-bold tabular-nums text-slate-900 dark:text-white">{attendance.onTime}</p>
+            <p className="text-[11px] text-slate-500">SV</p>
           </div>
 
-          <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+          <div className="rounded-md border border-slate-300 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500">
               Đi muộn
             </p>
-            <p className="mt-2 text-2xl font-black text-amber-700">{attendance.late}</p>
-            <p className="text-[11px] text-amber-700">SV</p>
+            <p className="mt-2 font-mono text-2xl font-bold tabular-nums text-slate-900 dark:text-white">{attendance.late}</p>
+            <p className="text-[11px] text-slate-500">SV</p>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="rounded-md border border-slate-300 bg-slate-50/60 p-4 dark:border-white/10 dark:bg-white/[0.02]">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500">
               {session.status === 'Sắp diễn ra' ? 'Chưa vào' : 'Vắng'}
             </p>
-            <p className="mt-2 text-2xl font-black text-slate-700">
+            <p className="mt-2 font-mono text-2xl font-bold tabular-nums text-slate-700 dark:text-slate-300">
               {session.status === 'Sắp diễn ra' ? attendance.notArrived : attendance.absent}
             </p>
             <p className="text-[11px] text-slate-500">SV</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/60 px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-300 bg-slate-50 px-6 py-4 dark:border-white/10 dark:bg-neutral-950">
           <div className="flex items-center gap-2 text-[11px] text-slate-500">
             <Users className="h-3.5 w-3.5" />
             <span>
@@ -444,17 +454,19 @@ function SessionDetailModal({
           <div className="flex flex-wrap gap-2">
             {session.status === 'Đang diễn ra' && (
               <>
-                <button
-                  type="button"
-                  onClick={onExtend}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100"
-                >
-                  <Clock className="h-3.5 w-3.5" />
-                  Gia hạn
-                </button>
+                {session.type !== 'EXAM' && (
+                  <button
+                    type="button"
+                    onClick={onExtend}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                  >
+                    <Clock className="h-3.5 w-3.5" />
+                    Gia hạn
+                  </button>
+                )}
                 <Link
                   href={`/instructor/monitoring?room=${encodeURIComponent(session.roomCode)}`}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+                  className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
                 >
                   <Video className="h-3.5 w-3.5" />
                   Giám sát ngay
@@ -464,8 +476,8 @@ function SessionDetailModal({
 
             {session.status === 'Sắp diễn ra' && (
               <Link
-                href={`/instructor/room/${encodeURIComponent(session.roomCode)}`}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                href={`/instructor/room/${encodeURIComponent(session.roomCode)}?returnTo=schedules`}
+                className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
               >
                 <Users className="h-3.5 w-3.5" />
                 Vào phòng chờ
@@ -475,17 +487,29 @@ function SessionDetailModal({
             {session.status === 'Đã kết thúc' && (
               <Link
                 href="/instructor/reports"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 Xem báo cáo
               </Link>
             )}
 
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(session)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-300 dark:hover:bg-white/10 transition cursor-pointer"
+                title="Xóa phòng thi này khỏi hệ thống"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-slate-500" />
+                Xóa phòng
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100"
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200"
             >
               Đóng
             </button>
@@ -499,6 +523,7 @@ function SessionDetailModal({
 export default function InstructorSchedulesPage() {
   const [sessions, setSessions] = useState<InstructorSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [listTab, setListTab] = useState<'current' | 'history'>('current');
   const [filterType, setFilterType] = useState<'ALL' | 'LAB' | 'EXAM' | 'active' | 'upcoming'>('ALL');
   const [dateFilter, setDateFilter] = useState<DateFilter>('ALL');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -652,6 +677,44 @@ export default function InstructorSchedulesPage() {
     setSessionToExtend(null);
   };
 
+  // Xóa ca thi / phòng kiểm tra khỏi hệ thống và đồng bộ CSDL
+  const handleDeleteRoom = async (sessionItem: InstructorSession) => {
+    if (
+      !window.confirm(
+        `Giảng viên có chắc chắn muốn xóa phòng [${sessionItem.roomCode}] (${sessionItem.title}) khỏi hệ thống?\nToàn bộ dữ liệu phòng thi sẽ bị xóa vĩnh viễn khỏi CSDL.`
+      )
+    ) {
+      return;
+    }
+    try {
+      if (sessionItem.roomId) {
+        await fetchWithAuth(`/api/v1/rooms/${sessionItem.roomId}`, { method: 'DELETE' });
+      } else {
+        await fetchWithAuth(`/api/v1/rooms/by-code/${encodeURIComponent(sessionItem.roomCode)}`, { method: 'DELETE' });
+      }
+
+      setSessions((prev) => prev.filter((s) => s.roomCode.toLowerCase() !== sessionItem.roomCode.toLowerCase()));
+
+      try {
+        const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
+        if (raw) {
+          const list = JSON.parse(raw);
+          const filtered = list.filter((s: any) => s.roomCode?.toLowerCase() !== sessionItem.roomCode.toLowerCase());
+          localStorage.setItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY, JSON.stringify(filtered));
+        }
+      } catch {}
+
+      if (selectedSession && selectedSession.roomCode.toLowerCase() === sessionItem.roomCode.toLowerCase()) {
+        setSelectedSession(null);
+      }
+      showToast(`Đã xóa thành công phòng thi ${sessionItem.roomCode}!`);
+    } catch (err: any) {
+      console.error('Lỗi khi xóa phòng:', err);
+      alert(err?.message || 'Không thể xóa phòng');
+    }
+  };
+
+  // Chỉ coi là xung đột nếu CÙNG MỘT LỚP HỌC PHẦN (khác lớp thì được phép trùng giờ bình thường)
   const conflictIds = useMemo(() => {
     const ids = new Set<string>();
 
@@ -662,6 +725,11 @@ export default function InstructorSchedulesPage() {
 
       sessions.slice(index + 1).forEach((other) => {
         if (currentDate !== getSessionDateKey(other)) return;
+
+        // Quy tắc: 1 giờ có thể có nhiều phòng khác lớp thi cùng lúc. Chỉ xung đột nếu CÙNG LỚP!
+        const curClass = (current.classCode || '').trim().toLowerCase();
+        const othClass = (other.classCode || '').trim().toLowerCase();
+        if (curClass && othClass && curClass !== othClass) return;
 
         const otherStart = timeToMinutes(other.startTime);
         const otherEnd = timeToMinutes(other.endTime);
@@ -715,6 +783,9 @@ export default function InstructorSchedulesPage() {
     nextSevenEnd.setDate(nextSevenEnd.getDate() + 7);
 
     return sessions.filter((session) => {
+      const isHistorySession = session.status === 'Đã kết thúc';
+      if (listTab === 'history' ? !isHistorySession : isHistorySession) return false;
+
       const query = search.trim().toLowerCase();
 
       const matchSearch =
@@ -731,7 +802,9 @@ export default function InstructorSchedulesPage() {
       if (filterType === 'active' && session.status !== 'Đang diễn ra') return false;
       if (filterType === 'upcoming' && session.status !== 'Sắp diễn ra') return false;
 
-      const sessionDate = getSessionDateKey(session);
+      const sessionDate = listTab === 'history'
+        ? getLocalDateKey(new Date(session.sortTimestamp))
+        : getSessionDateKey(session);
 
       if (dateFilter === 'TODAY' && sessionDate !== todayKey) return false;
       if (dateFilter === 'TOMORROW' && sessionDate !== tomorrowKey) return false;
@@ -747,6 +820,19 @@ export default function InstructorSchedulesPage() {
         }
       }
 
+      if (dateFilter === 'PAST_7_DAYS') {
+        const candidate = new Date(`${sessionDate}T00:00:00`);
+        const pastSevenStart = new Date();
+        pastSevenStart.setDate(pastSevenStart.getDate() - 7);
+        if (
+          Number.isNaN(candidate.getTime()) ||
+          candidate < pastSevenStart ||
+          candidate > new Date(`${todayKey}T23:59:59`)
+        ) {
+          return false;
+        }
+      }
+
       if (dateFilter === 'CUSTOM') {
         if (customStartDate && sessionDate < customStartDate) return false;
         if (customEndDate && sessionDate > customEndDate) return false;
@@ -756,6 +842,7 @@ export default function InstructorSchedulesPage() {
     });
   }, [
     sessions,
+    listTab,
     search,
     filterType,
     dateFilter,
@@ -767,39 +854,54 @@ export default function InstructorSchedulesPage() {
     const groups = new Map<string, InstructorSession[]>();
 
     filteredSessions.forEach((session) => {
-      const dateKey = getSessionDateKey(session);
+      const dateKey = listTab === 'history'
+        ? getLocalDateKey(new Date(session.sortTimestamp))
+        : getSessionDateKey(session);
       const group = groups.get(dateKey) ?? [];
       group.push(session);
       groups.set(dateKey, group);
     });
 
     return Array.from(groups.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a], [b]) =>
+        listTab === 'history' ? b.localeCompare(a) : a.localeCompare(b)
+      )
       .map(([dateKey, group]) => ({
         dateKey,
         label: formatDateDisplay(dateKey),
-        sessions: group.sort(
-          (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
+        sessions: group.sort((a, b) =>
+          listTab === 'history'
+            ? b.sortTimestamp - a.sortTimestamp
+            : timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
         ),
       }));
-  }, [filteredSessions]);
+  }, [filteredSessions, listTab]);
 
   return (
     <div className="space-y-6">
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-semibold text-white shadow-xl">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-          <span>{toastMessage}</span>
-        </div>
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-md border border-slate-300 border-l-4 border-l-slate-900 bg-white px-4 py-3 text-xs shadow-lg dark:border-white/10 dark:border-l-white dark:bg-neutral-900"
+        >
+          <div className="flex h-7 w-7 items-center justify-center rounded-xs bg-slate-100 text-slate-900 shrink-0 dark:bg-white/10 dark:text-white">
+            <CheckCircle2 className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="font-serif text-xs font-bold text-[#2A282D] dark:text-white">Thông báo</p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">{toastMessage}</p>
+          </div>
+        </aside>
       )}
 
-      <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-center">
+      <div className="flex flex-col justify-between gap-4 border-b border-slate-300 pb-4 sm:flex-row sm:items-center dark:border-white/10">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">
-            Không gian Giảng viên
+          <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Hệ thống Quản lý Giảng dạy & Đánh giá
           </p>
-          <h1 className="mt-0.5 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
-            Lịch & Phiên Kiểm Tra Trực Tuyến
+          <h1 className="mt-0.5 font-serif text-2xl font-bold tracking-tight text-[#2A282D] sm:text-[28px] dark:text-[#ede8e9]">
+            Lịch &amp; Phiên Kiểm Tra Trực Tuyến
           </h1>
           <p className="mt-0.5 text-xs text-slate-500">
             Quản lý ca thực hành Lab, kích hoạt phòng thi và giám sát AI trực tiếp theo thời gian thực.
@@ -807,99 +909,136 @@ export default function InstructorSchedulesPage() {
         </div>
 
         <Link
-          href="/instructor/room"
-          className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white shadow-sm shadow-blue-500/20 transition hover:bg-blue-700"
+          href="/instructor/room?returnTo=schedules"
+          className="system-primary-action inline-flex h-9 items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800"
         >
           <Plus className="h-3.5 w-3.5" />
           <span>Tạo & Lên Lịch Phòng Mới</span>
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 items-stretch">
+        <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs dark:border-white/10 dark:bg-neutral-900 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-slate-500">
               Tổng số ca
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
               <Calendar className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{stats.total}</span>
-            <span className="text-xs font-semibold text-slate-600">tất cả phiên</span>
+            <span className="font-mono text-2xl font-bold tabular-nums text-slate-900 dark:text-white">{stats.total}</span>
+            <span className="text-xs font-semibold text-slate-500">tất cả phiên</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">
             {stats.upcoming} sắp diễn ra • {stats.completed} đã kết thúc
           </p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+        <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs dark:border-white/10 dark:bg-neutral-900 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-slate-500">
               Đang diễn ra
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
               <Clock className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-600">{stats.active}</span>
-            <span className="text-xs font-semibold text-slate-600">phòng hoạt động</span>
+            <span className="font-mono text-2xl font-bold tabular-nums text-slate-900 dark:text-white">{stats.active}</span>
+            <span className="text-xs font-semibold text-slate-500">phòng hoạt động</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            {stats.totalAttended}/{stats.totalEnrolled} lượt tham gia trong toàn bộ danh sách
+            {stats.totalAttended}/{stats.totalEnrolled} sinh viên đã vào
           </p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+        <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs dark:border-white/10 dark:bg-neutral-900 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-slate-500">
               Tổng sinh viên
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
               <Users className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{stats.totalEnrolled}</span>
-            <span className="text-xs font-semibold text-slate-600">lượt đăng ký</span>
+            <span className="font-mono text-2xl font-bold tabular-nums text-slate-900 dark:text-white">{stats.totalEnrolled}</span>
+            <span className="text-xs font-semibold text-slate-500">lượt đăng ký</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">Điểm danh tự động qua MSSV</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+        <div className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs dark:border-white/10 dark:bg-neutral-900 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-slate-500">
               Giám sát AI
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-slate-100 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
               <ShieldCheck className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">
+            <span className="font-mono text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
               {stats.aiEnabled}/{stats.total}
             </span>
-            <span className="text-xs font-semibold text-amber-600">phiên bật AI</span>
+            <span className="text-xs font-semibold text-slate-500">phiên bật AI</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">Bắt tab & nhận diện khuôn mặt</p>
         </div>
       </div>
 
       {conflictIds.size > 0 && (
-        <div className="flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 shadow-xs">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+        <div className="flex items-start gap-3 rounded-md border border-slate-300 bg-slate-50 p-4 text-slate-800 shadow-2xs dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-slate-600 dark:text-slate-400" />
           <div>
             <p className="text-sm font-bold">Có xung đột lịch</p>
-            <p className="mt-0.5 text-xs">
+            <p className="mt-0.5 text-xs text-slate-500">
               Có {conflictIds.size} phiên đang bị trùng thời gian. Hãy mở Chi tiết phiên để kiểm tra.
             </p>
           </div>
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs">
+      <div role="tablist" aria-label="Trạng thái phòng" className="flex gap-2 border-b border-slate-300 dark:border-white/10">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={listTab === 'current'}
+          onClick={() => {
+            setListTab('current');
+            setFilterType('ALL');
+            setDateFilter('ALL');
+          }}
+          className={`border-b-2 px-4 py-2.5 text-xs font-bold transition ${
+            listTab === 'current'
+              ? 'border-brand-600 text-brand-700 dark:border-brand-300 dark:text-brand-200'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+          }`}
+        >
+          Đang diễn ra &amp; sắp tới ({stats.active + stats.upcoming})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={listTab === 'history'}
+          onClick={() => {
+            setListTab('history');
+            setFilterType('ALL');
+            setDateFilter('ALL');
+          }}
+          className={`border-b-2 px-4 py-2.5 text-xs font-bold transition ${
+            listTab === 'history'
+              ? 'border-brand-600 text-brand-700 dark:border-brand-300 dark:text-brand-200'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+          }`}
+        >
+          Lịch sử ({stats.completed})
+        </button>
+      </div>
+
+      <div className="rounded-md border border-slate-300 bg-white p-4 shadow-2xs dark:border-white/10 dark:bg-neutral-900">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="relative flex-1 max-w-xl">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -908,45 +1047,57 @@ export default function InstructorSchedulesPage() {
               placeholder="Tìm theo môn học, mã phòng, bài lab..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-xs outline-none transition focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-md border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-4 text-xs outline-none transition focus:border-slate-600 focus:bg-white dark:border-white/10 dark:bg-white/[0.04] dark:focus:border-slate-400"
             />
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {[
-              { id: 'ALL', label: 'Tất cả' },
-              { id: 'active', label: 'Đang diễn ra' },
-              { id: 'upcoming', label: 'Sắp diễn ra' },
-              { id: 'LAB', label: 'Thực hành Lab' },
-              { id: 'EXAM', label: 'Kiểm tra' },
+              {
+                id: 'ALL' as const,
+                label: listTab === 'history'
+                  ? `Tất cả lịch sử (${stats.completed})`
+                  : `Tất cả (${stats.active + stats.upcoming})`,
+              },
+              ...(listTab === 'current'
+                ? [
+                    { id: 'active' as const, label: `Đang diễn ra (${stats.active})` },
+                    { id: 'upcoming' as const, label: `Sắp diễn ra (${stats.upcoming})` },
+                  ]
+                : []),
+              { id: 'LAB' as const, label: 'Thực hành Lab' },
+              { id: 'EXAM' as const, label: 'Kiểm tra' },
             ].map((tab) => (
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setFilterType(tab.id as typeof filterType)}
-                className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
+                onClick={() => {
+                  setFilterType(tab.id as typeof filterType);
+                }}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
                   filterType === tab.id
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    ? 'system-selected-module shadow-2xs'
+                    : 'text-slate-600 hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white'
                 }`}
               >
                 {tab.label}
               </button>
             ))}
 
-            <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
+            <div className="mx-1 hidden h-6 w-px bg-slate-200 dark:bg-white/10 sm:block" />
 
             <div className="relative flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-slate-400" />
+              <CalendarDays className="h-4 w-4 text-slate-500" />
               <select
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value as DateFilter)}
-                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500"
+                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-slate-600 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200"
               >
                 <option value="ALL">Tất cả ngày</option>
                 <option value="TODAY">Hôm nay</option>
                 <option value="TOMORROW">Ngày mai</option>
                 <option value="NEXT_7_DAYS">7 ngày tới</option>
+                <option value="PAST_7_DAYS">7 ngày qua</option>
                 <option value="CUSTOM">Tùy chọn ngày</option>
               </select>
             </div>
@@ -954,20 +1105,20 @@ export default function InstructorSchedulesPage() {
         </div>
 
         {dateFilter === 'CUSTOM' && (
-          <div className="mt-3 flex flex-col gap-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3 sm:flex-row sm:items-center">
-            <span className="text-[11px] font-bold text-blue-700">Khoảng ngày:</span>
+          <div className="mt-3 flex flex-col gap-2 rounded-md border border-slate-300 bg-slate-50 p-3 sm:flex-row sm:items-center dark:border-white/10 dark:bg-white/[0.02]">
+            <span className="font-mono text-[11px] font-bold text-slate-700 dark:text-slate-300">Khoảng ngày:</span>
             <input
               type="date"
               value={customStartDate}
               onChange={(e) => setCustomStartDate(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-blue-500"
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs outline-none focus:border-slate-600 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200"
             />
             <span className="text-xs text-slate-400">→</span>
             <input
               type="date"
               value={customEndDate}
               onChange={(e) => setCustomEndDate(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-blue-500"
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs outline-none focus:border-slate-600 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200"
             />
             <button
               type="button"
@@ -975,7 +1126,7 @@ export default function InstructorSchedulesPage() {
                 setCustomStartDate('');
                 setCustomEndDate('');
               }}
-              className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-white"
+              className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-white dark:hover:bg-white/10"
             >
               Xóa ngày
             </button>
@@ -985,24 +1136,29 @@ export default function InstructorSchedulesPage() {
 
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-black text-slate-900">Danh sách phiên</h2>
+          <h2 className="font-serif text-sm font-bold text-slate-900 dark:text-white">
+            {listTab === 'history' ? 'Lịch sử phòng' : 'Danh sách phiên'}
+          </h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Hiển thị {filteredSessions.length}/{sessions.length} phiên.
+            Hiển thị {filteredSessions.length}/
+            {listTab === 'history' ? stats.completed : stats.active + stats.upcoming} phiên.
           </p>
         </div>
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-xs font-semibold text-slate-400">
+        <div className="rounded-md border border-slate-300 bg-white p-12 text-center text-xs font-semibold text-slate-500 dark:border-white/10 dark:bg-neutral-900">
           Đang tải lịch thi và lịch thực hành từ máy chủ...
         </div>
       ) : groupedSessions.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center">
-          <CalendarDays className="mx-auto h-9 w-9 text-slate-300" />
-          <p className="mt-3 text-sm font-bold text-slate-700">
-            Không tìm thấy phiên phù hợp
+        <div className="rounded-md border border-slate-300 bg-white p-12 text-center dark:border-white/10 dark:bg-neutral-900">
+          <CalendarDays className="mx-auto h-9 w-9 text-slate-300 dark:text-white/20" />
+          <p className="mt-3 font-serif text-sm font-bold text-slate-700 dark:text-slate-200">
+            {listTab === 'history' && stats.completed === 0
+              ? 'Chưa có phòng trong lịch sử'
+              : 'Không tìm thấy phiên phù hợp'}
           </p>
-          <p className="mt-1 text-xs text-slate-400">
+          <p className="mt-1 text-xs text-slate-500">
             Hãy thử xóa bộ lọc ngày, đổi trạng thái hoặc dùng từ khóa khác.
           </p>
           <button
@@ -1014,7 +1170,7 @@ export default function InstructorSchedulesPage() {
               setCustomStartDate('');
               setCustomEndDate('');
             }}
-            className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700"
+            className="mt-4 rounded-md border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 cursor-pointer"
           >
             Xóa bộ lọc
           </button>
@@ -1024,11 +1180,11 @@ export default function InstructorSchedulesPage() {
           {groupedSessions.map((group) => (
             <section key={group.dateKey} className="space-y-3">
               <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-slate-200" />
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-black text-slate-600">
+                <div className="h-px flex-1 bg-[#ded7d9] dark:bg-white/10" />
+                <span className="rounded border border-slate-300 bg-slate-50 px-3 py-1 font-mono text-[11px] font-bold text-slate-700 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-300">
                   {group.label}
                 </span>
-                <div className="h-px flex-1 bg-slate-200" />
+                <div className="h-px flex-1 bg-[#ded7d9] dark:bg-white/10" />
               </div>
 
               <div className="space-y-4">
@@ -1036,68 +1192,46 @@ export default function InstructorSchedulesPage() {
                   const progress = getSessionProgress(session, now);
                   const remainingMinutes = getRemainingMinutes(session, now);
                   const hasConflict = conflictIds.has(session.id);
+                  const isHistory = listTab === 'history';
 
                   return (
                     <div
                       key={session.id}
-                      className={`rounded-2xl border bg-white p-5 shadow-xs transition-all hover:shadow-md ${
-                        session.status === 'Đang diễn ra'
-                          ? 'border-emerald-300 ring-2 ring-emerald-500/10'
-                          : hasConflict
-                          ? 'border-amber-300 ring-2 ring-amber-400/10'
-                          : 'border-slate-200/90'
-                      }`}
+                      className="rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-colors dark:border-white/10 dark:bg-neutral-900"
                     >
                       <div className="flex flex-col gap-5">
                         <div className="flex flex-col justify-between gap-4 xl:flex-row">
                           <div className="flex min-w-0 items-start gap-4">
-                            <div
-                              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-xs font-black ${
-                                session.type === 'LAB'
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : 'bg-purple-100 text-purple-700'
-                              }`}
-                            >
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md font-mono text-xs font-bold border border-slate-300 dark:border-white/10 bg-slate-100 dark:bg-white/10 text-slate-800 dark:text-slate-200">
                               {session.type}
                             </div>
 
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">
-                                  {session.classCode}
+                                <span className="rounded border border-slate-300 bg-slate-50 px-2 py-0.5 font-mono text-xs font-bold text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
+                                  {session.classCode === 'unassigned' || !session.classCode ? 'Chưa gán lớp' : session.classCode}
                                 </span>
 
-                                <span
-                                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
-                                    session.status === 'Đang diễn ra'
-                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                      : session.status === 'Sắp diễn ra'
-                                      ? 'border-amber-200 bg-amber-50 text-amber-700'
-                                      : 'border-slate-200 bg-slate-100 text-slate-600'
-                                  }`}
-                                >
-                                  {session.status === 'Đang diễn ra' && (
-                                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                                  )}
+                                <span className="inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                                   {session.status}
                                 </span>
 
                                 {session.isAiProctored && (
-                                  <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                                  <span className="inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                                     <ShieldCheck className="h-3 w-3" />
                                     AI Proctor
                                   </span>
                                 )}
 
                                 {hasConflict && (
-                                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                  <span className="inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                                     <AlertTriangle className="h-3 w-3" />
                                     Trùng lịch
                                   </span>
                                 )}
                               </div>
 
-                              <h3 className="mt-1 truncate text-base font-bold text-slate-900">
+                              <h3 className="mt-1 font-serif text-base font-bold text-slate-900 truncate dark:text-white">
                                 {session.title}
                               </h3>
 
@@ -1105,25 +1239,25 @@ export default function InstructorSchedulesPage() {
 
                               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-slate-500">
                                 <span className="inline-flex items-center gap-1.5">
-                                  <Clock className="h-3.5 w-3.5 text-slate-400" />
-                                  <strong className="text-slate-700">
+                                  <Clock className="h-3.5 w-3.5 text-slate-500" />
+                                  <strong className="font-mono text-slate-700 dark:text-slate-300">
                                     {session.startTime} - {session.endTime}
                                   </strong>
                                 </span>
 
                                 <span className="inline-flex items-center gap-1.5">
-                                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                                  {formatDateDisplay(getSessionDateKey(session))}
+                                  <Calendar className="h-3.5 w-3.5 text-slate-500" />
+                                  <span className="font-mono">{formatDateDisplay(getSessionDateKey(session))}</span>
                                 </span>
 
                                 <span className="inline-flex items-center gap-1.5">
-                                  <Code2 className="h-3.5 w-3.5 text-slate-400" />
-                                  {session.language}
+                                  <Code2 className="h-3.5 w-3.5 text-slate-500" />
+                                  <span>{session.language}</span>
                                 </span>
 
                                 <span className="inline-flex items-center gap-1.5">
-                                  <Users className="h-3.5 w-3.5 text-slate-400" />
-                                  <strong className="text-slate-800">
+                                  <Users className="h-3.5 w-3.5 text-slate-500" />
+                                  <strong className="font-mono text-slate-800 dark:text-slate-200">
                                     {session.attendedStudents}/{session.enrolledStudents}
                                   </strong>{' '}
                                   SV
@@ -1133,48 +1267,50 @@ export default function InstructorSchedulesPage() {
                           </div>
 
                           <div className="flex flex-wrap items-start gap-2 xl:justify-end">
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs">
-                              <div className="flex items-center gap-2">
-                                <span className="text-slate-500">Mã phòng:</span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    copyToClipboard(session.roomCode, `code-${session.id}`)
-                                  }
-                                  className="inline-flex items-center gap-1 font-mono font-bold text-blue-600 hover:underline"
-                                  title="Bấm để sao chép"
-                                >
-                                  {session.roomCode}
-                                  <Copy className="h-3 w-3" />
-                                </button>
-                              </div>
+                            {!isHistory && (
+                              <div className="rounded-md border border-slate-300 bg-slate-50/60 p-2 text-xs dark:border-white/10 dark:bg-white/[0.02]">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-slate-500">Mã phòng:</span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyToClipboard(session.roomCode, `code-${session.id}`)
+                                    }
+                                    className="inline-flex items-center gap-1 font-mono font-bold text-slate-900 hover:underline dark:text-white"
+                                    title="Bấm để sao chép"
+                                  >
+                                    {session.roomCode}
+                                    <Copy className="h-3 w-3" />
+                                  </button>
+                                </div>
 
-                              <div className="mt-0.5 flex items-center gap-2">
-                                <span className="text-slate-500">Mật mã:</span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    copyToClipboard(session.passcode, `pass-${session.id}`)
-                                  }
-                                  className="inline-flex items-center gap-1 font-mono font-bold text-slate-700 hover:underline"
-                                  title="Bấm để sao chép"
-                                >
-                                  {session.passcode}
-                                  <Copy className="h-3 w-3" />
-                                </button>
-                              </div>
+                                <div className="mt-0.5 flex items-center gap-2">
+                                  <span className="text-slate-500">Mật mã:</span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyToClipboard(session.passcode, `pass-${session.id}`)
+                                    }
+                                    className="inline-flex items-center gap-1 font-mono font-bold text-slate-700 hover:underline dark:text-slate-300"
+                                    title="Bấm để sao chép"
+                                  >
+                                    {session.passcode}
+                                    <Copy className="h-3 w-3" />
+                                  </button>
+                                </div>
 
-                              {copiedCode?.startsWith(`code-${session.id}`) && (
-                                <p className="mt-1 text-[9px] font-semibold text-emerald-600">
-                                  Đã sao chép
-                                </p>
-                              )}
-                            </div>
+                                {copiedCode?.startsWith(`code-${session.id}`) && (
+                                  <p className="mt-1 text-[9px] font-bold text-slate-600 dark:text-slate-400">
+                                    Đã sao chép
+                                  </p>
+                                )}
+                              </div>
+                            )}
 
                             <button
                               type="button"
                               onClick={() => setSelectedSession(session)}
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-white/10"
                             >
                               Chi tiết
                               <ChevronRight className="h-3.5 w-3.5" />
@@ -1182,10 +1318,11 @@ export default function InstructorSchedulesPage() {
                           </div>
                         </div>
 
+                        {!isHistory && (
                         <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
                           <div>
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-[11px] font-bold text-slate-600">
+                              <div className="text-[11px] font-bold text-slate-500">
                                 {session.status === 'Đang diễn ra'
                                   ? `Tiến độ • Còn khoảng ${formatDuration(remainingMinutes)}`
                                   : session.status === 'Sắp diễn ra'
@@ -1193,18 +1330,16 @@ export default function InstructorSchedulesPage() {
                                   : 'Phiên đã kết thúc'}
                               </div>
 
-                              <span className="text-[11px] font-black text-slate-700">
+                              <span className="font-mono text-[11px] font-bold tabular-nums text-slate-700 dark:text-slate-300">
                                 {progress}%
                               </span>
                             </div>
 
-                            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                            <div className="mt-2 h-1.5 overflow-hidden rounded bg-slate-100 dark:bg-white/10">
                               <div
-                                className={`h-full rounded-full transition-all ${
+                                className={`h-full transition-all ${
                                   session.status === 'Đang diễn ra'
-                                    ? 'bg-emerald-500'
-                                    : session.status === 'Sắp diễn ra'
-                                    ? 'bg-blue-500'
+                                    ? 'bg-slate-900 dark:bg-white'
                                     : 'bg-slate-400'
                                 }`}
                                 style={{
@@ -1217,20 +1352,22 @@ export default function InstructorSchedulesPage() {
                           <div className="flex flex-wrap items-center gap-2">
                             {session.status === 'Đang diễn ra' ? (
                               <>
-                                <button
-                                  type="button"
-                                  onClick={() => setSessionToExtend(session)}
-                                  className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100"
-                                >
-                                  <Clock className="h-3.5 w-3.5" />
-                                  Gia hạn
-                                </button>
+                                {session.type !== 'EXAM' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSessionToExtend(session)}
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                                  >
+                                    <Clock className="h-3.5 w-3.5" />
+                                    Gia hạn
+                                  </button>
+                                )}
 
                                 <Link
                                   href={`/instructor/monitoring?room=${encodeURIComponent(
                                     session.roomCode
                                   )}`}
-                                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-700"
+                                  className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-slate-800"
                                 >
                                   <Video className="h-3.5 w-3.5" />
                                   Giám sát ngay
@@ -1241,8 +1378,8 @@ export default function InstructorSchedulesPage() {
                                 <Link
                                   href={`/instructor/room/${encodeURIComponent(
                                     session.roomCode
-                                  )}`}
-                                  className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
+                                  )}?returnTo=schedules`}
+                                  className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
                                 >
                                   <Users className="h-3.5 w-3.5" />
                                   Vào phòng chờ
@@ -1251,7 +1388,7 @@ export default function InstructorSchedulesPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleOpenRoomEarly(session.id)}
-                                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm shadow-blue-600/20 hover:bg-blue-700"
+                                  className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-slate-800"
                                 >
                                   <Play className="h-3.5 w-3.5" />
                                   Mở phòng sớm
@@ -1260,14 +1397,28 @@ export default function InstructorSchedulesPage() {
                             ) : (
                               <Link
                                 href="/instructor/reports"
-                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200"
                               >
                                 <ExternalLink className="h-3.5 w-3.5" />
                                 Xem báo cáo
                               </Link>
                             )}
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteRoom(session);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 transition cursor-pointer"
+                              title="Xóa phòng thi này khỏi hệ thống"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-slate-500" />
+                              <span>Xóa</span>
+                            </button>
                           </div>
                         </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1286,6 +1437,7 @@ export default function InstructorSchedulesPage() {
             setSessionToExtend(selectedSession);
             setSelectedSession(null);
           }}
+          onDelete={selectedSession.status === 'Đã kết thúc' ? undefined : handleDeleteRoom}
         />
       )}
 

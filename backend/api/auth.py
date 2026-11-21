@@ -29,12 +29,14 @@ logger = logging.getLogger(__name__)
 
 def extract_client_ip(request: Request) -> str:
     """
-    Bóc tách địa chỉ IP thực tế của client:
+    Bóc tách địa chỉ IP thực tế của client (IP thật, tránh lưu IP ảo 127.0.0.1 hay card mạng ảo):
     1. Header X-Client-Public-IP do frontend resolver hoặc reverse proxy truyền
     2. Cloudflare header CF-Connecting-IP
-    3. X-Real-IP
-    4. X-Forwarded-For (lấy IP đầu tiên)
-    5. Fallback request.client.host
+    3. True-Client-IP
+    4. X-Real-IP
+    5. X-Forwarded-For (lấy IP client hợp lệ đầu tiên)
+    6. Socket client host (nếu là IP thật, không phải loopback)
+    7. Fallback Local Dev: Lấy IP card mạng thật (Wi-Fi/Ethernet) đang hoạt động thay vì loopback 127.0.0.1
     """
     # 1. Header do client hoặc reverse proxy truyền
     client_public_ip = request.headers.get("x-client-public-ip")
@@ -48,21 +50,45 @@ def extract_client_ip(request: Request) -> str:
     if cf_ip and cf_ip.strip():
         return cf_ip.strip()
 
-    # 3. Nginx / Reverse Proxy Real IP
+    # 3. True-Client-IP
+    true_ip = request.headers.get("true-client-ip")
+    if true_ip and true_ip.strip():
+        return true_ip.strip()
+
+    # 4. Nginx / Reverse Proxy Real IP
     real_ip = request.headers.get("x-real-ip")
     if real_ip and real_ip.strip():
         return real_ip.strip()
 
-    # 4. Standard X-Forwarded-For
+    # 5. Standard X-Forwarded-For
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for and forwarded_for.strip():
         ips = [i.strip() for i in forwarded_for.split(",") if i.strip()]
+        for cand in ips:
+            if cand.lower() not in ("127.0.0.1", "::1", "localhost", "0.0.0.0", "null", "undefined"):
+                return cand
         if ips:
             return ips[0]
 
-    # 5. Socket Host
+    # 6. Socket Host
     if request.client and request.client.host:
-        return request.client.host
+        host = request.client.host.strip()
+        if host.lower() not in ("127.0.0.1", "::1", "localhost"):
+            return host
+
+    # 7. Fallback khi truy cập local loopback (tránh lưu IP ảo 127.0.0.1):
+    # Lấy IP card mạng vật lý đang kết nối định tuyến ra ngoài (Wi-Fi / LAN)
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.1)
+        s.connect(('8.8.8.8', 80))
+        real_local_ip = s.getsockname()[0]
+        s.close()
+        if real_local_ip and real_local_ip != "127.0.0.1":
+            return real_local_ip
+    except Exception:
+        pass
 
     return "127.0.0.1"
 

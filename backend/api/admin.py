@@ -32,6 +32,7 @@ from services.system_settings_manager import SystemSettingsManager
 from services.backup_service import BackupService
 from services.host_metrics import get_real_host_metrics
 from core.database import get_db_cursor
+from api.auth import extract_client_ip
 
 router = APIRouter(dependencies=[Depends(admin_required)])
 
@@ -71,7 +72,7 @@ async def create_user_by_admin(
         allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
         if not clean_email.endswith(allowed_domain):
             try:
-                client_ip = request.client.host if request.client else "127.0.0.1"
+                client_ip = extract_client_ip(request)
                 create_system_log(
                     log_level="warning",
                     module="Quản lý người dùng",
@@ -323,7 +324,7 @@ async def batch_import_users(
 
     # Đọc cấu hình tên miền email từ Cấu hình Hệ thống & Nhật ký
     sys_settings = SystemSettingsManager.get_settings()
-    raw_domain = (sys_settings.allowed_email_domain or "@school.edu.vn").strip().lower()
+    raw_domain = (sys_settings.allowed_email_domain or "@gmail.com").strip().lower()
     allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
     
     for u in data.users:
@@ -383,7 +384,7 @@ async def batch_import_users(
             errors.append(f"Lỗi thêm {u.student_id or u.email}: {str(e)}")
             
     try:
-        client_ip = request.client.host if request.client else "127.0.0.1"
+        client_ip = extract_client_ip(request)
         create_system_log(
             log_level="warning" if failed > 0 else "info",
             module="Nhập danh sách",
@@ -940,7 +941,7 @@ async def update_system_settings(
     current_user: Dict[str, Any] = Depends(admin_required)
 ):
     """Admin cập nhật các tham số cấu hình hạ tầng hệ thống"""
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = extract_client_ip(request)
     admin_name = current_user.get("username", "admin")
     old_settings = SystemSettingsManager.get_settings()
     updated = SystemSettingsManager.update_settings(settings_data.model_dump(), updated_by=admin_name)
@@ -987,7 +988,7 @@ async def reset_system_settings(
     current_user: Dict[str, Any] = Depends(admin_required)
 ):
     """Khôi phục toàn bộ cấu hình hạ tầng về mặc định an toàn"""
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = extract_client_ip(request)
     admin_name = current_user.get("username", "admin")
     reset = SystemSettingsManager.reset_settings(updated_by=admin_name)
 
@@ -1018,7 +1019,7 @@ async def create_database_backup(
     current_user: Dict[str, Any] = Depends(admin_required)
 ):
     """Kích hoạt sao lưu toàn bộ CSDL SQL Server ra tệp .bak thực tế"""
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = extract_client_ip(request)
     try:
         bk_info = BackupService.create_database_backup(
             backup_type="manual",
@@ -1060,7 +1061,7 @@ async def delete_database_backup(
     current_user: Dict[str, Any] = Depends(admin_required)
 ):
     """Xóa tệp sao lưu trên đĩa cứng máy chủ để giải phóng dung lượng"""
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = extract_client_ip(request)
     deleted = BackupService.delete_backup(
         filename=filename,
         actor_id=current_user.get("user_id"),
@@ -1079,7 +1080,7 @@ async def cleanup_database_backups(
     current_user: Dict[str, Any] = Depends(admin_required)
 ):
     """Admin chủ động kích hoạt dọn dẹp các bản sao lưu CSDL quá hạn hoặc vượt quá số lượng tối đa"""
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = extract_client_ip(request)
     sys_settings = SystemSettingsManager.get_settings()
     result = BackupService.cleanup_expired_backups(
         retention_days=sys_settings.backup_retention_days,
@@ -1519,7 +1520,7 @@ async def delete_admin_schedule(
         )
 
     try:
-        client_ip = request.client.host if request.client else "127.0.0.1"
+        client_ip = extract_client_ip(request)
         create_system_log(
             log_level="warning",
             module="Quản lý lịch thi",

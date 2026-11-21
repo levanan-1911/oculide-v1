@@ -17,7 +17,7 @@ import {
 
 export default function ForgotPasswordPage() {
   // ── THEME STATE ──
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [mounted, setMounted] = useState(false);
 
   // ── FORM STATE ──
@@ -30,7 +30,7 @@ export default function ForgotPasswordPage() {
   useEffect(() => {
     setMounted(true);
     const saved = localStorage.getItem('oculide_theme') as 'dark' | 'light' | null;
-    const initial = saved || 'dark';
+    const initial = saved || 'light';
     setTheme(initial);
     applyTheme(initial);
   }, []);

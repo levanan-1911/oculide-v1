@@ -8,6 +8,7 @@ from database.session_db import (
     get_sessions_by_student, update_session_status, end_session
 )
 from database.room_db import get_room_by_id
+from api.auth import extract_client_ip
 
 router = APIRouter()
 
@@ -48,7 +49,7 @@ async def start_session(
             detail=f"Bạn đã sử dụng hết số lần tham gia thi cho phép ({len(past_sessions)}/{max_attempts})"
         )
         
-    client_ip = request.client.host if request.client else None
+    client_ip = extract_client_ip(request)
     user_agent = request.headers.get("user-agent")
     
     return create_session(

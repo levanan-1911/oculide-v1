@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 
 from schemas.system_log import SystemLogCreateRequest, SystemLogResponse
 from core.permissions import admin_required
+from api.auth import extract_client_ip
 from database.system_log_db import create_system_log, get_system_logs
 
 router = APIRouter()
@@ -44,7 +45,7 @@ async def add_system_log(
     """Ghi nhận nhật ký kiểm toán mới vào bảng NhatKyHeThong"""
     client_ip = log_data.ip_address
     if not client_ip:
-        client_ip = request.client.host if request.client else "127.0.0.1"
+        client_ip = extract_client_ip(request)
         
     log_record = create_system_log(
         log_level=log_data.log_level,

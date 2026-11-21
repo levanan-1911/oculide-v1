@@ -150,7 +150,7 @@ function getInitialCodeTemplate(language: string): string {
 }
 
 export default function ExamWorkspacePage() {
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">("light");
   const [mounted, setMounted] = useState(false);
   const [examState, setExamState] = useState<ExamState>("doing");
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
@@ -171,7 +171,7 @@ export default function ExamWorkspacePage() {
   useEffect(() => {
     setMounted(true);
     const saved = localStorage.getItem("oculide_theme") as "dark" | "light" | null;
-    const initial = saved || "dark";
+    const initial = saved || "light";
     setTheme(initial);
     applyTheme(initial);
   }, []);

@@ -3,6 +3,8 @@
  * Tự động gắn JWT Token từ localStorage và quản lý lỗi chuẩn hóa.
  */
 
+import { getCachedClientPublicIp } from '@/utils/ipResolver';
+
 export function getAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('oculide_token');
@@ -16,6 +18,11 @@ export function getAuthHeaders(extraHeaders: HeadersInit = {}): HeadersInit {
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const clientIp = getCachedClientPublicIp();
+  if (clientIp) {
+    headers['X-Client-Public-IP'] = clientIp;
   }
 
   return {

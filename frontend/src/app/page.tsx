@@ -20,7 +20,7 @@ import InstitutionalFooter from '@/components/common/InstitutionalFooter';
 import BrandLogo from '@/components/common/BrandLogo';
 
 export default function HomePage() {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [mounted, setMounted] = useState(false);
 
   const staticCode = [
@@ -52,7 +52,7 @@ export default function HomePage() {
   useEffect(() => {
     setMounted(true);
     const saved = localStorage.getItem('oculide_theme') as 'dark' | 'light' | null;
-    const initial = saved || 'dark';
+    const initial = saved || 'light';
     setTheme(initial);
     applyTheme(initial);
   }, []);

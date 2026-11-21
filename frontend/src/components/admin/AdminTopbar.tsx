@@ -58,7 +58,7 @@ export default function AdminTopbar({
   const router = useRouter();
 
   // ── THEME & USER STATE ──
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [mounted, setMounted] = useState(false);
   const [userProfile, setUserProfile] = useState({
     name: 'Lê Phương',
@@ -86,7 +86,7 @@ export default function AdminTopbar({
   useEffect(() => {
     setMounted(true);
     const saved = localStorage.getItem('oculide_theme') as 'dark' | 'light' | null;
-    const initial = saved || 'dark';
+    const initial = saved || 'light';
     setTheme(initial);
     applyTheme(initial);
 

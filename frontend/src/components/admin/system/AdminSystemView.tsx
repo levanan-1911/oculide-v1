@@ -322,7 +322,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   auditLogRetentionDays: 90,
 
   // 2. Tên miền trường
-  allowedEmailDomain: '@school.edu.vn',
+  allowedEmailDomain: '@gmail.com',
 
   // 3. Bảo mật & Vận hành
   maxLoginAttempts: 5,
@@ -2151,7 +2151,7 @@ export default function AdminSystemView() {
                       })
                     }
                     className="w-full rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 font-mono text-xs text-slate-800 dark:text-white outline-none focus:border-slate-900 dark:border-white"
-                    placeholder="@school.edu.vn"
+                    placeholder="@gmail.com"
                   />
                   <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                     Chỉ cho phép tài khoản có đuôi email này đăng nhập vào hệ thống trường.

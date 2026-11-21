@@ -18,7 +18,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "max_livekit_bitrate_kbps": 350,
     "auto_cleanup_drafts_days": 30,
     "audit_log_retention_days": 90,
-    "allowed_email_domain": "@school.edu.vn",
+    "allowed_email_domain": "@gmail.com",
     "max_login_attempts": 5,
     "jwt_token_expiry_minutes": 60,
     "maintenance_mode": False,

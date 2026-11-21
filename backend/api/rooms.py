@@ -25,6 +25,7 @@ from database.session_db import get_sessions_by_room
 from database.violation_db import get_violations_by_session
 from services.livekit_service import livekit_service
 from core.config import settings
+from api.auth import extract_client_ip
 
 router = APIRouter()
 
@@ -316,7 +317,7 @@ async def join_room_authenticated(
         except Exception:
             pass
 
-    client_ip = request.client.host if request.client else None
+    client_ip = extract_client_ip(request)
     user_agent = request.headers.get("user-agent")
     session_id = upsert_student_lobby_session(
         room_id=room["room_id"],

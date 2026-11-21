@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import React from 'react';
 import './globals.css';
+import IpPreloader from '@/components/common/IpPreloader';
 
 export const metadata: Metadata = {
   applicationName: 'Oculide',
@@ -37,7 +38,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen font-sans text-foreground antialiased">{children}</body>
+      <body className="min-h-screen font-sans text-foreground antialiased">
+        <IpPreloader />
+        {children}
+      </body>
     </html>
   );
 }

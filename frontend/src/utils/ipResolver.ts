@@ -13,9 +13,13 @@ const STORAGE_KEY_PUBLIC_IP = 'oculide_client_public_ip';
 export function getCachedClientPublicIp(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    const cached = sessionStorage.getItem(STORAGE_KEY_PUBLIC_IP);
-    if (cached && isValidPublicIp(cached)) {
-      return cached;
+    const sessionVal = sessionStorage.getItem(STORAGE_KEY_PUBLIC_IP);
+    if (sessionVal && isValidPublicIp(sessionVal)) {
+      return sessionVal;
+    }
+    const localVal = localStorage.getItem(STORAGE_KEY_PUBLIC_IP);
+    if (localVal && isValidPublicIp(localVal)) {
+      return localVal;
     }
   } catch {
     // ignore
@@ -66,6 +70,7 @@ export async function getClientPublicIp(): Promise<string | null> {
       const data = await res.json();
       if (data && data.ip && isValidPublicIp(data.ip)) {
         sessionStorage.setItem(STORAGE_KEY_PUBLIC_IP, data.ip);
+        localStorage.setItem(STORAGE_KEY_PUBLIC_IP, data.ip);
         return data.ip;
       }
     }
@@ -87,11 +92,27 @@ export async function getClientPublicIp(): Promise<string | null> {
       const data = await res.json();
       if (data && data.ip && isValidPublicIp(data.ip)) {
         sessionStorage.setItem(STORAGE_KEY_PUBLIC_IP, data.ip);
+        localStorage.setItem(STORAGE_KEY_PUBLIC_IP, data.ip);
         return data.ip;
       }
     }
   } catch {
     // Không kết nối được internet ngoài
+  }
+
+  // 4. Dự phòng 3: lấy từ endpoint backend /api/v1/auth/my-ip (trả về IP card mạng thật của máy)
+  try {
+    const res = await fetch('/api/v1/auth/my-ip');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.ip && isValidPublicIp(data.ip)) {
+        sessionStorage.setItem(STORAGE_KEY_PUBLIC_IP, data.ip);
+        localStorage.setItem(STORAGE_KEY_PUBLIC_IP, data.ip);
+        return data.ip;
+      }
+    }
+  } catch {
+    // ignore
   }
 
   return null;

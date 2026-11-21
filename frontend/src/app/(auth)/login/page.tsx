@@ -22,7 +22,7 @@ import { getClientIpHeader, getClientPublicIp } from '@/utils/ipResolver';
 
 export default function LoginPage() {
   // ── THEME STATE ──
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [mounted, setMounted] = useState(false);
 
   // ── FORM STATE ──
@@ -74,7 +74,7 @@ export default function LoginPage() {
   useEffect(() => {
     setMounted(true);
     const saved = localStorage.getItem('oculide_theme') as 'dark' | 'light' | null;
-    const initial = saved || 'dark';
+    const initial = saved || 'light';
     setTheme(initial);
     applyTheme(initial);
 

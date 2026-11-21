@@ -28,7 +28,7 @@ from database.user_db import (
 from database.room_db import get_system_overview_stats
 from database.system_log_db import get_system_logs, create_system_log
 from services.email_service import EmailService
-from services.system_settings_manager import SystemSettingsManager
+from services.system_settings_manager import SystemSettingsManager, is_email_domain_allowed
 from services.backup_service import BackupService
 from services.host_metrics import get_real_host_metrics
 from core.database import get_db_cursor
@@ -67,24 +67,23 @@ async def create_user_by_admin(
 
     # Kiểm tra ràng buộc tên miền trường theo Cấu hình Hệ thống & Nhật ký
     sys_settings = SystemSettingsManager.get_settings()
-    raw_domain = (sys_settings.allowed_email_domain or "").strip().lower()
-    if raw_domain:
-        allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
-        if not clean_email.endswith(allowed_domain):
+    allowed_setting = (sys_settings.allowed_email_domain or "").strip()
+    if allowed_setting:
+        if not is_email_domain_allowed(clean_email, allowed_setting):
             try:
                 client_ip = extract_client_ip(request)
                 create_system_log(
                     log_level="warning",
                     module="Quản lý người dùng",
-                    message=f"Tạo người dùng thất bại với email '{clean_email}': Tên miền không thuộc cấu hình hệ thống cho phép ({allowed_domain})",
+                    message=f"Tạo người dùng thất bại với email '{clean_email}': Tên miền không thuộc cấu hình hệ thống cho phép ({allowed_setting})",
                     ip_address=client_ip,
-                    extra_data={"attempted_email": clean_email, "allowed_domain": allowed_domain}
+                    extra_data={"attempted_email": clean_email, "allowed_domain": allowed_setting}
                 )
             except Exception:
                 pass
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Email '{clean_email}' không hợp lệ. Hệ thống chỉ cho phép tạo tài khoản có email thuộc tên miền '{sys_settings.allowed_email_domain}'"
+                detail=f"Email '{clean_email}' không hợp lệ. Hệ thống chỉ cho phép tạo tài khoản có email thuộc tên miền do Quản trị viên cấu hình: '{allowed_setting}'"
             )
 
     final_username = clean_email.split("@")[0].strip().lower()
@@ -325,8 +324,7 @@ async def batch_import_users(
 
     # Đọc cấu hình tên miền email từ Cấu hình Hệ thống & Nhật ký
     sys_settings = SystemSettingsManager.get_settings()
-    raw_domain = (sys_settings.allowed_email_domain or "@gmail.com").strip().lower()
-    allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
+    allowed_setting = (sys_settings.allowed_email_domain or "").strip()
     
     for u in data.users:
         try:
@@ -336,8 +334,8 @@ async def batch_import_users(
                 errors.append(f"Bỏ qua '{u.full_name}': Thiếu địa chỉ email hợp lệ. Hệ thống không thể tự sinh email.")
                 failed += 1
                 continue
-            elif not u_email.endswith(allowed_domain):
-                errors.append(f"Bỏ qua '{u.full_name}': Email '{u_email}' không thuộc tên miền cho phép ({sys_settings.allowed_email_domain}).")
+            elif allowed_setting and not is_email_domain_allowed(u_email, allowed_setting):
+                errors.append(f"Bỏ qua '{u.full_name}': Email '{u_email}' không thuộc tên miền cho phép do Quản trị viên cấu hình ({allowed_setting}).")
                 failed += 1
                 continue
 

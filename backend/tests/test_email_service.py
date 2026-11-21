@@ -5,10 +5,29 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.abspath("backend"))
 
 from services.email_service import EmailService
-from services.system_settings_manager import SystemSettingsManager
+from services.system_settings_manager import SystemSettingsManager, is_email_domain_allowed
 from schemas.system_management import SystemSettingsModel
 from fastapi.testclient import TestClient
 from main import app
+
+def test_is_email_domain_allowed():
+    # 1. Khi admin chưa cấu hình domain (rỗng hoặc None) -> cho phép mọi email hợp lệ
+    assert is_email_domain_allowed("user@gmail.com", "") is True
+    assert is_email_domain_allowed("user@school.edu.vn", None) is True
+    assert is_email_domain_allowed("user@anydomain.com", "   ") is True
+    assert is_email_domain_allowed("invalid-email", "") is False
+
+    # 2. Khi admin cấu hình 1 domain cụ thể
+    assert is_email_domain_allowed("user@dtu.edu.vn", "@dtu.edu.vn") is True
+    assert is_email_domain_allowed("user@dtu.edu.vn", "dtu.edu.vn") is True
+    assert is_email_domain_allowed("user@gmail.com", "@dtu.edu.vn") is False
+
+    # 3. Khi admin cấu hình nhiều domain cách nhau bởi dấu phẩy, chấm phẩy
+    multi_domain = "@dtu.edu.vn, @school.edu.vn; @ptit.edu.vn"
+    assert is_email_domain_allowed("sv@dtu.edu.vn", multi_domain) is True
+    assert is_email_domain_allowed("sv@school.edu.vn", multi_domain) is True
+    assert is_email_domain_allowed("sv@ptit.edu.vn", multi_domain) is True
+    assert is_email_domain_allowed("sv@gmail.com", multi_domain) is False
 
 def test_email_service_mock():
     mock_settings = SystemSettingsModel(allowed_email_domain="@school.edu.vn")

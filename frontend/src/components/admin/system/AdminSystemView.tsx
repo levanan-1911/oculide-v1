@@ -322,7 +322,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   auditLogRetentionDays: 90,
 
   // 2. Tên miền trường
-  allowedEmailDomain: '@gmail.com',
+  allowedEmailDomain: '',
 
   // 3. Bảo mật & Vận hành
   maxLoginAttempts: 5,
@@ -608,7 +608,7 @@ export default function AdminSystemView() {
           maxLiveKitBitrateKbps: data.max_livekit_bitrate_kbps ?? 350,
           autoCleanupDraftsDays: data.auto_cleanup_drafts_days ?? 30,
           auditLogRetentionDays: data.audit_log_retention_days ?? 90,
-          allowedEmailDomain: data.allowed_email_domain ?? '@school.edu.vn',
+          allowedEmailDomain: data.allowed_email_domain ?? '',
           maxLoginAttempts: data.max_login_attempts ?? 5,
           jwtTokenExpiryMinutes: data.jwt_token_expiry_minutes ?? 60,
           maintenanceMode: Boolean(data.maintenance_mode),
@@ -2151,10 +2151,10 @@ export default function AdminSystemView() {
                       })
                     }
                     className="w-full rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 font-mono text-xs text-slate-800 dark:text-white outline-none focus:border-slate-900 dark:border-white"
-                    placeholder="@gmail.com"
+                    placeholder="VD: @school.edu.vn, @dtu.edu.vn (để trống nếu cho phép tất cả)"
                   />
                   <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
-                    Chỉ cho phép tài khoản có đuôi email này đăng nhập vào hệ thống trường.
+                    Để trống để cho phép mọi tên miền email hợp lệ, hoặc nhập danh sách tên miền cho phép (cách nhau bởi dấu phẩy).
                   </p>
                 </div>
 

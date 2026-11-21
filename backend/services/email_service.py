@@ -27,23 +27,22 @@ class EmailService:
         """Thực thi kết nối SMTP và gửi Email HTML (có firewall kiểm soát tên miền)"""
         # 1. Ràng buộc tên miền theo Cấu hình Hệ thống & Nhật ký (Inbound/Outbound Guard)
         try:
-            from services.system_settings_manager import SystemSettingsManager
+            from services.system_settings_manager import SystemSettingsManager, is_email_domain_allowed
             sys_settings = SystemSettingsManager.get_settings()
-            raw_domain = (sys_settings.allowed_email_domain or "").strip().lower()
-            if raw_domain:
-                allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
-                if not to_email.strip().lower().endswith(allowed_domain):
+            allowed_setting = (sys_settings.allowed_email_domain or "").strip()
+            if allowed_setting:
+                if not is_email_domain_allowed(to_email, allowed_setting):
                     logger.warning(
                         f"🚫 [EMAIL FIREWALL BLOCKED] Từ chối gửi thư tới '{to_email}': "
-                        f"Tên miền không thuộc cấu hình cho phép trong Hệ Thống ({allowed_domain})"
+                        f"Tên miền không thuộc cấu hình cho phép trong Hệ Thống ({allowed_setting})"
                     )
                     try:
                         from database.system_log_db import create_system_log
                         create_system_log(
                             log_level="warning",
                             module="EMAIL_FIREWALL",
-                            message=f"Chặn gửi email tới '{to_email}': Tên miền không thuộc cấu hình cho phép ({allowed_domain})",
-                            extra_data={"to_email": to_email, "subject": subject, "allowed_domain": allowed_domain}
+                            message=f"Chặn gửi email tới '{to_email}': Tên miền không thuộc cấu hình cho phép ({allowed_setting})",
+                            extra_data={"to_email": to_email, "subject": subject, "allowed_domain": allowed_setting}
                         )
                     except Exception:
                         pass

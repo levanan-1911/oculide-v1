@@ -7,7 +7,10 @@ class SystemSettingsModel(BaseModel):
     max_livekit_bitrate_kbps: int = Field(350, ge=100, le=1500, description="Băng thông Video tối đa mỗi luồng (kbps)")
     auto_cleanup_drafts_days: int = Field(30, ge=1, le=365, description="Số ngày tự động dọn dẹp bản nháp code")
     audit_log_retention_days: int = Field(90, ge=15, le=365, description="Số ngày lưu trữ nhật ký kiểm toán")
-    allowed_email_domain: str = Field("@gmail.com", description="Tên miền email trường cho phép")
+    allowed_email_domain: str = Field(
+        "",
+        description="Tên miền email cho phép do Admin cấu hình (để trống nếu cho phép mọi domain hợp lệ, hoặc nhập danh sách cách nhau bởi dấu phẩy e.g. @school.edu.vn, @dtu.edu.vn)"
+    )
     max_login_attempts: int = Field(5, ge=3, le=20, description="Số lần đăng nhập sai tối đa trước khi khóa")
     jwt_token_expiry_minutes: int = Field(30, ge=15, le=1440, description="Thời hạn token phiên làm việc (phút)")
     maintenance_mode: bool = Field(False, description="Chế độ bảo trì hệ thống")

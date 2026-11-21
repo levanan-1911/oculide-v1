@@ -103,31 +103,30 @@ async def register(
     username = (user_data.username or clean_email.split("@")[0]).strip().lower()
 
     # Kiểm tra ràng buộc tên miền trường theo Cấu hình Hệ thống & Nhật ký
-    from services.system_settings_manager import SystemSettingsManager
+    from services.system_settings_manager import SystemSettingsManager, is_email_domain_allowed
     sys_settings = SystemSettingsManager.get_settings()
-    raw_domain = (sys_settings.allowed_email_domain or "").strip().lower()
-    if raw_domain:
-        allowed_domain = raw_domain if raw_domain.startswith("@") else f"@{raw_domain}"
-        if not clean_email.endswith(allowed_domain):
+    allowed_setting = (sys_settings.allowed_email_domain or "").strip()
+    if allowed_setting:
+        if not is_email_domain_allowed(clean_email, allowed_setting):
             try:
                 from database.system_log_db import create_system_log
                 client_ip = extract_client_ip(request)
                 create_system_log(
                     log_level="warning",
                     module="AUTH_REGISTER",
-                    message=f"Từ chối đăng ký tài khoản với email '{clean_email}': Tên miền không thuộc cấu hình hệ thống cho phép ({allowed_domain})",
+                    message=f"Từ chối đăng ký tài khoản với email '{clean_email}': Tên miền không thuộc cấu hình hệ thống cho phép ({allowed_setting})",
                     ip_address=client_ip,
                     extra_data={
                         "attempted_email": clean_email,
                         "username": username,
-                        "allowed_domain": allowed_domain
+                        "allowed_domain": allowed_setting
                     }
                 )
             except Exception:
                 pass
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Hệ thống chỉ chấp nhận đăng ký tài khoản bằng email thuộc tên miền trường '{sys_settings.allowed_email_domain}'"
+                detail=f"Hệ thống chỉ chấp nhận đăng ký tài khoản bằng email thuộc tên miền do Quản trị viên cấu hình '{allowed_setting}'"
             )
 
     if get_user_by_username(username):

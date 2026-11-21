@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -19,6 +20,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "auto_cleanup_drafts_days": 30,
     "audit_log_retention_days": 90,
     "allowed_email_domain": "@gmail.com",
+    "allowed_email_domain": "",
     "max_login_attempts": 5,
     "jwt_token_expiry_minutes": 30,
     "maintenance_mode": False,
@@ -32,6 +34,32 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "updated_at": None,
     "updated_by": None
 }
+
+def is_email_domain_allowed(email: str, allowed_setting: Optional[str]) -> bool:
+    """
+    Kiểm tra email có thuộc tên miền cho phép hay không.
+    - Nếu allowed_setting rỗng/None/chỉ khoảng trắng: Cho phép mọi email hợp lệ (không cấu hình sẵn mặc định).
+    - Nếu allowed_setting có giá trị (hỗ trợ nhiều domain cách nhau bởi dấu phẩy, chấm phẩy hoặc khoảng trắng, VD: '@school.edu.vn, @dtu.edu.vn, @gmail.com'):
+      Kiểm tra email xem có kết thúc bằng bất kỳ domain nào trong danh sách không.
+    """
+    clean_email = (email or "").strip().lower()
+    if not clean_email or "@" not in clean_email:
+        return False
+
+    clean_setting = (allowed_setting or "").strip()
+    if not clean_setting:
+        return True
+
+    domains = [d.strip().lower() for d in re.split(r"[,;\s]+", clean_setting) if d.strip()]
+    if not domains:
+        return True
+
+    for d in domains:
+        expected = d if d.startswith("@") else f"@{d}"
+        if clean_email.endswith(expected):
+            return True
+
+    return False
 
 class SystemSettingsManager:
     _cached_settings: Optional[SystemSettingsModel] = None

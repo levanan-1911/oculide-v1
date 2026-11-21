@@ -1309,9 +1309,15 @@ export default function InstructorCreateRoomView() {
                   <div>
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                       <Camera className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" />
-                      Bật Camera
+                      {roomType === 'lab' ? 'Bắt buộc bật Camera trong phòng Lab' : 'Bắt buộc bật Camera'}
                     </span>
-                    <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">Bắt buộc webcam sinh viên trước khi vào làm bài</p>
+                    <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">
+                      {roomType === 'lab'
+                        ? (requireCamera
+                            ? 'Bắt buộc sinh viên bật webcam suốt buổi thực hành'
+                            : 'Cho phép sinh viên tắt camera trong phòng Lab (nhưng vẫn phải kiểm tra ở bước Check-in)')
+                        : 'Bắt buộc webcam sinh viên trước khi vào làm bài'}
+                    </p>
                   </div>
                 </label>
 

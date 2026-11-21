@@ -61,6 +61,7 @@ function InstructorMonitoringContent() {
     session,
     setSessionType,
     setRequireCamera,
+  CameraOff,
     violations,
     announcements,
     extendSession,
@@ -750,9 +751,32 @@ function InstructorMonitoringContent() {
               const hasAlert = student.status === 'warning' || student.status === 'critical';
               const isSubmitted = student.status === 'submitted';
               const pKey = (student as any).userId ? `user_${(student as any).userId}` : '';
-              const pTracks = pKey && participantTracks ? participantTracks[pKey] : undefined;
-              const camTrack = pTracks?.camera || (pKey ? remoteTracks[pKey] : undefined);
+              const altKey = student.id ? `user_${student.id}` : '';
+              const directKey = (student as any).userId ? String((student as any).userId) : '';
+              const studentIdKey = student.id ? String(student.id) : '';
+
+              const pTracks =
+                (pKey && participantTracks[pKey]) ||
+                (altKey && participantTracks[altKey]) ||
+                (directKey && participantTracks[directKey]) ||
+                (studentIdKey && participantTracks[studentIdKey]) ||
+                (Object.keys(participantTracks).length === 1 && filteredCameras.length === 1
+                  ? Object.values(participantTracks)[0]
+                  : undefined);
+
+              const camTrack =
+                pTracks?.camera ||
+                (pKey ? remoteTracks[pKey] : undefined) ||
+                (altKey ? remoteTracks[altKey] : undefined) ||
+                (directKey ? remoteTracks[directKey] : undefined) ||
+                (studentIdKey ? remoteTracks[studentIdKey] : undefined) ||
+                (Object.keys(remoteTracks).length === 1 && filteredCameras.length === 1
+                  ? Object.values(remoteTracks)[0]
+                  : undefined);
+
               const screenTrack = pTracks?.screen;
+              const isLabRoom = session.type === 'LAB' || activeRoomSession?.type === 'lab';
+              const isCamAllowedOff = isLabRoom && (activeRoomSession?.proctoringConfig as any)?.requireCamera === false;
 
               return (
                 <div
@@ -810,12 +834,26 @@ function InstructorMonitoringContent() {
                     ) : (
                       /* Chưa có luồng video: hiển thị thông báo trạng thái kết nối rõ ràng */
                       <div className="flex flex-col items-center justify-center gap-2 p-4 text-center text-slate-400">
-                        <Video className="h-8 w-8 text-slate-600 animate-pulse" />
-                        <span className="text-[11px] font-mono text-slate-400">
-                          {student.statusText === 'Đang làm bài (Live)'
-                            ? 'Đang chờ tín hiệu Camera/Màn hình...'
-                            : 'Sinh viên chưa vào phòng thi'}
-                        </span>
+                        {isCamAllowedOff ? (
+                          <>
+                            <CameraOff className="h-8 w-8 text-slate-500" />
+                            <span className="text-[11px] font-mono text-slate-400">
+                              Camera tắt (Theo cấu hình phòng Lab)
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              Đang chờ luồng chia sẻ màn hình...
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Video className="h-8 w-8 text-slate-600 animate-pulse" />
+                            <span className="text-[11px] font-mono text-slate-400">
+                              {student.statusText.includes('Live')
+                                ? 'Đang chờ tín hiệu Camera / Màn hình...'
+                                : 'Sinh viên chưa vào phòng'}
+                            </span>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -1212,16 +1250,39 @@ function InstructorMonitoringContent() {
         student={focusedStudent}
         sessionType={session.type}
         requireCamera={session.requireCamera}
-        videoTrack={
-          focusedStudent?.userId
-            ? participantTracks[`user_${focusedStudent.userId}`]?.camera || remoteTracks[`user_${focusedStudent.userId}`]
-            : undefined
-        }
-        screenTrack={
-          focusedStudent?.userId
-            ? participantTracks[`user_${focusedStudent.userId}`]?.screen
-            : undefined
-        }
+        videoTrack={(() => {
+          if (!focusedStudent) return undefined;
+          const k1 = focusedStudent.userId ? `user_${focusedStudent.userId}` : '';
+          const k2 = focusedStudent.id ? `user_${focusedStudent.id}` : '';
+          const k3 = focusedStudent.userId ? String(focusedStudent.userId) : '';
+          const k4 = focusedStudent.id ? String(focusedStudent.id) : '';
+          return (
+            (k1 && participantTracks[k1]?.camera) ||
+            (k2 && participantTracks[k2]?.camera) ||
+            (k3 && participantTracks[k3]?.camera) ||
+            (k4 && participantTracks[k4]?.camera) ||
+            (k1 && remoteTracks[k1]) ||
+            (k2 && remoteTracks[k2]) ||
+            (k3 && remoteTracks[k3]) ||
+            (k4 && remoteTracks[k4]) ||
+            (Object.keys(participantTracks).length === 1 ? Object.values(participantTracks)[0]?.camera : undefined) ||
+            (Object.keys(remoteTracks).length === 1 ? Object.values(remoteTracks)[0] : undefined)
+          );
+        })()}
+        screenTrack={(() => {
+          if (!focusedStudent) return undefined;
+          const k1 = focusedStudent.userId ? `user_${focusedStudent.userId}` : '';
+          const k2 = focusedStudent.id ? `user_${focusedStudent.id}` : '';
+          const k3 = focusedStudent.userId ? String(focusedStudent.userId) : '';
+          const k4 = focusedStudent.id ? String(focusedStudent.id) : '';
+          return (
+            (k1 && participantTracks[k1]?.screen) ||
+            (k2 && participantTracks[k2]?.screen) ||
+            (k3 && participantTracks[k3]?.screen) ||
+            (k4 && participantTracks[k4]?.screen) ||
+            (Object.keys(participantTracks).length === 1 ? Object.values(participantTracks)[0]?.screen : undefined)
+          );
+        })()}
         onSendNotice={(studentId, studentName) => {
           handleOpenIndividualNotice(studentId, studentName);
         }}

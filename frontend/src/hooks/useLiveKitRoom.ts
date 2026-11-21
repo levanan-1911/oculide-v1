@@ -74,6 +74,27 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
     }
   }, []);
 
+  const toggleCamera = useCallback(async (enable?: boolean): Promise<boolean> => {
+    if (!roomRef.current) return false;
+    try {
+      const target = enable !== undefined ? enable : !localVideoTrack;
+      await roomRef.current.localParticipant.setCameraEnabled(target);
+      if (target) {
+        const { Track } = await import('livekit-client');
+        const pub = roomRef.current.localParticipant.getTrackPublication(Track.Source.Camera);
+        if (pub?.videoTrack) {
+          setLocalVideoTrack(pub.videoTrack as LocalVideoTrack);
+        }
+      } else {
+        setLocalVideoTrack(null);
+      }
+      return target;
+    } catch (err) {
+      console.warn('Lỗi khi bật/tắt camera qua LiveKit:', err);
+      return false;
+    }
+  }, [localVideoTrack]);
+
   useEffect(() => {
     if (!enabled || !roomId) {
       return;
@@ -263,6 +284,7 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
     isScreenSharing,
     enableScreenShare,
     disableScreenShare,
+    toggleCamera,
     remoteTracks,
     participantTracks,
     room: roomRef.current,

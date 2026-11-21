@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Camera,
+  CameraOff,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -156,6 +157,9 @@ export default function ExamWorkspacePage() {
   const [examState, setExamState] = useState<ExamState>("doing");
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
   const [examRoomType, setExamRoomType] = useState<'lab' | 'exam'>('lab');
+  const [proctoringConfig, setProctoringConfig] = useState<any>(null);
+  const isLabSession = examRoomType === "lab";
+  const isCameraOffAllowed = isLabSession && proctoringConfig?.requireCamera === false;
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [examData, setExamData] = useState<ExamData>(mockExamData);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -201,6 +205,8 @@ export default function ExamWorkspacePage() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed.roomId) setActiveRoomId(Number(parsed.roomId));
+        if (parsed.roomType) setExamRoomType(parsed.roomType === 'lab' ? 'lab' : 'exam');
+        if (parsed.proctoringConfig) setProctoringConfig(parsed.proctoringConfig);
       }
     } catch {
       // ignore
@@ -302,6 +308,7 @@ export default function ExamWorkspacePage() {
     isScreenSharing,
     enableScreenShare,
     disableScreenShare,
+    toggleCamera,
   } = useLiveKitRoom({
     roomId: activeRoomId,
     mode: "publish",
@@ -335,42 +342,28 @@ export default function ExamWorkspacePage() {
     }
   }, [localVideoTrack, localStream, isCameraExpanded]);
 
-  // Chỉ kích hoạt getUserMedia local nếu LiveKit chưa có track hoặc không hoạt động
-  useEffect(() => {
-    if (examState !== "doing" || localVideoTrack) return;
-    let stream: MediaStream | null = null;
-    let cancelled = false;
+  // Tự động yêu cầu chia sẻ màn hình khi sinh viên vào phòng thi / phòng thực hành (Lab)
+  const [hasPromptedScreenShare, setHasPromptedScreenShare] = useState(false);
+  const [showScreenShareModal, setShowScreenShareModal] = useState(false);
 
-    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false,
-      })
-      .then((s) => {
-        if (cancelled) {
-          s.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        stream = s;
-        setLocalStream(s);
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = s;
-          localVideoRef.current.play().catch(() => {});
-        }
-      })
-      .catch((err) => {
-        console.warn("Không thể mở webcam trực tiếp:", err);
-      });
-    }
+  useEffect(() => {
+    if (livekitState !== "connected" || isScreenSharing || hasPromptedScreenShare) return;
+
+    let isSubscribed = true;
+    setHasPromptedScreenShare(true);
+
+    enableScreenShare().then((success) => {
+      if (!isSubscribed) return;
+      if (!success) {
+        // Cần tương tác người dùng (user activation) -> Mở modal để sinh viên bấm 1 click
+        setShowScreenShareModal(true);
+      }
+    });
 
     return () => {
-      cancelled = true;
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
-      }
-      setLocalStream(null);
+      isSubscribed = false;
     };
-  }, [examState, localVideoTrack]);
+  }, [livekitState, isScreenSharing, hasPromptedScreenShare, enableScreenShare]);
 
   // Cảnh báo AI & Đếm Vi Phạm
   const [pasteCount, setPasteCount] = useState(0);
@@ -1024,6 +1017,22 @@ export default function ExamWorkspacePage() {
                   </button>
                 )}
 
+                {isCameraOffAllowed && (
+                  <button
+                    type="button"
+                    onClick={() => toggleCamera()}
+                    title={localVideoTrack ? "Tắt Camera (Được phép trong phòng Lab)" : "Bật Camera"}
+                    className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                      localVideoTrack
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
+                        : "border-slate-300 bg-slate-100 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+                    }`}
+                  >
+                    {localVideoTrack ? <Camera size={12} /> : <CameraOff size={12} />}
+                    <span>{localVideoTrack ? "Cam Bật" : "Cam Tắt"}</span>
+                  </button>
+                )}
+
                 <div className="rounded-md bg-slate-50 border border-slate-300 px-2.5 py-1 text-[10px] font-mono text-[#5a565e] dark:bg-white/5 dark:border-white/10 dark:text-slate-300 flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
                   <span>AI Proctoring</span>
@@ -1080,18 +1089,22 @@ export default function ExamWorkspacePage() {
                         muted
                         className="h-full w-full object-cover"
                       />
-                    ) : localStream ? (
-                      <video
-                        ref={localVideoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="h-full w-full object-cover"
-                      />
+                    ) : isCameraOffAllowed ? (
+                      <div className="flex flex-col items-center justify-center gap-1.5 text-slate-400 p-2 text-center bg-stone-900/90 h-full w-full">
+                        <CameraOff size={20} className="text-slate-500" />
+                        <span className="text-[9px] font-mono">Camera đang tắt (Được phép trong Lab)</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleCamera(true)}
+                          className="mt-1 rounded bg-stone-800 px-2 py-0.5 text-[9px] font-bold text-white hover:bg-stone-700 transition cursor-pointer"
+                        >
+                          Bật lại Cam
+                        </button>
+                      </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center gap-1 text-slate-500">
                         <Camera size={22} className="animate-pulse" />
-                        <span className="text-[9px] font-mono">Đang kích hoạt cam...</span>
+                        <span className="text-[9px] font-mono">Đang kết nối camera...</span>
                       </div>
                     )}
 
@@ -1485,6 +1498,39 @@ export default function ExamWorkspacePage() {
             </div>
           </div>
         </main>
+      )}
+
+      {/* MODAL YÊU CẦU CHIA SẺ MÀN HÌNH BẮT BUỘC KHI VÀO PHÒNG */}
+      {showScreenShareModal && !isScreenSharing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-md border border-slate-300 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-neutral-900 space-y-4 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-800 dark:bg-white/10 dark:text-white border border-slate-200 dark:border-white/10">
+              <Monitor size={28} />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-serif text-lg font-bold text-slate-900 dark:text-white">
+                Yêu Cầu Chia Sẻ Màn Hình
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Theo quy chế phòng {examRoomType === 'exam' ? 'thi trực tuyến' : 'thực hành (Lab)'}, sinh viên cần chia sẻ toàn bộ màn hình để Giảng viên giám sát tiến độ làm bài.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                const ok = await enableScreenShare();
+                if (ok) setShowScreenShareModal(false);
+              }}
+              className="system-primary-action w-full flex items-center justify-center gap-2 rounded-md bg-slate-900 py-3 font-serif text-xs sm:text-sm font-bold text-white shadow-2xs hover:bg-slate-800 transition cursor-pointer"
+            >
+              <Monitor size={16} />
+              <span>BẮT ĐẦU CHIA SẺ TOÀN MÀN HÌNH</span>
+            </button>
+            <p className="font-mono text-[11px] text-slate-400">
+              * Vui lòng chọn &quot;Toàn bộ màn hình&quot; (Entire Screen) trong cửa sổ trình duyệt vừa hiện lên.
+            </p>
+          </div>
+        </div>
       )}
 
     </div>

@@ -152,6 +152,12 @@ export default function StudentDeviceCheckPage() {
   const [isSavingCheck, setIsSavingCheck] = useState(false);
 
   const handleProceedToWaitingRoom = async () => {
+    // Giải phóng hoàn toàn luồng camera phần cứng trước khi chuyển trang
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
     if (sessionInfo?.roomId) {
       setIsSavingCheck(true);
       try {
@@ -233,20 +239,29 @@ export default function StudentDeviceCheckPage() {
             </span>
           </div>
 
-          {/* Khung Xem trước Camera */}
+          {/* Khung Xem trước Camera thật (Live Feed) */}
           <div className="relative aspect-video w-full overflow-hidden rounded-md border border-stone-800 bg-stone-950 flex items-center justify-center">
-            {/* Luồng Video Webcam thật */}
+            {/* Luồng Video Webcam thật - hiển thị trực tiếp và rõ nét 100% */}
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className={`absolute inset-0 h-full w-full object-cover z-0 ${camStatus === 'success' ? 'opacity-100' : 'opacity-0'}`}
+              className={`absolute inset-0 h-full w-full object-cover z-0 transition-opacity duration-300 ${camStatus === 'success' ? 'opacity-100' : 'opacity-0'}`}
             />
+
+            {/* Trạng thái đang kết nối Webcam */}
+            {camStatus === "testing" && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-black/80 text-center space-y-3">
+                <LoaderCircle className="h-10 w-10 text-cyan-400 animate-spin" />
+                <p className="text-xs font-mono text-stone-200">Đang kích hoạt luồng camera máy tính...</p>
+                <p className="text-[11px] text-stone-400">Vui lòng bấm &quot;Cho phép&quot; (Allow) nếu trình duyệt hỏi quyền.</p>
+              </div>
+            )}
 
             {/* Thông báo lỗi khi không thể mở Webcam */}
             {camStatus === "error" && (
-              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-black/90 text-center space-y-3">
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-black/95 text-center space-y-3">
                 <AlertCircle className="h-12 w-12 text-rose-500" />
                 <p className="text-xs text-rose-200 font-medium max-w-md leading-relaxed">
                   {cameraError || "Không thể truy cập Webcam. Vui lòng đóng các ứng dụng đang dùng camera (Meet, Zoom...) và cấp quyền."}
@@ -254,43 +269,62 @@ export default function StudentDeviceCheckPage() {
                 <button
                   type="button"
                   onClick={startCamera}
-                  className="rounded-md bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500 transition cursor-pointer flex items-center gap-1.5"
+                  className="rounded-md bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500 transition cursor-pointer flex items-center gap-1.5 shadow-md"
                 >
                   <RefreshCw size={14} /> Thử lại kết nối Camera
                 </button>
               </div>
             )}
 
-            {/* Lớp phủ AI Scanning khi đối soát khuôn mặt */}
-            {camStatus !== "error" && (
-              <div className={`relative flex flex-col items-center justify-center text-center p-6 space-y-3 z-10 ${camStatus === 'success' ? 'bg-black/40 backdrop-blur-[2px] rounded-xl' : ''}`}>
-                <div className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-dashed border-[#e5a9b9]/80 bg-slate-900/30">
-                  <ScanFace size={48} className="text-[#f0c2cf]" />
+            {/* Khung ngắm khuôn mặt AI HUD (Viewfinder mỏng trong suốt, KHÔNG che mặt) */}
+            {camStatus === "success" && (
+              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10">
+                <div
+                  className={`relative h-48 w-44 sm:h-56 sm:w-52 rounded-3xl border-2 transition-all duration-300 ${
+                    faceVerified
+                      ? 'border-emerald-400 bg-emerald-500/10 shadow-[0_0_20px_rgba(52,211,153,0.3)]'
+                      : isVerifyingFace
+                      ? 'border-cyan-400 bg-cyan-500/10 shadow-[0_0_20px_rgba(34,211,238,0.3)]'
+                      : 'border-dashed border-white/60 bg-black/5'
+                  }`}
+                >
+                  {/* Đường laser quét khuôn mặt khi bấm xác thực */}
+                  {isVerifyingFace && (
+                    <div className="absolute inset-x-2 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#22d3ee] animate-pulse" />
+                  )}
+
+                  {/* 4 góc ngắm camera HUD */}
+                  <span className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-2 border-l-2 border-white rounded-tl" />
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 border-t-2 border-r-2 border-white rounded-tr" />
+                  <span className="absolute -bottom-1 -left-1 w-3.5 h-3.5 border-b-2 border-l-2 border-white rounded-bl" />
+                  <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 border-b-2 border-r-2 border-white rounded-br" />
                 </div>
 
-                {isVerifyingFace ? (
-                  <p className="text-xs font-mono font-bold text-[#f0c2cf] flex items-center gap-1.5">
-                    <LoaderCircle size={14} className="animate-spin" />
-                    Đang đối soát AI Face ID...
-                  </p>
-                ) : faceVerified ? (
-                  <div className="space-y-1">
-                    <p className="text-xs font-bold text-emerald-400 flex items-center justify-center gap-1">
-                      <CheckCircle2 size={16} /> Khuôn mặt hợp lệ ({faceScore}%)
-                    </p>
-                    <p className="text-[11px] text-stone-300">Khớp dữ liệu thẻ sinh viên Oculide</p>
-                  </div>
-                ) : (
-                  <p className="text-xs text-stone-200">
-                    Nhấn nút bên dưới để tiến hành quét sinh trắc học khuôn mặt
-                  </p>
-                )}
+                {/* Badge trạng thái AI Face ID */}
+                <div className="mt-3 px-3 py-1 rounded-full bg-black/75 backdrop-blur-xs text-xs font-mono font-bold text-white border border-white/20">
+                  {isVerifyingFace ? (
+                    <span className="text-cyan-300 flex items-center gap-1.5">
+                      <LoaderCircle size={13} className="animate-spin" /> Đang đối soát AI Face ID...
+                    </span>
+                  ) : faceVerified ? (
+                    <span className="text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 size={13} /> Khuôn mặt hợp lệ ({faceScore}%) - Đã khớp thẻ
+                    </span>
+                  ) : (
+                    <span className="text-stone-300">
+                      Giữ khuôn mặt ở giữa khung hình và nhấn &quot;Xác thực khuôn mặt AI&quot;
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 
             {/* HUD Cài đặt thông số AI */}
             <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[11px] font-mono text-stone-200 bg-black/80 px-3 py-1.5 rounded-md border border-stone-800 z-10">
-              <span>Độ phân giải: 1280x720</span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                Webcam HD 30 FPS
+              </span>
               <span>Độ sáng: Đạt chuẩn</span>
             </div>
           </div>

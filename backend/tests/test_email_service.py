@@ -1,14 +1,19 @@
 import os
 import sys
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath("backend"))
 
 from services.email_service import EmailService
+from services.system_settings_manager import SystemSettingsManager
+from schemas.system_management import SystemSettingsModel
 from fastapi.testclient import TestClient
 from main import app
 
 def test_email_service_mock():
-    with patch.object(EmailService, "_is_smtp_configured", return_value=False):
+    mock_settings = SystemSettingsModel(allowed_email_domain="@school.edu.vn")
+    with patch.object(SystemSettingsManager, "get_settings", return_value=mock_settings), \
+         patch.object(EmailService, "_is_smtp_configured", return_value=False):
         res1 = EmailService.send_account_credentials_email(
             to_email="student01@school.edu.vn",
             username="sv001",
@@ -25,8 +30,6 @@ def test_email_service_mock():
             full_name="TS. Trần Văn B"
         )
         assert res2 is True
-
-from unittest.mock import patch
 
 def test_api_forgot_password_with_background_task():
     client = TestClient(app)
@@ -63,7 +66,9 @@ def test_api_register_with_email_notification():
         "created_at": "2026-11-08T00:00:00",
         "updated_at": "2026-11-08T00:00:00"
     }
-    with patch("api.auth.get_user_by_username", return_value=None), \
+    mock_settings = SystemSettingsModel(allowed_email_domain="@school.edu.vn")
+    with patch("services.system_settings_manager.SystemSettingsManager.get_settings", return_value=mock_settings), \
+         patch("api.auth.get_user_by_username", return_value=None), \
          patch("api.auth.get_user_by_email", return_value=None), \
          patch("api.auth.create_user", return_value=mock_new_user), \
          patch("services.email_service.EmailService.send_account_credentials_email", return_value=True) as mock_send_email:
@@ -90,8 +95,10 @@ def test_api_batch_import_with_email_notification():
     client = TestClient(app)
     mock_admin_user = {"user_id": 1, "username": "admin", "role": "admin"}
     app.dependency_overrides[admin_required] = lambda: mock_admin_user
+    mock_settings = SystemSettingsModel(allowed_email_domain="@school.edu.vn")
     try:
-        with patch("api.admin.get_user_by_username", return_value=None), \
+        with patch("services.system_settings_manager.SystemSettingsManager.get_settings", return_value=mock_settings), \
+             patch("api.admin.get_user_by_username", return_value=None), \
              patch("api.admin.get_user_by_email", return_value=None), \
              patch("api.admin.create_user", return_value={"user_id": 99}), \
              patch("services.email_service.EmailService.send_account_credentials_email", return_value=True) as mock_send_email:

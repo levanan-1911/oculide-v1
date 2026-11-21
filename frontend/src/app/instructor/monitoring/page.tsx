@@ -93,9 +93,9 @@ function InstructorMonitoringContent() {
     };
   }, []);
 
-  const handleEndLabEarly = async () => {
+  const handleConfirmEndLab = async () => {
     if (!realRoomId) return;
-    if (!window.confirm('Giảng viên có chắc chắn muốn kết thúc sớm ca thực hành này?')) return;
+    setIsEndingLab(true);
     try {
       await fetchWithAuth(`/api/v1/rooms/${realRoomId}/status`, {
         method: 'PATCH',
@@ -116,10 +116,12 @@ function InstructorMonitoringContent() {
         updateStorageKey('oculide_instructor_rooms');
         window.dispatchEvent(new Event('storage'));
       } catch {}
-      alert('Đã kết thúc sớm ca thực hành!');
+      setIsEndLabModalOpen(false);
       router.push('/instructor/classes');
     } catch (err: any) {
       alert(err?.message || 'Không thể kết thúc phòng');
+    } finally {
+      setIsEndingLab(false);
     }
   };
 
@@ -234,6 +236,8 @@ function InstructorMonitoringContent() {
 
   // Modals state
   const [isExtendModalOpen, setIsExtendModalOpen] = useState(false);
+  const [isEndLabModalOpen, setIsEndLabModalOpen] = useState(false);
+  const [isEndingLab, setIsEndingLab] = useState(false);
   const [isSendNoticeModalOpen, setIsSendNoticeModalOpen] = useState(false);
   const [targetedStudent, setTargetedStudent] = useState<{ id: string; name: string } | null>(null);
 
@@ -721,7 +725,7 @@ function InstructorMonitoringContent() {
             {session.type === 'LAB' ? (
               <button
                 type="button"
-                onClick={handleEndLabEarly}
+                onClick={() => setIsEndLabModalOpen(true)}
                 className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-900 dark:text-stone-200 transition cursor-pointer shadow-2xs"
                 title="Giảng viên kết thúc sớm ca thực hành cho sinh viên"
               >
@@ -1411,6 +1415,62 @@ function InstructorMonitoringContent() {
         }
         onSend={handleSendNotice}
       />
+
+      {/* ── MODAL DIALOG: XÁC NHẬN KẾT THÚC SỚM CA THỰC HÀNH ── */}
+      {isEndLabModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-md border border-slate-300 bg-white p-6 shadow-2xl space-y-4 dark:border-white/10 dark:bg-neutral-900">
+            <div className="flex items-start gap-3.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Xác Nhận Kết Thúc Sớm Ca Thực Hành?
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Bạn có chắc chắn muốn kết thúc ca thực hành <strong className="font-mono text-slate-900 dark:text-white">{activeRoomSession?.id || roomIdParam}</strong> ngay bây giờ không?
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1.5 dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-400">
+              <p>• Phiên giám sát trực tiếp sẽ đóng lại.</p>
+              <p>• Sinh viên trong phòng sẽ nhận thông báo giải tán phòng.</p>
+              <p>• Lớp học phần sẽ được giải phóng để bạn có thể tạo ca học mới.</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200 dark:border-white/10">
+              <button
+                type="button"
+                disabled={isEndingLab}
+                onClick={() => setIsEndLabModalOpen(false)}
+                className="h-9 rounded-md border border-slate-300 bg-white px-4 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-300 dark:hover:bg-white/10 disabled:opacity-50"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isEndingLab}
+                onClick={handleConfirmEndLab}
+                className="system-primary-action h-9 inline-flex items-center gap-2 rounded-md bg-rose-700 hover:bg-rose-800 px-4 text-xs font-bold text-white shadow-2xs transition cursor-pointer disabled:opacity-50"
+              >
+                {isEndingLab ? (
+                  <>
+                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    <span>Đang kết thúc...</span>
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="h-3.5 w-3.5" />
+                    <span>Xác Nhận Kết Thúc</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

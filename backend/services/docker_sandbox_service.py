@@ -297,12 +297,14 @@ class DockerSandboxService:
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
                 is_success = (run_res.returncode == 0)
 
+                safe_stdout = (run_res.stdout or "")[:65536]
+                safe_stderr = (run_res.stderr or "")[:65536]
                 return {
                     "status": "AC" if is_success else "RTE",
                     "is_passed": is_success,
-                    "stdout": run_res.stdout,
-                    "stderr": run_res.stderr,
-                    "error": run_res.stderr if not is_success else None,
+                    "stdout": safe_stdout,
+                    "stderr": safe_stderr,
+                    "error": safe_stderr if not is_success else None,
                     "execution_ms": round(elapsed_ms, 2),
                     "memory_mb": 32.0
                 }

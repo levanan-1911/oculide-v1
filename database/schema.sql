@@ -670,7 +670,7 @@ GO
 -- Password hash for 'admin123': $2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6
 IF NOT EXISTS (SELECT 1 FROM Users WHERE username = 'admin')
     INSERT INTO Users (username, email, password_hash, full_name, identifier_code, department, role_id, is_active, must_change_password, email_status)
-    VALUES ('admin', 'admin@school.edu.vn', '$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6', N'Quản Trị Viên Hệ Thống', 'ADM001', N'Phòng CNTT & Đào Tạo', 1, 1, 0, 'sent');
+    VALUES ('admin', 'admin@dtu.edu.vn', '$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6', N'Quản Trị Viên Hệ Thống', 'ADM001', N'Phòng CNTT & Đào Tạo', 1, 1, 0, 'sent');
 GO
 
 -- Standard Semesters (Chỉ lưu kỳ học hiện tại thời gian thực; các kỳ tiếp theo do hệ thống tự động tính khi đến hạn)

@@ -3,7 +3,7 @@
 # Script khoi tao CSDL ExamSystem cho Oculide
 # ==============================================================================
 
-param(s
+param(
     [string]$Server = ".",
     [string]$User = "sa",
     [string]$Password = "YourStrong@Passw0rd",

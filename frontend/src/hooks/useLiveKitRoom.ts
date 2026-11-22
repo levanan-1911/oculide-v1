@@ -51,8 +51,15 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
       });
       const pub = roomRef.current.localParticipant.getTrackPublication(Track.Source.ScreenShare);
       if (pub?.videoTrack) {
-        setLocalScreenTrack(pub.videoTrack as LocalVideoTrack);
+        const vTrack = pub.videoTrack as LocalVideoTrack;
+        setLocalScreenTrack(vTrack);
         setIsScreenSharing(true);
+        if (vTrack.mediaStreamTrack) {
+          vTrack.mediaStreamTrack.onended = () => {
+            setIsScreenSharing(false);
+            setLocalScreenTrack(null);
+          };
+        }
         return true;
       }
       setIsScreenSharing(true);
@@ -180,14 +187,23 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
           });
         };
 
+        const handleLocalTrackUnpublished = (publication: any) => {
+          if (publication.source === Track.Source.ScreenShare) {
+            setIsScreenSharing(false);
+            setLocalScreenTrack(null);
+          }
+        };
+
         room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
         room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
         room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+        room.on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
 
         cleanupRoom = () => {
           room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
           room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
           room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+          room.off(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
           room.disconnect();
         };
 

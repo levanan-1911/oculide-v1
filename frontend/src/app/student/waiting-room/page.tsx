@@ -82,13 +82,45 @@ export default function StudentWaitingRoomPage() {
       if (rawUser) {
         const u = JSON.parse(rawUser);
         setStudentProfile({
-          name: u.name || u.fullName || u.full_name || "Sinh viên",
-          studentId: u.studentId || u.student_id || u.userCode || u.ma_dinh_danh || "---",
+          name: u.full_name || u.fullName || u.name || "Sinh viên",
+          studentId:
+            u.student_id ||
+            u.identifier_code ||
+            u.ma_dinh_danh ||
+            u.student_code ||
+            u.studentId ||
+            u.userCode ||
+            u.username ||
+            "---",
         });
       }
     } catch {
       // Giữ giá trị mặc định nếu không đọc được
     }
+
+    fetchWithAuth<{
+      user_id: number;
+      username?: string;
+      full_name?: string;
+      student_id?: string;
+      identifier_code?: string;
+      ma_dinh_danh?: string;
+      student_code?: string;
+    }>("/api/v1/auth/me")
+      .then((me) => {
+        if (me) {
+          setStudentProfile((prev) => ({
+            name: me.full_name || prev.name,
+            studentId:
+              me.student_id ||
+              me.identifier_code ||
+              me.ma_dinh_danh ||
+              me.student_code ||
+              prev.studentId,
+          }));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Polling 3 giây/lần kiểm tra trạng thái bắt đầu thi thật từ Giảng viên
@@ -153,15 +185,25 @@ export default function StudentWaitingRoomPage() {
     if ((isLecturerUnlocked || isLateEntry) && !isEntering) {
       const autoTimer = setTimeout(() => {
         setIsEntering(true);
+        if (session?.roomId) {
+          try {
+            localStorage.setItem(`exam_start_timestamp_${session.roomId}`, String(Date.now()));
+          } catch {}
+        }
         router.push("/student/exam-room");
       }, isLateEntry ? 2500 : 1500);
       return () => clearTimeout(autoTimer);
     }
-  }, [isLecturerUnlocked, isLateEntry, isEntering, router]);
+  }, [isLecturerUnlocked, isLateEntry, isEntering, router, session?.roomId]);
 
   // Xử lý Chuyển tiếp vào Màn hình Làm bài thi IDE
   const handleStartExam = () => {
     setIsEntering(true);
+    if (session?.roomId) {
+      try {
+        localStorage.setItem(`exam_start_timestamp_${session.roomId}`, String(Date.now()));
+      } catch {}
+    }
     setTimeout(() => {
       router.push("/student/exam-room");
     }, 500);

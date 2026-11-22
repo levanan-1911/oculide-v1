@@ -90,11 +90,12 @@ function ExamJoinContent() {
         const parsed = JSON.parse(stored);
         setStudentInfo({
           mssv:
+            parsed.student_id ||
+            parsed.identifier_code ||
+            parsed.ma_dinh_danh ||
             parsed.student_code ||
             parsed.studentId ||
-            parsed.student_id ||
             parsed.userCode ||
-            parsed.ma_dinh_danh ||
             parsed.username ||
             "SV001",
           fullName:
@@ -113,11 +114,19 @@ function ExamJoinContent() {
           username?: string;
           full_name?: string;
           email?: string;
+          student_id?: string;
+          identifier_code?: string;
+          ma_dinh_danh?: string;
           student_code?: string;
         }>("/api/v1/auth/me");
         if (isMounted && me) {
           setStudentInfo((prev) => ({
-            mssv: me.student_code || me.username || prev.mssv,
+            mssv:
+              me.student_id ||
+              me.identifier_code ||
+              me.ma_dinh_danh ||
+              me.student_code ||
+              prev.mssv,
             fullName: me.full_name || prev.fullName,
             email: me.email || prev.email,
           }));
@@ -234,20 +243,6 @@ function ExamJoinContent() {
 
     if (selectedExam && typeof window !== "undefined" && localStorage.getItem(`oculide_submitted_room_${selectedExam.id}`) === "true") {
       setError("Bạn đã hoàn thành và nộp bài thi cho phòng này. Không thể vào lại phòng thi theo quy chế khảo thí.");
-      return;
-    }
-
-    const scheduledStart = selectedExam?.rawStartTime
-      ? Date.parse(selectedExam.rawStartTime)
-      : Number.NaN;
-    if (Number.isFinite(scheduledStart) && Date.now() < scheduledStart - 15 * 60 * 1000) {
-      const lobbyOpenAt = new Date(scheduledStart - 15 * 60 * 1000);
-      setError(
-        `Phòng chờ sẽ mở từ ${lobbyOpenAt.toLocaleTimeString("vi-VN", {
-          hour: "2-digit",
-          minute: "2-digit",
-        })} (15 phút trước giờ bắt đầu).`
-      );
       return;
     }
 

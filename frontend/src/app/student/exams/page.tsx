@@ -237,6 +237,20 @@ function ExamJoinContent() {
       return;
     }
 
+    const scheduledStart = selectedExam?.rawStartTime
+      ? Date.parse(selectedExam.rawStartTime)
+      : Number.NaN;
+    if (Number.isFinite(scheduledStart) && Date.now() < scheduledStart - 15 * 60 * 1000) {
+      const lobbyOpenAt = new Date(scheduledStart - 15 * 60 * 1000);
+      setError(
+        `Phòng chờ sẽ mở từ ${lobbyOpenAt.toLocaleTimeString("vi-VN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })} (15 phút trước giờ bắt đầu).`
+      );
+      return;
+    }
+
     setJoining(true);
 
     try {

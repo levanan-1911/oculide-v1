@@ -731,6 +731,17 @@ def enroll_student_to_class(
             if not real_student_id:
                 raise ValueError(f"Không tìm thấy sinh viên với mã định danh hoặc ID '{student_user_id}'.")
 
+        # Kiểm tra vai trò của người dùng: Chỉ cho phép tài khoản Sinh viên (role_id = 3 hoặc role_name = 'student')
+        cursor.execute("""
+            SELECT r.role_name 
+            FROM Users u 
+            JOIN Roles r ON u.role_id = r.role_id 
+            WHERE u.user_id = ?
+        """, (real_student_id,))
+        role_row = cursor.fetchone()
+        if role_row and str(role_row[0]).lower() != 'student':
+            raise ValueError(f"Tài khoản '{student_user_id}' là {role_row[0]}, không thể ghi danh vào lớp học phần. Chỉ tài khoản sinh viên mới được ghi danh.")
+
         # Kiểm tra đã có chưa
         cursor.execute("""
             SELECT enrollment_id, status FROM ClassEnrollments 
@@ -781,6 +792,18 @@ def enroll_students_batch(
             real_student_id = _resolve_user_id(cursor, sid)
             if not real_student_id:
                 continue
+
+            # Chỉ ghi danh nếu là tài khoản sinh viên
+            cursor.execute("""
+                SELECT r.role_name 
+                FROM Users u 
+                JOIN Roles r ON u.role_id = r.role_id 
+                WHERE u.user_id = ?
+            """, (real_student_id,))
+            role_row = cursor.fetchone()
+            if role_row and str(role_row[0]).lower() != 'student':
+                continue
+
             cursor.execute("""
                 SELECT 1 FROM ClassEnrollments WHERE class_id = ? AND student_id = ?
             """, (real_class_id, real_student_id))
@@ -848,7 +871,8 @@ def get_class_enrolled_students(class_id: Any) -> List[Dict]:
                 u.phone_number
             FROM ClassEnrollments svl
             JOIN Users u ON svl.student_id = u.user_id
-            WHERE svl.class_id = ?
+            JOIN Roles r ON u.role_id = r.role_id
+            WHERE svl.class_id = ? AND LOWER(r.role_name) = 'student'
             ORDER BY u.full_name ASC
         """, (real_class_id,))
         rows = cursor.fetchall()

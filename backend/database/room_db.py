@@ -1,6 +1,15 @@
 from core.config import get_db_connection
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
+
+try:
+    from zoneinfo import ZoneInfo
+    VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+except Exception:
+    VN_TZ = timezone(timedelta(hours=7))
+
+def get_current_vn_time() -> datetime:
+    return datetime.now(VN_TZ).replace(tzinfo=None)
 
 def _resolve_template_id(cursor, template_id: Optional[Any]) -> Optional[int]:
     """Chuyển đổi template_id (int hoặc code như 'TPL-LAB-01' hoặc 'DE_LAB_01') sang template_id INT trong ExamTemplates"""
@@ -990,13 +999,14 @@ def upsert_student_lobby_session(
                 conn.commit()
             return session_id
 
+        now_vn = get_current_vn_time()
         cursor.execute(
             """
             INSERT INTO ExamSessions (room_id, student_id, ip_address, user_agent, status, start_time)
             OUTPUT INSERTED.session_id
-            VALUES (?, ?, ?, ?, ?, GETDATE())
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (room_id, student_id, ip_address, ua_trimmed, target_status),
+            (room_id, student_id, ip_address, ua_trimmed, target_status, now_vn),
         )
         new_id = cursor.fetchone()[0]
         conn.commit()

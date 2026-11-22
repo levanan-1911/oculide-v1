@@ -69,6 +69,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      TZ: "Asia/Ho_Chi_Minh"
       DATABASE_SERVER: sqlserver
       DATABASE_NAME: ExamSystem
       DATABASE_USERNAME: sa
@@ -115,6 +116,7 @@ services:
     restart: unless-stopped
     command: celery -A celery_app worker -B -Q grading,maintenance,default --loglevel=info --concurrency=2 --max-memory-per-child=300000 --max-tasks-per-child=500
     environment:
+      TZ: "Asia/Ho_Chi_Minh"
       DATABASE_SERVER: sqlserver
       DATABASE_NAME: ExamSystem
       DATABASE_USERNAME: sa
@@ -145,6 +147,7 @@ services:
     restart: unless-stopped
     command: celery -A celery_app worker -Q proctoring --loglevel=info --concurrency=2 --max-memory-per-child=400000 --max-tasks-per-child=200
     environment:
+      TZ: "Asia/Ho_Chi_Minh"
       DATABASE_SERVER: sqlserver
       DATABASE_NAME: ExamSystem
       DATABASE_USERNAME: sa
@@ -177,6 +180,7 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
+      TZ: "Asia/Ho_Chi_Minh"
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
       NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-https://api.oculide.id.vn}"

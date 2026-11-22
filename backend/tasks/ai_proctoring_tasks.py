@@ -13,16 +13,15 @@ from database.snapshot_db import create_snapshot
 from database.violation_db import create_violation
 from database.system_log_db import create_system_log
 
-# Bảo đảm đường dẫn import module ai_workers từ thư mục gốc
+# Bảo đảm đường dẫn import module ai_workers từ thư mục backend ưu tiên
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-# Thêm thư mục backend nếu cần
 backend_dir = os.path.abspath(os.path.join(current_dir, ".."))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
+
+project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
 from ai_workers.detector import proctor_detector
 
@@ -128,30 +127,7 @@ def analyze_frame(
     if not result.get("success"):
         return {"status": "failed", "error": result.get("error")}
 
-    # 3. Lưu trữ ảnh lên hệ thống tệp tin
-    snapshot_url = _save_snapshot_image(session_id, student_id, snapshot_data)
-    if not snapshot_url:
-        snapshot_url = f"/uploads/snapshots/placeholder_{session_id}_{student_id}.jpg"
-
-    # 4. Lưu bản ghi vào bảng Snapshots
-    try:
-        create_snapshot(
-            session_id=session_id,
-            student_id=student_id,
-            image_url=snapshot_url,
-            face_detected=result["face_detected"],
-            face_count=result["face_count"],
-            looking_at_screen=result["looking_at_screen"],
-            confidence_score=result["confidence_score"]
-        )
-    except Exception as db_err:
-        create_system_log(
-            log_level="error",
-            module="AIProctoring",
-            message=f"Lỗi khi lưu snapshot phiên {session_id}: {str(db_err)}"
-        )
-
-    # 5. Phân tích trạng thái chuỗi thời gian (Temporal Dwell Time & Pattern Analysis)
+    # 3. Phân tích trạng thái chuỗi thời gian (Temporal Dwell Time & Pattern Analysis)
     now = time.time()
     session_state = _load_session_state(r, session_id)
 
@@ -203,15 +179,16 @@ def analyze_frame(
                 attention_status = "violation"
                 session_state[obj_key] = None
 
-    # B. Quay đầu / Liếc mắt rời màn hình (Ngưỡng Dwell Time >= 7s)
-    # TƯƠNG QUAN GÕ PHÍM & ÁNH MẮT:
-    # Nếu thí sinh cúi đầu xuống (Pitch < -15°) NHƯNG đang gõ phím liên tục (is_typing = True)
-    # -> AI nhận diện đây là hành vi nhìn bàn phím gõ code, BỎ QUA KHÔNG TÍNH VI PHẠM!
-    is_typing_looking_at_keyboard = (
-        is_typing and
-        result.get("head_pose", {}).get("pitch", 0.0) < -15.0 and
-        abs(result.get("head_pose", {}).get("yaw", 0.0)) <= 25.0
-    )
+    # B. Quay đầu / Liếc mắt rời màn hình (Ngưỡng Dwell Time thích ứng)
+    # Phân loại 2 hành vi:
+    # 1. Cúi đầu nhìn nháp/bàn phím (Pitch < -15°, |Yaw| <= 25°): Cho phép tới 15s để làm nháp
+    # 2. Ngoảnh mặt sang bên / liếc mắt ra ngoài (|Yaw| > 25° hoặc Gaze lệch): Ngưỡng 7s
+    pitch_angle = result.get("head_pose", {}).get("pitch", 0.0)
+    yaw_angle = abs(result.get("head_pose", {}).get("yaw", 0.0))
+    is_looking_down = (pitch_angle < -15.0 and yaw_angle <= 25.0)
+
+    # Nếu đang gõ phím và nhìn xuống bàn phím -> bỏ qua
+    is_typing_looking_at_keyboard = is_typing and is_looking_down
 
     if face_count == 1:
         if not looking_at_screen and not is_typing_looking_at_keyboard:
@@ -223,24 +200,35 @@ def analyze_frame(
             else:
                 dwell = now - start_off
 
-            if 3.0 <= dwell < 7.0:
-                # Cảnh báo mềm (3s - 6s): Thí sinh có thể đang mỏi cổ hoặc bắt đầu nhìn tài liệu
+            # Ngưỡng Dwell Time phân biệt theo hướng nhìn
+            warning_threshold = 8.0 if is_looking_down else 3.0
+            violation_threshold = 15.0 if is_looking_down else 7.0
+
+            if warning_threshold <= dwell < violation_threshold:
                 attention_status = "warning"
+                reminder_msg = (
+                    "Nhắc nhở: Bạn đang cúi mặt ra ngoài khá lâu. Vui lòng tập trung nhìn màn hình làm bài."
+                    if is_looking_down
+                    else "Nhắc nhở: Bạn đang quay mặt hoặc liếc mắt rời màn hình. Vui lòng tập trung vào bài thi."
+                )
                 gentle_reminder = {
                     "type": "proctor_reminder",
                     "room_id": room_id,
                     "student_id": student_id,
                     "session_id": session_id,
-                    "message": "Nhắc nhở: Bạn đang quay mặt hoặc liếc mắt rời màn hình. Vui lòng tập trung vào bài thi.",
+                    "message": reminder_msg,
                     "dwell_seconds": round(dwell, 1)
                 }
-            elif dwell >= 7.0 and not session_state.get("off_screen_violation_triggered", False):
-                # Đạt ngưỡng VI PHẠM THỰC SỰ (>= 7s)
+            elif dwell >= violation_threshold and not session_state.get("off_screen_violation_triggered", False):
                 attention_status = "violation"
                 gaze_dir = result.get("gaze", {}).get("gaze_direction", "rời màn hình")
                 head_yaw = result.get("head_pose", {}).get("yaw", 0.0)
 
-                desc = f"Thí sinh quay đầu hoặc liếc mắt rời màn hình liên tục trong {round(dwell, 1)}s (Góc lệch: Yaw {head_yaw}°, Hướng mắt: {gaze_dir})"
+                desc = (
+                    f"Thí sinh cúi mặt rời màn hình liên tục trong {round(dwell, 1)}s (Góc cúi: Pitch {pitch_angle}°)"
+                    if is_looking_down
+                    else f"Thí sinh quay đầu hoặc liếc mắt rời màn hình liên tục trong {round(dwell, 1)}s (Góc lệch: Yaw {head_yaw}°, Hướng mắt: {gaze_dir})"
+                )
                 confirmed_violations.append({
                     "type": "suspicious_object",
                     "severity": "high",
@@ -333,8 +321,9 @@ def analyze_frame(
         session_state["dark_start"] = None
         session_state["dark_violation_triggered"] = False
 
-    # F. Liveness / Chống Webcam ảo & Ảnh tĩnh (Phân tích phương sai EAR)
-    if face_count == 1:
+    # F. Liveness / Chống Webcam ảo & Ảnh tĩnh (Chỉ kiểm tra EAR khi có dữ liệu từ MediaPipe thật)
+    detector_method = result.get("method")
+    if face_count == 1 and detector_method == "mediapipe_facemesh":
         current_ear = liveness.get("ear")
         if current_ear is not None:
             ear_history = session_state.get("ear_history", [])
@@ -356,6 +345,61 @@ def analyze_frame(
                     })
                     attention_status = "violation"
                     session_state["liveness_violation_triggered"] = True
+
+    # G. Kiểm tra đóng băng khung hình (Freeze Frame / Static Photo) cho mọi phương thức nhận diện
+    current_frame_hash = hash(snapshot_data[:400] + snapshot_data[-400:]) if len(snapshot_data) > 800 else hash(snapshot_data)
+    last_frame_hash = session_state.get("last_frame_hash")
+    identical_count = session_state.get("identical_frame_count", 0)
+
+    if last_frame_hash is not None and last_frame_hash == current_frame_hash:
+        identical_count += 1
+        # Nếu gửi 6 frame liên tiếp giống nhau 100% từng byte (~24s liên tục)
+        if identical_count >= 6 and not session_state.get("frozen_camera_violation_triggered", False):
+            confirmed_violations.append({
+                "type": "suspicious_object",
+                "severity": "high",
+                "description": "Phát hiện khung hình webcam bị đóng băng hoặc sử dụng ảnh tĩnh cố định"
+            })
+            attention_status = "violation"
+            session_state["frozen_camera_violation_triggered"] = True
+    else:
+        identical_count = 0
+        session_state["frozen_camera_violation_triggered"] = False
+
+    session_state["last_frame_hash"] = current_frame_hash
+    session_state["identical_frame_count"] = identical_count
+
+    # 4. Quản lý lưu trữ ảnh snapshot (Tối ưu I/O: Chỉ ghi đĩa khi có vi phạm hoặc chu kỳ mẫu 30s)
+    last_saved_time = session_state.get("last_saved_snapshot_time", 0.0)
+    should_save_disk = (len(confirmed_violations) > 0) or (now - last_saved_time >= 30.0)
+
+    snapshot_url = None
+    if should_save_disk:
+        snapshot_url = _save_snapshot_image(session_id, student_id, snapshot_data)
+        if snapshot_url:
+            session_state["last_saved_snapshot_time"] = now
+            session_state["last_snapshot_url"] = snapshot_url
+
+    if not snapshot_url:
+        snapshot_url = session_state.get("last_snapshot_url") or f"/uploads/snapshots/placeholder_{session_id}_{student_id}.jpg"
+
+    # Lưu bản ghi vào bảng Snapshots
+    try:
+        create_snapshot(
+            session_id=session_id,
+            student_id=student_id,
+            image_url=snapshot_url,
+            face_detected=result["face_detected"],
+            face_count=result["face_count"],
+            looking_at_screen=result["looking_at_screen"],
+            confidence_score=result["confidence_score"]
+        )
+    except Exception as db_err:
+        create_system_log(
+            log_level="error",
+            module="AIProctoring",
+            message=f"Lỗi khi lưu snapshot phiên {session_id}: {str(db_err)}"
+        )
 
     # Lưu lại trạng thái phiên thi
     _save_session_state(r, session_id, session_state)

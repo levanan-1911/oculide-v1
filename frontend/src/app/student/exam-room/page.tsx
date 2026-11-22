@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
 import LiveKitVideoFeed from "@/components/livekit/LiveKitVideoFeed";
 import { fetchWithAuth, getAuthToken } from "@/services/apiClient";
+import { ProctoringClient } from "@/utils/proctorClient";
 import {
   AlertOctagon,
   AlertTriangle,
@@ -384,6 +385,21 @@ export default function ExamWorkspacePage() {
   const [isLocked, setIsLocked] = useState(false);
   const [helpRequested, setHelpRequested] = useState(false);
 
+  // Khởi động Engine AI Proctoring Client để chụp định kỳ webcam và gửi về Celery Worker
+  useEffect(() => {
+    if (!activeSessionId || examState !== "doing" || isLocked) return;
+    const videoEl = localVideoRef.current;
+    if (!videoEl) return;
+
+    const token = getAuthToken() || "";
+    const client = new ProctoringClient(activeSessionId, window.location.origin, token);
+    client.start(videoEl);
+
+    return () => {
+      client.stop();
+    };
+  }, [activeSessionId, examState, isLocked, localVideoTrack]);
+
   // YOLOv8 AI Proctoring State
   const [yoloDetections, setYoloDetections] = useState<{
     label: string;
@@ -534,6 +550,15 @@ export default function ExamWorkspacePage() {
               setProctoringConfig((prev: any) => ({ ...prev, requireCamera: msg.requireCamera }));
               if (msg.requireCamera) {
                 toggleCamera(true).catch(() => null);
+              }
+            } else if (msg.type === "proctor_reminder") {
+              if (String(msg.student_id) === String(me.user_id) && msg.message) {
+                showToast(msg.message);
+              }
+            } else if (msg.type === "violation_alert") {
+              if (String(msg.student_id) === String(me.user_id)) {
+                setAiViolationCount((prev) => prev + 1);
+                showToast(`CẢNH BÁO VI PHẠM: ${msg.description || "Hệ thống AI ghi nhận vi phạm quy chế!"}`);
               }
             }
           } catch {
@@ -1211,6 +1236,16 @@ export default function ExamWorkspacePage() {
                 </div>
               </div>
             )}
+
+            {/* THẺ VIDEO ẨN DUY TRÌ LIÊN TỤC CHO PROCTORING CLIENT CHỤP FRAME PHÂN TÍCH */}
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{ display: "none", position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+              aria-hidden="true"
+            />
 
             {/* CONSOLE & TESTCASE RUNNER PANEL */}
             <div className="h-56 shrink-0 border-t border-slate-300 bg-white flex flex-col dark:border-white/10 dark:bg-neutral-900">

@@ -52,6 +52,7 @@ import {
   getStoredClasses,
   saveStoredClasses,
 } from './types';
+import { exportStyledExcel } from '@/utils/excelExporter';
 
 const SEMESTERS = ['HK1 2026–2027', 'HK2 2026–2027', 'HKT 2026-27', 'HKT 2025-26'];
 
@@ -668,40 +669,68 @@ function ClassManagerContent() {
 
   function handleExportStudentList() {
     if (!viewingClass || viewingClass.students.length === 0) return;
-    const header = 'STT,Mã sinh viên,Họ và tên,Email,Lớp,Trạng thái\n';
-    const rows = viewingClass.students
-      .map(
-        (st, idx) =>
-          `${idx + 1},${st.id},"${st.name}",${st.email},${viewingClass.id},${st.status}`
-      )
-      .join('\n');
-    const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Danh_Sach_Sinh_Vien_Lop_${viewingClass.id}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    
+    const columns = [
+      { header: 'STT', width: 50, align: 'center' as const },
+      { header: 'Mã sinh viên (MSSV)', width: 140, align: 'center' as const },
+      { header: 'Họ và tên sinh viên', width: 220, align: 'left' as const },
+      { header: 'Email sinh viên', width: 240, align: 'left' as const },
+      { header: 'Mã lớp học phần', width: 130, align: 'center' as const },
+      { header: 'Trạng thái', width: 130, align: 'center' as const },
+    ];
+
+    const data = viewingClass.students.map((st, idx) => [
+      idx + 1,
+      st.id,
+      st.name,
+      st.email,
+      viewingClass.id,
+      st.status === 'Đang học' || st.status === 'active' ? 'Đang theo học' : st.status,
+    ]);
+
+    exportStyledExcel({
+      title: `DANH SÁCH SINH VIÊN - LỚP HỌC PHẦN ${viewingClass.id}`,
+      subtitle: `Tên môn/lớp: ${viewingClass.name} | Giảng viên: ${viewingClass.lecturer || 'Chưa phân công'} | Sĩ số: ${viewingClass.students.length}`,
+      filename: `Danh_Sach_Sinh_Vien_Lop_${viewingClass.id}.xls`,
+      sheetName: 'Danh sách SV',
+      columns,
+      data,
+    });
   }
 
   function handleExportClasses() {
     if (classes.length === 0) return;
-    const header = 'STT,Mã lớp,Tên lớp học phần,Học kỳ,Giảng viên phụ trách,Sĩ số,Trạng thái\n';
-    const rows = classes
-      .map(
-        (c, idx) =>
-          `${idx + 1},"${c.id}","${c.name}","${c.semester}","${c.lecturer || 'Chưa phân công'}",${c.students.length},"${c.status}"`
-      )
-      .join('\n');
-    const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Danh_Sach_Lop_Hoc_Oculide.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+
+    const columns = [
+      { header: 'STT', width: 50, align: 'center' as const },
+      { header: 'Mã lớp', width: 130, align: 'center' as const },
+      { header: 'Tên lớp học phần', width: 240, align: 'left' as const },
+      { header: 'Học kỳ', width: 130, align: 'center' as const },
+      { header: 'Giảng viên phụ trách', width: 200, align: 'left' as const },
+      { header: 'Số tín chỉ', width: 90, align: 'right' as const },
+      { header: 'Sĩ số', width: 80, align: 'right' as const },
+      { header: 'Trạng thái', width: 130, align: 'center' as const },
+    ];
+
+    const data = classes.map((c, idx) => [
+      idx + 1,
+      c.id,
+      c.name,
+      c.semester,
+      c.lecturer || 'Chưa phân công',
+      c.creditHours || 3,
+      c.students.length,
+      c.status,
+    ]);
+
+    exportStyledExcel({
+      title: 'DANH SÁCH TOÀN BỘ LỚP HỌC PHẦN (OCULIDE)',
+      subtitle: `Trường Đại Học Duy Tân | Xuất lúc: ${new Date().toLocaleDateString('vi-VN')} | Tổng số lớp: ${classes.length}`,
+      filename: `Danh_Sach_Lop_Hoc_Oculide_${new Date().toISOString().slice(0, 10)}.xls`,
+      sheetName: 'Lớp học phần',
+      columns,
+      data,
+    });
   }
 
   function openEditModal(classItem: ClassRow) {

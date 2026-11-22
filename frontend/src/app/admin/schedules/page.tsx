@@ -40,6 +40,7 @@ import {
   saveStoredSchedules,
   ScheduleStatus,
 } from './types';
+import { exportStyledExcel } from '@/utils/excelExporter';
 
 function formatScheduleCreatedAt(val?: string): string {
   if (!val) return '—';
@@ -566,34 +567,33 @@ export default function ScheduleManagerPage() {
     }, 600);
   };
 
-  // Export to Excel / CSV
+  // Export to Excel / XML Spreadsheet
   function handleExportExcel() {
     if (formalSchedules.length === 0) {
       alert('Không có dữ liệu ca thi chính thức để xuất.');
       return;
     }
 
-    const rows: string[][] = [
-      [
-        'Mã ca thi',
-        'Tên môn thi & kỳ thi',
-        'Mã học phần',
-        'Sĩ số dự thi',
-        'Cán bộ coi thi',
-        'Người tạo',
-        'Thời gian tạo',
-        'Mã đề thi',
-        'Tên đề thi lập trình',
-        'Ngày thi',
-        'Giờ bắt đầu',
-        'Giờ kết thúc',
-        'Thời lượng (phút)',
-        'Hình thức thi',
-        'Trạng thái',
-      ],
+    const columns = [
+      { header: 'STT', width: 50, align: 'center' as const },
+      { header: 'Mã ca thi', width: 100, align: 'center' as const },
+      { header: 'Tên môn thi & kỳ thi', width: 220, align: 'left' as const },
+      { header: 'Mã học phần', width: 110, align: 'center' as const },
+      { header: 'Sĩ số', width: 70, align: 'right' as const },
+      { header: 'Cán bộ coi thi', width: 150, align: 'left' as const },
+      { header: 'Người tạo', width: 140, align: 'left' as const },
+      { header: 'Thời gian tạo', width: 130, align: 'center' as const },
+      { header: 'Mã đề thi', width: 90, align: 'center' as const },
+      { header: 'Tên đề thi lập trình', width: 200, align: 'left' as const },
+      { header: 'Ngày thi', width: 100, align: 'center' as const },
+      { header: 'Bắt đầu', width: 80, align: 'center' as const },
+      { header: 'Kết thúc', width: 80, align: 'center' as const },
+      { header: 'Thời lượng', width: 90, align: 'center' as const },
+      { header: 'Hình thức thi', width: 160, align: 'left' as const },
+      { header: 'Trạng thái', width: 140, align: 'center' as const },
     ];
 
-    formalSchedules.forEach((s) => {
+    const data = formalSchedules.map((s, idx) => {
       const statusLabel =
         s.status === 'ongoing'
           ? 'Đang diễn ra (Live)'
@@ -603,11 +603,12 @@ export default function ScheduleManagerPage() {
           ? 'Đã kết thúc (Tự động đóng)'
           : 'Bản nháp';
 
-      rows.push([
+      return [
+        idx + 1,
         s.id,
         s.title,
         s.courseCode || s.classId,
-        String(s.studentCount),
+        s.studentCount,
         s.lecturer,
         s.creatorName || s.createdBy || 'Quản trị viên',
         formatScheduleCreatedAt(s.createdAt),
@@ -616,30 +617,24 @@ export default function ScheduleManagerPage() {
         s.date,
         s.startTime,
         s.endTime,
-        String(s.durationMinutes),
+        `${s.durationMinutes} phút`,
         '100% Lập trình thực hành',
         statusLabel,
-      ]);
+      ];
     });
 
-    const csvContent =
-      '\uFEFF' +
-      rows
-        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        .join('\r\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `danh_sach_lich_thi_cuoi_ky_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    exportStyledExcel({
+      title: 'DANH SÁCH LỊCH THI LẬP TRÌNH CHÍNH THỨC TOÀN TRƯỜNG',
+      subtitle: `Trường Đại Học Duy Tân | Xuất lúc: ${new Date().toLocaleDateString('vi-VN')} | Tổng số: ${formalSchedules.length} ca thi`,
+      filename: `Danh_Sach_Lich_Thi_Oculide_${new Date().toISOString().slice(0, 10)}.xls`,
+      sheetName: 'Lịch thi',
+      columns,
+      data,
+    });
 
     setNotification({
       type: 'success',
-      message: 'Đã xuất danh sách lịch thi ra file CSV thành công!',
+      message: 'Đã xuất danh sách lịch thi ra file Excel định dạng bảng thành công!',
     });
   }
 

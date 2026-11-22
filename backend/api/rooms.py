@@ -30,6 +30,19 @@ from api.auth import extract_client_ip
 router = APIRouter()
 
 
+from datetime import datetime, timedelta, timezone
+try:
+    from zoneinfo import ZoneInfo
+    VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+except Exception:
+    VN_TZ = timezone(timedelta(hours=7))
+
+def _get_current_time(target_tz=None) -> datetime:
+    """Trả về thời gian hiện tại chuẩn múi giờ Việt Nam (Asia/Ho_Chi_Minh)."""
+    if target_tz is not None:
+        return datetime.now(target_tz)
+    return datetime.now(VN_TZ).replace(tzinfo=None)
+
 def _is_room_expired(room: Dict[str, Any]) -> bool:
     terminal_statuses = {
         "da_dong",
@@ -58,7 +71,7 @@ def _is_room_expired(room: Dict[str, Any]) -> bool:
     if not isinstance(end_time, datetime):
         return False
 
-    now = datetime.now(end_time.tzinfo) if end_time.tzinfo else datetime.now()
+    now = _get_current_time(end_time.tzinfo)
     return now >= end_time
 
 
@@ -75,7 +88,7 @@ def _room_lobby_opens_at(room: Dict[str, Any]) -> Optional[datetime]:
 
 
 def _is_before_lobby_open(open_time: datetime) -> bool:
-    now = datetime.now(open_time.tzinfo) if open_time.tzinfo else datetime.now()
+    now = _get_current_time(open_time.tzinfo)
     return now < open_time
 
 
@@ -101,8 +114,10 @@ async def get_lobby_room_info(
         lobby_data["passcode"] = None
 
     lobby_open_time = _room_lobby_opens_at(lobby_data)
+    room_status = str(lobby_data.get("status") or "").lower()
     if (
-        lobby_open_time
+        room_status not in ("dang_dien_ra", "in_progress", "active")
+        and lobby_open_time
         and _is_before_lobby_open(lobby_open_time)
         and current_user.get("role") == "student"
     ):
@@ -287,8 +302,10 @@ async def join_room_authenticated(
             )
 
     lobby_open_time = _room_lobby_opens_at(room)
+    room_status = str(room.get("status") or "").lower()
     if (
         current_user.get("role") == "student"
+        and room_status not in ("dang_dien_ra", "in_progress", "active")
         and lobby_open_time
         and _is_before_lobby_open(lobby_open_time)
     ):

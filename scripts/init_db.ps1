@@ -6,7 +6,7 @@
 param(
     [string]$Server = ".",
     [string]$User = "sa",
-    [string]$Password = "YourStrong@Passw0rd",
+    [string]$Password = "123456",
     [switch]$Docker,
     [switch]$Local
 )
@@ -43,7 +43,7 @@ if ($dockerRunning -or $Docker) {
     Write-Host "[*] Dang xa database/schema.sql vao Docker container..." -ForegroundColor Yellow
     
     docker exec -i exam-sqlserver /opt/mssql-tools18/bin/sqlcmd `
-        -S localhost -U sa -P "YourStrong@Passw0rd" -No -f 65001 -i /schema.sql
+        -S localhost -U sa -P $Password -No -f 65001 -i /schema.sql
         
     if ($LASTEXITCODE -eq 0) {
         Write-Host "`n[THANH CONG] Da xa CSDL vao Docker container exam-sqlserver!" -ForegroundColor Green

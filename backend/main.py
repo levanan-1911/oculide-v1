@@ -1,5 +1,6 @@
 import os
 import asyncio
+import inspect
 import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
@@ -134,7 +135,6 @@ async def health_check():
             await r.aclose()
         elif hasattr(r, "close"):
             res = r.close()
-            import inspect
             if inspect.isawaitable(res):
                 await res
         redis_status = {"status": "up" if pong else "down"}

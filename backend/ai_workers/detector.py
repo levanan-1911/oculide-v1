@@ -309,7 +309,7 @@ class AIProctorDetector:
                     "looking_at_screen": True,
                     "head_on_screen": True,
                     "gaze": {"gaze_direction": "center", "horizontal_ratio": 0.5, "is_deviated": False},
-                    "liveness": {"ear": 0.30, "eyes_closed": False},
+                    "liveness": {"ear": None, "eyes_closed": False},
                     "head_pose": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
                     "method": "opencv_cascade"
                 }
@@ -321,7 +321,7 @@ class AIProctorDetector:
             "looking_at_screen": False,
             "head_on_screen": False,
             "gaze": {"gaze_direction": "center", "horizontal_ratio": 0.5, "is_deviated": False},
-            "liveness": {"ear": 0.0, "eyes_closed": True},
+            "liveness": {"ear": None, "eyes_closed": True},
             "head_pose": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
             "method": "none"
         }
@@ -461,7 +461,8 @@ class AIProctorDetector:
             "lighting": lighting,
             "detected_objects": objects,
             "violations": violations,
-            "confidence_score": confidence_score
+            "confidence_score": confidence_score,
+            "method": face_res.get("method", "none")
         }
 
 # Singleton Instance

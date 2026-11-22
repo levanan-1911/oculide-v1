@@ -38,9 +38,10 @@ async def run_proctoring_violations_e2e():
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT TOP 1 instructor_id FROM Classes")
+    cursor.execute("SELECT TOP 1 class_id, instructor_id FROM Classes")
     inst_row = cursor.fetchone()
-    instructor_id = inst_row[0] if inst_row else 2
+    class_id = inst_row[0] if inst_row else 1
+    instructor_id = inst_row[1] if inst_row else 2
 
     cursor.execute("""
         SELECT TOP 1 u.user_id
@@ -65,8 +66,9 @@ async def run_proctoring_violations_e2e():
                 room_code=room_code,
                 room_name="Phòng thi E2E Giám sát Vi phạm",
                 room_type="exam",
+                session_type="MIDTERM",
                 duration_minutes=45,
-                class_id=5,
+                class_id=class_id,
                 start_time=now - timedelta(minutes=5),
                 end_time=now + timedelta(minutes=60),
             ),

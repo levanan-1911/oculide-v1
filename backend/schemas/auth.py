@@ -32,6 +32,7 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = None
     is_active: bool = True
     must_change_password: bool = False
+    initial_password: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     last_login: Optional[datetime] = None

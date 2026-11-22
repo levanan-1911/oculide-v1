@@ -103,7 +103,10 @@ export class ProctoringClient {
   };
 
   private handleWindowBlur = () => {
-    this.sendSnapshotImmediately("blur");
+    // Chỉ kích hoạt chụp tab_switch nếu tài liệu thực sự bị ẩn (tránh phạt oan do popup hệ điều hành)
+    if (document.hidden) {
+      this.sendSnapshotImmediately("tab_switch");
+    }
   };
 
   /**
@@ -121,11 +124,14 @@ export class ProctoringClient {
     const b64 = captureAndCompressFrame(this.videoElement);
     if (!b64) return;
 
+    const resolvedEvent = event === "blur" ? (document.hidden ? "tab_switch" : undefined) : event;
+    if (!resolvedEvent) return;
+
     this.postAnalyze({
       session_id: this.sessionId,
       snapshot_data: b64,
       is_typing: this.isTyping(),
-      client_event: event === "blur" ? "tab_switch" : event
+      client_event: resolvedEvent
     });
   }
 
@@ -162,11 +168,12 @@ export class ProctoringClient {
 
   private async postAnalyze(payload: SnapshotPayload): Promise<any> {
     try {
+      const token = this.authToken || (typeof window !== "undefined" ? localStorage.getItem("oculide_token") || "" : "");
       const response = await fetch(`${this.apiUrl}/api/v1/violations/analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${this.authToken}`
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(payload)
       });

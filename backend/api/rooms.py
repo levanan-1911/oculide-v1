@@ -100,17 +100,6 @@ async def get_lobby_room_info(
     if _is_room_expired(lobby_data):
         lobby_data["passcode"] = None
 
-    lobby_open_time = _room_lobby_opens_at(lobby_data)
-    if (
-        lobby_open_time
-        and _is_before_lobby_open(lobby_open_time)
-        and current_user.get("role") == "student"
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Phòng chờ sẽ mở từ {lobby_open_time.strftime('%H:%M %d/%m/%Y')} (15 phút trước giờ bắt đầu)."
-        )
-
     return lobby_data
 
 @router.patch("/{room_id}/status")
@@ -285,17 +274,6 @@ async def join_room_authenticated(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Mật khẩu vào phòng (passcode) không chính xác"
             )
-
-    lobby_open_time = _room_lobby_opens_at(room)
-    if (
-        current_user.get("role") == "student"
-        and lobby_open_time
-        and _is_before_lobby_open(lobby_open_time)
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Phòng chờ sẽ mở từ {lobby_open_time.strftime('%H:%M %d/%m/%Y')} (15 phút trước giờ bắt đầu)."
-        )
 
     # Khi giảng viên đã mở lớp (phòng đang diễn ra), đóng phòng chờ; sinh viên vào sau sẽ được ghi nhận là điểm danh muộn.
     is_late_entry = False

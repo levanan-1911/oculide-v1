@@ -171,7 +171,8 @@ async def get_my_ip(request: Request):
 # Bộ đếm theo dõi các lần đăng nhập sai để phát hiện bất thường (Brute-force / Dò mật khẩu)
 _FAILED_LOGIN_TRACKER: Dict[str, Dict[str, Any]] = {}
 FAILED_WINDOW_SECONDS = 900  # 15 phút
-FAILED_THRESHOLD = 3         # Chỉ ghi log cảnh báo khi sai liên tiếp từ lần thứ 3 trở lên
+FAILED_THRESHOLD = 3         # Ghi log cảnh báo khi sai liên tiếp từ lần thứ 3 trở lên
+MAX_FAILED_ATTEMPTS = 5      # Khóa tài khoản vĩnh viễn/tạm khóa khi sai từ 5 lần trở lên
 
 @router.post("/login", response_model=TokenResponse)
 async def login(credentials: LoginRequest, request: Request):
@@ -193,6 +194,26 @@ async def login(credentials: LoginRequest, request: Request):
             info["count"] += 1
             info["last_failed"] = now
         _FAILED_LOGIN_TRACKER[track_key] = info
+
+        # Khóa tài khoản nếu nhập sai từ MAX_FAILED_ATTEMPTS lần trở lên
+        if user and info["count"] >= MAX_FAILED_ATTEMPTS:
+            from database.user_db import update_user_status
+            update_user_status(user["user_id"], is_active=False)
+            try:
+                create_system_log(
+                    log_level="critical",
+                    module="Bảo mật / Khóa tài khoản",
+                    message=f"Tài khoản '{user['username']}' đã bị tự động KHÓA do đăng nhập sai vượt quá {MAX_FAILED_ATTEMPTS} lần liên tiếp từ IP {client_ip}",
+                    user_id=user["user_id"],
+                    ip_address=client_ip,
+                    extra_data={"attempt_count": info["count"], "identifier": identifier, "ip": client_ip, "locked": True}
+                )
+            except Exception:
+                pass
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Tài khoản '{identifier}' đã bị khóa do nhập sai mật khẩu vượt quá {MAX_FAILED_ATTEMPTS} lần. Vui lòng liên hệ Quản trị viên để mở khóa."
+            )
 
         # Ghi nhận log đăng nhập thất bại vào SystemAuditLogs
         try:

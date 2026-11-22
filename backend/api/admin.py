@@ -1139,16 +1139,16 @@ async def get_admin_schedules_overview():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT COUNT(*) FROM Rooms")
+        cursor.execute("SELECT COUNT(*) FROM Rooms WHERE room_type != 'lab'")
         total = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM Rooms WHERE status IN ('dang_dien_ra', 'in_progress', 'ongoing')")
+        cursor.execute("SELECT COUNT(*) FROM Rooms WHERE room_type != 'lab' AND status IN ('dang_dien_ra', 'in_progress', 'ongoing')")
         ongoing = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM Rooms WHERE status IN ('chua_mo', 'scheduled', 'draft')")
+        cursor.execute("SELECT COUNT(*) FROM Rooms WHERE room_type != 'lab' AND status IN ('chua_mo', 'scheduled', 'draft')")
         scheduled = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM Rooms WHERE status IN ('da_dong', 'completed', 'finished')")
+        cursor.execute("SELECT COUNT(*) FROM Rooms WHERE room_type != 'lab' AND status IN ('da_dong', 'completed', 'finished')")
         completed = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(DISTINCT student_id) FROM ClassEnrollments")
@@ -1184,9 +1184,12 @@ async def list_admin_schedules(
         conditions = []
         params = []
 
+        # Mặc định Admin chỉ thanh tra các phòng thi (EXAM), không thanh tra các phòng thực hành riêng (LAB)
         if room_type and room_type.lower() != "all":
             conditions.append("p.room_type = ?")
             params.append(room_type.lower())
+        else:
+            conditions.append("p.room_type != 'lab'")
 
         if status and status.lower() != "all":
             st = status.lower()
@@ -1395,6 +1398,12 @@ async def get_admin_schedule_detail(room_id: int):
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy ca thi")
 
+    if (room.get("room_type") or "").lower() == "lab":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin không có quyền thanh tra các phòng thực hành (LAB). Chức năng này chỉ dành cho Giảng viên phụ trách."
+        )
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -1494,6 +1503,12 @@ async def update_admin_schedule_status(
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy ca thi")
 
+    if (room.get("room_type") or "").lower() == "lab":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin không có quyền thanh tra các phòng thực hành (LAB). Chức năng này chỉ dành cho Giảng viên phụ trách."
+        )
+
     target_status = status_payload.get("status", "").strip().lower()
     if target_status not in ("chua_mo", "dang_dien_ra", "da_dong", "huy"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Trạng thái '{target_status}' không hợp lệ")
@@ -1518,6 +1533,12 @@ async def delete_admin_schedule(
     room = get_room_by_id(room_id)
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy ca thi")
+
+    if (room.get("room_type") or "").lower() == "lab":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin không có quyền thanh tra các phòng thực hành (LAB). Chức năng này chỉ dành cho Giảng viên phụ trách."
+        )
 
     success = delete_room(room_id)
     if not success:
@@ -1737,6 +1758,14 @@ async def get_student_live_screen_code(
 ):
     """Thanh tra xem màn hình và trình biên soạn code thời gian thực của sinh viên đang thi"""
     from core.config import get_db_connection
+    from database.room_db import get_room_by_id
+    room = get_room_by_id(room_id)
+    if room and (room.get("room_type") or "").lower() == "lab":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin không có quyền thanh tra màn hình phòng thực hành (LAB)."
+        )
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:

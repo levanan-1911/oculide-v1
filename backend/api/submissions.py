@@ -33,7 +33,9 @@ async def create_submission_endpoint(
     room = get_room_by_id(submission_data.room_id)
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
-    if not room["is_active"]:
+    # Cho phép nộp bài nếu phòng đang hoạt động hoặc ca thi đang ở trạng thái diễn ra
+    room_status = (room.get("status") or "").lower()
+    if not room.get("is_active") and room_status not in ("dang_dien_ra", "in_progress", "ongoing"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phòng đã đóng, không nhận bài nộp")
         
     question = get_question_by_id(submission_data.question_id)

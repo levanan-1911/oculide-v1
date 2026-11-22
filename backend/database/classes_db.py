@@ -355,6 +355,23 @@ def update_class(
             credit_hours,
             real_id,
         ))
+
+        # Đồng bộ số tín chỉ trên toàn hệ thống cho toàn bộ các lớp cùng môn học (cùng course_code)
+        if credit_hours is not None:
+            effective_course_code = course_code
+            if not effective_course_code:
+                cursor.execute("SELECT course_code FROM Classes WHERE class_id = ?", (real_id,))
+                c_row = cursor.fetchone()
+                if c_row and c_row[0]:
+                    effective_course_code = c_row[0]
+            
+            if effective_course_code:
+                cursor.execute("""
+                    UPDATE Classes
+                    SET credit_hours = ?, updated_at = GETDATE()
+                    WHERE course_code = ? AND class_id != ?
+                """, (credit_hours, effective_course_code, real_id))
+
         conn.commit()
         return get_class_by_id(real_id)
     finally:

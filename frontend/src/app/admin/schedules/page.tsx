@@ -1627,7 +1627,6 @@ export default function ScheduleManagerPage() {
                             <th className="px-3 py-2">STT</th>
                             <th className="px-3 py-2">MÃ SV</th>
                             <th className="px-3 py-2">HỌ VÀ TÊN</th>
-                            <th className="px-3 py-2">MÁY SỐ</th>
                             <th className="px-3 py-2">ĐIỂM DANH</th>
                             <th className="px-3 py-2 text-right">THANH TRA MÀN HÌNH</th>
                           </tr>
@@ -1641,9 +1640,6 @@ export default function ScheduleManagerPage() {
                               </td>
                               <td className="px-3 py-2.5 font-semibold text-slate-900 dark:text-white">
                                 {st.full_name}
-                              </td>
-                              <td className="px-3 py-2.5 font-mono text-slate-600 dark:text-slate-300">
-                                {st.pc || `PC-0${idx + 1}`}
                               </td>
                               <td className="px-3 py-2.5 whitespace-nowrap">
                                 {st.attendance_status === 'present' ? (
@@ -2001,7 +1997,7 @@ export default function ScheduleManagerPage() {
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Máy số: <strong>{inspectingStudent.pc || 'PC-01'}</strong> • Ca thi: {selectedSchedule?.title}
+                    Ca thi: {selectedSchedule?.title}
                   </p>
                 </div>
               </div>

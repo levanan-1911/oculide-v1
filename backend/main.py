@@ -1,5 +1,6 @@
 import os
 import asyncio
+import inspect
 import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
@@ -86,7 +87,12 @@ async def lifespan(app: FastAPI):
         listener_task.cancel()
     if redis_client:
         try:
-            await redis_client.aclose()
+            if hasattr(redis_client, "aclose"):
+                await redis_client.aclose()
+            elif hasattr(redis_client, "close"):
+                res = redis_client.close()
+                if inspect.isawaitable(res):
+                    await res
         except Exception:
             pass
 
@@ -125,7 +131,12 @@ async def health_check():
             socket_timeout=1
         )
         pong = await r.ping()
-        await r.aclose()
+        if hasattr(r, "aclose"):
+            await r.aclose()
+        elif hasattr(r, "close"):
+            res = r.close()
+            if inspect.isawaitable(res):
+                await res
         redis_status = {"status": "up" if pong else "down"}
     except Exception as e:
         redis_status = {"status": "down", "error": str(e)}

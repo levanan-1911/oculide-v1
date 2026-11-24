@@ -568,16 +568,13 @@ export default function StudentDashboardPage() {
 
                     <div className="min-w-0 space-y-1">
                       <h3 className="font-serif font-bold text-[#2A282D] dark:text-white text-sm truncate">
-                        {exam.title}
+                        {exam.subject} - Lớp: {exam.classCode || "Chung"} (GV: {exam.instructor})
                       </h3>
 
                       <p className="text-xs text-slate-500 dark:text-[#a59fa3] flex items-center gap-1.5">
-                        <span>{exam.subject}</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{exam.title}</span>
                         <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <GraduationCap className="h-3.5 w-3.5 text-slate-500" />
-                          {exam.instructor}
-                        </span>
+                        <span>Phòng: {exam.roomCode}</span>
                       </p>
 
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 dark:text-[#a59fa3] pt-1">

@@ -9,6 +9,7 @@ import { ProctoringClient } from "@/utils/proctorClient";
 import {
   AlertOctagon,
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   Camera,
   CameraOff,
@@ -48,71 +49,14 @@ import {
   X
 } from "lucide-react";
 
-// Dữ liệu mẫu bài thi
-const mockExamData = {
-  id: "EXAM-101",
-  title: "Kiểm tra Lập trình C++ & Thuật toán Cơ bản",
-  subject: "Lập trình nâng cao (PRJ301)",
+// Cấu trúc khởi tạo ban đầu rỗng khi chờ dữ liệu đề thi từ Backend
+const initialEmptyExam: ExamData = {
+  id: "",
+  title: "Đang tải đề thi...",
+  subject: "Phòng thi trực tuyến",
   durationMinutes: 60,
-  roomCode: "OCL-C001",
-  problems: [
-    {
-      id: "P1",
-      title: "Bài 1: Tìm phần tử lớn thứ hai",
-      points: 30,
-      language: "cpp",
-      description: `Cho mảng $A$ gồm $N$ số nguyên. Hãy viết chương trình tìm giá trị lớn thứ hai trong mảng.
-
-### Đầu vào (Input):
-- Dòng đầu tiên chứa số nguyên $N$ ($2 \\le N \\le 10^5$).
-- Dòng thứ hai chứa $N$ số nguyên $A_i$ ($|A_i| \\le 10^9$).
-
-### Đầu ra (Output):
-- In ra một số nguyên duy nhất là giá trị lớn thứ hai trong mảng. Nếu không tồn tại, in ra \`-1\`.`,
-      testcases: [
-        { id: 1, input: "5\n10 5 20 20 8", expectedOutput: "10" },
-        { id: 2, input: "4\n5 5 5 5", expectedOutput: "-1" },
-        { id: 3, input: "3\n-10 -5 -20", expectedOutput: "-10" },
-      ],
-      initialCode: `#include <iostream>\n#include <vector>\nusing namespace std;\n\nint main() {\n    int n;\n    if (!(cin >> n)) return 0;\n    // Viết mã nguồn của bạn tại đây\n    return 0;\n}`,
-    },
-    {
-      id: "P2",
-      title: "Bài 2: Kiểm tra chuỗi Palindrome",
-      points: 30,
-      language: "cpp",
-      description: `Viết chương trình kiểm tra một chuỗi ký tự nhập vào có phải là chuỗi đối xứng (Palindrome) hay không.
-
-### Đầu vào (Input):
-- Một dòng duy nhất chứa chuỗi $S$ ($1 \\le |S| \\le 10^4$).
-
-### Đầu ra (Output):
-- In ra \`YES\` nếu chuỗi là Palindrome, ngược lại in ra \`NO\`.`,
-      testcases: [
-        { id: 1, input: "radar", expectedOutput: "YES" },
-        { id: 2, input: "oculide", expectedOutput: "NO" },
-      ],
-      initialCode: `#include <iostream>\n#include <string>\nusing namespace std;\n\nint main() {\n    // Viết mã nguồn của bạn tại đây\n    return 0;\n}`,
-    },
-    {
-      id: "P3",
-      title: "Bài 3: Tính tổng dãy số nguyên dương",
-      points: 40,
-      language: "cpp",
-      description: `Cho số nguyên $N$. Hãy tính tổng các số nguyên dương từ 1 đến $N$.
-
-### Đầu vào (Input):
-- Một số nguyên $N$ ($1 \\le N \\le 10^9$).
-
-### Đầu ra (Output):
-- Tổng từ $1$ đến $N$.`,
-      testcases: [
-        { id: 1, input: "5", expectedOutput: "15" },
-        { id: 2, input: "100", expectedOutput: "5050" },
-      ],
-      initialCode: `#include <iostream>\nusing namespace std;\n\nint main() {\n    long long n;\n    if (cin >> n) {\n        cout << n * (n + 1) / 2;\n    }\n    return 0;\n}`,
-    },
-  ],
+  roomCode: "",
+  problems: [],
 };
 
 type ExamState = "doing" | "confirm_submit" | "completed";
@@ -164,7 +108,9 @@ export default function ExamWorkspacePage() {
   const isLabSession = examRoomType === "lab";
   const isCameraOffAllowed = isLabSession && proctoringConfig?.requireCamera === false;
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
-  const [examData, setExamData] = useState<ExamData>(mockExamData);
+  const [examData, setExamData] = useState<ExamData>(initialEmptyExam);
+  const [isLoadingExam, setIsLoadingExam] = useState<boolean>(true);
+  const [examErrorMessage, setExamErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [customRunOutput, setCustomRunOutput] = useState<{
@@ -228,8 +174,10 @@ export default function ExamWorkspacePage() {
 
     let cancelled = false;
     async function loadExamContent() {
+      setIsLoadingExam(true);
+      setExamErrorMessage(null);
       try {
-        const data = await fetchWithAuth(`/api/v1/rooms/${activeRoomId}/exam-content`);
+        const data = await fetchWithAuth<any>(`/api/v1/rooms/${activeRoomId}/exam-content`);
         if (cancelled || !data) return;
         setExamRoomType(data.room_type === 'exam' ? 'exam' : 'lab');
 
@@ -262,10 +210,10 @@ export default function ExamWorkspacePage() {
 
           setExamData({
             id: data.template_id || String(data.room_id),
-            title: data.template_title || data.room_name || mockExamData.title,
+            title: data.template_title || data.room_name || "Bài thi trực tuyến",
             subject: data.room_type === "lab" ? "Thực hành (Lab)" : "Kiểm tra / Thi",
-            durationMinutes: data.duration_minutes || mockExamData.durationMinutes,
-            roomCode: data.room_code || mockExamData.roomCode,
+            durationMinutes: data.duration_minutes || 60,
+            roomCode: data.room_code || "",
             problems: mappedProblems,
           });
           setCodes((prev) => {
@@ -276,17 +224,35 @@ export default function ExamWorkspacePage() {
             return next;
           });
           setSelectedLanguage(mappedProblems[0]?.language || "cpp");
-          setTimeLeft((data.duration_minutes || mockExamData.durationMinutes) * 60);
-        } else {
-          setExamData((prev) => ({
-            ...prev,
-            title: data.room_name || prev.title,
-            roomCode: data.room_code || prev.roomCode,
-            durationMinutes: data.duration_minutes || prev.durationMinutes,
-          }));
-          if (data.duration_minutes) {
-            setTimeLeft(data.duration_minutes * 60);
+          const durationMins = data.duration_minutes || 60;
+          const totalSecs = durationMins * 60;
+          let calculatedRemaining = totalSecs;
+
+          if (typeof window !== "undefined" && activeRoomId) {
+            try {
+              const startKey = `exam_start_timestamp_${activeRoomId}`;
+              const startTs = Number(localStorage.getItem(startKey));
+              if (startTs && !isNaN(startTs)) {
+                const elapsedSecs = Math.max(0, Math.floor((Date.now() - startTs) / 1000));
+                calculatedRemaining = Math.max(0, totalSecs - elapsedSecs);
+              }
+            } catch {}
           }
+
+          setTimeLeft(calculatedRemaining);
+          if (calculatedRemaining <= 0) {
+            setExamState("completed");
+          }
+        } else {
+          setExamData({
+            id: String(data.room_id || activeRoomId),
+            title: data.room_name || "Phòng thi",
+            subject: data.room_type === "lab" ? "Thực hành (Lab)" : "Kiểm tra / Thi",
+            durationMinutes: data.duration_minutes || 60,
+            roomCode: data.room_code || "",
+            problems: [],
+          });
+          setExamErrorMessage("Phòng thi hiện tại chưa có đề thi hoặc câu hỏi nào từ Giảng viên.");
         }
       } catch (err: any) {
         const errMsg = String(err?.message || err?.detail || "");
@@ -296,6 +262,9 @@ export default function ExamWorkspacePage() {
           showToast("Bạn đã nộp bài thi cho phòng này. Không thể truy cập lại đề bài.");
           return;
         }
+        setExamErrorMessage(errMsg || "Lỗi khi nạp dữ liệu đề thi từ máy chủ.");
+      } finally {
+        if (!cancelled) setIsLoadingExam(false);
       }
     }
     loadExamContent();
@@ -318,13 +287,19 @@ export default function ExamWorkspacePage() {
     enabled: Boolean(activeRoomId) && examState === "doing",
   });
   const [activeProblemIdx, setActiveProblemIdx] = useState(0);
-  const [codes, setCodes] = useState<Record<string, string>>({
-    P1: mockExamData.problems[0].initialCode,
-    P2: mockExamData.problems[1].initialCode,
-    P3: mockExamData.problems[2].initialCode,
-  });
+  const [codes, setCodes] = useState<Record<string, string>>({});
   const [selectedLanguage, setSelectedLanguage] = useState("cpp");
-  const [timeLeft, setTimeLeft] = useState(mockExamData.durationMinutes * 60);
+  const [timeLeft, setTimeLeft] = useState<number>(() => {
+    if (typeof window === "undefined" || !activeRoomId) return 60 * 60;
+    try {
+      const startTs = Number(localStorage.getItem(`exam_start_timestamp_${activeRoomId}`));
+      if (startTs && !isNaN(startTs)) {
+        const elapsed = Math.floor((Date.now() - startTs) / 1000);
+        return Math.max(0, 60 * 60 - elapsed);
+      }
+    } catch {}
+    return 60 * 60;
+  });
 
   // Luồng camera vật lý trực tiếp
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -368,10 +343,19 @@ export default function ExamWorkspacePage() {
     };
   }, [livekitState, isScreenSharing, hasPromptedScreenShare, enableScreenShare]);
 
-  // Cảnh báo AI & Đếm Vi Phạm
-  const [pasteCount, setPasteCount] = useState(0);
-  const [tabSwitchCount, setTabSwitchCount] = useState(0);
-  const [aiViolationCount, setAiViolationCount] = useState(0);
+  // Cảnh báo AI & Đếm Vi Phạm - Phục hồi từ localStorage khi F5 reload trang
+  const [pasteCount, setPasteCount] = useState<number>(() => {
+    if (typeof window === "undefined" || !activeRoomId) return 0;
+    return Number(localStorage.getItem(`exam_paste_${activeRoomId}`)) || 0;
+  });
+  const [tabSwitchCount, setTabSwitchCount] = useState<number>(() => {
+    if (typeof window === "undefined" || !activeRoomId) return 0;
+    return Number(localStorage.getItem(`exam_tab_switch_${activeRoomId}`)) || 0;
+  });
+  const [aiViolationCount, setAiViolationCount] = useState<number>(() => {
+    if (typeof window === "undefined" || !activeRoomId) return 0;
+    return Number(localStorage.getItem(`exam_ai_violation_${activeRoomId}`)) || 0;
+  });
   const [warningToast, setWarningToast] = useState<string | null>(null);
   const [incomingAnnouncement, setIncomingAnnouncement] = useState<{
     id: number;
@@ -382,8 +366,31 @@ export default function ExamWorkspacePage() {
   } | null>(null);
 
   // Trạng thái Khóa / Treo Máy do vi phạm (Chỉ Giảng viên mới được mở khóa từ xa)
-  const [isLocked, setIsLocked] = useState(false);
+  const [isLocked, setIsLocked] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !activeRoomId) return false;
+    try {
+      return localStorage.getItem(`exam_locked_${activeRoomId}`) === "true";
+    } catch {
+      return false;
+    }
+  });
   const [helpRequested, setHelpRequested] = useState(false);
+
+  // Đồng bộ trạng thái khóa và số vi phạm khi activeRoomId sẵn sàng
+  useEffect(() => {
+    if (!activeRoomId || typeof window === "undefined") return;
+    try {
+      if (localStorage.getItem(`exam_locked_${activeRoomId}`) === "true") {
+        setIsLocked(true);
+      }
+      const savedPaste = Number(localStorage.getItem(`exam_paste_${activeRoomId}`));
+      if (savedPaste) setPasteCount(savedPaste);
+      const savedTab = Number(localStorage.getItem(`exam_tab_switch_${activeRoomId}`));
+      if (savedTab) setTabSwitchCount(savedTab);
+      const savedAi = Number(localStorage.getItem(`exam_ai_violation_${activeRoomId}`));
+      if (savedAi) setAiViolationCount(savedAi);
+    } catch {}
+  }, [activeRoomId]);
 
   // Khởi động Engine AI Proctoring Client để chụp định kỳ webcam và gửi về Celery Worker
   useEffect(() => {
@@ -422,17 +429,22 @@ export default function ExamWorkspacePage() {
   >({});
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const currentProblem = examData.problems[activeProblemIdx] ?? examData.problems[0];
+  const currentProblem = examData.problems[activeProblemIdx] ?? examData.problems[0] ?? null;
 
   const totalViolations = pasteCount + tabSwitchCount + aiViolationCount;
 
-  // Khóa thi khi quá 3 lần vi phạm
+  // Khóa thi khi quá 3 lần vi phạm - Lưu cờ vào localStorage để F5 không tự mở khóa
   useEffect(() => {
     if (totalViolations >= 3 && !isLocked && examState === "doing") {
       setIsLocked(true);
+      if (activeRoomId && typeof window !== "undefined") {
+        try {
+          localStorage.setItem(`exam_locked_${activeRoomId}`, "true");
+        } catch {}
+      }
       showToast("BÀI THI BỊ KHÓA: Bạn đã ghi nhận 3 lần vi phạm quy chế! Đang chờ Giảng viên phê duyệt mở khóa.");
     }
-  }, [totalViolations, isLocked, examState]);
+  }, [totalViolations, isLocked, examState, activeRoomId]);
 
   useEffect(() => {
     const enterFullscreen = async () => {
@@ -464,44 +476,6 @@ export default function ExamWorkspacePage() {
     return () => clearInterval(timer);
   }, [examState, isLocked]);
 
-  // Giả lập YOLOv8 AI
-  useEffect(() => {
-    if (examState !== "doing" || isLocked) return;
-
-    const interval = setInterval(() => {
-      const rand = Math.random();
-
-      if (rand < 0.1) {
-        setYoloDetections({
-          label: "cell phone",
-          confidence: 0.89,
-          bbox: { x: 55, y: 40, w: 30, h: 45 },
-          status: "danger",
-        });
-        setAiViolationCount((prev) => prev + 1);
-        showToast("CẢNH BÁO AI: Phát hiện thiết bị di động trong khung hình!");
-      } else if (rand < 0.22) {
-        setYoloDetections({
-          label: "looking away",
-          confidence: 0.92,
-          bbox: { x: 10, y: 15, w: 60, h: 65 },
-          status: "warning",
-        });
-        setAiViolationCount((prev) => prev + 1);
-        showToast("CẢNH BÁO AI: Góc mặt quay khỏi màn hình làm bài > 5s!");
-      } else {
-        setYoloDetections({
-          label: "person",
-          confidence: 0.98,
-          bbox: { x: 20, y: 15, w: 60, h: 70 },
-          status: "ok",
-        });
-      }
-    }, 12000);
-
-    return () => clearInterval(interval);
-  }, [examState, isLocked]);
-
   useEffect(() => {
     if (!activeRoomId) return;
     let cancelled = false;
@@ -509,12 +483,49 @@ export default function ExamWorkspacePage() {
 
     async function initSessionAndWs() {
       try {
-        const sess = await fetchWithAuth<{ session_id: number }>("/api/v1/sessions", {
+        const sess = await fetchWithAuth<{
+          session_id: number;
+          status?: string;
+          is_locked?: boolean;
+          started_at?: string;
+          start_time?: string;
+        }>("/api/v1/sessions", {
           method: "POST",
           body: JSON.stringify({ room_id: activeRoomId }),
         });
         if (!cancelled && sess?.session_id) {
           setActiveSessionId(sess.session_id);
+          if (sess.status === "locked" || sess.is_locked) {
+            setIsLocked(true);
+            if (activeRoomId && typeof window !== "undefined") {
+              try {
+                localStorage.setItem(`exam_locked_${activeRoomId}`, "true");
+              } catch {}
+            }
+          }
+
+          // Lấy mốc thời gian bắt đầu làm bài chính thức từ API session
+          const apiStartTimeRaw = sess.started_at || sess.start_time;
+          let officialStartTs = 0;
+          if (apiStartTimeRaw) {
+            const parsedMs = Date.parse(apiStartTimeRaw);
+            if (!Number.isNaN(parsedMs) && parsedMs > 0) {
+              officialStartTs = parsedMs;
+            }
+          }
+
+          const startKey = `exam_start_timestamp_${activeRoomId}`;
+          if (officialStartTs > 0) {
+            localStorage.setItem(startKey, String(officialStartTs));
+            setTimeLeft((prev) => {
+              const totalSecs = (examData.durationMinutes || 60) * 60;
+              const elapsed = Math.max(0, Math.floor((Date.now() - officialStartTs) / 1000));
+              return Math.max(0, totalSecs - elapsed);
+            });
+          } else if (typeof window !== "undefined" && !localStorage.getItem(startKey)) {
+            // Lưu mốc khi bắt đầu phiên làm bài nếu chưa có
+            localStorage.setItem(startKey, String(Date.now()));
+          }
         }
 
         const me = await fetchWithAuth<{ user_id: number }>("/api/v1/auth/me");
@@ -527,12 +538,26 @@ export default function ExamWorkspacePage() {
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
-            if (msg.type === "student_unlocked") {
-              setIsLocked(false);
-              setPasteCount(0);
-              setTabSwitchCount(0);
-              setAiViolationCount(0);
-              showToast("ĐÃ MỞ KHÓA: Giảng viên đã phê duyệt mở khóa từ xa!");
+            if (
+              msg.type === "student_unlocked" ||
+              msg.type === "ROOM_UNLOCKED" ||
+              msg.type === "room_unlocked"
+            ) {
+              if (!msg.student_id || String(msg.student_id) === String(me.user_id)) {
+                setIsLocked(false);
+                setPasteCount(0);
+                setTabSwitchCount(0);
+                setAiViolationCount(0);
+                if (activeRoomId && typeof window !== "undefined") {
+                  try {
+                    localStorage.removeItem(`exam_locked_${activeRoomId}`);
+                    localStorage.removeItem(`exam_paste_${activeRoomId}`);
+                    localStorage.removeItem(`exam_tab_switch_${activeRoomId}`);
+                    localStorage.removeItem(`exam_ai_violation_${activeRoomId}`);
+                  } catch {}
+                }
+                showToast("ĐÃ MỞ KHÓA: Giảng viên đã phê duyệt mở khóa từ xa!");
+              }
             } else if (msg.type === "announcement" || msg.type === "notice") {
               const myIdStr = String(me.user_id);
               const targetStr = msg.target_id ? String(msg.target_id) : "";
@@ -556,8 +581,19 @@ export default function ExamWorkspacePage() {
                 showToast(msg.message);
               }
             } else if (msg.type === "violation_alert") {
-              if (String(msg.student_id) === String(me.user_id)) {
-                setAiViolationCount((prev) => prev + 1);
+              if (!msg.student_id || String(msg.student_id) === String(me.user_id)) {
+                setAiViolationCount((prev) => {
+                  const next = prev + 1;
+                  if (activeRoomId && typeof window !== "undefined") {
+                    try {
+                      localStorage.setItem(`exam_ai_violation_${activeRoomId}`, String(next));
+                    } catch {}
+                  }
+                  return next;
+                });
+                if (msg.detection) {
+                  setYoloDetections(msg.detection);
+                }
                 showToast(`CẢNH BÁO VI PHẠM: ${msg.description || "Hệ thống AI ghi nhận vi phạm quy chế!"}`);
               }
             }
@@ -600,7 +636,15 @@ export default function ExamWorkspacePage() {
   useEffect(() => {
     function handleVisibilityChange() {
       if (document.hidden && examState === "doing" && !isLocked) {
-        setTabSwitchCount((prev) => prev + 1);
+        setTabSwitchCount((prev) => {
+          const next = prev + 1;
+          if (activeRoomId && typeof window !== "undefined") {
+            try {
+              localStorage.setItem(`exam_tab_switch_${activeRoomId}`, String(next));
+            } catch {}
+          }
+          return next;
+        });
         showToast("CẢNH BÁO QUY CHẾ: Rời khỏi cửa sổ bài thi (Chuyển tab)!");
         reportViolationToBackend(
           "tab_switch",
@@ -611,14 +655,22 @@ export default function ExamWorkspacePage() {
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [examState, isLocked, activeSessionId]);
+  }, [examState, isLocked, activeSessionId, activeRoomId]);
 
   // Chặn phím tắt paste
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (isLocked) return;
     if ((e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
       e.preventDefault();
-      setPasteCount((prev) => prev + 1);
+      setPasteCount((prev) => {
+        const next = prev + 1;
+        if (activeRoomId && typeof window !== "undefined") {
+          try {
+            localStorage.setItem(`exam_paste_${activeRoomId}`, String(next));
+          } catch {}
+        }
+        return next;
+      });
       showToast("CẢNH BÁO: Hệ thống chặn thao tác dán mã nguồn từ ngoài vào!");
       reportViolationToBackend(
         "copy_paste",
@@ -631,7 +683,15 @@ export default function ExamWorkspacePage() {
   function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     if (isLocked) return;
     e.preventDefault();
-    setPasteCount((prev) => prev + 1);
+    setPasteCount((prev) => {
+      const next = prev + 1;
+      if (activeRoomId && typeof window !== "undefined") {
+        try {
+          localStorage.setItem(`exam_paste_${activeRoomId}`, String(next));
+        } catch {}
+      }
+      return next;
+    });
     showToast("CẢNH BÁO: Hệ thống chặn thao tác dán mã nguồn từ ngoài vào!");
     reportViolationToBackend(
       "copy_paste",
@@ -672,6 +732,7 @@ export default function ExamWorkspacePage() {
   };
 
   const handleRunAllTests = async () => {
+    if (!currentProblem) return;
     setIsRunning(true);
     setTestResults({});
     setCustomRunOutput(null);
@@ -760,6 +821,11 @@ export default function ExamWorkspacePage() {
 
         // Lưu cờ vào localStorage để ngăn vào lại phòng thi kể cả khi bấm back hoặc tải lại trang
         localStorage.setItem(`oculide_submitted_room_${activeRoomId}`, "true");
+        localStorage.removeItem(`exam_start_timestamp_${activeRoomId}`);
+        localStorage.removeItem(`exam_locked_${activeRoomId}`);
+        localStorage.removeItem(`exam_paste_${activeRoomId}`);
+        localStorage.removeItem(`exam_tab_switch_${activeRoomId}`);
+        localStorage.removeItem(`exam_ai_violation_${activeRoomId}`);
         sessionStorage.removeItem("oculide_student_pending_exam");
       }
 
@@ -928,10 +994,62 @@ export default function ExamWorkspacePage() {
         </div>
       </header>
 
+      {/* Banner cảnh báo chia sẻ màn hình bắt buộc khi đang làm bài mà chưa share */}
+      {examState === "doing" && !isScreenSharing && (
+        <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200 z-20">
+          <div className="flex items-center gap-2">
+            <Monitor className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 animate-pulse" />
+            <span>
+              <strong>YÊU CẦU QUY CHẾ:</strong> Bạn chưa chia sẻ màn hình làm bài. Vui lòng chia sẻ <strong>Toàn bộ màn hình (Entire Screen)</strong> hoặc <strong>Cửa sổ IDE</strong> để Giám thị theo dõi ca thi.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              enableScreenShare().then((success) => {
+                if (!success) setShowScreenShareModal(true);
+              });
+            }}
+            className="system-primary-action shrink-0 px-3.5 py-1.5 text-xs rounded-md font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-colors cursor-pointer"
+          >
+            Bật chia sẻ màn hình ngay
+          </button>
+        </div>
+      )}
+
       {/* ------------------------------------------------------------------ */}
       {/* KHÔNG GIAN LÀM BÀI: 2 CỘT CÂN ĐỐI TUYỆT ĐỐI (ĐỀ BÀI vs IDE) */}
       {/* ------------------------------------------------------------------ */}
       {examState === "doing" && (
+        !currentProblem ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-neutral-900">
+            {isLoadingExam ? (
+              <div className="space-y-4">
+                <LoaderCircle className="h-10 w-10 animate-spin text-slate-800 dark:text-slate-200 mx-auto" />
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Đang tải nội dung đề thi từ hệ thống...
+                </p>
+              </div>
+            ) : (
+              <div className="max-w-md space-y-4">
+                <FileCode className="h-12 w-12 text-slate-400 mx-auto" />
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                  {examErrorMessage || "Phòng thi hiện chưa có câu hỏi nào"}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Vui lòng liên hệ Giám thị hoặc Giảng viên phụ trách để cập nhật bộ đề thi cho phòng này.
+                </p>
+                <Link
+                  href="/student/exams"
+                  className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 cursor-pointer"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Quay về danh sách phòng thi</span>
+                </Link>
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden relative">
           
           {/* CỘT TRÁI (5/12): ĐỀ BÀI & ĐIỀU HƯỚNG CÂU HỎI */}
@@ -1153,12 +1271,18 @@ export default function ExamWorkspacePage() {
               <textarea
                 value={codes[currentProblem.id] ?? ""}
                 disabled={isLocked}
-                onChange={(e) =>
+                onChange={(e) => {
+                  if (activeRoomId && typeof window !== "undefined") {
+                    const startKey = `exam_start_timestamp_${activeRoomId}`;
+                    if (!localStorage.getItem(startKey)) {
+                      localStorage.setItem(startKey, String(Date.now()));
+                    }
+                  }
                   setCodes((prev) => ({
                     ...prev,
                     [currentProblem.id]: e.target.value,
-                  }))
-                }
+                  }));
+                }}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 spellCheck={false}
@@ -1456,6 +1580,7 @@ export default function ExamWorkspacePage() {
             </div>
           )}
         </div>
+        )
       )}
 
       {/* ------------------------------------------------------------------ */}
@@ -1608,11 +1733,18 @@ export default function ExamWorkspacePage() {
             </div>
             <div className="space-y-1">
               <h3 className="font-serif text-lg font-bold text-slate-900 dark:text-white">
-                Yêu Cầu Chia Sẻ Màn Hình
+                Yêu Cầu Chia Sẻ Màn Hình Làm Bài
               </h3>
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                Theo quy chế phòng {examRoomType === 'exam' ? 'thi trực tuyến' : 'thực hành (Lab)'}, sinh viên cần chia sẻ toàn bộ màn hình để Giảng viên giám sát tiến độ làm bài.
+                Theo quy chế phòng {examRoomType === 'exam' ? 'thi trực tuyến' : 'thực hành (Lab)'}, sinh viên bắt buộc phải chia sẻ màn hình để Giảng viên giám sát tiến độ và tính liêm chính học thuật.
               </p>
+            </div>
+            <div className="rounded-md border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-3 text-left space-y-2 text-xs">
+              <p className="font-semibold text-slate-800 dark:text-slate-200">Hướng dẫn chọn màn hình:</p>
+              <ul className="space-y-1 text-slate-600 dark:text-slate-400 list-disc list-inside">
+                <li>Ưu tiên chọn tab <strong>&quot;Toàn bộ màn hình&quot; (Entire Screen)</strong></li>
+                <li>Hoặc chọn <strong>&quot;Cửa sổ&quot; (Window)</strong> chứa IDE / Trình duyệt thi</li>
+              </ul>
             </div>
             <button
               type="button"
@@ -1623,10 +1755,10 @@ export default function ExamWorkspacePage() {
               className="system-primary-action w-full flex items-center justify-center gap-2 rounded-md bg-slate-900 py-3 font-serif text-xs sm:text-sm font-bold text-white shadow-2xs hover:bg-slate-800 transition cursor-pointer"
             >
               <Monitor size={16} />
-              <span>BẮT ĐẦU CHIA SẺ TOÀN MÀN HÌNH</span>
+              <span>CHIA SẺ MÀN HÌNH NGAY</span>
             </button>
             <p className="font-mono text-[11px] text-slate-400">
-              * Vui lòng chọn &quot;Toàn bộ màn hình&quot; (Entire Screen) trong cửa sổ trình duyệt vừa hiện lên.
+              * Sinh viên có thể chọn Entire Screen hoặc Tab/Cửa sổ IDE đang mở để làm bài mượt mà.
             </p>
           </div>
         </div>

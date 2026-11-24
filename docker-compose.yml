@@ -6,17 +6,16 @@ services:
     container_name: exam-sqlserver
     restart: unless-stopped
     environment:
+      TZ: "Asia/Ho_Chi_Minh"
       ACCEPT_EULA: "Y"
-      SA_PASSWORD: "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}"
+      SA_PASSWORD: "${MSSQL_SA_PASSWORD:-123456}"
       MSSQL_MEMORY_LIMIT_MB: 512
     ports:
       - "1433:1433"
     volumes:
       - sqlserver_data:/var/opt/mssql
-      # Auto-init: schema.sql runs once on first start via entrypoint wrapper
       - ./database/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
       - ./database/schema.sql:/schema.sql:ro
-      - ./database/sample_data.sql:/sample_data.sql:ro
       - ./database/reset_db.sql:/reset_db.sql:ro
     entrypoint:
       - "/bin/bash"
@@ -34,7 +33,7 @@ services:
           "-U",
           "sa",
           "-P",
-          "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}",
+          "${MSSQL_SA_PASSWORD:-123456}",
           "-No",
           "-Q",
           "SELECT 1"
@@ -65,23 +64,33 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile # Lean image: no ML deps
+      dockerfile: Dockerfile
     container_name: exam-backend
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
+      TZ: "Asia/Ho_Chi_Minh"
       DATABASE_SERVER: sqlserver
       DATABASE_NAME: ExamSystem
       DATABASE_USERNAME: sa
-      DATABASE_PASSWORD: "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}"
+      DATABASE_PASSWORD: "${MSSQL_SA_PASSWORD:-123456}"
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LIVEKIT_URL: wss://oculide-exam-4eu7af2s.livekit.cloud
       LIVEKIT_API_KEY: APIYsZcXomYALVS
       LIVEKIT_API_SECRET: H1lgQ7E9lv8f7G5g7DaaAD70Svg4qn7JvEPmFWjXcqV
-      JWT_SECRET_KEY: "${JWT_SECRET_KEY:-change-me-in-production}"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:-oculide-secret-key-change-in-production-2026}"
       DOCKER_HOST: "unix:///var/run/docker.sock"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001,https://oculide.id.vn,https://api.oculide.id.vn}"
+      FRONTEND_URL: "${FRONTEND_URL:-https://oculide.id.vn}"
+      SMTP_HOST: "${SMTP_HOST:-smtp.gmail.com}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-oculide.system@gmail.com}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-zrljvmnyvrkxsjlc}"
+      SMTP_FROM_NAME: "${SMTP_FROM_NAME:-Hệ thống Khảo thí Oculide}"
+      SMTP_FROM_EMAIL: "${SMTP_FROM_EMAIL:-oculide.system@gmail.com}"
+      SMTP_TLS: "${SMTP_TLS:-True}"
     depends_on:
       sqlserver:
         condition: service_healthy
@@ -103,22 +112,21 @@ services:
   celery-grading:
     build:
       context: ./backend
-      dockerfile: Dockerfile # Lean image (no ML) — grading uses Docker SDK
+      dockerfile: Dockerfile
     container_name: exam-celery-grading
     restart: unless-stopped
-    command: celery -A celery_app worker -B -Q grading,maintenance,default --loglevel=info --concurrency=4 --max-memory-per-child=300000 --max-tasks-per-child=500
+    command: celery -A celery_app worker -B -Q grading,maintenance,default --loglevel=info --concurrency=2 --max-memory-per-child=300000 --max-tasks-per-child=500
     environment:
+      TZ: "Asia/Ho_Chi_Minh"
       DATABASE_SERVER: sqlserver
       DATABASE_NAME: ExamSystem
       DATABASE_USERNAME: sa
-      DATABASE_PASSWORD: "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}"
+      DATABASE_PASSWORD: "${MSSQL_SA_PASSWORD:-123456}"
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      # Docker sandbox settings
       SANDBOX_MEM_LIMIT: "128m"
       SANDBOX_TIME_LIMIT_S: "10"
       SANDBOX_NANO_CPUS: "500000000"
-      # Allow worker to call Docker daemon on the host
       DOCKER_HOST: "unix:///var/run/docker.sock"
     depends_on:
       sqlserver:
@@ -127,30 +135,24 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-      # Mount Docker socket so worker can spin up sandbox containers
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - exam-network
-    healthcheck:
-      test: [ "CMD-SHELL", "python -c 'from celery_app import celery_app; res = celery_app.control.ping(timeout=2.0); exit(0 if res else 1)'" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
   # ─── Celery Worker — AI Proctoring ───────────────────────────────────────────
   celery-proctoring:
     build:
       context: ./backend
-      dockerfile: Dockerfile.celery # Heavy image: torch + ultralytics + mediapipe
+      dockerfile: Dockerfile.celery
     container_name: exam-celery-proctoring
     restart: unless-stopped
     command: celery -A celery_app worker -Q proctoring --loglevel=info --concurrency=2 --max-memory-per-child=400000 --max-tasks-per-child=200
     environment:
+      TZ: "Asia/Ho_Chi_Minh"
       DATABASE_SERVER: sqlserver
       DATABASE_NAME: ExamSystem
       DATABASE_USERNAME: sa
-      DATABASE_PASSWORD: "${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}"
+      DATABASE_PASSWORD: "${MSSQL_SA_PASSWORD:-123456}"
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:
@@ -161,16 +163,9 @@ services:
     volumes:
       - ./backend:/app
       - ./ai_workers:/app/ai_workers
-      # Cache YOLO weights across restarts
       - yolo_weights:/root/.config/ultralytics
     networks:
       - exam-network
-    healthcheck:
-      test: [ "CMD-SHELL", "python -c 'from celery_app import celery_app; res = celery_app.control.ping(timeout=2.0); exit(0 if res else 1)'" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
   # ─── Frontend Next.js Web App ─────────────────────────────────────────────────
   frontend:
@@ -178,18 +173,19 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:8000}"
-        NEXT_PUBLIC_WS_URL: "${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}"
+        NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-https://api.oculide.id.vn}"
+        NEXT_PUBLIC_WS_URL: "${NEXT_PUBLIC_WS_URL:-wss://api.oculide.id.vn}"
         NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL:-wss://oculide-exam-4eu7af2s.livekit.cloud}"
     container_name: exam-frontend
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
+      TZ: "Asia/Ho_Chi_Minh"
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
-      NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:8000}"
-      NEXT_PUBLIC_WS_URL: "${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}"
+      NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-https://api.oculide.id.vn}"
+      NEXT_PUBLIC_WS_URL: "${NEXT_PUBLIC_WS_URL:-wss://api.oculide.id.vn}"
       NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL:-wss://oculide-exam-4eu7af2s.livekit.cloud}"
       BACKEND_INTERNAL_URL: "http://backend:8000"
     depends_on:
@@ -209,7 +205,6 @@ volumes:
   sqlserver_data:
   redis_data:
   yolo_weights:
-    # persistent cache for YOLO model weights
 
 # ─── Networks ─────────────────────────────────────────────────────────────────
 networks:

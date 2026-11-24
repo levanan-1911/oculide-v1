@@ -16,6 +16,7 @@ import {
   Info,
   Flame,
   User,
+  KeyRound,
   Settings,
   LogOut,
   ExternalLink,
@@ -540,7 +541,7 @@ export default function AdminTopbar({
                 </div>
               </div>
 
-              {/* Menu điều hướng */}
+              {/* Menu điều hướng: Đồng bộ Thông tin cá nhân & Bảo mật & Mật khẩu */}
               <div className="py-1">
                 <Link
                   href="/admin/profile"
@@ -548,7 +549,16 @@ export default function AdminTopbar({
                   className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 transition"
                 >
                   <User className="h-4 w-4 text-slate-500" />
-                  <span>Hồ sơ cá nhân</span>
+                  <span>Thông tin cá nhân</span>
+                </Link>
+
+                <Link
+                  href="/admin/profile?tab=security"
+                  onClick={() => setIsProfileOpen(false)}
+                  className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 transition"
+                >
+                  <KeyRound className="h-4 w-4 text-slate-500" />
+                  <span>Bảo mật & Mật khẩu</span>
                 </Link>
               </div>
 

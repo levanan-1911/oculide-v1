@@ -121,14 +121,14 @@ class AIProctorDetector:
             (landmarks[291].x * w, landmarks[291].y * h)    # Khóe môi phải
         ], dtype=np.float64)
 
-        # Mô hình 3D chuẩn khuôn mặt người (3D Facial Model Coordinate)
+        # Mô hình 3D chuẩn khuôn mặt người theo hệ tọa độ ảnh OpenCV (X phải, Y xuống, Z hướng vào trong)
         model_points = np.array([
             (0.0, 0.0, 0.0),             # Mũi
-            (0.0, -330.0, -65.0),        # Cằm
-            (-225.0, 170.0, -135.0),     # Mắt trái
-            (225.0, 170.0, -135.0),      # Mắt phải
-            (-150.0, -150.0, -125.0),    # Khóe môi trái
-            (150.0, -150.0, -125.0)      # Khóe môi phải
+            (0.0, 330.0, 65.0),          # Cằm
+            (-225.0, -170.0, 135.0),     # Mắt trái
+            (225.0, -170.0, 135.0),      # Mắt phải
+            (-150.0, 150.0, 125.0),      # Khóe môi trái
+            (150.0, 150.0, 125.0)        # Khóe môi phải
         ], dtype=np.float64)
 
         # Ma trận nội suy Camera giả định
@@ -148,11 +148,14 @@ class AIProctorDetector:
             return 0.0, 0.0, 0.0
 
         rot_mat, _ = cv2.Rodrigues(rot_vec)
-        # Chuyển đổi ma trận xoay sang góc Euler
-        proj_matrix = np.hstack((rot_mat, trans_vec))
-        _, _, _, _, _, _, euler_angles = cv2.decomposeProjectionMatrix(proj_matrix)
-        pitch, yaw, roll = euler_angles.flatten()[:3]
-        return float(pitch), float(yaw), float(roll)
+        # Tính trực tiếp góc Euler (độ) từ ma trận xoay R, tránh lỗi lật 180° của decomposeProjectionMatrix:
+        # - pitch: cúi xuống (-), ngửa lên (+)
+        # - yaw: xoay trái (-), xoay phải (+)
+        # - roll: nghiêng đầu sang vai
+        pitch = float(np.degrees(np.arctan2(-rot_mat[1, 2], rot_mat[2, 2])))
+        yaw = float(np.degrees(np.arcsin(np.clip(-rot_mat[0, 2], -1.0, 1.0))))
+        roll = float(np.degrees(np.arctan2(-rot_mat[0, 1], rot_mat[0, 0])))
+        return pitch, yaw, roll
 
     def estimate_iris_gaze(self, landmarks, frame_shape: Tuple[int, int]) -> Dict[str, Any]:
         """
@@ -238,13 +241,32 @@ class AIProctorDetector:
         return round(avg_ear, 3), eyes_closed
 
     @staticmethod
+    def compute_dhash(frame: np.ndarray, hash_size: int = 8) -> str:
+        """Tính perceptual difference hash (64-bit hex) chịu nhiễu nhẹ để phát hiện ảnh tĩnh / webcam ảo."""
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        resized = cv2.resize(gray, (hash_size + 1, hash_size), interpolation=cv2.INTER_AREA)
+        diff = resized[:, 1:] > resized[:, :-1]
+        bits = "".join("1" if b else "0" for b in diff.flatten())
+        return f"{int(bits, 2):016x}"
+
+    @staticmethod
+    def dhash_hamming_distance(hash_a: Optional[str], hash_b: Optional[str]) -> int:
+        """Khoảng cách Hamming giữa 2 mã dHash 64-bit (0 = giống hệt, <= 2 = gần như bất động)."""
+        if not hash_a or not hash_b:
+            return 64
+        try:
+            return bin(int(hash_a, 16) ^ int(hash_b, 16)).count("1")
+        except ValueError:
+            return 64
+
+    @staticmethod
     def check_illumination_and_quality(frame: np.ndarray) -> Dict[str, Any]:
         """
         Kiểm tra độ sáng và chất lượng ảnh phòng thi:
         - Nhận diện tắt camera (khung hình tối đen hoặc không có tín hiệu)
-        - Nhận diện che camera (che ống kính bằng tay, giấy hoặc vật cản)
+        - Nhận diện che camera (che toàn bộ hoặc che nửa ống kính bằng tay, giấy, băng dính ở mọi độ sáng)
         - Độ sáng trung bình (Mean Brightness) và độ tương phản
-        - Cảnh báo phòng quá tối hoặc bị lóa
+        - Cảnh báo phòng quá tối (mất chi tiết) hoặc bị lóa
         """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         mean_brightness = float(np.mean(gray))
@@ -253,19 +275,40 @@ class AIProctorDetector:
         # Kiểm tra độ mờ / che phủ ống kính qua biến thiên Laplacian
         laplacian_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
-        # Tắt camera: Khung hình hoàn toàn đen kịt hoặc gần như không có ánh sáng (mean < 8.0 và std < 4.0)
+        # Tắt camera: Khung hình hoàn toàn đen kịt hoặc gần như không có ánh sáng
         is_camera_off = (mean_brightness < 8.0 and std_dev < 4.0)
 
-        # Che camera: Ánh sáng quá yếu (mean < 25.0) hoặc bị che mờ cận cảnh (mean < 35.0 và laplacian_var < 15.0)
-        is_camera_covered = is_camera_off or (mean_brightness < 25.0) or (mean_brightness < 35.0 and laplacian_var < 15.0)
+        # Che camera toàn phần (không phụ thuộc độ sáng: tay màu da, giấy trắng, băng dính xám đều có độ tương phản & Laplacian cực thấp)
+        is_uniform_covered = (std_dev < 8.0 and laplacian_var < 15.0)
+        # Quá tối đến mức không còn chi tiết hình ảnh (tránh phạt oan phòng tối hợp lệ vẫn rõ chi tiết)
+        is_dark_covered = (mean_brightness < 18.0 and laplacian_var < 25.0)
 
-        is_too_dark = mean_brightness < 35.0
-        is_overexposed = mean_brightness > 230.0
+        # Che một nửa ống kính (trái/phải/trên/dưới bị che mờ phẳng tuyệt đối)
+        h, w = gray.shape[:2]
+        is_partial_covered = False
+        if not is_camera_off and not is_uniform_covered and h >= 40 and w >= 40:
+            halves = (
+                gray[:, : w // 2],
+                gray[:, w // 2 :],
+                gray[: h // 2, :],
+                gray[h // 2 :, :],
+            )
+            for region in halves:
+                r_std = float(np.std(region))
+                r_lap = float(cv2.Laplacian(region, cv2.CV_64F).var())
+                if r_std < 4.0 and r_lap < 3.0:
+                    is_partial_covered = True
+                    break
+
+        is_camera_covered = is_camera_off or is_uniform_covered or is_dark_covered or is_partial_covered
+
+        is_too_dark = mean_brightness < 18.0
+        is_overexposed = (mean_brightness > 230.0 and not is_uniform_covered)
 
         camera_status = "normal"
         if is_camera_off:
             camera_status = "off"
-        elif is_camera_covered or is_too_dark:
+        elif is_camera_covered:
             camera_status = "covered"
         elif is_overexposed:
             camera_status = "overexposed"
@@ -276,6 +319,7 @@ class AIProctorDetector:
             "laplacian_var": round(laplacian_var, 1),
             "is_camera_off": is_camera_off,
             "is_camera_covered": is_camera_covered,
+            "is_partial_covered": is_partial_covered,
             "is_too_dark": is_too_dark,
             "is_overexposed": is_overexposed,
             "camera_status": camera_status,
@@ -402,6 +446,7 @@ class AIProctorDetector:
             }
 
         lighting = self.check_illumination_and_quality(frame)
+        frame_dhash = self.compute_dhash(frame)
         
         # Nếu camera bị tắt hoặc bị che ống kính: không chạy nhận diện mặt hoặc YOLO để tránh báo sai
         if lighting["is_camera_off"] or lighting["is_camera_covered"]:
@@ -460,7 +505,7 @@ class AIProctorDetector:
                 desc = f"Thí sinh liếc mắt rời màn hình (Hướng: {gaze_info.get('gaze_direction')}, Tỷ lệ: {gaze_info.get('horizontal_ratio')})"
 
             violations.append({
-                "type": "suspicious_object",
+                "type": "looking_away",
                 "severity": "low",
                 "description": desc
             })
@@ -515,7 +560,8 @@ class AIProctorDetector:
             "detected_objects": objects,
             "violations": violations,
             "confidence_score": confidence_score,
-            "method": face_res.get("method", "none")
+            "method": face_res.get("method", "none"),
+            "dhash": frame_dhash
         }
 
 # Singleton Instance

@@ -20,9 +20,16 @@ $localSqlServer = Get-Service -Name "MSSQLSERVER" -ErrorAction SilentlyContinue 
 
 if ($Local -or ($localSqlServer -and -not $Docker)) {
     Write-Host "[*] Phat hien SQL Server Windows (MSSQLSERVER) dang chay." -ForegroundColor Green
-    Write-Host "[*] Dang thuc thi database/schema.sql vao SQL Server Windows..." -ForegroundColor Yellow
-    
-    sqlcmd -S "." -E -C -f 65001 -i database/schema.sql
+    # Kiem tra ket noi qua (localdb)\ProjectModels hoac "."
+    $targetServer = "(localdb)\ProjectModels"
+    $checkLocalDb = sqlcmd -S "(localdb)\ProjectModels" -E -Q "SELECT 1" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $targetServer = "."
+    }
+
+    Write-Host "[*] Dang thuc thi database/schema.sql vao SQL Server ($targetServer)..." -ForegroundColor Yellow
+    $schemaPath = Join-Path $PSScriptRoot "..\database\schema.sql"
+    sqlcmd -S $targetServer -E -C -f 65001 -i $schemaPath
     if ($LASTEXITCODE -eq 0) {
         Write-Host "`n[THANH CONG] Da xa CSDL ExamSystem (21 bang) vao SQL Server Windows!" -ForegroundColor Green
         Write-Host "[*] Mo SSMS, chuot phai vao Tables va bam F5 de xem ket qua." -ForegroundColor Cyan

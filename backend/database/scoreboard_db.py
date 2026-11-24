@@ -33,6 +33,7 @@ def get_room_scoreboard(room_id: int) -> List[Dict[str, Any]]:
             COALESCE(sub_summary.submission_count, 0) AS total_submissions,
             sub_summary.last_submission_time
         FROM Users u
+        JOIN Roles r ON u.role_id = r.role_id
         JOIN (
             SELECT svl.student_id
             FROM ClassEnrollments svl
@@ -67,6 +68,7 @@ def get_room_scoreboard(room_id: int) -> List[Dict[str, Any]]:
             ) best_per_q
             GROUP BY best_per_q.student_id
         ) sub_summary ON u.user_id = sub_summary.student_id
+        WHERE LOWER(r.role_name) = 'student'
         ORDER BY total_score DESC, last_submission_time ASC
     """
     with get_db_cursor(commit=False) as cursor:

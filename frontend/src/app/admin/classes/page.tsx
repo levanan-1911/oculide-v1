@@ -685,7 +685,7 @@ function ClassManagerContent() {
       st.name,
       st.email,
       viewingClass.id,
-      st.status === 'Đang học' || st.status === 'active' ? 'Đang theo học' : st.status,
+      (st.status as string) === 'Đang học' || (st.status as string) === 'active' ? 'Đang theo học' : st.status,
     ]);
 
     exportStyledExcel({

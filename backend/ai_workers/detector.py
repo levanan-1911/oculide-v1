@@ -241,20 +241,45 @@ class AIProctorDetector:
     def check_illumination_and_quality(frame: np.ndarray) -> Dict[str, Any]:
         """
         Kiểm tra độ sáng và chất lượng ảnh phòng thi:
-        - Độ sáng trung bình (Mean Brightness)
+        - Nhận diện tắt camera (khung hình tối đen hoặc không có tín hiệu)
+        - Nhận diện che camera (che ống kính bằng tay, giấy hoặc vật cản)
+        - Độ sáng trung bình (Mean Brightness) và độ tương phản
         - Cảnh báo phòng quá tối hoặc bị lóa
         """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         mean_brightness = float(np.mean(gray))
-        
+        std_dev = float(np.std(gray))
+
+        # Kiểm tra độ mờ / che phủ ống kính qua biến thiên Laplacian
+        laplacian_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+        # Tắt camera: Khung hình hoàn toàn đen kịt hoặc gần như không có ánh sáng (mean < 8.0 và std < 4.0)
+        is_camera_off = (mean_brightness < 8.0 and std_dev < 4.0)
+
+        # Che camera: Ánh sáng quá yếu (mean < 25.0) hoặc bị che mờ cận cảnh (mean < 35.0 và laplacian_var < 15.0)
+        is_camera_covered = is_camera_off or (mean_brightness < 25.0) or (mean_brightness < 35.0 and laplacian_var < 15.0)
+
         is_too_dark = mean_brightness < 35.0
         is_overexposed = mean_brightness > 230.0
-        
+
+        camera_status = "normal"
+        if is_camera_off:
+            camera_status = "off"
+        elif is_camera_covered or is_too_dark:
+            camera_status = "covered"
+        elif is_overexposed:
+            camera_status = "overexposed"
+
         return {
             "mean_brightness": round(mean_brightness, 1),
+            "std_dev": round(std_dev, 1),
+            "laplacian_var": round(laplacian_var, 1),
+            "is_camera_off": is_camera_off,
+            "is_camera_covered": is_camera_covered,
             "is_too_dark": is_too_dark,
             "is_overexposed": is_overexposed,
-            "lighting_ok": (not is_too_dark and not is_overexposed)
+            "camera_status": camera_status,
+            "lighting_ok": (not is_too_dark and not is_overexposed and not is_camera_off and not is_camera_covered)
         }
 
     def detect_faces(self, frame: np.ndarray) -> Dict[str, Any]:
@@ -376,26 +401,54 @@ class AIProctorDetector:
                 "confidence_score": 0.0
             }
 
-        face_res = self.detect_faces(frame)
-        objects = self.detect_prohibited_objects(frame)
         lighting = self.check_illumination_and_quality(frame)
+        
+        # Nếu camera bị tắt hoặc bị che ống kính: không chạy nhận diện mặt hoặc YOLO để tránh báo sai
+        if lighting["is_camera_off"] or lighting["is_camera_covered"]:
+            face_res = {
+                "face_detected": False,
+                "face_count": 0,
+                "looking_at_screen": False,
+                "head_on_screen": False,
+                "gaze": {"gaze_direction": "center", "horizontal_ratio": 0.5, "is_deviated": False},
+                "liveness": {"ear": None, "eyes_closed": True},
+                "head_pose": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
+                "method": "none"
+            }
+            objects = []
+        else:
+            face_res = self.detect_faces(frame)
+            objects = self.detect_prohibited_objects(frame)
 
         violations = []
-        # 1. Kiểm tra vi phạm vắng mặt / không nhận diện được khuôn mặt
-        if face_res["face_count"] == 0:
+        # 1. Kiểm tra vi phạm camera bị tắt hoặc bị che khuất (Ưu tiên số 1)
+        if lighting.get("is_camera_off"):
+            violations.append({
+                "type": "camera_blocked",
+                "severity": "high",
+                "description": "Camera bị tắt hoặc không có tín hiệu hình ảnh"
+            })
+        elif lighting.get("is_camera_covered"):
+            violations.append({
+                "type": "camera_blocked",
+                "severity": "medium",
+                "description": "Ống kính camera bị che khuất hoặc bị che mờ, không thể quan sát thí sinh"
+            })
+        # 2. Kiểm tra vi phạm vắng mặt / không nhận diện được khuôn mặt
+        elif face_res["face_count"] == 0:
             violations.append({
                 "type": "no_face_detected",
                 "severity": "medium",
                 "description": "Không phát hiện khuôn mặt thí sinh trong khung hình camera"
             })
-        # 2. Kiểm tra vi phạm có nhiều người trước camera
+        # 3. Kiểm tra vi phạm có nhiều người trước camera
         elif face_res["face_count"] > 1:
             violations.append({
                 "type": "multiple_faces",
                 "severity": "high",
                 "description": f"Phát hiện {face_res['face_count']} khuôn mặt trong vùng quan sát camera"
             })
-        # 3. Kiểm tra thí sinh ngoảnh mặt hoặc liếc mắt rời màn hình
+        # 4. Kiểm tra thí sinh ngoảnh mặt hoặc liếc mắt rời màn hình (Chỉ khi camera rõ và có 1 mặt)
         elif not face_res["looking_at_screen"]:
             gaze_info = face_res.get("gaze", {})
             head_info = face_res.get("head_pose", {})
@@ -412,15 +465,15 @@ class AIProctorDetector:
                 "description": desc
             })
 
-        # 4. Kiểm tra chất lượng ánh sáng camera
-        if lighting.get("is_too_dark"):
+        # 5. Kiểm tra phòng bị quá chói lóa
+        if lighting.get("is_overexposed"):
             violations.append({
                 "type": "camera_blocked",
-                "severity": "medium",
-                "description": "Ánh sáng phòng thi quá tối, camera không thể quan sát rõ thí sinh"
+                "severity": "low",
+                "description": "Ánh sáng phòng thi bị quá chói/lóa, ảnh hưởng đến khả năng giám sát"
             })
 
-        # 5. Kiểm tra các thiết bị cấm phát hiện qua YOLO
+        # 6. Kiểm tra các thiết bị cấm phát hiện qua YOLO
         for obj in objects:
             c_name = obj["class_name"].lower()
             if "phone" in c_name:

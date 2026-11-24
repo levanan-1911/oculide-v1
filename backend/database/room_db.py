@@ -984,7 +984,8 @@ def upsert_student_lobby_session(
         if row:
             session_id = row[0]
             curr_status = str(row[1] or '').lower()
-            if curr_status not in ("completed", "da_nop", "submitted"):
+            # Bảo tồn các trạng thái đã nộp hoặc bị khóa/đình chỉ do vi phạm quy chế
+            if curr_status not in ("completed", "da_nop", "submitted", "locked", "bi_khoa", "disqualified", "kicked"):
                 final_status = 'late' if (is_late or curr_status in ('late', 'muon', 'diem_danh_muon')) else 'active'
                 cursor.execute(
                     """

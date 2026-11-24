@@ -1,18 +1,42 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List, Any
 from datetime import datetime
+
+def _clean_language(v: Any) -> str:
+    if not isinstance(v, str):
+        return "cpp"
+    val = v.strip().lower()
+    if "python" in val or val == "py":
+        return "python"
+    if "java" in val and "script" not in val:
+        return "java"
+    if "c++" in val or "cpp" in val:
+        return "cpp"
+    if val == "c":
+        return "c"
+    return "cpp"
 
 class SubmissionCreateRequest(BaseModel):
     room_id: int
     question_id: int
     code_content: str = Field(..., min_length=1)
-    language: str = Field(..., pattern="^(python|cpp|c|java)$")
+    language: str = Field(default="cpp")
     attempt_number: int = Field(default=1, ge=1)
+
+    @field_validator('language', mode='before')
+    @classmethod
+    def validate_lang(cls, v):
+        return _clean_language(v)
 
 class CodeRunRequest(BaseModel):
     code_content: str = Field(..., min_length=1)
-    language: str = Field(..., pattern="^(python|cpp|c|java)$")
+    language: str = Field(default="cpp")
     custom_input: str = ""
+
+    @field_validator('language', mode='before')
+    @classmethod
+    def validate_lang(cls, v):
+        return _clean_language(v)
 
 class CodeRunResponse(BaseModel):
     stdout: str

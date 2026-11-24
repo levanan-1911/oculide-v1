@@ -119,6 +119,15 @@ export default function ExamWorkspacePage() {
     time: string;
   } | null>(null);
 
+  // Lưu trữ kết quả chấm điểm thật phòng Lab từ Docker Sandbox / Celery
+  const [labGradingResult, setLabGradingResult] = useState<{
+    loading: boolean;
+    score10: number | null;
+    scorePercentage: number | null;
+    status: string;
+    details?: string;
+  } | null>(null);
+
   // PIP Camera minimization state
   const [isCameraExpanded, setIsCameraExpanded] = useState(true);
 
@@ -289,6 +298,88 @@ export default function ExamWorkspacePage() {
       cancelled = true;
     };
   }, [activeRoomId]);
+
+  // Tự động kiểm tra và đồng bộ kết quả chấm điểm thực tế từ Docker Sandbox khi kết thúc bài thực hành (Lab)
+  useEffect(() => {
+    if (examState !== "completed" || examRoomType !== "lab" || !activeRoomId) return;
+
+    let isSubscribed = true;
+    let pollCount = 0;
+    const maxPolls = 10;
+
+    const checkGrading = async () => {
+      try {
+        setLabGradingResult((prev) => prev || { loading: true, score10: null, scorePercentage: null, status: "grading" });
+        const subs = await fetchWithAuth<any[]>(`/api/v1/submissions/my?room_id=${activeRoomId}`);
+        if (!isSubscribed) return;
+
+        if (Array.isArray(subs) && subs.length > 0) {
+          const isStillGrading = subs.some((s) => s.status === "pending" || s.status === "grading");
+
+          let totalEarned = 0;
+          let totalMax = 0;
+
+          for (const s of subs) {
+            const maxPts = typeof s.max_points === "number" && s.max_points > 0 ? s.max_points : 10;
+            const pts = typeof s.total_points === "number" ? s.total_points : 0;
+            totalEarned += pts;
+            totalMax += maxPts;
+          }
+
+          const percentage = totalMax > 0 ? (totalEarned / totalMax) * 100 : 0;
+          const scoreOutOf10 = Math.round((percentage / 10) * 10) / 10;
+
+          if (isStillGrading && pollCount < maxPolls) {
+            pollCount++;
+            setTimeout(checkGrading, 1500);
+            return;
+          }
+
+          setLabGradingResult({
+            loading: false,
+            score10: scoreOutOf10,
+            scorePercentage: Math.round(percentage),
+            status: isStillGrading ? "grading" : "completed",
+            details:
+              scoreOutOf10 >= 10
+                ? "Bài thực hành đạt chuẩn. Toàn bộ test case đã được máy chấm tự động xác nhận đạt 100%."
+                : scoreOutOf10 > 0
+                ? `Đạt ${Math.round(percentage)}% số điểm. Một số test case chưa vượt qua hoặc logic chưa hoàn chỉnh.`
+                : "Chưa vượt qua test case nào hoặc mã nguồn gặp lỗi biên dịch / runtime error.",
+          });
+          return;
+        }
+
+        if (pollCount < 3) {
+          pollCount++;
+          setTimeout(checkGrading, 1500);
+        } else {
+          setLabGradingResult({
+            loading: false,
+            score10: 0,
+            scorePercentage: 0,
+            status: "not_found",
+            details: "Chưa ghi nhận bài nộp có điểm cho phòng thực hành này.",
+          });
+        }
+      } catch {
+        if (!isSubscribed) return;
+        setLabGradingResult({
+          loading: false,
+          score10: null,
+          scorePercentage: null,
+          status: "error",
+          details: "Không thể lấy kết quả chấm tự động từ máy chủ.",
+        });
+      }
+    };
+
+    checkGrading();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [examState, examRoomType, activeRoomId]);
 
   const {
     connectionState: livekitState,
@@ -2092,16 +2183,35 @@ export default function ExamWorkspacePage() {
 
             {/* Quy tắc công bố điểm: Thực hành công bố máy chấm ngay; Bài thi phải do GV công bố */}
             {examRoomType === 'lab' ? (
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5 text-center space-y-1.5">
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5 text-center space-y-2">
                 <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                   Kết quả chấm điểm tự động (Máy chấm test case):
                 </p>
-                <p className="text-3xl font-black font-mono text-slate-900 dark:text-white">
-                  10 / 10
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Bài thực hành đạt chuẩn. Toàn bộ test case đã được máy chấm tự động xác nhận đạt 100%.
-                </p>
+                {labGradingResult?.loading ? (
+                  <div className="py-2 flex flex-col items-center justify-center gap-1.5">
+                    <LoaderCircle className="animate-spin text-slate-800 dark:text-slate-200" size={26} />
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Đang chấm điểm tự động trong Sandbox...
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <p className={`text-3xl font-black font-mono ${
+                      (labGradingResult?.score10 ?? 0) >= 10
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : (labGradingResult?.score10 ?? 0) > 0
+                        ? "text-amber-500 dark:text-amber-400"
+                        : "text-rose-600 dark:text-rose-400"
+                    }`}>
+                      {labGradingResult?.score10 !== null && labGradingResult?.score10 !== undefined
+                        ? `${labGradingResult.score10} / 10`
+                        : "-- / 10"}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {labGradingResult?.details || "Kết quả chấm máy tự động."}
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="rounded-md border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5 text-center space-y-1.5">

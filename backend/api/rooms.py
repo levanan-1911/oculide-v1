@@ -26,6 +26,7 @@ from database.violation_db import get_violations_by_session
 from services.livekit_service import livekit_service
 from core.config import settings
 from api.auth import extract_client_ip
+from websocket.connection_manager import manager
 
 router = APIRouter()
 

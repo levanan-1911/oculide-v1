@@ -578,7 +578,6 @@ export default function StudentSubmissionsPage() {
                   </div>
                 </div>
 
-<<<<<<< HEAD
                 {/* Danh sách các Phiên thi trong Lớp học phần */}
                 <div className="p-4 sm:p-5 space-y-5">
                   {Object.values(clsGroup.sessions).map((sess) => (

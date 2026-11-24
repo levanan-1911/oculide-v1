@@ -180,6 +180,15 @@ export default function ExamWorkspacePage() {
         const data = await fetchWithAuth<any>(`/api/v1/rooms/${activeRoomId}/exam-content`);
         if (cancelled || !data) return;
         setExamRoomType(data.room_type === 'exam' ? 'exam' : 'lab');
+        if (data.proctoring_config) {
+          let parsedConfig = data.proctoring_config;
+          if (typeof parsedConfig === 'string') {
+            try {
+              parsedConfig = JSON.parse(parsedConfig);
+            } catch {}
+          }
+          setProctoringConfig(parsedConfig);
+        }
 
         if (Array.isArray(data.questions) && data.questions.length > 0) {
           const mappedProblems: ExamProblem[] = data.questions.map((q: {
@@ -502,8 +511,22 @@ export default function ExamWorkspacePage() {
 
   const totalViolations = pasteCount + tabSwitchCount + aiViolationCount;
 
-  // Khóa thi khi quá 3 lần vi phạm - Lưu cờ vào localStorage để F5 không tự mở khóa
+  // Xác định quy chế giám sát tab và toàn màn hình:
+  // Chỉ chặn chuyển tab khi phòng là Exam HOẶC GV cấu hình bật lockdownFullscreen / blockTabSwitch / allowTabSwitch === false
+  const shouldBlockTabSwitch = Boolean(
+    examRoomType === "exam" ||
+    proctoringConfig?.lockdownFullscreen === true ||
+    proctoringConfig?.blockTabSwitch === true ||
+    proctoringConfig?.allowTabSwitch === false
+  );
+
+  // Khóa thi khi quá 3 lần vi phạm - Chỉ tự động khóa bài đối với phòng Thi chính thức (exam) hoặc cấu hình autoLock=true.
+  // Đối với phòng Lab (thực hành tra cứu tài liệu), không tự động khóa máy để tránh cản trở sinh viên.
   useEffect(() => {
+    if (examRoomType !== "exam" && !proctoringConfig?.autoLock) {
+      return;
+    }
+
     if (totalViolations >= 3 && !isLocked && examState === "doing") {
       setIsLocked(true);
       if (activeRoomId && typeof window !== "undefined") {
@@ -513,21 +536,37 @@ export default function ExamWorkspacePage() {
       }
       showToast("BÀI THI BỊ KHÓA: Bạn đã ghi nhận 3 lần vi phạm quy chế! Đang chờ Giảng viên phê duyệt mở khóa.");
     }
-  }, [totalViolations, isLocked, examState, activeRoomId]);
+  }, [totalViolations, isLocked, examState, activeRoomId, examRoomType, proctoringConfig]);
 
   useEffect(() => {
     const enterFullscreen = async () => {
       try {
-        if (!document.fullscreenElement) {
+        if (!document.fullscreenElement && shouldBlockTabSwitch) {
           await document.documentElement.requestFullscreen();
           setIsFullscreen(true);
+          if ("keyboard" in navigator && (navigator as any).keyboard?.lock) {
+            try {
+              await (navigator as any).keyboard.lock(["Escape", "Tab"]);
+            } catch {}
+          }
         }
       } catch {
-        // browser restriction
+        // browser restriction: cần tương tác click của người dùng
       }
     };
     enterFullscreen();
-  }, []);
+
+    const handleFullscreenChange = () => {
+      const isFull = Boolean(document.fullscreenElement);
+      setIsFullscreen(isFull);
+      if (!isFull && shouldBlockTabSwitch && examState === "doing" && !isLocked) {
+        showToast("CẢNH BÁO QUY CHẾ: Bạn vừa thoát chế độ Toàn màn hình (Fullscreen)!");
+        reportViolationToBackend("fullscreen_exit", "low", "Sinh viên thoát chế độ toàn màn hình.");
+      }
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, [shouldBlockTabSwitch, examState, isLocked]);
 
   // Đếm ngược thời gian
   useEffect(() => {
@@ -760,6 +799,9 @@ export default function ExamWorkspacePage() {
   // Giám sát chuyển tab
   useEffect(() => {
     function handleVisibilityChange() {
+      // Nếu phòng Lab cho phép chuyển tab hoặc GV không cấu hình chặn tab thì không tính lỗi
+      if (!shouldBlockTabSwitch) return;
+
       if (document.hidden && examState === "doing" && !isLocked) {
         setTabSwitchCount((prev) => {
           const next = prev + 1;
@@ -780,7 +822,7 @@ export default function ExamWorkspacePage() {
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [examState, isLocked, activeSessionId, activeRoomId]);
+  }, [examState, isLocked, activeSessionId, activeRoomId, shouldBlockTabSwitch]);
 
   // Hỗ trợ phím Tab, Enter tự động thụt lề & Chặn Ctrl+V
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -1025,16 +1067,28 @@ export default function ExamWorkspacePage() {
     }
   };
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-        setIsFullscreen(false);
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        setIsFullscreen(true);
+        if ("keyboard" in navigator && (navigator as any).keyboard?.lock) {
+          try {
+            await (navigator as any).keyboard.lock(["Escape", "Tab"]);
+          } catch {}
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+          setIsFullscreen(false);
+          if ("keyboard" in navigator && (navigator as any).keyboard?.unlock) {
+            try {
+              (navigator as any).keyboard.unlock();
+            } catch {}
+          }
+        }
       }
-    }
+    } catch {}
   };
 
   return (
@@ -1045,6 +1099,23 @@ export default function ExamWorkspacePage() {
         <div className="fixed top-18 right-6 z-50 flex items-center gap-3 rounded-md border border-rose-500/50 bg-rose-900 text-white px-4 py-3 text-xs font-semibold shadow-lg backdrop-blur-md">
           <ShieldAlert size={18} className="shrink-0 text-rose-300" />
           <span>{warningToast}</span>
+        </div>
+      )}
+
+      {/* Banner Khóa Fullscreen khi phòng thi yêu cầu mà sinh viên chưa bật */}
+      {shouldBlockTabSwitch && !isFullscreen && examState === "doing" && !isLocked && (
+        <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200 backdrop-blur-sm z-30">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+            <span className="font-medium">Phòng thi yêu cầu làm bài ở chế độ Toàn màn hình (Fullscreen) để đảm bảo quy chế.</span>
+          </div>
+          <button
+            onClick={toggleFullscreen}
+            className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-semibold transition-colors flex items-center gap-1.5 text-xs shadow-sm"
+          >
+            <Maximize2 size={13} />
+            Bật Toàn màn hình
+          </button>
         </div>
       )}
 

@@ -519,7 +519,7 @@ def get_exam_content_for_room(room_id: int, include_hidden_tests: bool = False) 
         cursor.execute(
             """
             SELECT p.room_id, p.room_code, p.room_name, p.room_type, p.duration_minutes,
-                   p.template_id, bd.title AS template_title
+                   p.template_id, bd.title AS template_title, p.proctoring_config
             FROM Rooms p
             LEFT JOIN ExamTemplates bd ON p.template_id = bd.template_id
             WHERE p.room_id = ?
@@ -585,6 +585,13 @@ def get_exam_content_for_room(room_id: int, include_hidden_tests: bool = False) 
                 }
             )
 
+        proctoring_cfg = None
+        if len(room_row) > 7 and room_row[7]:
+            try:
+                proctoring_cfg = json.loads(room_row[7]) if isinstance(room_row[7], str) else room_row[7]
+            except Exception:
+                proctoring_cfg = None
+
         return {
             "room_id": room_row[0],
             "room_code": room_row[1],
@@ -593,6 +600,7 @@ def get_exam_content_for_room(room_id: int, include_hidden_tests: bool = False) 
             "duration_minutes": room_row[4] or 60,
             "template_id": template_id,
             "template_title": room_row[6],
+            "proctoring_config": proctoring_cfg,
             "questions": questions,
         }
     finally:

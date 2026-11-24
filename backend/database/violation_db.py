@@ -32,12 +32,17 @@ def create_violation(
         """, (session_id, room_id, student_id, violation_type, severity, description, snapshot_url, now_vn))
         row = cursor.fetchone()
 
-        # Đếm tổng số vi phạm trong phiên thi này
-        cursor.execute("SELECT COUNT(*) FROM Violations WHERE session_id = ?", (session_id,))
+        # Đếm tổng số vi phạm hợp lệ (loại trừ mức low và các vi phạm đã bị giám thị bác bỏ)
+        cursor.execute("""
+            SELECT COUNT(*) FROM Violations
+            WHERE session_id = ?
+              AND (review_status IS NULL OR review_status != 'rejected')
+              AND severity IN ('medium', 'high', 'critical', 'warning')
+        """, (session_id,))
         v_count_row = cursor.fetchone()
         total_v = v_count_row[0] if v_count_row else 0
         if total_v >= 3:
-            # Khóa phiên thi ở mức CSDL nếu vượt quá 3 lần vi phạm
+            # Khóa phiên thi ở mức CSDL nếu đạt ngưỡng >= 3 vi phạm hợp lệ
             cursor.execute(
                 "UPDATE ExamSessions SET status = 'locked' WHERE session_id = ? AND status NOT IN ('completed', 'da_nop', 'submitted')",
                 (session_id,)

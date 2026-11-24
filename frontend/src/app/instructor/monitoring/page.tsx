@@ -41,6 +41,7 @@ import SendNotificationModal from '@/components/instructor/monitoring/SendNotifi
 import StudentDetailModal, { StudentDetailInfo } from '@/components/instructor/monitoring/StudentDetailModal';
 import InstructorRoomChat from '@/components/instructor/monitoring/InstructorRoomChat';
 import { fetchWithAuth, getAuthToken } from '@/services/apiClient';
+import { buildRoomWebSocketUrl } from '@/utils/websocket';
 import { useLiveKitRoom } from '@/hooks/useLiveKitRoom';
 import LiveKitVideoFeed from '@/components/livekit/LiveKitVideoFeed';
 
@@ -68,6 +69,7 @@ function InstructorMonitoringContent() {
     sendAnnouncement,
     reviewViolation,
     simulateViolation,
+    registerWsSender,
   } = useMonitoring();
 
   // Tải danh sách tất cả các phòng đang hoạt động của Giảng viên để hỗ trợ giám sát nhiều lớp
@@ -301,11 +303,14 @@ function InstructorMonitoringContent() {
         const me = await fetchWithAuth<{ user_id: number }>('/api/v1/auth/me');
         const token = getAuthToken();
         if (cancelled || !me?.user_id || !token || typeof window === 'undefined') return;
-        const baseWs = process.env.NEXT_PUBLIC_WS_URL
-          ? process.env.NEXT_PUBLIC_WS_URL.replace(/\/$/, '')
-          : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-        ws = new WebSocket(`${baseWs}/ws/${realRoomId}/proctor_${me.user_id}?token=${encodeURIComponent(token)}`);
+        const wsUrl = buildRoomWebSocketUrl(realRoomId, `proctor_${me.user_id}`, token);
+        ws = new WebSocket(wsUrl);
         wsRef.current = ws;
+        registerWsSender?.((data) => {
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify(data));
+          }
+        });
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
@@ -347,6 +352,7 @@ function InstructorMonitoringContent() {
     loadViolationsAndWs();
     return () => {
       cancelled = true;
+      registerWsSender?.(null);
       if (ws && ws.readyState === WebSocket.OPEN) ws.close();
       if (wsRef.current) {
         if (wsRef.current.readyState === WebSocket.OPEN) wsRef.current.close();
@@ -409,14 +415,22 @@ function InstructorMonitoringContent() {
     studentId?: string
   ) => {
     sendAnnouncement(targetType, targetLabel, message, type, studentId);
-    const targetStudent = realStudents?.find((s) => s.id === studentId);
-    const targetUserId = targetStudent?.userId ? String(targetStudent.userId) : undefined;
+    const targetStudent = realStudents?.find(
+      (s) => s.id === studentId || String(s.userId) === String(studentId)
+    );
+    const targetUserId = targetStudent?.userId
+      ? String(targetStudent.userId)
+      : studentId && !isNaN(Number(studentId))
+      ? studentId
+      : undefined;
+    const finalStudentId = targetStudent?.id || studentId;
+
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
           type: 'announcement',
           target_type: targetType,
-          target_id: studentId,
+          target_id: finalStudentId,
           target_user_id: targetUserId,
           target_label: targetLabel,
           message: message,

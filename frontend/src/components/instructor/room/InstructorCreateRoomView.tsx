@@ -721,8 +721,7 @@ export default function InstructorCreateRoomView() {
           aiFaceDetection,
           aiObjectDetection: aiPhoneDetection,
           allowTabSwitch: !blockTabSwitch,
-          webAccessPolicy,
-          maxTabSwitches,
+          maxTabSwitches: blockTabSwitch ? (maxTabSwitches || 2) : 999,
           requireCamera,
         },
         status: 'chua_mo',
@@ -1511,36 +1510,6 @@ export default function InstructorCreateRoomView() {
                     <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">Cảnh báo vi phạm ngay khi mở tab hoặc ứng dụng khác</p>
                   </div>
                 </label>
-              </div>
-
-              {/* Chính sách quản lý các trang web khác */}
-              <div className="rounded-md border border-slate-300 dark:border-white/10 bg-slate-50/60 dark:bg-white/[0.02] p-3.5 space-y-2.5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                    <Globe className="h-3.5 w-3.5 text-slate-500" />
-                    Chính Sách Quản Lý Trang Web Khác:
-                  </span>
-                  <select
-                    value={webAccessPolicy}
-                    onChange={(e) => setWebAccessPolicy(e.target.value as 'strict' | 'whitelist' | 'open')}
-                    className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium dark:border-white/15 dark:bg-neutral-900 text-slate-800 dark:text-slate-100 outline-none focus:border-slate-900 cursor-pointer"
-                  >
-                    <option value="strict">Cấm toàn bộ trang web khác (Block All External Web)</option>
-                    <option value="whitelist">Chỉ cho phép tra cứu Whitelist kỹ thuật</option>
-                    <option value="open">Môi trường mở tự do (Dành cho buổi Lab)</option>
-                  </select>
-                </div>
-
-                {webAccessPolicy === 'whitelist' && (
-                  <p className="text-[11px] text-slate-900 dark:text-slate-500 bg-white dark:bg-white/[0.04] p-2.5 rounded-md border border-slate-300 dark:border-white/10 leading-relaxed font-medium">
-                    <strong>Whitelist cho phép:</strong> <code className="font-mono bg-slate-50 dark:bg-white/10 px-1 py-0.5 rounded border border-slate-300 dark:border-white/10">docs.oracle.com</code>, <code className="font-mono bg-slate-50 dark:bg-white/10 px-1 py-0.5 rounded border border-slate-300 dark:border-white/10">cppreference.com</code>, <code className="font-mono bg-slate-50 dark:bg-white/10 px-1 py-0.5 rounded border border-slate-300 dark:border-white/10">w3schools.com</code>. Mọi trang web khác bị chặn.
-                  </p>
-                )}
-                {webAccessPolicy === 'strict' && (
-                  <p className="text-[11px] text-slate-800 dark:text-slate-500 bg-white dark:bg-white/[0.04] p-2.5 rounded-md border border-slate-300 dark:border-white/10 leading-relaxed font-medium">
-                    <strong>Cấm tuyệt đối:</strong> Mọi hành vi mở tab ngoài đều bị ghi nhận vi phạm AI và thông báo lên màn hình giám sát.
-                  </p>
-                )}
               </div>
             </div>
           </div>

@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  LoaderCircle,
   ShieldCheck,
   Terminal,
   Zap,
@@ -63,221 +64,24 @@ export interface SubmissionDetail {
   testCases: TestCaseResult[];
 }
 
-// Dữ liệu mẫu phong phú mô phỏng chuẩn xác từ ảnh tham khảo của thí sinh Le_Van_an (cb_111)
-const mockSubmissionsDatabase: Record<string, SubmissionDetail> = {
-  cb_111: {
-    id: "cb_111",
-    problemCode: "cb_111",
-    problemTitle: "Tính tổng các số trong chuỗi",
-    authorName: "Lê Văn An",
-    authorUsername: "Le_Van_an",
-    authorMssv: "SE184801",
-    submittedAt: "31, Tháng 10, 2026, 20:51",
-    language: "C++20",
-    compiler: "GCC 13.2 / C++20 (ISO/IEC 14882:2020)",
-    status: "failed", // 4/5 AC, 1 WA
-    scoreEarned: 4,
-    scoreMax: 5,
-    pointsScaled: "8,000 / 10,000 điểm",
-    maxRuntime: "0,004s",
-    maxMemory: "1.82 MB",
-    code: `#include <iostream>
-#include <string>
-
-using namespace std;
-
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-
-    string s;
-    long long total = 0, count = 0, num = 0;
-
-    while (cin >> s) {
-        for (char c : s) {
-            if (c >= '0' && c <= '9') {
-                num = num * 10 + (c - '0');
-            } else {
-                if (num > 0) {
-                    total += num;
-                    count++;
-                    num = 0;
-                }
-            }
-        }
-        if (num > 0) {
-            total += num;
-            count++;
-            num = 0;
-        }
-    }
-    cout << total << "\\n";
-    return 0;
-}`,
-    testCases: [
-      {
-        id: 1,
-        name: "Test case #1",
-        status: "AC",
-        statusText: "Kết quả đúng (AC)",
-        runtime: "0,003s",
-        memory: "1.75 MB",
-        scoreEarned: 1,
-        scoreMax: 1,
-        input: "abc123def45gh",
-        expectedOutput: "168",
-        actualOutput: "168",
-        diffNote: "Khớp 100% kết quả đầu ra chuẩn (Accepted)",
-      },
-      {
-        id: 2,
-        name: "Test case #2",
-        status: "AC",
-        statusText: "Kết quả đúng (AC)",
-        runtime: "0,004s",
-        memory: "1.82 MB",
-        scoreEarned: 1,
-        scoreMax: 1,
-        input: "10 20 30 40 50",
-        expectedOutput: "150",
-        actualOutput: "150",
-        diffNote: "Xử lý chuẩn xác các token số phân tách bằng dấu cách.",
-      },
-      {
-        id: 3,
-        name: "Test case #3",
-        status: "AC",
-        statusText: "Kết quả đúng (AC)",
-        runtime: "0,003s",
-        memory: "1.73 MB",
-        scoreEarned: 1,
-        scoreMax: 1,
-        input: "no_number_here_xyz!!!",
-        expectedOutput: "0",
-        actualOutput: "0",
-        diffNote: "Xử lý chính xác trường hợp chuỗi không chứa chữ số.",
-      },
-      {
-        id: 4,
-        name: "Test case #4",
-        status: "AC",
-        statusText: "Kết quả đúng (AC)",
-        runtime: "0,003s",
-        memory: "1.73 MB",
-        scoreEarned: 1,
-        scoreMax: 1,
-        input: "a000b00c0d12",
-        expectedOutput: "12",
-        actualOutput: "12",
-        diffNote: "Xử lý thành công các chữ số 0 đứng trước (leading zeroes).",
-      },
-      {
-        id: 5,
-        name: "Test case #5",
-        status: "WA",
-        statusText: "Kết quả sai (WA)",
-        runtime: "0,003s",
-        memory: "1.81 MB",
-        scoreEarned: 0,
-        scoreMax: 1,
-        input: "12345678901234567890 999999999999999999",
-        expectedOutput: "13345678901234567889",
-        actualOutput: "2561284719283748291",
-        diffNote: "Sai lệch kết quả (WA): Tràn số kiểu dữ liệu long long (64-bit integer overflow). Cần sử dụng thuật toán số học lớn (BigInt) hoặc kiểu __int128_t.",
-      },
-    ],
-  },
-  "SUB-1001": {
-    id: "SUB-1001",
-    problemCode: "max_elem",
-    problemTitle: "Tìm phần tử lớn nhất trong mảng",
-    authorName: "Nguyễn Minh Anh",
-    authorUsername: "minh_anh_se",
-    authorMssv: "SE184801",
-    submittedAt: "27, Tháng 10, 2026, 09:30",
-    language: "C++20",
-    compiler: "GCC 13.2 / C++20",
-    status: "accepted",
-    scoreEarned: 5,
-    scoreMax: 5,
-    pointsScaled: "10,000 / 10,000 điểm",
-    maxRuntime: "0,002s",
-    maxMemory: "1.65 MB",
-    code: `#include <iostream>
-#include <vector>
-#include <algorithm>
-
-using namespace std;
-
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-
-    int n;
-    if (!(cin >> n) || n <= 0) {
-        return 0;
-    }
-
-    long long maxVal;
-    cin >> maxVal;
-
-    for (int i = 1; i < n; i++) {
-        long long x;
-        cin >> x;
-        if (x > maxVal) {
-            maxVal = x;
-        }
-    }
-
-    cout << maxVal << "\\n";
-    return 0;
-}`,
-    testCases: [
-      {
-        id: 1,
-        name: "Test case #1",
-        status: "AC",
-        statusText: "Kết quả đúng (AC)",
-        runtime: "0,002s",
-        memory: "1.65 MB",
-        scoreEarned: 1,
-        scoreMax: 1,
-        input: "5\\n1 3 9 2 5",
-        expectedOutput: "9",
-        actualOutput: "9",
-        diffNote: "Đạt",
-      },
-      {
-        id: 2,
-        name: "Test case #2",
-        status: "AC",
-        statusText: "Kết quả đúng (AC)",
-        runtime: "0,002s",
-        memory: "1.65 MB",
-        scoreEarned: 1,
-        scoreMax: 1,
-        input: "1\\n-999999",
-        expectedOutput: "-999999",
-        actualOutput: "-999999",
-        diffNote: "Đạt (Xử lý số âm)",
-      },
-    ],
-  },
-};
-
 export default function SubmissionDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
 
   // Nhận dạng submission ID từ route dynamic
-  const rawId = (params?.id as string) || "cb_111";
+  const rawId = (params?.id as string) || "";
   const [apiSubmission, setApiSubmission] = useState<SubmissionDetail | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    if (!/^\d+$/.test(rawId)) return;
+    if (!rawId || !/^\d+$/.test(rawId)) {
+      setIsLoading(false);
+      return;
+    }
     let cancelled = false;
     async function loadSubmissionDetail() {
+      setIsLoading(true);
       try {
         const data = await fetchWithAuth<{
           submission_id: number;
@@ -353,7 +157,11 @@ export default function SubmissionDetailPage() {
           })),
         });
       } catch {
-        // Giữ fallback mock nếu không tải được từ server
+        setApiSubmission(null);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     }
     loadSubmissionDetail();
@@ -362,35 +170,7 @@ export default function SubmissionDetailPage() {
     };
   }, [rawId]);
 
-  // Lấy dữ liệu hoặc fallback về cb_111
-  const submission: SubmissionDetail = useMemo(() => {
-    if (apiSubmission) {
-      return apiSubmission;
-    }
-    if (mockSubmissionsDatabase[rawId]) {
-      return mockSubmissionsDatabase[rawId];
-    }
-    // Nếu ID bất kỳ chưa có trong mock, tạo template động mô phỏng
-    return {
-      id: rawId,
-      problemCode: rawId.toLowerCase(),
-      problemTitle: `Bài thi lập trình ${rawId}`,
-      authorName: "Lê Văn An",
-      authorUsername: "Le_Van_an",
-      authorMssv: "SE184801",
-      submittedAt: "31, Tháng 10, 2026, 20:51",
-      language: "C++20",
-      compiler: "GCC 13.2 / C++20",
-      status: "failed",
-      scoreEarned: 4,
-      scoreMax: 5,
-      pointsScaled: "8,000 / 10,000 điểm",
-      maxRuntime: "0,004s",
-      maxMemory: "1.82 MB",
-      code: mockSubmissionsDatabase.cb_111.code,
-      testCases: mockSubmissionsDatabase.cb_111.testCases,
-    };
-  }, [rawId, apiSubmission]);
+  const submission = apiSubmission;
 
   // Tab đang kích hoạt: "result" (Xem kết quả) hoặc "code" (Xem code)
   const queryTab = searchParams.get("tab");
@@ -423,6 +203,7 @@ export default function SubmissionDetailPage() {
 
   // Mở/Đóng tất cả test cases
   const toggleAllTestCases = (open: boolean) => {
+    if (!submission) return;
     const updated: Record<number, boolean> = {};
     submission.testCases.forEach((tc) => {
       updated[tc.id] = open;
@@ -432,6 +213,7 @@ export default function SubmissionDetailPage() {
 
   // Xử lý sao chép code vào bộ nhớ đệm
   const handleCopyCode = async () => {
+    if (!submission) return;
     try {
       await navigator.clipboard.writeText(submission.code);
       setCopied(true);
@@ -451,6 +233,7 @@ export default function SubmissionDetailPage() {
 
   // Tải file mã nguồn về máy
   const handleDownloadCode = () => {
+    if (!submission) return;
     const extension = submission.language.toLowerCase().includes("python")
       ? ".py"
       : submission.language.toLowerCase().includes("java")
@@ -475,8 +258,49 @@ export default function SubmissionDetailPage() {
 
   // Tính số dòng mã nguồn
   const codeLines = useMemo(() => {
-    return submission.code.split("\n");
-  }, [submission.code]);
+    return submission ? submission.code.split("\n") : [];
+  }, [submission]);
+
+  if (isLoading) {
+    return (
+      <div className="mx-auto max-w-[1600px] flex min-h-[400px] flex-col items-center justify-center p-8 space-y-4">
+        <LoaderCircle className="h-8 w-8 animate-spin text-slate-700 dark:text-slate-300" />
+        <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">Đang tải chi tiết bài nộp...</p>
+      </div>
+    );
+  }
+
+  if (!submission) {
+    return (
+      <div className="space-y-6 pb-16">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+          <Link
+            href="/student/submissions"
+            className="inline-flex items-center gap-1.5 font-medium hover:text-brand-700 dark:text-slate-500 dark:hover:text-brand-200 transition"
+          >
+            <ArrowLeft size={14} />
+            <span>Quay lại danh sách bài làm</span>
+          </Link>
+        </div>
+        <div className="rounded-md border border-slate-300 bg-white p-12 text-center space-y-4 dark:border-white/10 dark:bg-neutral-900">
+          <FileCode2 className="h-12 w-12 text-slate-400 mx-auto" />
+          <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">Không tìm thấy bài nộp #{rawId}</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+            Bài nộp không tồn tại trong hệ thống hoặc bạn không có quyền xem chi tiết bài làm này.
+          </p>
+          <div className="pt-2">
+            <Link
+              href="/student/submissions"
+              className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900"
+            >
+              <ArrowLeft size={14} />
+              <span>Xem lịch sử bài làm</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-16">

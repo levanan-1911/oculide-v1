@@ -94,7 +94,15 @@ export default function StudentTopbar({
           const parsed = JSON.parse(stored);
           const name = parsed.full_name || parsed.fullName || parsed.name || parsed.username || "Sinh viên";
           const email = parsed.email || "student@school.edu.vn";
-          const studentId = parsed.student_code || parsed.studentId || parsed.student_id || "SV001";
+          const studentId =
+            parsed.student_id ||
+            parsed.identifier_code ||
+            parsed.ma_dinh_danh ||
+            parsed.student_code ||
+            parsed.studentId ||
+            parsed.userCode ||
+            parsed.username ||
+            "SV001";
           if (isSubscribed) {
             setUserProfile({ name, email, studentId });
             const init = name
@@ -118,13 +126,22 @@ export default function StudentTopbar({
           full_name?: string;
           email?: string;
           username?: string;
+          student_id?: string;
+          identifier_code?: string;
+          ma_dinh_danh?: string;
           student_code?: string;
         }>("/api/v1/auth/me");
         if (isSubscribed && me) {
           currentUserId = me.user_id;
           const name = me.full_name || me.username || "Sinh viên";
           const email = me.email || "student@school.edu.vn";
-          const studentId = me.student_code || me.username || "SV001";
+          const studentId =
+            me.student_id ||
+            me.identifier_code ||
+            me.ma_dinh_danh ||
+            me.student_code ||
+            me.username ||
+            "SV001";
           setUserProfile({ name, email, studentId });
           const init = name
             .split(" ")

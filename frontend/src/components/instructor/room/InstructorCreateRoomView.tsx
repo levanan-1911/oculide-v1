@@ -136,12 +136,9 @@ function timeStringToMinutes(timeStr: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
-function getInitialSchedule(leadMinutes = 15): { dateStr: string; startTime: string } {
+function getInitialSchedule(leadMinutes = 0): { dateStr: string; startTime: string } {
   const now = new Date();
-  const target = new Date(now.getTime() + leadMinutes * 60 * 1000);
-  const m = target.getMinutes();
-  const roundedM = Math.ceil(m / 15) * 15;
-  target.setMinutes(roundedM, 0, 0);
+  const target = leadMinutes > 0 ? new Date(now.getTime() + leadMinutes * 60 * 1000) : now;
   const pad = (n: number) => String(n).padStart(2, '0');
   return {
     dateStr: `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}`,
@@ -328,7 +325,7 @@ export default function InstructorCreateRoomView() {
   // Chỉ tạo mã phòng/PIN và lấy ngày giờ địa phương sau lần render đầu tiên.
   // Tránh Math.random()/Date dùng trong useState initializer gây hydration mismatch.
   useEffect(() => {
-    const { dateStr, startTime: initialStartTime } = getInitialSchedule(15);
+    const { dateStr, startTime: initialStartTime } = getInitialSchedule(0);
     setRoomCode(generateClassRoomCode());
     setRoomPassword(generateRandomAlphanumericPassword(6));
     setScheduledDate(dateStr);
@@ -337,6 +334,13 @@ export default function InstructorCreateRoomView() {
     setEndTime(displayEndTime);
     setIsClientReady(true);
   }, [queryClass]);
+
+  const handleSetCurrentTime = () => {
+    const { dateStr, startTime: currentStartTime } = getInitialSchedule(0);
+    setScheduledDate(dateStr);
+    handleStartTimeChange(currentStartTime);
+    showToast(`Đã đồng bộ giờ hiện tại: ${currentStartTime}`);
+  };
 
   const loadExistingSessions = useCallback(async () => {
     const list: typeof existingSessions = [];
@@ -430,11 +434,12 @@ export default function InstructorCreateRoomView() {
       const currentTotalM = now.getHours() * 60 + now.getMinutes();
       const startTotalM = timeStringToMinutes(startTime);
 
-      if (startTotalM < currentTotalM) {
+      // Cho phép trễ 5 phút để tránh việc điền form 1-2 phút bị coi là quá khứ
+      if (startTotalM < currentTotalM - 5) {
         const currentFormatted = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         return {
           isPast: true,
-          message: `Giờ bắt đầu (${startTime}) đã trôi qua so với thời điểm hiện tại (${currentFormatted}). Không thể tạo lịch trong quá khứ. Vui lòng chọn từ ${currentFormatted} trở đi.`,
+          message: `Giờ bắt đầu (${startTime}) đã trôi qua so với thời điểm hiện tại (${currentFormatted}). Vui lòng chọn từ ${currentFormatted} trở đi.`,
         };
       }
     }
@@ -1223,9 +1228,20 @@ export default function InstructorCreateRoomView() {
 
               {/* Giờ bắt đầu */}
               <div>
-                <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">
-                  Giờ bắt đầu:
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    Giờ bắt đầu:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSetCurrentTime}
+                    className="inline-flex items-center gap-1 font-mono text-[10.5px] font-semibold text-brand-700 dark:text-brand-300 hover:underline cursor-pointer"
+                    title="Đặt giờ bắt đầu thành thời gian hiện tại"
+                  >
+                    <Clock className="h-3 w-3" />
+                    Lấy giờ hiện tại (Realtime)
+                  </button>
+                </div>
                 <input
                   type="time"
                   value={startTime}

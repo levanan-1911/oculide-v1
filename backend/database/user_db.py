@@ -2,98 +2,9 @@ from core.config import get_db_connection
 from core.security import get_password_hash, verify_password
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple
+import logging
 
-# Dữ liệu tài khoản mẫu phát triển (sử dụng khi SQL Server chưa được khởi động)
-DEV_MOCK_USERS = [
-    {
-        "user_id": 1,
-        "username": "admin",
-        "email": "admin@school.edu.vn",
-        "password_hash": "$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6",
-        "full_name": "Quản Trị Viên Hệ Thống",
-        "role": "admin",
-        "student_id": "ADM001",
-        "user_code": "ADM001",
-        "department": "Phòng CNTT & Đào Tạo",
-        "academic_rank": None,
-        "phone_number": None,
-        "avatar_url": None,
-        "is_active": True,
-        "must_change_password": False,
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-        "last_login": None,
-        "last_login_ip": "127.0.0.1",
-        "lop_sinh_hoat": None,
-        "homeroom_class": None
-    },
-    {
-        "user_id": 2,
-        "username": "instructor",
-        "email": "instructor@school.edu.vn",
-        "password_hash": "$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6",
-        "full_name": "Giảng Viên Hướng Dẫn",
-        "role": "instructor",
-        "student_id": "MSGV001",
-        "user_code": "MSGV001",
-        "department": "Khoa Công Nghệ Thông Tin",
-        "academic_rank": "Thạc sĩ",
-        "phone_number": None,
-        "avatar_url": None,
-        "is_active": True,
-        "must_change_password": False,
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-        "last_login": None,
-        "last_login_ip": None,
-        "lop_sinh_hoat": None,
-        "homeroom_class": None
-    },
-    {
-        "user_id": 3,
-        "username": "student",
-        "email": "student@school.edu.vn",
-        "password_hash": "$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6",
-        "full_name": "Sinh Viên Nguyễn Văn A",
-        "role": "student",
-        "student_id": "SV2026001",
-        "user_code": "SV2026001",
-        "department": "Kỹ Thuật Phần Mềm",
-        "academic_rank": None,
-        "phone_number": None,
-        "avatar_url": None,
-        "is_active": True,
-        "must_change_password": False,
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-        "last_login": None,
-        "last_login_ip": None,
-        "lop_sinh_hoat": "SE1801",
-        "homeroom_class": "SE1801"
-    },
-    {
-        "user_id": 4,
-        "username": "pvlong",
-        "email": "pvlong@dtu.edu.vn",
-        "password_hash": "$2b$12$t/59jV7LxFjvjku/dRjkzO/NuiUXgNxE4rJnC8oboFt3wN1AxZcti",
-        "full_name": "Phạm Vũ Long",
-        "role": "instructor",
-        "student_id": "MSGV_PVL01",
-        "user_code": "MSGV_PVL01",
-        "department": "Khoa CNTT - Đại học Duy Tân",
-        "academic_rank": "Thạc sĩ",
-        "phone_number": None,
-        "avatar_url": None,
-        "is_active": True,
-        "must_change_password": False,
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-        "last_login": None,
-        "last_login_ip": None,
-        "lop_sinh_hoat": None,
-        "homeroom_class": None
-    }
-]
+logger = logging.getLogger(__name__)
 
 def _parse_user_row(cursor, row) -> Optional[Dict]:
     if not row:
@@ -150,10 +61,8 @@ def get_user_by_username(username: str) -> Optional[Dict]:
         finally:
             cursor.close()
             conn.close()
-    except Exception:
-        for u in DEV_MOCK_USERS:
-            if u["username"].lower() == username.lower():
-                return u
+    except Exception as e:
+        logger.error(f"Lỗi database khi tìm user theo username '{username}': {e}")
     return None
 
 def get_user_by_email(email: str) -> Optional[Dict]:
@@ -167,10 +76,8 @@ def get_user_by_email(email: str) -> Optional[Dict]:
         finally:
             cursor.close()
             conn.close()
-    except Exception:
-        for u in DEV_MOCK_USERS:
-            if u["email"].lower() == email.lower():
-                return u
+    except Exception as e:
+        logger.error(f"Lỗi database khi tìm user theo email '{email}': {e}")
     return None
 
 def get_user_by_student_id(student_id: str) -> Optional[Dict]:
@@ -187,10 +94,8 @@ def get_user_by_student_id(student_id: str) -> Optional[Dict]:
         finally:
             cursor.close()
             conn.close()
-    except Exception:
-        for u in DEV_MOCK_USERS:
-            if (u.get("student_id") or "").strip().lower() == clean_id.lower():
-                return u
+    except Exception as e:
+        logger.error(f"Lỗi database khi tìm user theo mã định danh '{clean_id}': {e}")
     return None
 
 def get_user_by_id(user_id: int) -> Optional[Dict]:
@@ -204,10 +109,8 @@ def get_user_by_id(user_id: int) -> Optional[Dict]:
         finally:
             cursor.close()
             conn.close()
-    except Exception:
-        for u in DEV_MOCK_USERS:
-            if u["user_id"] == user_id:
-                return u
+    except Exception as e:
+        logger.error(f"Lỗi database khi tìm user theo ID {user_id}: {e}")
     return None
 
 def create_user(
@@ -292,13 +195,8 @@ def update_last_login(user_id: int, client_ip: Optional[str] = None):
         finally:
             cursor.close()
             conn.close()
-    except Exception:
-        for u in DEV_MOCK_USERS:
-            if u["user_id"] == user_id:
-                u["last_login"] = datetime.now()
-                if client_ip:
-                    u["last_login_ip"] = client_ip
-                break
+    except Exception as e:
+        logger.error(f"Lỗi database khi cập nhật last_login cho user_id {user_id}: {e}")
 
 def update_user_profile(
     user_id: int, 
@@ -354,19 +252,9 @@ def update_user_profile(
         finally:
             cursor.close()
             conn.close()
-    except Exception:
-        for u in DEV_MOCK_USERS:
-            if u["user_id"] == user_id:
-                if full_name is not None: u["full_name"] = full_name
-                if email is not None: u["email"] = email
-                if student_id is not None:
-                    u["student_id"] = student_id
-                    u["user_code"] = student_id
-                if department is not None: u["department"] = department
-                if lop_sinh_hoat is not None:
-                    u["lop_sinh_hoat"] = lop_sinh_hoat
-                    u["homeroom_class"] = lop_sinh_hoat
-                return u
+    except Exception as e:
+        logger.error(f"Lỗi database khi cập nhật profile cho user_id {user_id}: {e}")
+        return None
         return None
 
 def change_user_password(user_id: int, new_password: str) -> bool:

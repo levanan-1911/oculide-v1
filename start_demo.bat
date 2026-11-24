@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title Oculide - Khoi Dong He Thong Bao Cao & Demo
+title Oculide - Khoi Dong He Thong Bao Cao ^& Demo
 color 0A
 
 echo ==============================================================================
-echo       OCULIDE - HE THONG KHAO THI & GIAM SAT THI TRUC TUYEN BANG AI
+echo       OCULIDE - HE THONG KHAO THI ^& GIAM SAT THI TRUC TUYEN BANG AI
 echo ==============================================================================
 echo.
 
@@ -35,14 +35,29 @@ echo [OK] Toan bo 6/6 container Docker da duoc khoi dong.
 
 :: 3. Kiem tra va chay Cloudflare Tunnel
 echo.
-echo [*] 3/3. Dang kiem tra Cloudflare Tunnel (https://oculide.id.vn)...
+echo [*] 3/3. Dang kiem tra Cloudflare Tunnel...
+set "TUNNEL_FOUND=0"
 tasklist /fi "imagename eq cloudflared.exe" | findstr /i "cloudflared.exe" >nul
-if errorlevel 1 (
-    echo [*] Dang khoi chay Cloudflare Tunnel trong tien trinh ngam...
-    start /min "Cloudflare Tunnel (oculide.id.vn)" "D:\Oculide\cloudflared.exe" tunnel run oculide-tunnel
-    timeout /t 3 /nobreak >nul
-) else (
+if not errorlevel 1 (
     echo [OK] Cloudflare Tunnel da dang chay san.
+    set "TUNNEL_FOUND=1"
+) else (
+    if exist "D:\Oculide\cloudflared.exe" (
+        echo [*] Dang khoi chay Cloudflare Tunnel tu D:\Oculide...
+        start /min "Cloudflare Tunnel (oculide.id.vn)" "D:\Oculide\cloudflared.exe" tunnel run oculide-tunnel
+        timeout /t 3 /nobreak >nul
+        set "TUNNEL_FOUND=1"
+    ) else (
+        where cloudflared >nul 2>&1
+        if not errorlevel 1 (
+            echo [*] Dang khoi chay Cloudflare Tunnel tu he thong...
+            start /min "Cloudflare Tunnel (oculide.id.vn)" cloudflared tunnel run oculide-tunnel
+            timeout /t 3 /nobreak >nul
+            set "TUNNEL_FOUND=1"
+        ) else (
+            echo [THONG BAO] Khong tim thay cloudflared.exe tren may nay. He thong van hoat dong tot tren Localhost.
+        )
+    )
 )
 
 :: 4. Thong tin tai khoan demo
@@ -51,7 +66,7 @@ echo ===========================================================================
 echo                     HE THONG DA SAN SANG DE BAO CAO!
 echo ==============================================================================
 echo  - Ten mien chinh thuc (HTTPS):  https://oculide.id.vn
-echo  - API & Swagger Docs:            https://api.oculide.id.vn/docs
+echo  - API ^& Swagger Docs:            https://api.oculide.id.vn/docs
 echo  - Du phong noi bo (Offline):     http://localhost:3000
 echo.
 echo  --- TAI KHOAN DANG NHAP DEMO (Mat khau tat ca deu la: admin123) ---
@@ -61,8 +76,13 @@ echo   [3] Sinh vien (Student):         username: student     (MK: admin123)
 echo   [4] Sinh vien 2 (Student 2):     username: levanan13   (MK: admin123)
 echo ==============================================================================
 echo.
-echo Dang tu dong mo trinh duyet den https://oculide.id.vn ...
-start https://oculide.id.vn
+if "%TUNNEL_FOUND%"=="1" (
+    echo Dang tu dong mo trinh duyet den https://oculide.id.vn ...
+    start https://oculide.id.vn
+) else (
+    echo Dang tu dong mo trinh duyet den http://localhost:3000 ...
+    start http://localhost:3000
+)
 echo.
 echo Nhan phim bat ky de dong cua so nay (He thong van tiep tuc chay trong Docker ngam).
 pause >nul

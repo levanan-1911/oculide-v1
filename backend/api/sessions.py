@@ -27,7 +27,7 @@ async def start_session(
     if not room["is_active"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phòng thi đã bị đóng")
         
-    now = datetime.utcnow()
+    now = datetime.now()
     # Kiểm tra khung giờ thi hợp lệ nếu là phòng thi (exam)
     if room.get("room_type") == "exam":
         if room.get("start_time") and now < room["start_time"]:

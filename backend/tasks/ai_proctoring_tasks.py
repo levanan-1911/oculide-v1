@@ -96,7 +96,8 @@ def analyze_frame(
     session_id: int,
     snapshot_data: str,
     is_typing: bool = False,
-    client_event: Optional[str] = None
+    client_event: Optional[str] = None,
+    proctoring_config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Tác vụ Celery xử lý và phân tích hình ảnh giám sát webcam:
@@ -141,36 +142,47 @@ def analyze_frame(
     lighting = result.get("lighting", {})
     liveness = result.get("liveness", {})
 
+    # Đọc cấu hình ràng buộc của phòng thi
+    cfg = proctoring_config or {}
+    ai_face_enabled = cfg.get("aiFaceDetection", True)
+    ai_object_enabled = cfg.get("aiObjectDetection", True)
+    allow_tab_switch = cfg.get("allowTabSwitch", False)
+    lockdown_fullscreen = cfg.get("lockdownFullscreen", True)
+    require_camera = cfg.get("requireCamera", True)
+
     # ─── 0. SỰ KIỆN TỪ PHÍA CLIENT (Chuyển tab, thoát toàn màn hình, tắt camera) ───────────
     if client_event == "tab_switch":
-        confirmed_violations.append({
-            "type": "tab_switch",
-            "severity": "high",
-            "description": "Thí sinh chuyển sang tab hoặc cửa sổ ứng dụng khác ngoài trang thi"
-        })
-        attention_status = "violation"
+        if not allow_tab_switch:
+            confirmed_violations.append({
+                "type": "tab_switch",
+                "severity": "high",
+                "description": "Thí sinh chuyển sang tab hoặc cửa sổ ứng dụng khác ngoài trang thi"
+            })
+            attention_status = "violation"
     elif client_event == "fullscreen_exit":
-        confirmed_violations.append({
-            "type": "fullscreen_exit",
-            "severity": "medium",
-            "description": "Thí sinh thoát chế độ làm bài toàn màn hình"
-        })
-        attention_status = "violation"
+        if lockdown_fullscreen:
+            confirmed_violations.append({
+                "type": "fullscreen_exit",
+                "severity": "medium",
+                "description": "Thí sinh thoát chế độ làm bài toàn màn hình"
+            })
+            attention_status = "violation"
     elif client_event in ("camera_off", "camera_disabled"):
-        confirmed_violations.append({
-            "type": "camera_blocked",
-            "severity": "high",
-            "description": "Thí sinh đã tắt camera trong lúc làm bài thi"
-        })
-        attention_status = "violation"
+        if require_camera:
+            confirmed_violations.append({
+                "type": "camera_blocked",
+                "severity": "high",
+                "description": "Thí sinh đã tắt camera trong lúc làm bài thi"
+            })
+            attention_status = "violation"
 
     # Kiểm tra trạng thái camera tắt hoặc bị che ống kính
     is_cam_off = lighting.get("is_camera_off", False) or (client_event in ("camera_off", "camera_disabled"))
     is_cam_covered = lighting.get("is_camera_covered", False)
     is_cam_off_or_covered = is_cam_off or is_cam_covered
 
-    # A. Thiết bị cấm (YOLO) - Chỉ quét khi camera hoạt động bình thường
-    if not is_cam_off_or_covered:
+    # A. Thiết bị cấm (YOLO) - Chỉ quét khi camera hoạt động bình thường và ai_object_enabled là True
+    if not is_cam_off_or_covered and ai_object_enabled:
         for obj in result.get("detected_objects", []):
             c_name = obj.get("class_name", "").lower()
             if "phone" in c_name:
@@ -201,7 +213,7 @@ def analyze_frame(
     # Nếu đang gõ phím và nhìn xuống bàn phím -> bỏ qua
     is_typing_looking_at_keyboard = is_typing and is_looking_down
 
-    if face_count == 1 and not is_cam_off_or_covered:
+    if face_count == 1 and not is_cam_off_or_covered and ai_face_enabled:
         if not looking_at_screen and not is_typing_looking_at_keyboard:
             start_off = session_state.get("off_screen_start")
             if not start_off:
@@ -274,8 +286,8 @@ def analyze_frame(
         session_state["off_screen_start"] = None
         session_state["off_screen_violation_triggered"] = False
 
-    # C. Vắng mặt khỏi camera (Ngưỡng Dwell Time >= 5s) - Chỉ tính khi camera đang mở bình thường
-    if face_count == 0 and not is_cam_off_or_covered:
+    # C. Vắng mặt khỏi camera (Ngưỡng Dwell Time >= 5s) - Chỉ tính khi camera đang mở bình thường và ai_face_enabled
+    if face_count == 0 and not is_cam_off_or_covered and ai_face_enabled:
         start_no_face = session_state.get("no_face_start")
         if not start_no_face:
             session_state["no_face_start"] = now
@@ -297,7 +309,7 @@ def analyze_frame(
         session_state["no_face_violation_triggered"] = False
 
     # D. Nhiều khuôn mặt trước camera (Ngưỡng >= 3s)
-    if face_count > 1 and not is_cam_off_or_covered:
+    if face_count > 1 and not is_cam_off_or_covered and ai_face_enabled:
         start_multi = session_state.get("multi_face_start")
         if not start_multi:
             session_state["multi_face_start"] = now

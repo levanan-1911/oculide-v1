@@ -365,6 +365,7 @@ export default function ExamWorkspacePage() {
     return Number(localStorage.getItem(`exam_ai_violation_${activeRoomId}`)) || 0;
   });
   const [warningToast, setWarningToast] = useState<string | null>(null);
+  const [showFullscreenWarningModal, setShowFullscreenWarningModal] = useState(false);
   const [incomingAnnouncement, setIncomingAnnouncement] = useState<{
     id: number;
     message: string;
@@ -441,7 +442,8 @@ export default function ExamWorkspacePage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const currentProblem = examData.problems[activeProblemIdx] ?? examData.problems[0] ?? null;
 
-  const totalViolations = pasteCount + tabSwitchCount + aiViolationCount;
+  const isTabSwitchBlocked = proctoringConfig?.allowTabSwitch === false || (examRoomType === 'exam' && proctoringConfig?.allowTabSwitch !== true);
+  const totalViolations = pasteCount + (isTabSwitchBlocked ? tabSwitchCount : 0) + aiViolationCount;
 
   // Khóa thi khi quá 3 lần vi phạm - Cập nhật đồng bộ vào CSDL và localStorage để F5 không thể mở lại
   useEffect(() => {
@@ -463,7 +465,11 @@ export default function ExamWorkspacePage() {
     }
   }, [totalViolations, isLocked, examState, activeRoomId, activeSessionId]);
 
+  // Tự động kích hoạt toàn màn hình nếu ca thi bật ràng buộc Lockdown
   useEffect(() => {
+    const isLockdown = proctoringConfig?.lockdownFullscreen !== false && examRoomType === 'exam';
+    if (!isLockdown) return;
+
     const enterFullscreen = async () => {
       try {
         if (!document.fullscreenElement) {
@@ -475,7 +481,33 @@ export default function ExamWorkspacePage() {
       }
     };
     enterFullscreen();
-  }, []);
+  }, [proctoringConfig, examRoomType]);
+
+  // Giám sát trạng thái toàn màn hình khi có ràng buộc Lockdown
+  useEffect(() => {
+    const isLockdown = proctoringConfig?.lockdownFullscreen !== false && examRoomType === 'exam';
+
+    function handleFullscreenChange() {
+      if (!document.fullscreenElement && examState === "doing" && !isLocked) {
+        setIsFullscreen(false);
+        if (isLockdown) {
+          setShowFullscreenWarningModal(true);
+          showToast("CẢNH BÁO QUY CHẾ: Bạn vừa thoát chế độ toàn màn hình!");
+          reportViolationToBackend(
+            "fullscreen_exit",
+            "medium",
+            "Sinh viên thoát chế độ làm bài toàn màn hình."
+          );
+        }
+      } else if (document.fullscreenElement) {
+        setIsFullscreen(true);
+        setShowFullscreenWarningModal(false);
+      }
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, [proctoringConfig, examRoomType, examState, isLocked]);
 
   // Đếm ngược thời gian
   useEffect(() => {
@@ -731,10 +763,16 @@ export default function ExamWorkspacePage() {
     }).catch(() => {});
   };
 
-  // Giám sát chuyển tab
+  // Giám sát chuyển tab (Chỉ cảnh báo & phạt khi phòng thi bật ràng buộc Chặn chuyển tab)
   useEffect(() => {
     function handleVisibilityChange() {
       if (document.hidden && examState === "doing" && !isLocked) {
+        const isTabSwitchAllowed = proctoringConfig?.allowTabSwitch === true || (examRoomType === 'lab' && proctoringConfig?.allowTabSwitch !== false);
+        if (isTabSwitchAllowed) {
+          // Buổi Lab hoặc cấu hình cho phép chuyển tab tra cứu tài liệu
+          return;
+        }
+
         setTabSwitchCount((prev) => {
           const next = prev + 1;
           if (activeRoomId && typeof window !== "undefined") {
@@ -754,7 +792,7 @@ export default function ExamWorkspacePage() {
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [examState, isLocked, activeSessionId, activeRoomId]);
+  }, [examState, isLocked, activeSessionId, activeRoomId, proctoringConfig, examRoomType]);
 
   // Chặn phím tắt paste
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -981,6 +1019,36 @@ export default function ExamWorkspacePage() {
         <div className="fixed top-18 right-6 z-50 flex items-center gap-3 rounded-md border border-rose-500/50 bg-rose-900 text-white px-4 py-3 text-xs font-semibold shadow-lg backdrop-blur-md">
           <ShieldAlert size={18} className="shrink-0 text-rose-300" />
           <span>{warningToast}</span>
+        </div>
+      )}
+
+      {/* Modal Cảnh báo Thoát Toàn Màn Hình (Lockdown Enforcement) */}
+      {showFullscreenWarningModal && !isLocked && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-lg border-2 border-rose-500 bg-slate-900 p-6 text-white shadow-2xl text-center space-y-4">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/20 text-rose-400">
+              <ShieldAlert className="h-8 w-8 animate-bounce" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="font-serif text-lg font-bold text-white">
+                Cảnh Báo: Chế Độ Khóa Toàn Màn Hình!
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Phòng thi này yêu cầu làm bài ở chế độ toàn màn hình (Lockdown Mode). Bạn vừa thoát hoặc thu nhỏ cửa sổ trình duyệt. Hành vi này đã được gửi về máy chủ giám sát.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                document.documentElement.requestFullscreen().catch(() => {});
+                setShowFullscreenWarningModal(false);
+              }}
+              className="w-full rounded-md bg-rose-600 hover:bg-rose-500 py-2.5 text-xs font-bold text-white transition shadow-md cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Maximize2 size={15} />
+              Quay lại chế độ toàn màn hình ngay
+            </button>
+          </div>
         </div>
       )}
 

@@ -2,6 +2,7 @@
 
 import React, { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, LoaderCircle, MessageSquare, RefreshCw, Send, Wifi, WifiOff } from 'lucide-react';
+import { buildRoomWebSocketUrl } from '@/utils/websocket';
 
 type ConnectionState = 'loading' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
 
@@ -156,14 +157,7 @@ export default function InstructorRoomChat({ roomCode }: InstructorRoomChatProps
       setConnectionState(reconnectAttempts === 0 ? 'connecting' : 'reconnecting');
       setConnectionMessage(reconnectAttempts === 0 ? 'Đang kết nối chat phòng...' : 'Đang kết nối lại...');
 
-      const wsBase = getWebSocketBase();
-      if (!wsBase) {
-        setConnectionState('error');
-        setErrorMessage('Chưa cấu hình địa chỉ WebSocket cho hệ thống chat.');
-        return;
-      }
-
-      const wsUrl = `${wsBase}/ws/${roomId}/proctor_${senderIdRef.current}?token=${encodeURIComponent(accessToken)}`;
+      const wsUrl = buildRoomWebSocketUrl(roomId, `proctor_${senderIdRef.current}`, accessToken);
       socket = new WebSocket(wsUrl);
       socketRef.current = socket;
 

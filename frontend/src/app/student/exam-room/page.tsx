@@ -305,6 +305,44 @@ export default function ExamWorkspacePage() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
 
+  // Khởi động webcam dự phòng liên tục để phục vụ AI Proctoring và chụp bằng chứng vi phạm
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let isCancelled = false;
+
+    async function initCamera() {
+      if (localVideoTrack) return;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false,
+        });
+        if (!isCancelled) {
+          setLocalStream(stream);
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+            localVideoRef.current.play().catch(() => {});
+          }
+        } else {
+          stream.getTracks().forEach((t) => t.stop());
+        }
+      } catch (err) {
+        console.warn("Không thể mở webcam dự phòng:", err);
+      }
+    }
+
+    if (!localVideoTrack) {
+      initCamera();
+    }
+
+    return () => {
+      isCancelled = true;
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, [localVideoTrack]);
+
   // Ưu tiên gắn trực tiếp localVideoTrack của LiveKit vào khung hình, tránh xung đột camera
   useEffect(() => {
     const videoEl = localVideoRef.current;
@@ -320,8 +358,11 @@ export default function ExamWorkspacePage() {
     }
   }, [localVideoTrack, localStream, isCameraExpanded]);
 
-  // Tự động yêu cầu chia sẻ màn hình khi sinh viên vào phòng thi / phòng thực hành (Lab)
-  const [hasPromptedScreenShare, setHasPromptedScreenShare] = useState(false);
+  // Tự động yêu cầu chia sẻ màn hình khi sinh viên vào phòng thi / phòng thực hành (Lab) - Chỉ hỏi 1 lần duy nhất
+  const [hasPromptedScreenShare, setHasPromptedScreenShare] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("exam_screen_shared_once") === "true";
+  });
   const [showScreenShareModal, setShowScreenShareModal] = useState(false);
 
   useEffect(() => {
@@ -329,6 +370,9 @@ export default function ExamWorkspacePage() {
 
     let isSubscribed = true;
     setHasPromptedScreenShare(true);
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("exam_screen_shared_once", "true");
+    }
 
     enableScreenShare().then((success) => {
       if (!isSubscribed) return;
@@ -430,6 +474,31 @@ export default function ExamWorkspacePage() {
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const currentProblem = examData.problems[activeProblemIdx] ?? examData.problems[0] ?? null;
+
+  // Đồng bộ ngôn ngữ lập trình theo câu hỏi do Giảng viên cấu hình
+  useEffect(() => {
+    if (currentProblem?.language) {
+      setSelectedLanguage(currentProblem.language);
+    }
+  }, [currentProblem?.id, currentProblem?.language]);
+
+  const handleLanguageChange = (newLang: string) => {
+    setSelectedLanguage(newLang);
+    if (!currentProblem) return;
+    const currentCode = codes[currentProblem.id] ?? "";
+    const isTemplateOrEmpty =
+      !currentCode.trim() ||
+      currentCode === getInitialCodeTemplate("cpp") ||
+      currentCode === getInitialCodeTemplate("python") ||
+      currentCode === getInitialCodeTemplate("java");
+
+    if (isTemplateOrEmpty) {
+      setCodes((prev) => ({
+        ...prev,
+        [currentProblem.id]: getInitialCodeTemplate(newLang),
+      }));
+    }
+  };
 
   const totalViolations = pasteCount + tabSwitchCount + aiViolationCount;
 
@@ -558,6 +627,18 @@ export default function ExamWorkspacePage() {
                 }
                 showToast("ĐÃ MỞ KHÓA: Giảng viên đã phê duyệt mở khóa từ xa!");
               }
+            } else if (
+              msg.type === "ROOM_ENDED" ||
+              msg.type === "room_ended" ||
+              (msg.type === "ROOM_STATUS_CHANGED" &&
+                ["da_dong", "ended", "completed", "closed", "da_ket_thuc"].includes(String(msg.status).toLowerCase()))
+            ) {
+              setExamState("completed");
+              setIsLocked(true);
+              showToast("PHÒNG THI ĐÃ KẾT THÚC: Giảng viên đã kết thúc phòng thi. Đang chuyển hướng...");
+              setTimeout(() => {
+                window.location.href = "/student/exams";
+              }, 2500);
             } else if (msg.type === "announcement" || msg.type === "notice") {
               const myIdStr = String(me.user_id);
               const targetStr = msg.target_id ? String(msg.target_id) : "";
@@ -615,12 +696,55 @@ export default function ExamWorkspacePage() {
     };
   }, [activeRoomId]);
 
+  // Polling dự phòng kiểm tra trạng thái phòng thi đã bị đóng bởi Giảng viên
+  useEffect(() => {
+    if (!activeRoomId || examState === "completed") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetchWithAuth<any>(`/api/v1/rooms/${activeRoomId}/status`);
+        const st = String(res?.status || "").toLowerCase();
+        if (["da_dong", "ended", "completed", "closed", "da_ket_thuc"].includes(st) || res?.is_active === false) {
+          clearInterval(interval);
+          setExamState("completed");
+          setIsLocked(true);
+          showToast("PHÒNG THI ĐÃ KẾT THÚC: Giảng viên đã kết thúc phòng thi. Đang chuyển hướng...");
+          setTimeout(() => {
+            window.location.href = "/student/exams";
+          }, 2500);
+        }
+      } catch {}
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [activeRoomId, examState]);
+
+  // Hàm chụp ảnh từ webcam của sinh viên làm bằng chứng vi phạm
+  const captureWebcamSnapshot = (): string | null => {
+    try {
+      const video = localVideoRef.current;
+      if (!video || !video.videoWidth || !video.videoHeight) {
+        return null;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.min(video.videoWidth, 640);
+      canvas.height = Math.min(video.videoHeight, 480);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.65);
+    } catch (err) {
+      console.warn("Không thể chụp frame vi phạm:", err);
+      return null;
+    }
+  };
+
   const reportViolationToBackend = (
     violationType: "tab_switch" | "copy_paste" | "fullscreen_exit",
     severity: "low" | "medium" | "high",
     description: string,
   ) => {
     if (!activeSessionId) return;
+    const snapshotBase64 = captureWebcamSnapshot();
+
     fetchWithAuth("/api/v1/violations", {
       method: "POST",
       body: JSON.stringify({
@@ -628,6 +752,7 @@ export default function ExamWorkspacePage() {
         violation_type: violationType,
         severity,
         description,
+        snapshot_url: snapshotBase64,
       }),
     }).catch(() => {});
   };
@@ -657,9 +782,61 @@ export default function ExamWorkspacePage() {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [examState, isLocked, activeSessionId, activeRoomId]);
 
-  // Chặn phím tắt paste
+  // Hỗ trợ phím Tab, Enter tự động thụt lề & Chặn Ctrl+V
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (isLocked) return;
+
+    // Phím Tab: thụt dòng 4 spaces thay vì mất focus
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const target = e.currentTarget;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const val = target.value;
+      const tabSpaces = "    ";
+      const newVal = val.substring(0, start) + tabSpaces + val.substring(end);
+      target.value = newVal;
+      target.selectionStart = target.selectionEnd = start + tabSpaces.length;
+      if (currentProblem) {
+        setCodes((prev) => ({
+          ...prev,
+          [currentProblem.id]: newVal,
+        }));
+      }
+      return;
+    }
+
+    // Phím Enter: Tự động thụt lề (Auto-indent) theo dòng trước đó
+    if (e.key === "Enter") {
+      const target = e.currentTarget;
+      const cursor = target.selectionStart;
+      const val = target.value;
+      const lastLineBreak = val.lastIndexOf("\n", cursor - 1);
+      const currentLine = val.substring(lastLineBreak + 1, cursor);
+      const matchIndent = currentLine.match(/^[ \t]+/);
+      let indent = matchIndent ? matchIndent[0] : "";
+
+      const trimmedLine = currentLine.trimEnd();
+      if (trimmedLine.endsWith("{") || trimmedLine.endsWith(":")) {
+        indent += "    ";
+      }
+
+      if (indent.length > 0) {
+        e.preventDefault();
+        const newVal = val.substring(0, cursor) + "\n" + indent + val.substring(target.selectionEnd);
+        target.value = newVal;
+        target.selectionStart = target.selectionEnd = cursor + 1 + indent.length;
+        if (currentProblem) {
+          setCodes((prev) => ({
+            ...prev,
+            [currentProblem.id]: newVal,
+          }));
+        }
+        return;
+      }
+    }
+
+    // Chặn phím tắt paste
     if ((e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
       e.preventDefault();
       setPasteCount((prev) => {
@@ -733,11 +910,16 @@ export default function ExamWorkspacePage() {
 
   const handleRunAllTests = async () => {
     if (!currentProblem) return;
+    const codeContent = (codes[currentProblem.id] ?? "").trim();
+    if (!codeContent) {
+      showToast("Vui lòng nhập mã nguồn trước khi chạy thử!");
+      return;
+    }
     setIsRunning(true);
     setTestResults({});
     setCustomRunOutput(null);
 
-    const codeContent = codes[currentProblem.id] ?? "";
+    const normalizedLang = (selectedLanguage || "cpp").toLowerCase().replace("c++", "cpp").replace("py", "python");
 
     try {
       if (activeTestTab === "custom") {
@@ -745,7 +927,7 @@ export default function ExamWorkspacePage() {
           method: "POST",
           body: JSON.stringify({
             code_content: codeContent,
-            language: selectedLanguage,
+            language: normalizedLang,
             custom_input: customInput,
           }),
         });
@@ -763,7 +945,7 @@ export default function ExamWorkspacePage() {
                 method: "POST",
                 body: JSON.stringify({
                   code_content: codeContent,
-                  language: selectedLanguage,
+                  language: normalizedLang,
                   custom_input: tc.input,
                 }),
               });
@@ -1176,7 +1358,7 @@ export default function ExamWorkspacePage() {
                 <select
                   value={selectedLanguage}
                   disabled={isLocked}
-                  onChange={(e) => setSelectedLanguage(e.target.value)}
+                  onChange={(e) => handleLanguageChange(e.target.value)}
                   className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 outline-none focus:border-slate-900 dark:border-white/10 dark:bg-[#221e27] dark:text-slate-300"
                 >
                   <option value="cpp">C++ (GCC 11)</option>
@@ -1188,9 +1370,10 @@ export default function ExamWorkspacePage() {
                   type="button"
                   disabled={isLocked}
                   onClick={() =>
+                    currentProblem &&
                     setCodes((prev) => ({
                       ...prev,
-                      [currentProblem.id]: currentProblem.initialCode,
+                      [currentProblem.id]: getInitialCodeTemplate(selectedLanguage),
                     }))
                   }
                   className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:text-[#a59fa3] dark:hover:text-white transition-colors cursor-pointer"
@@ -1746,17 +1929,34 @@ export default function ExamWorkspacePage() {
                 <li>Hoặc chọn <strong>&quot;Cửa sổ&quot; (Window)</strong> chứa IDE / Trình duyệt thi</li>
               </ul>
             </div>
-            <button
-              type="button"
-              onClick={async () => {
-                const ok = await enableScreenShare();
-                if (ok) setShowScreenShareModal(false);
-              }}
-              className="system-primary-action w-full flex items-center justify-center gap-2 rounded-md bg-slate-900 py-3 font-serif text-xs sm:text-sm font-bold text-white shadow-2xs hover:bg-slate-800 transition cursor-pointer"
-            >
-              <Monitor size={16} />
-              <span>CHIA SẺ MÀN HÌNH NGAY</span>
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await enableScreenShare();
+                  setShowScreenShareModal(false);
+                  if (typeof window !== "undefined") {
+                    sessionStorage.setItem("exam_screen_shared_once", "true");
+                  }
+                }}
+                className="system-primary-action flex-1 flex items-center justify-center gap-2 rounded-md bg-slate-900 py-3 font-serif text-xs sm:text-sm font-bold text-white shadow-2xs hover:bg-slate-800 transition cursor-pointer"
+              >
+                <Monitor size={16} />
+                <span>CHIA SẺ MÀN HÌNH NGAY</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowScreenShareModal(false);
+                  if (typeof window !== "undefined") {
+                    sessionStorage.setItem("exam_screen_shared_once", "true");
+                  }
+                }}
+                className="rounded-md border border-slate-300 px-4 py-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5 transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
             <p className="font-mono text-[11px] text-slate-400">
               * Sinh viên có thể chọn Entire Screen hoặc Tab/Cửa sổ IDE đang mở để làm bài mượt mà.
             </p>

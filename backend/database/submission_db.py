@@ -67,6 +67,10 @@ def get_submissions_by_student(student_id: int, room_id: Optional[int] = None) -
                    s.room_id, 
                    p.room_code,
                    p.room_name,
+                   lh.class_id,
+                   lh.class_code,
+                   lh.class_name,
+                   lh.course_code AS course_name,
                    s.student_id, 
                    s.question_id, 
                    q.title AS question_title,
@@ -85,6 +89,7 @@ def get_submissions_by_student(student_id: int, room_id: Optional[int] = None) -
             FROM Submissions s
             JOIN Questions q ON s.question_id = q.question_id
             LEFT JOIN Rooms p ON s.room_id = p.room_id
+            LEFT JOIN Classes lh ON p.class_id = lh.class_id
             {where_sql}
             ORDER BY s.submitted_at DESC
         """, tuple(params))

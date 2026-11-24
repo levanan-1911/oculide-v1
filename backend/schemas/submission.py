@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -6,13 +6,43 @@ class SubmissionCreateRequest(BaseModel):
     room_id: int
     question_id: int
     code_content: str = Field(..., min_length=1)
-    language: str = Field(..., pattern="^(python|cpp|c|java)$")
+    language: str
     attempt_number: int = Field(default=1, ge=1)
+
+    @validator("language", pre=True)
+    def normalize_create_language(cls, v):
+        if not v:
+            return "cpp"
+        v_clean = str(v).lower().strip()
+        if v_clean in ("c++", "cpp"):
+            return "cpp"
+        if v_clean in ("python", "py"):
+            return "python"
+        if v_clean == "java":
+            return "java"
+        if v_clean == "c":
+            return "c"
+        return v_clean
 
 class CodeRunRequest(BaseModel):
     code_content: str = Field(..., min_length=1)
-    language: str = Field(..., pattern="^(python|cpp|c|java)$")
+    language: str
     custom_input: str = ""
+
+    @validator("language", pre=True)
+    def normalize_run_language(cls, v):
+        if not v:
+            return "cpp"
+        v_clean = str(v).lower().strip()
+        if v_clean in ("c++", "cpp"):
+            return "cpp"
+        if v_clean in ("python", "py"):
+            return "python"
+        if v_clean == "java":
+            return "java"
+        if v_clean == "c":
+            return "c"
+        return v_clean
 
 class CodeRunResponse(BaseModel):
     stdout: str
@@ -38,6 +68,10 @@ class SubmissionResponse(BaseModel):
     room_id: int
     room_code: Optional[str] = None
     room_name: Optional[str] = None
+    class_id: Optional[int] = None
+    class_code: Optional[str] = None
+    class_name: Optional[str] = None
+    course_name: Optional[str] = None
     student_id: int
     student_name: Optional[str] = None
     student_code: Optional[str] = None

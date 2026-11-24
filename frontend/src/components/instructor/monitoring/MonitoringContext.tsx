@@ -15,6 +15,7 @@ export interface ViolationAlert {
   timestamp: string;
   description: string;
   status: 'pending' | 'warned' | 'recorded' | 'dismissed';
+  snapshotUrl?: string | null;
 }
 
 export interface SentAnnouncement {

@@ -11,8 +11,6 @@ import {
   LogOut,
   User,
   GraduationCap,
-  ShieldAlert,
-  CheckCircle2,
   CalendarDays,
   Sparkles,
 } from "lucide-react";
@@ -422,33 +420,6 @@ export default function StudentTopbar({
                 >
                   <User className="h-4 w-4 text-slate-500" />
                   <span>Hồ sơ cá nhân</span>
-                </Link>
-
-                <Link
-                  href="/student/schedule"
-                  onClick={() => setIsProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
-                >
-                  <GraduationCap className="h-4 w-4 text-slate-500" />
-                  <span>Lịch thi của tôi</span>
-                </Link>
-
-                <Link
-                  href="/student/submissions"
-                  onClick={() => setIsProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
-                >
-                  <CheckCircle2 className="h-4 w-4 text-slate-500" />
-                  <span>Kết quả làm bài</span>
-                </Link>
-
-                <Link
-                  href="/student/violations"
-                  onClick={() => setIsProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
-                >
-                  <ShieldAlert className="h-4 w-4 text-slate-500" />
-                  <span>Cảnh báo vi phạm AI</span>
                 </Link>
               </div>
 

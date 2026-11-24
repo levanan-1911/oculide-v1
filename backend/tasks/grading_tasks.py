@@ -47,7 +47,7 @@ def _run_in_docker_sandbox(
     )
     return {
         "stdout": res.get("stdout", ""),
-        "error": res.get("error") or res.get("stderr"),
+        "error": (res.get("stderr") or "").strip() or res.get("error"),
         "execution_ms": int(res.get("execution_ms", 0))
     }
 

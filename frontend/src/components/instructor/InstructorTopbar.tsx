@@ -15,8 +15,8 @@ import {
   Moon,
   User,
   Settings,
+  KeyRound,
   LogOut,
-  Radio,
 } from 'lucide-react';
 import { useMonitoring } from './monitoring/MonitoringContext';
 import { INSTRUCTOR_ROOMS_STORAGE_KEY, RoomSession } from '@/components/instructor/classes/types';
@@ -377,7 +377,7 @@ export default function InstructorTopbar({
                 </div>
               </div>
 
-              {/* Action items */}
+              {/* Action items: Đồng bộ 2 chức năng Thông tin cá nhân & Bảo mật & Mật khẩu */}
               <div className="py-1">
                 <Link
                   href="/instructor/profile"
@@ -385,7 +385,7 @@ export default function InstructorTopbar({
                   className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
                 >
                   <User className="h-4 w-4 text-slate-500" />
-                  <span>Hồ sơ cá nhân</span>
+                  <span>Thông tin cá nhân</span>
                 </Link>
 
                 <Link
@@ -393,17 +393,8 @@ export default function InstructorTopbar({
                   onClick={() => setIsProfileOpen(false)}
                   className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
                 >
-                  <Settings className="h-4 w-4 text-slate-500" />
-                  <span>Đổi mật khẩu</span>
-                </Link>
-
-                <Link
-                  href="/instructor/monitoring"
-                  onClick={() => setIsProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
-                >
-                  <Radio className="h-4 w-4 text-slate-500" />
-                  <span>Phòng giám sát thi</span>
+                  <KeyRound className="h-4 w-4 text-slate-500" />
+                  <span>Bảo mật & Mật khẩu</span>
                 </Link>
               </div>
 

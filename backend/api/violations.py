@@ -25,6 +25,13 @@ async def log_violation(
     session = get_session_by_id(violation_data.session_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phiên thi")
+
+    # Chống IDOR: sinh viên chỉ được ghi nhận sự kiện cho chính phiên thi của mình
+    if current_user.get("role") == "student" and session["student_id"] != current_user.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Không có quyền ghi nhận vi phạm cho phiên thi của sinh viên khác"
+        )
         
     # Bỏ qua vi phạm nếu phòng là chế độ thực hành thông thường (classroom)
     room = get_room_by_id(session["room_id"])
@@ -72,6 +79,11 @@ async def ingest_ai_violation_event(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Đầu chờ chuẩn cho mô-đun AI Proctoring (YOLOv8 / Pose) đẩy cảnh báo vi phạm vào hệ thống"""
+    if current_user.get("role") not in ("instructor", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ giảng viên, quản trị viên hoặc dịch vụ AI mới được gửi sự kiện AI"
+        )
     session_id = ai_event.session_id
     if not session_id:
         active_sessions = get_sessions_by_student(ai_event.student_id, room_id=ai_event.room_id, active_only=True)
@@ -118,6 +130,13 @@ async def analyze_webcam_snapshot(
     session = get_session_by_id(data.session_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phiên thi")
+
+    # Chống IDOR: sinh viên chỉ được gửi snapshot cho chính phiên thi của mình
+    if current_user.get("role") == "student" and session["student_id"] != current_user.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Không có quyền gửi dữ liệu giám sát cho phiên thi của sinh viên khác"
+        )
         
     room = get_room_by_id(session["room_id"])
     if room and room.get("room_type") == "classroom":

@@ -26,6 +26,16 @@ if project_root not in sys.path:
 
 from ai_workers.detector import proctor_detector
 
+
+def _dhash_hamming_distance(hash_a: Optional[str], hash_b: Optional[str]) -> int:
+    """Khoảng cách Hamming giữa 2 mã dHash 64-bit."""
+    if not hash_a or not hash_b:
+        return 64
+    try:
+        return bin(int(hash_a, 16) ^ int(hash_b, 16)).count("1")
+    except ValueError:
+        return 64
+
 def _get_redis_client():
     """Tạo kết nối đồng bộ đến Redis phục vụ việc publish tin nhắn WebSocket và kiểm soát tần suất"""
     if settings.REDIS_PASSWORD:
@@ -114,7 +124,9 @@ def analyze_frame(
         pass
 
     # 1. Cơ chế Kiểm soát Tần suất (Backpressure Rate Limiting: tối đa 1 frame/2s mỗi session)
-    if r:
+    # Không drop các sự kiện quan trọng từ client (tab_switch, fullscreen_exit, camera_off)
+    is_priority_event = client_event in ("tab_switch", "fullscreen_exit", "camera_off", "camera_disabled")
+    if r and not is_priority_event:
         try:
             ratelimit_key = f"ratelimit:ai_frame:{session_id}"
             # Chỉ cho phép phân tích nếu khóa chưa tồn tại (hạn 2 giây)
@@ -131,6 +143,21 @@ def analyze_frame(
     # 3. Phân tích trạng thái chuỗi thời gian (Temporal Dwell Time & Pattern Analysis)
     now = time.time()
     session_state = _load_session_state(r, session_id)
+    cooldowns = session_state.get("violation_cooldowns", {})
+
+    def _add_violation_with_cooldown(v_type: str, severity: str, description: str, cooldown_sec: float = 30.0) -> bool:
+        """Ghi nhận vi phạm có thời gian chờ (cooldown) để 1 sự cố không bị đếm trùng nhiều lần."""
+        last_ts = cooldowns.get(v_type)
+        if last_ts is not None and (now - float(last_ts)) < cooldown_sec:
+            return False
+        cooldowns[v_type] = now
+        session_state["violation_cooldowns"] = cooldowns
+        confirmed_violations.append({
+            "type": v_type,
+            "severity": severity,
+            "description": description
+        })
+        return True
 
     confirmed_violations = []
     gentle_reminder = None
@@ -143,26 +170,31 @@ def analyze_frame(
 
     # ─── 0. SỰ KIỆN TỪ PHÍA CLIENT (Chuyển tab, thoát toàn màn hình, tắt camera) ───────────
     if client_event == "tab_switch":
-        confirmed_violations.append({
-            "type": "tab_switch",
-            "severity": "high",
-            "description": "Thí sinh chuyển sang tab hoặc cửa sổ ứng dụng khác ngoài trang thi"
-        })
-        attention_status = "violation"
+        if _add_violation_with_cooldown(
+            "tab_switch",
+            "high",
+            "Thí sinh chuyển sang tab hoặc cửa sổ ứng dụng khác ngoài trang thi",
+            cooldown_sec=10.0,
+        ):
+            attention_status = "violation"
     elif client_event == "fullscreen_exit":
-        confirmed_violations.append({
-            "type": "fullscreen_exit",
-            "severity": "medium",
-            "description": "Thí sinh thoát chế độ làm bài toàn màn hình"
-        })
-        attention_status = "violation"
+        if _add_violation_with_cooldown(
+            "fullscreen_exit",
+            "medium",
+            "Thí sinh thoát chế độ làm bài toàn màn hình",
+            cooldown_sec=10.0,
+        ):
+            attention_status = "violation"
     elif client_event in ("camera_off", "camera_disabled"):
-        confirmed_violations.append({
-            "type": "camera_blocked",
-            "severity": "high",
-            "description": "Thí sinh đã tắt camera trong lúc làm bài thi"
-        })
-        attention_status = "violation"
+        if _add_violation_with_cooldown(
+            "camera_blocked",
+            "high",
+            "Thí sinh đã tắt camera trong lúc làm bài thi",
+            cooldown_sec=30.0,
+        ):
+            attention_status = "violation"
+        # Đánh dấu đã kích hoạt để mục E không đếm trùng thêm 1 lần nữa
+        session_state["dark_violation_triggered"] = True
 
     # Kiểm tra trạng thái camera tắt hoặc bị che ống kính
     is_cam_off = lighting.get("is_camera_off", False) or (client_event in ("camera_off", "camera_disabled"))
@@ -170,27 +202,42 @@ def analyze_frame(
     is_cam_off_or_covered = is_cam_off or is_cam_covered
 
     # A. Thiết bị cấm (YOLO) - Chỉ quét khi camera hoạt động bình thường
+    # Xác nhận điện thoại qua nhiều khung hình (>= 2/3 frame) hoặc độ tin cậy rất cao (>= 0.70) + cooldown 30s
     if not is_cam_off_or_covered:
-        for obj in result.get("detected_objects", []):
+        detected_objects = result.get("detected_objects", [])
+        phone_objs = [o for o in detected_objects if "phone" in o.get("class_name", "").lower()]
+        phone_history = session_state.get("phone_history", [])
+        phone_history.append(1 if phone_objs else 0)
+        if len(phone_history) > 3:
+            phone_history.pop(0)
+        session_state["phone_history"] = phone_history
+
+        if phone_objs:
+            best_phone = max(phone_objs, key=lambda o: float(o.get("confidence", 0.0)))
+            best_conf = float(best_phone.get("confidence", 0.0))
+            if best_conf >= 0.70 or sum(phone_history) >= 2:
+                if _add_violation_with_cooldown(
+                    "phone_detected",
+                    "critical",
+                    f"Phát hiện điện thoại di động trong khung hình (Độ tin cậy: {best_conf*100:.1f}%)",
+                    cooldown_sec=30.0,
+                ):
+                    attention_status = "violation"
+
+        for obj in detected_objects:
             c_name = obj.get("class_name", "").lower()
-            if "phone" in c_name:
-                confirmed_violations.append({
-                    "type": "phone_detected",
-                    "severity": "critical",
-                    "description": f"Phát hiện điện thoại di động trong khung hình (Độ tin cậy: {obj['confidence']*100:.1f}%)"
-                })
-                attention_status = "violation"
-            elif "book" in c_name or "laptop" in c_name:
+            if "book" in c_name or "laptop" in c_name:
                 obj_key = f"obj_{c_name}_start"
                 if not session_state.get(obj_key):
                     session_state[obj_key] = now
                 elif now - session_state[obj_key] >= 3.0:
-                    confirmed_violations.append({
-                        "type": "suspicious_object",
-                        "severity": "high" if "laptop" in c_name else "medium",
-                        "description": f"Phát hiện vật thể khả nghi ({c_name}) duy trì trong khung hình camera"
-                    })
-                    attention_status = "violation"
+                    if _add_violation_with_cooldown(
+                        "suspicious_object",
+                        "high" if "laptop" in c_name else "medium",
+                        f"Phát hiện vật thể khả nghi ({c_name}) duy trì trong khung hình camera",
+                        cooldown_sec=30.0,
+                    ):
+                        attention_status = "violation"
                     session_state[obj_key] = None
 
     # B. Quay đầu / Liếc mắt rời màn hình (Chỉ áp dụng khi camera mở rõ và có đúng 1 khuôn mặt)
@@ -231,7 +278,6 @@ def analyze_frame(
                     "dwell_seconds": round(dwell, 1)
                 }
             elif dwell >= violation_threshold and not session_state.get("off_screen_violation_triggered", False):
-                attention_status = "violation"
                 gaze_dir = result.get("gaze", {}).get("gaze_direction", "rời màn hình")
                 head_yaw = result.get("head_pose", {}).get("yaw", 0.0)
 
@@ -240,11 +286,8 @@ def analyze_frame(
                     if is_looking_down
                     else f"Thí sinh quay đầu hoặc liếc mắt rời màn hình liên tục trong {round(dwell, 1)}s (Góc lệch: Yaw {head_yaw}°, Hướng mắt: {gaze_dir})"
                 )
-                confirmed_violations.append({
-                    "type": "suspicious_object",
-                    "severity": "high",
-                    "description": desc
-                })
+                if _add_violation_with_cooldown("looking_away", "high", desc, cooldown_sec=30.0):
+                    attention_status = "violation"
                 session_state["off_screen_violation_triggered"] = True
         else:
             # Thí sinh đã quay trở lại nhìn màn hình
@@ -259,12 +302,13 @@ def analyze_frame(
 
                     # Nếu trong 60 giây liếc lặp lại >= 4 lần
                     if len(glances) >= 4:
-                        confirmed_violations.append({
-                            "type": "suspicious_object",
-                            "severity": "medium",
-                            "description": f"Thí sinh có hành vi liếc nhìn ngắt quãng lặp đi lặp lại {len(glances)} lần trong 60 giây"
-                        })
-                        attention_status = "violation"
+                        if _add_violation_with_cooldown(
+                            "looking_away",
+                            "medium",
+                            f"Thí sinh có hành vi liếc nhìn ngắt quãng lặp đi lặp lại {len(glances)} lần trong 60 giây",
+                            cooldown_sec=30.0,
+                        ):
+                            attention_status = "violation"
                         session_state["recent_glances"] = []
 
             session_state["off_screen_start"] = None
@@ -285,18 +329,26 @@ def analyze_frame(
             dwell_nf = now - start_no_face
 
         if dwell_nf >= 5.0 and not session_state.get("no_face_violation_triggered", False):
-            confirmed_violations.append({
-                "type": "no_face_detected",
-                "severity": "medium",
-                "description": f"Không phát hiện khuôn mặt thí sinh trước camera trong {round(dwell_nf, 1)}s"
-            })
-            attention_status = "violation"
+            if _add_violation_with_cooldown(
+                "no_face_detected",
+                "medium",
+                f"Không phát hiện khuôn mặt thí sinh trước camera trong {round(dwell_nf, 1)}s",
+                cooldown_sec=30.0,
+            ):
+                attention_status = "violation"
             session_state["no_face_violation_triggered"] = True
     else:
         session_state["no_face_start"] = None
         session_state["no_face_violation_triggered"] = False
 
-    # D. Nhiều khuôn mặt trước camera (Ngưỡng >= 3s)
+    # D. Nhiều khuôn mặt trước camera (Dwell >= 3s HOẶC xuất hiện >= 3/5 khung hình gần nhất - chống chập chờn)
+    multi_face_history = session_state.get("multi_face_history", [])
+    if not is_cam_off_or_covered:
+        multi_face_history.append(1 if face_count > 1 else 0)
+        if len(multi_face_history) > 5:
+            multi_face_history.pop(0)
+        session_state["multi_face_history"] = multi_face_history
+
     if face_count > 1 and not is_cam_off_or_covered:
         start_multi = session_state.get("multi_face_start")
         if not start_multi:
@@ -306,44 +358,48 @@ def analyze_frame(
         else:
             dwell_mf = now - start_multi
 
-        if dwell_mf >= 3.0 and not session_state.get("multi_face_violation_triggered", False):
-            confirmed_violations.append({
-                "type": "multiple_faces",
-                "severity": "high",
-                "description": f"Phát hiện {face_count} khuôn mặt xuất hiện trước camera trong {round(dwell_mf, 1)}s"
-            })
-            attention_status = "violation"
+        if (dwell_mf >= 3.0 or sum(multi_face_history) >= 3) and not session_state.get("multi_face_violation_triggered", False):
+            desc_mf = (
+                f"Phát hiện {face_count} khuôn mặt xuất hiện trước camera trong {round(dwell_mf, 1)}s"
+                if dwell_mf >= 3.0
+                else f"Phát hiện {face_count} khuôn mặt xuất hiện lặp lại ({sum(multi_face_history)}/5 khung hình gần nhất)"
+            )
+            if _add_violation_with_cooldown("multiple_faces", "high", desc_mf, cooldown_sec=30.0):
+                attention_status = "violation"
             session_state["multi_face_violation_triggered"] = True
     else:
         session_state["multi_face_start"] = None
-        session_state["multi_face_violation_triggered"] = False
+        if sum(multi_face_history) == 0:
+            session_state["multi_face_violation_triggered"] = False
 
-    # E. Camera bị che khuất hoặc tắt (Ngưỡng >= 4s)
+    # E. Camera bị che khuất hoặc tắt (Ngưỡng >= 4s, không đếm trùng nếu client_event camera_off đã ghi)
     if is_cam_off_or_covered:
         start_dark = session_state.get("dark_start")
         if not start_dark:
             session_state["dark_start"] = now
-            session_state["dark_violation_triggered"] = False
+            if not session_state.get("dark_violation_triggered"):
+                session_state["dark_violation_triggered"] = False
         elif now - start_dark >= 4.0 and not session_state.get("dark_violation_triggered", False):
             cam_desc = (
                 "Thí sinh đã tắt camera trong phòng thi"
                 if is_cam_off
                 else f"Camera bị che khuất hoặc che mờ ống kính trong {round(now - start_dark, 1)}s"
             )
-            confirmed_violations.append({
-                "type": "camera_blocked",
-                "severity": "high" if is_cam_off else "medium",
-                "description": cam_desc
-            })
-            attention_status = "violation"
+            if _add_violation_with_cooldown(
+                "camera_blocked",
+                "high" if is_cam_off else "medium",
+                cam_desc,
+                cooldown_sec=30.0,
+            ):
+                attention_status = "violation"
             session_state["dark_violation_triggered"] = True
     else:
         session_state["dark_start"] = None
         session_state["dark_violation_triggered"] = False
 
-    # F. Liveness / Chống Webcam ảo & Ảnh tĩnh (Chỉ kiểm tra EAR khi có dữ liệu từ MediaPipe thật)
+    # F. Liveness / Chống Webcam ảo & Ảnh tĩnh (Kết hợp phương sai EAR + phương sai tư thế đầu để giảm báo động giả)
     detector_method = result.get("method")
-    if face_count == 1 and detector_method == "mediapipe_facemesh":
+    if face_count == 1 and detector_method == "mediapipe_facemesh" and not is_cam_off_or_covered:
         current_ear = liveness.get("ear")
         if current_ear is not None:
             ear_history = session_state.get("ear_history", [])
@@ -352,42 +408,73 @@ def analyze_frame(
                 ear_history.pop(0)
             session_state["ear_history"] = ear_history
 
-            # Khi đã thu thập đủ 8 mẫu (~16s)
+            pose_history = session_state.get("pose_history", [])
+            hp = result.get("head_pose") or {}
+            pose_history.append((float(hp.get("yaw", 0.0)), float(hp.get("pitch", 0.0))))
+            if len(pose_history) > 10:
+                pose_history.pop(0)
+            session_state["pose_history"] = pose_history
+
+            # Chỉ đánh dấu webcam ảo/ảnh bất động khi đủ 8 mẫu (~32s) VÀ cả EAR lẫn góc đầu đều bất động tuyệt đối
             if len(ear_history) >= 8:
                 ear_mean = sum(ear_history) / len(ear_history)
                 ear_variance = sum((x - ear_mean) ** 2 for x in ear_history) / len(ear_history)
-                # Nếu mắt mở nhưng hoàn toàn không chớp mắt (phương sai < 0.0001)
-                if ear_variance < 0.0001 and not session_state.get("liveness_violation_triggered", False):
-                    confirmed_violations.append({
-                        "type": "suspicious_object",
-                        "severity": "high",
-                        "description": "Phát hiện hình ảnh bất động hoặc video lặp không có phản xạ chớp mắt tự nhiên (Nghi vấn webcam ảo)"
-                    })
-                    attention_status = "violation"
+                yaw_vals = [p[0] for p in pose_history]
+                pitch_vals = [p[1] for p in pose_history]
+                yaw_mean = sum(yaw_vals) / len(yaw_vals)
+                pitch_mean = sum(pitch_vals) / len(pitch_vals)
+                pose_variance = (
+                    sum((y - yaw_mean) ** 2 for y in yaw_vals)
+                    + sum((p - pitch_mean) ** 2 for p in pitch_vals)
+                ) / (2 * len(pose_history))
+
+                if ear_variance < 1e-6 and pose_variance < 0.05 and not session_state.get("liveness_violation_triggered", False):
+                    if _add_violation_with_cooldown(
+                        "suspicious_object",
+                        "high",
+                        "Phát hiện hình ảnh bất động tuyệt đối không có chuyển động tự nhiên (Nghi vấn webcam ảo)",
+                        cooldown_sec=60.0,
+                    ):
+                        attention_status = "violation"
                     session_state["liveness_violation_triggered"] = True
 
-    # G. Kiểm tra đóng băng khung hình (Freeze Frame / Static Photo) cho mọi phương thức nhận diện
-    current_frame_hash = hash(snapshot_data[:400] + snapshot_data[-400:]) if len(snapshot_data) > 800 else hash(snapshot_data)
-    last_frame_hash = session_state.get("last_frame_hash")
-    identical_count = session_state.get("identical_frame_count", 0)
+    # G. Kiểm tra đóng băng khung hình (Freeze Frame / Static Photo) bằng perceptual dHash chịu nhiễu nhẹ
+    if not is_cam_off_or_covered:
+        current_dhash = result.get("dhash")
+        last_dhash = session_state.get("last_frame_dhash")
+        identical_count = session_state.get("identical_frame_count", 0)
 
-    if last_frame_hash is not None and last_frame_hash == current_frame_hash:
-        identical_count += 1
-        # Nếu gửi 6 frame liên tiếp giống nhau 100% từng byte (~24s liên tục)
-        if identical_count >= 6 and not session_state.get("frozen_camera_violation_triggered", False):
-            confirmed_violations.append({
-                "type": "suspicious_object",
-                "severity": "high",
-                "description": "Phát hiện khung hình webcam bị đóng băng hoặc sử dụng ảnh tĩnh cố định"
-            })
-            attention_status = "violation"
-            session_state["frozen_camera_violation_triggered"] = True
+        is_same_frame = False
+        if current_dhash and last_dhash:
+            is_same_frame = _dhash_hamming_distance(current_dhash, last_dhash) <= 2
+        else:
+            current_raw_hash = hash(snapshot_data[:400] + snapshot_data[-400:]) if len(snapshot_data) > 800 else hash(snapshot_data)
+            last_raw_hash = session_state.get("last_frame_hash")
+            is_same_frame = (last_raw_hash is not None and last_raw_hash == current_raw_hash)
+            session_state["last_frame_hash"] = current_raw_hash
+
+        if is_same_frame:
+            identical_count += 1
+            # Nếu gửi 6 frame liên tiếp giống nhau (~24s liên tục)
+            if identical_count >= 6 and not session_state.get("frozen_camera_violation_triggered", False):
+                if _add_violation_with_cooldown(
+                    "suspicious_object",
+                    "high",
+                    "Phát hiện khung hình webcam bị đóng băng hoặc sử dụng ảnh tĩnh cố định",
+                    cooldown_sec=60.0,
+                ):
+                    attention_status = "violation"
+                session_state["frozen_camera_violation_triggered"] = True
+        else:
+            identical_count = 0
+            session_state["frozen_camera_violation_triggered"] = False
+
+        if current_dhash:
+            session_state["last_frame_dhash"] = current_dhash
+        session_state["identical_frame_count"] = identical_count
     else:
-        identical_count = 0
+        session_state["identical_frame_count"] = 0
         session_state["frozen_camera_violation_triggered"] = False
-
-    session_state["last_frame_hash"] = current_frame_hash
-    session_state["identical_frame_count"] = identical_count
 
     # 4. Quản lý lưu trữ ảnh snapshot (Tối ưu I/O: Chỉ ghi đĩa khi có vi phạm hoặc chu kỳ mẫu 30s)
     last_saved_time = session_state.get("last_saved_snapshot_time", 0.0)

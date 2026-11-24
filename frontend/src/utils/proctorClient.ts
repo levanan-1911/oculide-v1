@@ -103,9 +103,8 @@ export class ProctoringClient {
     // 1. Lắng nghe hành vi gõ phím (is_typing trong 3s gần nhất)
     window.addEventListener("keydown", this.handleKeyDown);
 
-    // 2. Lắng nghe sự kiện chuyển tab (visibilitychange & blur)
-    document.addEventListener("visibilitychange", this.handleVisibilityChange);
-    window.addEventListener("blur", this.handleWindowBlur);
+    // 2. Lưu ý: Sự kiện chuyển tab (visibilitychange) đã được exam-room/page.tsx ghi nhận trực tiếp
+    // qua POST /api/v1/violations để tránh đếm trùng 2 lần cho cùng 1 lần chuyển tab.
 
     // 3. Khởi chạy chu kỳ chụp thích ứng
     this.scheduleNextCapture(2000); // Frame đầu chụp sau 2s
@@ -121,25 +120,10 @@ export class ProctoringClient {
       this.timerId = null;
     }
     window.removeEventListener("keydown", this.handleKeyDown);
-    document.removeEventListener("visibilitychange", this.handleVisibilityChange);
-    window.removeEventListener("blur", this.handleWindowBlur);
   }
 
   private handleKeyDown = () => {
     this.lastTypingTimestamp = Date.now();
-  };
-
-  private handleVisibilityChange = () => {
-    if (document.hidden) {
-      this.sendSnapshotImmediately("tab_switch");
-    }
-  };
-
-  private handleWindowBlur = () => {
-    // Chỉ kích hoạt chụp tab_switch nếu tài liệu thực sự bị ẩn (tránh phạt oan do popup hệ điều hành)
-    if (document.hidden) {
-      this.sendSnapshotImmediately("tab_switch");
-    }
   };
 
   /**

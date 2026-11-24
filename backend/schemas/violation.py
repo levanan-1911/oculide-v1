@@ -4,7 +4,7 @@ from datetime import datetime
 
 class ViolationCreateRequest(BaseModel):
     session_id: int
-    violation_type: str = Field(..., pattern="^(tab_switch|copy_paste|no_face_detected|multiple_faces|phone_detected|suspicious_object|fullscreen_exit|camera_blocked|time_exceeded|inactive_30s|multiple_people)$")
+    violation_type: str = Field(..., pattern="^(tab_switch|copy_paste|no_face_detected|multiple_faces|phone_detected|suspicious_object|fullscreen_exit|camera_blocked|looking_away|time_exceeded|inactive_30s|multiple_people)$")
     severity: str = Field("medium", pattern="^(low|medium|high|critical)$")
     description: Optional[str] = None
     snapshot_url: Optional[str] = None

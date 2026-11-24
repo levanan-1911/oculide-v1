@@ -400,23 +400,25 @@ export default function ExamWorkspacePage() {
 
     const token = getAuthToken() || "";
     const client = new ProctoringClient(activeSessionId, window.location.origin, token);
+    const hasActiveCamera = Boolean(localVideoTrack || localStream);
+    client.setCameraActive(hasActiveCamera);
     client.start(videoEl);
 
     return () => {
       client.stop();
     };
-  }, [activeSessionId, examState, isLocked, localVideoTrack]);
+  }, [activeSessionId, examState, isLocked, localVideoTrack, localStream]);
 
-  // YOLOv8 AI Proctoring State
+  // YOLOv8 AI Proctoring State - Khởi tạo sạch sẽ, không giả lập tĩnh cứng
   const [yoloDetections, setYoloDetections] = useState<{
     label: string;
     confidence: number;
     bbox: { x: number; y: number; w: number; h: number };
     status: "ok" | "warning" | "danger";
   }>({
-    label: "person",
-    confidence: 0.98,
-    bbox: { x: 18, y: 15, w: 64, h: 70 },
+    label: "Giám sát AI",
+    confidence: 1.0,
+    bbox: { x: 0, y: 0, w: 0, h: 0 },
     status: "ok",
   });
 
@@ -433,7 +435,7 @@ export default function ExamWorkspacePage() {
 
   const totalViolations = pasteCount + tabSwitchCount + aiViolationCount;
 
-  // Khóa thi khi quá 3 lần vi phạm - Lưu cờ vào localStorage để F5 không tự mở khóa
+  // Khóa thi khi quá 3 lần vi phạm - Cập nhật đồng bộ vào CSDL và localStorage để F5 không thể mở lại
   useEffect(() => {
     if (totalViolations >= 3 && !isLocked && examState === "doing") {
       setIsLocked(true);
@@ -442,9 +444,16 @@ export default function ExamWorkspacePage() {
           localStorage.setItem(`exam_locked_${activeRoomId}`, "true");
         } catch {}
       }
+      if (activeSessionId) {
+        // Đồng bộ trạng thái khóa trực tiếp vào CSDL để không thể F5 mở lại
+        fetchWithAuth(`/api/v1/sessions/${activeSessionId}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "locked" }),
+        }).catch(() => {});
+      }
       showToast("BÀI THI BỊ KHÓA: Bạn đã ghi nhận 3 lần vi phạm quy chế! Đang chờ Giảng viên phê duyệt mở khóa.");
     }
-  }, [totalViolations, isLocked, examState, activeRoomId]);
+  }, [totalViolations, isLocked, examState, activeRoomId, activeSessionId]);
 
   useEffect(() => {
     const enterFullscreen = async () => {
@@ -495,7 +504,8 @@ export default function ExamWorkspacePage() {
         });
         if (!cancelled && sess?.session_id) {
           setActiveSessionId(sess.session_id);
-          if (sess.status === "locked" || sess.is_locked) {
+          const isSessionLocked = sess.status === "locked" || sess.status === "bi_khoa" || Boolean(sess.is_locked);
+          if (isSessionLocked) {
             setIsLocked(true);
             if (activeRoomId && typeof window !== "undefined") {
               try {
@@ -503,6 +513,42 @@ export default function ExamWorkspacePage() {
               } catch {}
             }
           }
+
+          // Nạp lịch sử vi phạm thực tế từ máy chủ (tránh bị reset khi reload trang)
+          try {
+            const serverViolations = await fetchWithAuth<Array<{
+              violation_id: number;
+              violation_type: string;
+            }>>(`/api/v1/violations/session/${sess.session_id}`);
+            if (Array.isArray(serverViolations) && serverViolations.length > 0) {
+              let tabs = 0;
+              let pastes = 0;
+              let ais = 0;
+              for (const v of serverViolations) {
+                if (v.violation_type === "tab_switch") tabs++;
+                else if (v.violation_type === "copy_paste") pastes++;
+                else ais++;
+              }
+              setTabSwitchCount(tabs);
+              setPasteCount(pastes);
+              setAiViolationCount(ais);
+              if (activeRoomId && typeof window !== "undefined") {
+                try {
+                  localStorage.setItem(`exam_tab_switch_${activeRoomId}`, String(tabs));
+                  localStorage.setItem(`exam_paste_${activeRoomId}`, String(pastes));
+                  localStorage.setItem(`exam_ai_violation_${activeRoomId}`, String(ais));
+                } catch {}
+              }
+              if (tabs + pastes + ais >= 3) {
+                setIsLocked(true);
+                if (activeRoomId && typeof window !== "undefined") {
+                  try {
+                    localStorage.setItem(`exam_locked_${activeRoomId}`, "true");
+                  } catch {}
+                }
+              }
+            }
+          } catch {}
 
           // Lấy mốc thời gian bắt đầu làm bài chính thức từ API session
           const apiStartTimeRaw = sess.started_at || sess.start_time;
@@ -575,6 +621,38 @@ export default function ExamWorkspacePage() {
               setProctoringConfig((prev: any) => ({ ...prev, requireCamera: msg.requireCamera }));
               if (msg.requireCamera) {
                 toggleCamera(true).catch(() => null);
+              }
+            } else if (msg.type === "snapshot_update") {
+              if (String(msg.student_id) === String(me.user_id)) {
+                if (msg.camera_status === "off") {
+                  setYoloDetections({
+                    label: "Camera tắt",
+                    confidence: 1.0,
+                    bbox: { x: 0, y: 0, w: 0, h: 0 },
+                    status: "danger",
+                  });
+                } else if (msg.camera_status === "covered") {
+                  setYoloDetections({
+                    label: "Camera bị che",
+                    confidence: 1.0,
+                    bbox: { x: 0, y: 0, w: 0, h: 0 },
+                    status: "danger",
+                  });
+                } else if (msg.face_count === 0) {
+                  setYoloDetections({
+                    label: "Không thấy mặt",
+                    confidence: 0.0,
+                    bbox: { x: 0, y: 0, w: 0, h: 0 },
+                    status: "warning",
+                  });
+                } else if (msg.face_count === 1) {
+                  setYoloDetections({
+                    label: msg.looking_at_screen ? "Hợp lệ" : "Lệch hướng",
+                    confidence: msg.confidence_score || 0.95,
+                    bbox: { x: 20, y: 15, w: 60, h: 70 },
+                    status: msg.looking_at_screen ? "ok" : "warning",
+                  });
+                }
               }
             } else if (msg.type === "proctor_reminder") {
               if (String(msg.student_id) === String(me.user_id) && msg.message) {
@@ -798,20 +876,39 @@ export default function ExamWorkspacePage() {
     setIsSubmitting(true);
     try {
       if (activeRoomId) {
-        const realProblems = examData.problems.filter((p) => typeof p.question_id === "number");
-        for (const prob of realProblems) {
-          const code = codes[prob.id] ?? "";
+        // Chuẩn hóa ngôn ngữ lập trình về chuẩn hệ thống backend (cpp, python, java, c)
+        const normalizeLang = (lang: string) => {
+          const l = (lang || "").toLowerCase().trim();
+          if (l.includes("python") || l === "py") return "python";
+          if (l.includes("java") && !l.includes("script")) return "java";
+          if (l.includes("c++") || l.includes("cpp")) return "cpp";
+          if (l === "c") return "c";
+          return "cpp";
+        };
+        const safeLang = normalizeLang(selectedLanguage);
+
+        // Nộp mã nguồn cho từng câu hỏi trong đề thi
+        for (const prob of examData.problems) {
+          const qId = Number(prob.question_id || prob.id);
+          if (isNaN(qId) || qId <= 0) continue;
+
+          const code = codes[prob.id] || codes[String(prob.question_id)] || prob.initialCode || "";
           if (!code.trim()) continue;
-          await fetchWithAuth("/api/v1/submissions", {
-            method: "POST",
-            body: JSON.stringify({
-              room_id: activeRoomId,
-              question_id: prob.question_id,
-              attempt_number: 1,
-              code_content: code,
-              language: selectedLanguage,
-            }),
-          });
+
+          try {
+            await fetchWithAuth("/api/v1/submissions", {
+              method: "POST",
+              body: JSON.stringify({
+                room_id: activeRoomId,
+                question_id: qId,
+                attempt_number: 1,
+                code_content: code,
+                language: safeLang,
+              }),
+            });
+          } catch (subErr) {
+            console.warn(`Lỗi khi nộp bài cho câu hỏi #${qId}:`, subErr);
+          }
         }
 
         // Đánh dấu chính thức nộp bài trên Backend và kết thúc phiên thi
@@ -1354,7 +1451,11 @@ export default function ExamWorkspacePage() {
 
                     <div className="absolute bottom-1 left-1 right-1 flex items-center justify-between text-[8px] font-mono text-slate-300 bg-black/70 px-1 py-0.5 rounded">
                       <span>{livekitState === "connected" ? "LiveKit SFU" : "AI Camera"}</span>
-                      <span className="text-emerald-400 font-bold">ON</span>
+                      {Boolean(localVideoTrack || localStream) ? (
+                        <span className="text-emerald-400 font-bold">ON</span>
+                      ) : (
+                        <span className="text-rose-400 font-bold">OFF</span>
+                      )}
                     </div>
                   </div>
                 </div>

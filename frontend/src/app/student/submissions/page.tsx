@@ -31,64 +31,6 @@ type Submission = {
   memory: string;
 };
 
-const sampleSubmissions: Submission[] = [
-  {
-    id: "cb_111",
-    problem: "Tính tổng các số trong chuỗi",
-    exam: "Thực hành thuật toán nâng cao",
-    language: "C++20",
-    submittedAt: "2026-10-31T20:51:00",
-    status: "failed",
-    score: 80,
-    runtime: "0.004s",
-    memory: "1.82 MB",
-  },
-  {
-    id: "SUB-1001",
-    problem: "Tìm phần tử lớn nhất",
-    exam: "Thực hành thuật toán cơ bản",
-    language: "C++",
-    submittedAt: "2026-10-27T09:30:00",
-    status: "accepted",
-    score: 100,
-    runtime: "0.12s",
-    memory: "12 MB",
-  },
-  {
-    id: "SUB-1002",
-    problem: "Sắp xếp mảng",
-    exam: "Kiểm tra cấu trúc dữ liệu",
-    language: "Java",
-    submittedAt: "2026-10-27T10:15:00",
-    status: "pending",
-    score: null,
-    runtime: "Đang chấm",
-    memory: "—",
-  },
-  {
-    id: "SUB-1003",
-    problem: "Tính tổng dãy số",
-    exam: "Bài luyện tập lập trình",
-    language: "Python",
-    submittedAt: "2026-10-26T14:20:00",
-    status: "failed",
-    score: 40,
-    runtime: "0.18s",
-    memory: "18 MB",
-  },
-  {
-    id: "SUB-1004",
-    problem: "Kiểm tra số nguyên tố",
-    exam: "Thực hành thuật toán cơ bản",
-    language: "C++",
-    submittedAt: "2026-10-25T08:45:00",
-    status: "accepted",
-    score: 100,
-    runtime: "0.09s",
-    memory: "10 MB",
-  },
-];
-
 const statusConfig: Record<
   SubmissionStatus,
   { label: string; className: string; icon: typeof CheckCircle2; spin?: boolean }
@@ -135,15 +77,15 @@ function formatDate(value: string) {
 export default function StudentSubmissionsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | SubmissionStatus>("all");
-  const [submissions, setSubmissions] = useState<Submission[]>(sampleSubmissions);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
     let cancelled = false;
     async function loadMySubmissions() {
+      setIsLoading(true);
       try {
-        const me = await fetchWithAuth<{ user_id: number }>("/api/v1/auth/me");
-        if (!me?.user_id || cancelled) return;
-        const rows = await fetchWithAuth<Array<{
+        let rows: Array<{
           submission_id: number;
           room_id: number;
           room_code?: string;
@@ -154,7 +96,17 @@ export default function StudentSubmissionsPage() {
           submitted_at: string;
           status: string;
           score_percentage?: number;
-        }>>(`/api/v1/submissions/student/${me.user_id}`);
+        }> | null = null;
+
+        try {
+          rows = await fetchWithAuth("/api/v1/submissions/my");
+        } catch {
+          const me = await fetchWithAuth<{ user_id: number }>("/api/v1/auth/me");
+          if (me?.user_id && !cancelled) {
+            rows = await fetchWithAuth(`/api/v1/submissions/student/${me.user_id}`);
+          }
+        }
+
         if (cancelled || !Array.isArray(rows)) return;
 
         const mapped: Submission[] = rows.map((s) => {
@@ -180,8 +132,12 @@ export default function StudentSubmissionsPage() {
           };
         });
         setSubmissions(mapped);
-      } catch {
-        // Giữ fallback sampleSubmissions nếu chưa đăng nhập hoặc offline
+      } catch (err) {
+        console.error("Lỗi khi tải lịch sử bài nộp:", err);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     }
     loadMySubmissions();
@@ -368,7 +324,12 @@ export default function StudentSubmissionsPage() {
           </div>
         </div>
 
-        {filteredSubmissions.length ? (
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center p-14 space-y-3">
+            <LoaderCircle className="h-8 w-8 animate-spin text-slate-700 dark:text-slate-300" />
+            <p className="text-xs font-semibold text-slate-500">Đang tải danh sách bài nộp...</p>
+          </div>
+        ) : filteredSubmissions.length ? (
           <>
             {/* Desktop Table View */}
             <div className="hidden overflow-x-auto md:block">
@@ -512,17 +473,39 @@ export default function StudentSubmissionsPage() {
               })}
             </div>
           </>
-        ) : (
+        ) : submissions.length === 0 ? (
           <div className="px-6 py-14 text-center">
             <FileCode2
+              size={36}
+              className="mx-auto text-slate-400 dark:text-slate-600"
+            />
+            <h3 className="mt-3 font-serif font-semibold text-[#2A282D] dark:text-white text-base">
+              Chưa có bài nộp nào
+            </h3>
+            <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
+              Bạn chưa thực hiện nộp bài lập trình nào. Hãy tham gia ca thi hoặc phòng thực hành để bắt đầu làm bài.
+            </p>
+            <div className="mt-4">
+              <Link
+                href="/student/exams"
+                className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 font-serif text-xs font-bold text-white hover:bg-slate-800 transition"
+              >
+                <Code2 size={14} />
+                <span>Vào danh sách phòng thi</span>
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="px-6 py-14 text-center">
+            <Search
               size={32}
-              className="mx-auto text-slate-500"
+              className="mx-auto text-slate-400 dark:text-slate-600"
             />
             <h3 className="mt-3 font-serif font-semibold text-[#2A282D] dark:text-white text-sm">
-              Không tìm thấy bài nộp
+              Không tìm thấy bài nộp phù hợp
             </h3>
             <p className="mt-1 text-xs text-slate-500">
-              Thử thay đổi từ khóa hoặc bộ lọc trạng thái.
+              Thử thay đổi từ khóa tìm kiếm hoặc bộ lọc trạng thái.
             </p>
             <button
               type="button"

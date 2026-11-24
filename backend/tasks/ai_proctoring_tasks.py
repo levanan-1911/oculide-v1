@@ -12,6 +12,7 @@ from core.config import settings
 from database.snapshot_db import create_snapshot
 from database.violation_db import create_violation
 from database.system_log_db import create_system_log
+from database.room_db import get_current_vn_time
 
 # Bảo đảm đường dẫn import module ai_workers từ thư mục backend ưu tiên
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -140,7 +141,7 @@ def analyze_frame(
     lighting = result.get("lighting", {})
     liveness = result.get("liveness", {})
 
-    # ─── 0. SỰ KIỆN TỪ PHÍA CLIENT (Chuyển tab, thoát toàn màn hình) ───────────
+    # ─── 0. SỰ KIỆN TỪ PHÍA CLIENT (Chuyển tab, thoát toàn màn hình, tắt camera) ───────────
     if client_event == "tab_switch":
         confirmed_violations.append({
             "type": "tab_switch",
@@ -155,34 +156,44 @@ def analyze_frame(
             "description": "Thí sinh thoát chế độ làm bài toàn màn hình"
         })
         attention_status = "violation"
+    elif client_event in ("camera_off", "camera_disabled"):
+        confirmed_violations.append({
+            "type": "camera_blocked",
+            "severity": "high",
+            "description": "Thí sinh đã tắt camera trong lúc làm bài thi"
+        })
+        attention_status = "violation"
 
-    # A. Thiết bị cấm (YOLO) - Điện thoại xử lý ngay lập tức
-    for obj in result.get("detected_objects", []):
-        c_name = obj.get("class_name", "").lower()
-        if "phone" in c_name:
-            confirmed_violations.append({
-                "type": "phone_detected",
-                "severity": "critical",
-                "description": f"Phát hiện điện thoại di động trong khung hình (Độ tin cậy: {obj['confidence']*100:.1f}%)"
-            })
-            attention_status = "violation"
-        elif "book" in c_name or "laptop" in c_name:
-            obj_key = f"obj_{c_name}_start"
-            if not session_state.get(obj_key):
-                session_state[obj_key] = now
-            elif now - session_state[obj_key] >= 3.0:
+    # Kiểm tra trạng thái camera tắt hoặc bị che ống kính
+    is_cam_off = lighting.get("is_camera_off", False) or (client_event in ("camera_off", "camera_disabled"))
+    is_cam_covered = lighting.get("is_camera_covered", False)
+    is_cam_off_or_covered = is_cam_off or is_cam_covered
+
+    # A. Thiết bị cấm (YOLO) - Chỉ quét khi camera hoạt động bình thường
+    if not is_cam_off_or_covered:
+        for obj in result.get("detected_objects", []):
+            c_name = obj.get("class_name", "").lower()
+            if "phone" in c_name:
                 confirmed_violations.append({
-                    "type": "suspicious_object",
-                    "severity": "high" if "laptop" in c_name else "medium",
-                    "description": f"Phát hiện vật thể khả nghi ({c_name}) duy trì trong khung hình camera"
+                    "type": "phone_detected",
+                    "severity": "critical",
+                    "description": f"Phát hiện điện thoại di động trong khung hình (Độ tin cậy: {obj['confidence']*100:.1f}%)"
                 })
                 attention_status = "violation"
-                session_state[obj_key] = None
+            elif "book" in c_name or "laptop" in c_name:
+                obj_key = f"obj_{c_name}_start"
+                if not session_state.get(obj_key):
+                    session_state[obj_key] = now
+                elif now - session_state[obj_key] >= 3.0:
+                    confirmed_violations.append({
+                        "type": "suspicious_object",
+                        "severity": "high" if "laptop" in c_name else "medium",
+                        "description": f"Phát hiện vật thể khả nghi ({c_name}) duy trì trong khung hình camera"
+                    })
+                    attention_status = "violation"
+                    session_state[obj_key] = None
 
-    # B. Quay đầu / Liếc mắt rời màn hình (Ngưỡng Dwell Time thích ứng)
-    # Phân loại 2 hành vi:
-    # 1. Cúi đầu nhìn nháp/bàn phím (Pitch < -15°, |Yaw| <= 25°): Cho phép tới 15s để làm nháp
-    # 2. Ngoảnh mặt sang bên / liếc mắt ra ngoài (|Yaw| > 25° hoặc Gaze lệch): Ngưỡng 7s
+    # B. Quay đầu / Liếc mắt rời màn hình (Chỉ áp dụng khi camera mở rõ và có đúng 1 khuôn mặt)
     pitch_angle = result.get("head_pose", {}).get("pitch", 0.0)
     yaw_angle = abs(result.get("head_pose", {}).get("yaw", 0.0))
     is_looking_down = (pitch_angle < -15.0 and yaw_angle <= 25.0)
@@ -190,7 +201,7 @@ def analyze_frame(
     # Nếu đang gõ phím và nhìn xuống bàn phím -> bỏ qua
     is_typing_looking_at_keyboard = is_typing and is_looking_down
 
-    if face_count == 1:
+    if face_count == 1 and not is_cam_off_or_covered:
         if not looking_at_screen and not is_typing_looking_at_keyboard:
             start_off = session_state.get("off_screen_start")
             if not start_off:
@@ -258,9 +269,13 @@ def analyze_frame(
 
             session_state["off_screen_start"] = None
             session_state["off_screen_violation_triggered"] = False
+    else:
+        # Nếu camera tắt, che hoặc không có mặt, hủy ngay bộ đếm quay đầu
+        session_state["off_screen_start"] = None
+        session_state["off_screen_violation_triggered"] = False
 
-    # C. Vắng mặt khỏi camera (Ngưỡng Dwell Time >= 5s)
-    if face_count == 0:
+    # C. Vắng mặt khỏi camera (Ngưỡng Dwell Time >= 5s) - Chỉ tính khi camera đang mở bình thường
+    if face_count == 0 and not is_cam_off_or_covered:
         start_no_face = session_state.get("no_face_start")
         if not start_no_face:
             session_state["no_face_start"] = now
@@ -282,7 +297,7 @@ def analyze_frame(
         session_state["no_face_violation_triggered"] = False
 
     # D. Nhiều khuôn mặt trước camera (Ngưỡng >= 3s)
-    if face_count > 1:
+    if face_count > 1 and not is_cam_off_or_covered:
         start_multi = session_state.get("multi_face_start")
         if not start_multi:
             session_state["multi_face_start"] = now
@@ -303,17 +318,22 @@ def analyze_frame(
         session_state["multi_face_start"] = None
         session_state["multi_face_violation_triggered"] = False
 
-    # E. Camera bị che khuất hoặc quá tối (Ngưỡng >= 6s)
-    if lighting.get("is_too_dark", False):
+    # E. Camera bị che khuất hoặc tắt (Ngưỡng >= 4s)
+    if is_cam_off_or_covered:
         start_dark = session_state.get("dark_start")
         if not start_dark:
             session_state["dark_start"] = now
             session_state["dark_violation_triggered"] = False
-        elif now - start_dark >= 6.0 and not session_state.get("dark_violation_triggered", False):
+        elif now - start_dark >= 4.0 and not session_state.get("dark_violation_triggered", False):
+            cam_desc = (
+                "Thí sinh đã tắt camera trong phòng thi"
+                if is_cam_off
+                else f"Camera bị che khuất hoặc che mờ ống kính trong {round(now - start_dark, 1)}s"
+            )
             confirmed_violations.append({
                 "type": "camera_blocked",
-                "severity": "medium",
-                "description": f"Camera bị che khuất hoặc ánh sáng phòng thi quá tối trong {round(now - start_dark, 1)}s"
+                "severity": "high" if is_cam_off else "medium",
+                "description": cam_desc
             })
             attention_status = "violation"
             session_state["dark_violation_triggered"] = True
@@ -427,7 +447,7 @@ def analyze_frame(
                     "severity": v.get("severity", "warning"),
                     "description": v.get("description"),
                     "snapshot_url": snapshot_url,
-                    "detected_at": datetime.now().isoformat()
+                    "detected_at": get_current_vn_time().isoformat()
                 }
                 r.publish("ws_updates", json.dumps(alert_event))
         except Exception as v_err:
@@ -452,15 +472,16 @@ def analyze_frame(
                 "room_id": room_id,
                 "student_id": student_id,
                 "session_id": session_id,
-                "face_count": face_count,
-                "looking_at_screen": looking_at_screen,
+                "face_count": 0 if is_cam_off_or_covered else face_count,
+                "looking_at_screen": False if is_cam_off_or_covered else looking_at_screen,
                 "attention_status": attention_status,
-                "head_pose": result.get("head_pose"),
-                "gaze": result.get("gaze"),
-                "liveness": result.get("liveness"),
-                "confidence_score": result["confidence_score"],
+                "camera_status": lighting.get("camera_status", "normal"),
+                "head_pose": None if is_cam_off_or_covered else result.get("head_pose"),
+                "gaze": None if is_cam_off_or_covered else result.get("gaze"),
+                "liveness": None if is_cam_off_or_covered else result.get("liveness"),
+                "confidence_score": 0.0 if is_cam_off_or_covered else result["confidence_score"],
                 "snapshot_url": snapshot_url,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": get_current_vn_time().isoformat()
             }
             r.publish("ws_updates", json.dumps(grid_update))
             r.close()

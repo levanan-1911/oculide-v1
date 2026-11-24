@@ -62,6 +62,10 @@ class SubmissionResponse(BaseModel):
     room_id: int
     room_code: Optional[str] = None
     room_name: Optional[str] = None
+    class_id: Optional[int] = None
+    class_code: Optional[str] = None
+    class_name: Optional[str] = None
+    course_name: Optional[str] = None
     student_id: int
     student_name: Optional[str] = None
     student_code: Optional[str] = None

@@ -251,6 +251,7 @@ function InstructorMonitoringContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSideTab, setActiveSideTab] = useState<'violations' | 'announcements' | 'chat'>('violations');
   const [realViolations, setRealViolations] = useState<ViolationAlert[] | null>(null);
+  const [previewEvidenceViolation, setPreviewEvidenceViolation] = useState<ViolationAlert | null>(null);
   const [unlockNotice, setUnlockNotice] = useState<string | null>(null);
   const chatRoomCode = activeRoomSession?.id || roomIdParam || session.roomCode;
 
@@ -273,6 +274,7 @@ function InstructorMonitoringContent() {
           severity: string;
           description?: string | null;
           detected_at: string;
+          snapshot_url?: string | null;
           review_status: 'pending' | 'confirmed' | 'rejected';
         }>>(`/api/v1/violations/room/${realRoomId}`);
         if (!cancelled && Array.isArray(vioRows)) {
@@ -287,6 +289,7 @@ function InstructorMonitoringContent() {
             timestamp: new Date(v.detected_at).toLocaleTimeString('vi-VN'),
             description: v.description || v.violation_type,
             status: v.review_status === 'confirmed' ? 'recorded' : v.review_status === 'rejected' ? 'dismissed' : 'pending',
+            snapshotUrl: v.snapshot_url || null,
           }));
           setRealViolations(mapped);
         }
@@ -319,6 +322,7 @@ function InstructorMonitoringContent() {
                 timestamp: v.detected_at ? new Date(v.detected_at).toLocaleTimeString('vi-VN') : new Date().toLocaleTimeString('vi-VN'),
                 description: v.description || v.violation_type,
                 status: 'pending',
+                snapshotUrl: v.snapshot_url || null,
               };
               setRealViolations((prev) => [newAlert, ...(prev || [])]);
               setRealStudents((prev) =>
@@ -1248,15 +1252,29 @@ function InstructorMonitoringContent() {
 
                       {/* Dòng 3: Nút bấm mini gọn gàng */}
                       <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-300 dark:border-white/10">
-                        <button
-                          type="button"
-                          onClick={() => matchedStudent && setFocusedStudent(matchedStudent)}
-                          className="text-[10px] font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-0.5 cursor-pointer"
-                          title="Phóng to màn hình & webcam SV"
-                        >
-                          <Eye className="h-2.5 w-2.5 text-slate-600 dark:text-slate-300" />
-                          <span>Xem</span>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => matchedStudent && setFocusedStudent(matchedStudent)}
+                            className="text-[10px] font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-0.5 cursor-pointer"
+                            title="Phóng to màn hình & webcam SV"
+                          >
+                            <Eye className="h-2.5 w-2.5 text-slate-600 dark:text-slate-300" />
+                            <span>Xem</span>
+                          </button>
+
+                          {vio.snapshotUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewEvidenceViolation(vio)}
+                              className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 hover:underline inline-flex items-center gap-0.5 cursor-pointer bg-rose-50 dark:bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-500/20"
+                              title="Xem ảnh bằng chứng snapshot vi phạm"
+                            >
+                              <Video className="h-2.5 w-2.5 text-rose-600 dark:text-rose-400" />
+                              <span>Bằng chứng</span>
+                            </button>
+                          )}
+                        </div>
 
                         <div className="flex items-center gap-1">
                           <button
@@ -1475,6 +1493,103 @@ function InstructorMonitoringContent() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL DUYỆT BẰNG CHỨNG VI PHẠM CỦA SINH VIÊN */}
+      {previewEvidenceViolation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
+          <div className="w-full max-w-lg rounded-md border border-slate-300 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-neutral-900 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-300 dark:border-white/10 pb-3">
+              <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+                <ShieldAlert className="h-5 w-5" />
+                <h3 className="font-serif text-base font-bold text-slate-900 dark:text-white">
+                  Thẩm định bằng chứng vi phạm
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewEvidenceViolation(null)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/10 dark:hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="rounded-md bg-slate-50 dark:bg-neutral-950 p-3.5 border border-slate-300 dark:border-white/10 text-xs space-y-1.5 font-mono">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Sinh viên:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{previewEvidenceViolation.studentName} ({previewEvidenceViolation.studentId})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Hành vi vi phạm:</span>
+                <span className="font-bold text-rose-600 dark:text-rose-400">{previewEvidenceViolation.type}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Thời điểm ghi nhận:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{previewEvidenceViolation.timestamp}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Mô tả chi tiết:</span>
+                <span className="text-slate-700 dark:text-slate-300">{previewEvidenceViolation.description}</span>
+              </div>
+            </div>
+
+            {/* Khung ảnh bằng chứng snapshot */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                <span>Ảnh chụp thực tế từ Webcam (AI Snapshot):</span>
+                <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">Đã đối chiếu sinh trắc học</span>
+              </p>
+              <div className="relative aspect-video w-full overflow-hidden rounded-md border border-slate-300 bg-black flex items-center justify-center">
+                {previewEvidenceViolation.snapshotUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={previewEvidenceViolation.snapshotUrl}
+                    alt="Bằng chứng vi phạm"
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <div className="text-center p-6 text-slate-400 text-xs">
+                    Không có ảnh chụp webcam tại thời điểm phát sinh sự kiện.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Các nút hành động duyệt */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-300 dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => setPreviewEvidenceViolation(null)}
+                className="rounded-md border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5 cursor-pointer"
+              >
+                Đóng
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleReviewViolation(previewEvidenceViolation.id, 'dismiss');
+                    setPreviewEvidenceViolation(null);
+                  }}
+                  className="rounded-md border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-800 dark:text-slate-300 dark:hover:bg-neutral-700 cursor-pointer"
+                >
+                  Bỏ qua vi phạm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleReviewViolation(previewEvidenceViolation.id, 'record');
+                    setPreviewEvidenceViolation(null);
+                  }}
+                  className="system-primary-action rounded-md bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700 shadow-sm cursor-pointer"
+                >
+                  Xác nhận Lập biên bản
+                </button>
+              </div>
             </div>
           </div>
         </div>

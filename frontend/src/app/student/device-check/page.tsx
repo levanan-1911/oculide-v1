@@ -41,7 +41,7 @@ export default function StudentDeviceCheckPage() {
   // Trạng thái kiểm tra thiết bị (Đã bỏ hoàn toàn Microphone theo yêu cầu)
   const [camStatus, setCamStatus] = useState<"testing" | "success" | "error">("testing");
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [screenStatus, setScreenStatus] = useState<"idle" | "testing" | "success">("idle");
+  const [screenStatus, setScreenStatus] = useState<"idle" | "testing" | "success">("success");
   const [networkStatus, setNetworkStatus] = useState<"testing" | "success">("testing");
 
   // Xác thực AI Face ID
@@ -413,7 +413,7 @@ export default function StudentDeviceCheckPage() {
 
                 {screenStatus === "success" ? (
                   <span className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
-                    <CheckCircle2 size={13} /> Đã chia sẻ
+                    <CheckCircle2 size={13} /> Sẵn sàng
                   </span>
                 ) : (
                   <button

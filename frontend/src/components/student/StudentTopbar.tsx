@@ -12,8 +12,6 @@ import {
   User,
   KeyRound,
   GraduationCap,
-  ShieldAlert,
-  CheckCircle2,
   CalendarDays,
   Sparkles,
 } from "lucide-react";
@@ -424,15 +422,6 @@ export default function StudentTopbar({
                 >
                   <User className="h-4 w-4 text-slate-500" />
                   <span>Thông tin cá nhân</span>
-                </Link>
-
-                <Link
-                  href="/student/profile?tab=security"
-                  onClick={() => setIsProfileOpen(false)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-[#5A5555] hover:bg-slate-900/5 hover:text-slate-900 dark:text-[#9F9690] dark:hover:bg-white/5 dark:hover:text-white rounded-md transition"
-                >
-                  <KeyRound className="h-4 w-4 text-slate-500" />
-                  <span>Bảo mật & Mật khẩu</span>
                 </Link>
               </div>
 

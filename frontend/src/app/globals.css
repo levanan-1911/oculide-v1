@@ -176,3 +176,10 @@ html.dark thead th {
 .animate-pulse {
   animation: none !important;
 }
+
+/* Hide browser default password reveal and clear buttons (prevents duplicate eye icons in Edge/IE/Chrome) */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none !important;
+}
+

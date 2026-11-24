@@ -26,6 +26,7 @@ from database.violation_db import get_violations_by_session
 from services.livekit_service import livekit_service
 from core.config import settings
 from api.auth import extract_client_ip
+from websocket.connection_manager import manager
 
 router = APIRouter()
 
@@ -176,6 +177,25 @@ async def change_room_status(
         instructor_id=current_user["user_id"],
         force_close_conflicts=bool(status_data.force_close_conflicts)
     )
+
+    # Phát sự kiện qua WebSocket tới toàn bộ sinh viên đang trong phòng thi
+    try:
+        if target_status in ("ended", "da_dong", "da_ket_thuc", "closed", "completed"):
+            await manager.broadcast_json(room_id, {
+                "type": "ROOM_ENDED",
+                "room_id": room_id,
+                "status": target_status,
+                "message": "Giảng viên đã kết thúc phòng thi."
+            })
+        else:
+            await manager.broadcast_json(room_id, {
+                "type": "ROOM_STATUS_CHANGED",
+                "room_id": room_id,
+                "status": target_status
+            })
+    except Exception:
+        pass
+
     return updated
 
 @router.post("/{room_id}/attendance")

@@ -278,6 +278,48 @@ def get_classes_by_instructor(instructor_id: Optional[int] = None) -> List[Dict]
         cursor.close()
         conn.close()
 
+def get_classes_by_student(student_id: int) -> List[Dict]:
+    """Lấy danh sách các lớp học phần mà sinh viên đang được ghi danh"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT c.class_id, 
+                   c.class_code, 
+                   c.class_name, 
+                   c.course_code,
+                   c.section_code,
+                   c.semester_name AS semester,
+                   c.instructor_id,
+                   c.description, 
+                   c.status,
+                   c.start_date,
+                   c.end_date,
+                   c.total_sessions,
+                   c.credit_hours,
+                   c.created_at, 
+                   c.updated_at, 
+                   COALESCE(u.full_name, N'Chưa phân công') AS instructor_name,
+                   (SELECT COUNT(1) FROM ClassEnrollments svl WHERE svl.class_id = c.class_id) AS student_count
+            FROM Classes c
+            JOIN ClassEnrollments ce ON c.class_id = ce.class_id AND ce.student_id = ?
+            LEFT JOIN Users u ON c.instructor_id = u.user_id
+            ORDER BY c.created_at DESC
+        """, (student_id,))
+        rows = cursor.fetchall()
+        columns = [column[0] for column in cursor.description]
+        items = []
+        for r in rows:
+            it = dict(zip(columns, r))
+            auto_status = compute_class_status(it.get("start_date"), it.get("end_date"), it.get("status"))
+            if auto_status != it.get("status"):
+                it["status"] = auto_status
+            items.append(it)
+        return items
+    finally:
+        cursor.close()
+        conn.close()
+
 def update_class(
     class_id: Any,
     class_code: Optional[str] = None,

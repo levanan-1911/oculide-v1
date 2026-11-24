@@ -1212,9 +1212,11 @@ export default function InstructorCreateRoomView() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-3">
               {/* Ngày diễn ra */}
               <div>
-                <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">
-                  Ngày ca học / thi:
-                </label>
+                <div className="flex items-center justify-between mb-1.5 h-4">
+                  <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                    Ngày ca học / thi:
+                  </label>
+                </div>
                 <input
                   type="date"
                   min={isClientReady ? getTodayDateString() : undefined}
@@ -1227,18 +1229,18 @@ export default function InstructorCreateRoomView() {
 
               {/* Giờ bắt đầu */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <div className="flex items-center justify-between mb-1.5 h-4">
+                  <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap">
                     Giờ bắt đầu:
                   </label>
                   <button
                     type="button"
                     onClick={handleSetCurrentTime}
-                    className="inline-flex items-center gap-1 font-mono text-[10.5px] font-semibold text-brand-700 dark:text-brand-300 hover:underline cursor-pointer"
+                    className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-brand-700 dark:text-brand-300 hover:underline cursor-pointer whitespace-nowrap"
                     title="Đặt giờ bắt đầu thành thời gian hiện tại"
                   >
-                    <Clock className="h-3 w-3" />
-                    Lấy giờ hiện tại (Realtime)
+                    <Clock className="h-3 w-3 shrink-0" />
+                    <span>Lấy giờ hiện tại</span>
                   </button>
                 </div>
                 <input
@@ -1252,9 +1254,14 @@ export default function InstructorCreateRoomView() {
 
               {/* Giờ kết thúc */}
               <div>
-                <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">
-                  Giờ kết thúc:
-                </label>
+                <div className="flex items-center justify-between mb-1.5 h-4">
+                  <label className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                    Giờ kết thúc:
+                  </label>
+                  <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                    +{durationMinutes}p
+                  </span>
+                </div>
                 <input
                   type="time"
                   value={endTime}

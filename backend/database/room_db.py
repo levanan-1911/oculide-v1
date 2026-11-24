@@ -357,14 +357,13 @@ def get_rooms_for_student(student_id: int, skip: int = 0, limit: int = 100, room
     try:
         where_clauses = [
             """(
-                p.class_id IS NULL
-                OR EXISTS (SELECT 1 FROM ClassEnrollments svl WHERE svl.class_id = p.class_id AND svl.student_id = ?)
+                EXISTS (SELECT 1 FROM ClassEnrollments svl WHERE svl.class_id = p.class_id AND svl.student_id = ?)
+                OR EXISTS (SELECT 1 FROM ClassEnrollments svl_room WHERE svl_room.room_id = p.room_id AND svl_room.student_id = ?)
                 OR EXISTS (SELECT 1 FROM ExamSessions pl WHERE pl.room_id = p.room_id AND pl.student_id = ?)
                 OR EXISTS (SELECT 1 FROM Submissions bn WHERE bn.room_id = p.room_id AND bn.student_id = ?)
-                OR NOT EXISTS (SELECT 1 FROM ClassEnrollments svl_any WHERE svl_any.student_id = ?)
             )"""
         ]
-        params: List[Any] = [student_id, student_id, student_id, student_id, student_id, student_id]
+        params: List[Any] = [student_id, student_id, student_id, student_id]
         if room_type:
             where_clauses.append("p.room_type = ?")
             params.append(room_type)

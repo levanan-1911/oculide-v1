@@ -190,7 +190,7 @@ export default function StudentWaitingRoomPage() {
             localStorage.setItem(`exam_start_timestamp_${session.roomId}`, String(Date.now()));
           } catch {}
         }
-        router.push("/student/exam-room");
+        router.push(session?.roomId ? `/student/exam-room?roomId=${session.roomId}` : "/student/exam-room");
       }, isLateEntry ? 2500 : 1500);
       return () => clearTimeout(autoTimer);
     }
@@ -205,7 +205,7 @@ export default function StudentWaitingRoomPage() {
       } catch {}
     }
     setTimeout(() => {
-      router.push("/student/exam-room");
+      router.push(session?.roomId ? `/student/exam-room?roomId=${session.roomId}` : "/student/exam-room");
     }, 500);
   };
 

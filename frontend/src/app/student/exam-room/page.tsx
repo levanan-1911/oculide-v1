@@ -160,6 +160,14 @@ export default function ExamWorkspacePage() {
     } catch {
       // ignore
     }
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const qRoomId = params.get("roomId") || params.get("room_id");
+      if (qRoomId && !isNaN(Number(qRoomId))) {
+        setActiveRoomId(Number(qRoomId));
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -605,9 +613,22 @@ export default function ExamWorkspacePage() {
                 showToast("ĐÃ MỞ KHÓA: Giảng viên đã phê duyệt mở khóa từ xa!");
               }
             } else if (msg.type === "announcement" || msg.type === "notice") {
-              const myIdStr = String(me.user_id);
-              const targetStr = msg.target_id ? String(msg.target_id) : "";
-              const isTargetMe = !targetStr || targetStr === myIdStr || targetStr.toLowerCase() === "all";
+              const myIds = [
+                String(me.user_id),
+                String((me as any).student_id || ""),
+                String((me as any).user_code || ""),
+                String((me as any).username || ""),
+              ].filter(Boolean);
+              const targetStr = msg.target_id ? String(msg.target_id).trim() : "";
+              const targetUserIdStr = msg.target_user_id ? String(msg.target_user_id).trim() : "";
+              const targetType = msg.target_type || (targetStr ? "individual" : "all");
+              const isTargetMe =
+                targetType === "all" ||
+                (!targetStr && !targetUserIdStr) ||
+                targetStr.toLowerCase() === "all" ||
+                (targetUserIdStr && targetUserIdStr === String(me.user_id)) ||
+                myIds.some((id) => id.toLowerCase() === targetStr.toLowerCase());
+
               if (isTargetMe && msg.message) {
                 setIncomingAnnouncement({
                   id: Date.now(),

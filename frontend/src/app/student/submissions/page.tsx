@@ -163,14 +163,14 @@ export default function StudentSubmissionsPage() {
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grouped" | "table">("grouped");
   const [submissions, setSubmissions] = useState<Submission[]>(sampleSubmissions);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
     let cancelled = false;
     async function loadMySubmissions() {
+      setIsLoading(true);
       try {
-        const me = await fetchWithAuth<{ user_id: number }>("/api/v1/auth/me");
-        if (!me?.user_id || cancelled) return;
-        const rows = await fetchWithAuth<Array<{
+        let rows: Array<{
           submission_id: number;
           room_id: number;
           room_code?: string;
@@ -185,7 +185,17 @@ export default function StudentSubmissionsPage() {
           submitted_at: string;
           status: string;
           score_percentage?: number;
-        }>>(`/api/v1/submissions/student/${me.user_id}`);
+        }> | null = null;
+
+        try {
+          rows = await fetchWithAuth("/api/v1/submissions/my");
+        } catch {
+          const me = await fetchWithAuth<{ user_id: number }>("/api/v1/auth/me");
+          if (me?.user_id && !cancelled) {
+            rows = await fetchWithAuth(`/api/v1/submissions/student/${me.user_id}`);
+          }
+        }
+
         if (cancelled || !Array.isArray(rows)) return;
 
         if (rows.length > 0) {
@@ -222,8 +232,12 @@ export default function StudentSubmissionsPage() {
           });
           setSubmissions(mapped);
         }
-      } catch {
-        // Giữ fallback sampleSubmissions nếu offline
+      } catch (err) {
+        console.error("Lỗi khi tải lịch sử bài nộp:", err);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     }
     loadMySubmissions();
@@ -564,6 +578,7 @@ export default function StudentSubmissionsPage() {
                   </div>
                 </div>
 
+<<<<<<< HEAD
                 {/* Danh sách các Phiên thi trong Lớp học phần */}
                 <div className="p-4 sm:p-5 space-y-5">
                   {Object.values(clsGroup.sessions).map((sess) => (

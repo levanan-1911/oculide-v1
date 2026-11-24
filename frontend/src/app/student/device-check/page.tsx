@@ -178,14 +178,16 @@ export default function StudentDeviceCheckPage() {
         setIsSavingCheck(false);
       }
     }
-    router.push("/student/waiting-room");
+    router.push(sessionInfo?.roomId ? `/student/waiting-room?roomId=${sessionInfo.roomId}` : "/student/waiting-room");
   };
 
+  const isCameraRequired = (sessionInfo as any)?.proctoringConfig?.requireCamera !== false && (sessionInfo as any)?.roomType !== 'lab';
+  const isCamReady = !isCameraRequired || (camStatus === "success" && faceVerified);
+
   const isAllReady =
-    camStatus === "success" &&
+    isCamReady &&
     screenStatus === "success" &&
-    faceVerified;
-    faceVerified;
+    !isSavingCheck;
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">

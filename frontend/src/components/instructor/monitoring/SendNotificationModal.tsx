@@ -85,14 +85,14 @@ const TEMPLATES = [
 export default function SendNotificationModal({
   isOpen,
   onClose,
-  studentsList,
+  studentsList = [],
   defaultTarget,
   onSend,
 }: SendNotificationModalProps) {
-  const activeStudents = (studentsList && studentsList.length > 0) ? studentsList : ALL_STUDENTS;
+  const activeStudents = Array.isArray(studentsList) ? studentsList : [];
   const [targetType, setTargetType] = useState<'all' | 'group' | 'individual'>('all');
   const [selectedGroup, setSelectedGroup] = useState<string>(PREDEFINED_GROUPS[0].id);
-  const [selectedStudentId, setSelectedStudentId] = useState<string>(activeStudents[0]?.id || 'SE184801');
+  const [selectedStudentId, setSelectedStudentId] = useState<string>(activeStudents[0]?.id || '');
   const [noticeType, setNoticeType] = useState<'info' | 'warning' | 'time' | 'urgent'>('info');
   const [message, setMessage] = useState<string>('');
 
@@ -186,7 +186,7 @@ export default function SendNotificationModal({
               >
                 <Globe className="h-4 w-4" />
                 <span>Toàn phòng thi</span>
-                <span className="text-[10px] font-mono font-normal text-stone-400">46 SV</span>
+                <span className="text-[10px] font-mono font-normal text-stone-400">{activeStudents.length} SV</span>
               </button>
 
               <button
@@ -245,17 +245,23 @@ export default function SendNotificationModal({
               <label className="block text-xs font-serif font-bold text-stone-700 dark:text-stone-300 mb-1.5">
                 Chọn sinh viên nhận cảnh báo / nhắc nhở
               </label>
-              <select
-                value={selectedStudentId}
-                onChange={(e) => setSelectedStudentId(e.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-serif font-bold text-stone-800 outline-none transition focus:border-brand-600 dark:border-white/10 dark:bg-neutral-950 dark:text-stone-100"
-              >
-                {activeStudents.map((st) => (
-                  <option key={st.id} value={st.id}>
-                    {st.name} ({st.id})
-                  </option>
-                ))}
-              </select>
+              {activeStudents.length > 0 ? (
+                <select
+                  value={selectedStudentId}
+                  onChange={(e) => setSelectedStudentId(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-serif font-bold text-stone-800 outline-none transition focus:border-brand-600 dark:border-white/10 dark:bg-neutral-950 dark:text-stone-100"
+                >
+                  {activeStudents.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.name} ({st.id})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                  Chưa có sinh viên nào trong phòng thi để gửi cảnh báo riêng.
+                </div>
+              )}
             </div>
           )}
 

@@ -1,6 +1,7 @@
 from core.config import get_db_connection
 from datetime import datetime
 from typing import Optional, List, Dict
+from database.room_db import get_current_vn_time
 
 def get_submission_by_id(submission_id: int, include_hidden_details: bool = True) -> Optional[Dict]:
     conn = get_db_connection()
@@ -170,12 +171,16 @@ def create_submission(
         max_attempt = cursor.fetchone()[0] or 0
         next_attempt = max(attempt_number, max_attempt + 1)
 
+        now_vn = get_current_vn_time()
         cursor.execute("""
-            INSERT INTO Submissions (room_id, student_id, question_id, attempt_number, code_content, programming_language, grading_status)
+            INSERT INTO Submissions (
+                room_id, student_id, question_id, attempt_number, 
+                code_content, programming_language, grading_status, submitted_at
+            )
             OUTPUT inserted.submission_id, inserted.room_id, inserted.student_id, inserted.question_id,
                    inserted.attempt_number, inserted.code_content, inserted.programming_language, inserted.submitted_at, inserted.grading_status
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (room_id, student_id, question_id, next_attempt, code_content, language, status))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (room_id, student_id, question_id, next_attempt, code_content, language, status, now_vn))
         row = cursor.fetchone()
         conn.commit()
         if row:

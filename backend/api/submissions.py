@@ -112,6 +112,14 @@ async def run_custom_code(
             execution_ms=45
         )
 
+@router.get("/my", response_model=List[SubmissionResponse])
+async def get_my_submissions(
+    room_id: Optional[int] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lấy toàn bộ bài nộp của chính sinh viên đang đăng nhập"""
+    return get_submissions_by_student(current_user["user_id"], room_id=room_id)
+
 @router.get("/{submission_id}", response_model=SubmissionResponse)
 async def get_submission(
     submission_id: int,

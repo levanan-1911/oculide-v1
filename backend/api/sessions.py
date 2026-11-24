@@ -35,10 +35,12 @@ async def start_session(
         if room.get("end_time") and now > room["end_time"]:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phòng thi đã hết giờ làm bài")
 
-    # 1. Chống spam sinh session rác: Nếu đã có phiên active, tiếp tục phiên hiện có
-    active_sessions = get_sessions_by_student(current_user["user_id"], room_id=session_data.room_id, active_only=True)
-    if active_sessions:
-        return active_sessions[0]
+    # 1. Chống spam sinh session rác: Nếu đã có phiên đang làm hoặc bị khóa, tiếp tục phiên hiện có
+    existing_sessions = get_sessions_by_student(current_user["user_id"], room_id=session_data.room_id, active_only=False)
+    for s in existing_sessions:
+        s_status = str(s.get("status") or "").lower()
+        if s_status in ("active", "dang_lam", "late", "locked", "bi_khoa", "disqualified", "kicked"):
+            return s
 
     # 2. Kiểm soát giới hạn số lần làm bài (max_attempts)
     past_sessions = get_sessions_by_student(current_user["user_id"], room_id=session_data.room_id, active_only=False)

@@ -686,12 +686,20 @@ async def get_room_exam_content(
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
 
-    # Quy chế khảo thí: Nếu sinh viên đã nộp bài, không cho phép truy cập lại nội dung đề thi để làm tiếp
+    # Quy chế khảo thí: Nếu sinh viên đã nộp bài hoặc bị khóa do vi phạm, chặn truy cập lại nội dung đề thi
     if current_user.get("role") == "student":
-        if is_student_already_submitted(room_id, current_user["user_id"]):
+        student_id = current_user["user_id"]
+        if is_student_already_submitted(room_id, student_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Bạn đã hoàn thành và nộp bài thi cho phòng này. Không thể truy cập lại môi trường làm bài."
+            )
+        # Kiểm tra phiên thi của sinh viên có đang bị khóa do vi phạm hay không
+        sess = get_student_exam_session(room_id, student_id)
+        if sess and str(sess.get("status") or "").lower() in ("locked", "bi_khoa", "disqualified", "kicked"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bài thi của bạn đang bị khóa do vi phạm quy chế. Vui lòng liên hệ Giảng viên để được phê duyệt mở khóa từ xa."
             )
 
     include_hidden = current_user.get("role") in ("instructor", "admin")

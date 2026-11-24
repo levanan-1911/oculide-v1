@@ -400,7 +400,7 @@ function InstructorMonitoringContent() {
     setIsSendNoticeModalOpen(true);
   };
 
-  // Gửi thông báo trực tiếp qua WebSocket tới toàn bộ sinh viên trong phòng
+  // Gửi thông báo trực tiếp qua WebSocket tới toàn bộ sinh viên trong phòng hoặc sinh viên chỉ định
   const handleSendNotice = (
     targetType: 'all' | 'group' | 'individual',
     targetLabel: string,
@@ -409,12 +409,15 @@ function InstructorMonitoringContent() {
     studentId?: string
   ) => {
     sendAnnouncement(targetType, targetLabel, message, type, studentId);
+    const targetStudent = realStudents?.find((s) => s.id === studentId);
+    const targetUserId = targetStudent?.userId ? String(targetStudent.userId) : undefined;
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
           type: 'announcement',
           target_type: targetType,
           target_id: studentId,
+          target_user_id: targetUserId,
           target_label: targetLabel,
           message: message,
           notice_type: type,
@@ -1422,6 +1425,11 @@ function InstructorMonitoringContent() {
           setIsSendNoticeModalOpen(false);
           setTargetedStudent(null);
         }}
+        studentsList={
+          realStudents
+            ? realStudents.map((s) => ({ id: s.id, name: s.name }))
+            : []
+        }
         defaultTarget={
           targetedStudent
             ? {

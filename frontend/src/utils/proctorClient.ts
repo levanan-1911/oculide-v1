@@ -11,7 +11,7 @@ export interface SnapshotPayload {
   session_id: number;
   snapshot_data: string;
   is_typing: boolean;
-  client_event?: "tab_switch" | "fullscreen_exit" | "blur" | "periodic";
+  client_event?: "tab_switch" | "fullscreen_exit" | "blur" | "periodic" | "camera_off" | "camera_disabled";
 }
 
 /**
@@ -50,6 +50,7 @@ export class ProctoringClient {
   private videoElement: HTMLVideoElement | null = null;
   private timerId: any = null;
   private isRunning: boolean = false;
+  private isCameraActive: boolean = true;
   private lastTypingTimestamp: number = 0;
   private currentIntervalMs: number = 4000; // Mặc định 4 giây
 
@@ -57,6 +58,38 @@ export class ProctoringClient {
     this.sessionId = sessionId;
     this.apiUrl = apiUrl.replace(/\/$/, "");
     this.authToken = authToken;
+  }
+
+  /**
+   * Cập nhật trạng thái bật/tắt camera từ UI/LiveKit
+   */
+  public setCameraActive(active: boolean) {
+    const wasActive = this.isCameraActive;
+    this.isCameraActive = active;
+    if (wasActive && !active) {
+      // Khi vừa tắt camera, lập tức gửi sự kiện camera_off về server
+      this.sendCameraOffEvent();
+    }
+  }
+
+  private sendCameraOffEvent() {
+    if (!this.isRunning) return;
+    // Khung hình giả định tối đen để báo tắt camera
+    const blankCanvas = document.createElement("canvas");
+    blankCanvas.width = 320;
+    blankCanvas.height = 240;
+    const ctx = blankCanvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, 320, 240);
+      const b64 = blankCanvas.toDataURL("image/jpeg", 0.5);
+      this.postAnalyze({
+        session_id: this.sessionId,
+        snapshot_data: b64,
+        is_typing: this.isTyping(),
+        client_event: "camera_off"
+      });
+    }
   }
 
   /**
@@ -148,7 +181,12 @@ export class ProctoringClient {
   }
 
   private async captureAndSendPeriodic() {
-    if (!this.videoElement || !this.isRunning) return;
+    if (!this.isRunning) return;
+    if (!this.isCameraActive) {
+      this.sendCameraOffEvent();
+      return;
+    }
+    if (!this.videoElement) return;
     const b64 = captureAndCompressFrame(this.videoElement);
     if (!b64) return;
 

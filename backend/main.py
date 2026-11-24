@@ -339,6 +339,15 @@ async def websocket_endpoint(
                             str(target_student_id),
                         )
                     
+                elif msg_type in ("announcement", "notice"):
+                    if token_role not in ("instructor", "admin"):
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "message": "Chỉ giám thị mới có quyền gửi thông báo trong phòng thi"
+                        }))
+                        continue
+                    await manager.broadcast_json(room_id, message)
+
                 elif msg_type == "send_hint":
                     if token_role not in ("instructor", "admin"):
                         await websocket.send_text(json.dumps({

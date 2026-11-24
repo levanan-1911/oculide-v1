@@ -1,6 +1,7 @@
 from core.config import get_db_connection
 from datetime import datetime
 from typing import Optional, List, Dict
+from database.room_db import get_current_vn_time
 
 def create_violation(
     session_id: int,
@@ -18,17 +19,30 @@ def create_violation(
         sess_row = cursor.fetchone()
         room_id = sess_row[0] if sess_row else 1
 
+        now_vn = get_current_vn_time()
         cursor.execute("""
             INSERT INTO Violations (
                 session_id, room_id, student_id, violation_type, 
-                severity, description, evidence_url
+                severity, description, evidence_url, detected_at
             )
             OUTPUT inserted.violation_id, inserted.session_id, inserted.student_id, inserted.violation_type, 
                    inserted.severity, inserted.description, inserted.evidence_url, inserted.detected_at, 
                    inserted.is_reviewed, inserted.review_status, inserted.reviewed_by, inserted.reviewed_at
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (session_id, room_id, student_id, violation_type, severity, description, snapshot_url))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (session_id, room_id, student_id, violation_type, severity, description, snapshot_url, now_vn))
         row = cursor.fetchone()
+
+        # Đếm tổng số vi phạm trong phiên thi này
+        cursor.execute("SELECT COUNT(*) FROM Violations WHERE session_id = ?", (session_id,))
+        v_count_row = cursor.fetchone()
+        total_v = v_count_row[0] if v_count_row else 0
+        if total_v >= 3:
+            # Khóa phiên thi ở mức CSDL nếu vượt quá 3 lần vi phạm
+            cursor.execute(
+                "UPDATE ExamSessions SET status = 'locked' WHERE session_id = ? AND status NOT IN ('completed', 'da_nop', 'submitted')",
+                (session_id,)
+            )
+
         conn.commit()
         if row:
             return {

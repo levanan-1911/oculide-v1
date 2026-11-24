@@ -1,5 +1,6 @@
 from typing import Optional, List, Dict, Any
 from core.database import get_db_cursor, row_to_dict, rows_to_dicts
+from database.room_db import get_current_vn_time
 
 def create_snapshot(
     session_id: int,
@@ -11,10 +12,11 @@ def create_snapshot(
     confidence_score: Optional[float] = None
 ) -> Dict[str, Any]:
     """Lưu bản ghi ảnh chụp webcam định kỳ từ sinh viên vào bảng Snapshots"""
+    now_vn = get_current_vn_time()
     sql = """
         INSERT INTO Snapshots (
             session_id, student_id, image_url, 
-            has_face, face_count, looking_at_screen, confidence_score
+            has_face, face_count, looking_at_screen, confidence_score, captured_at
         )
         OUTPUT inserted.snapshot_id, 
                inserted.session_id, 
@@ -25,13 +27,14 @@ def create_snapshot(
                inserted.looking_at_screen, 
                inserted.confidence_score, 
                inserted.captured_at
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """
     with get_db_cursor(commit=True) as cursor:
         cursor.execute(sql, (
             session_id, student_id, image_url,
             1 if face_detected else 0, face_count,
-            1 if looking_at_screen else 0, confidence_score or 1.000
+            1 if looking_at_screen else 0, confidence_score or 1.000,
+            now_vn
         ))
         row = cursor.fetchone()
         result = row_to_dict(cursor, row)

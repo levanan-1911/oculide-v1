@@ -1179,6 +1179,43 @@ export default function ExamWorkspacePage() {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [examState, isLocked, activeSessionId, activeRoomId, shouldBlockTabSwitch, proctoringConfig, examRoomType]);
 
+  // Giám sát khi sinh viên DỪNG chia sẻ màn hình giữa chừng khi đang làm bài
+  const wasScreenSharingRef = useRef(false);
+  useEffect(() => {
+    // Nếu trước đó đang chia sẻ màn hình mà giờ bị dừng giữa chừng khi đang làm bài
+    if (wasScreenSharingRef.current && !isScreenSharing && examState === "doing") {
+      // 1. Hệ thống lập tức khóa lại giao diện và yêu cầu cấp quyền tiếp tục
+      setShowScreenShareModal(true);
+
+      // 2. Ghi nhận vi phạm theo cấu hình của Giảng viên
+      const shouldRecordViolation =
+        isScreenShareRequired ||
+        shouldBlockTabSwitch ||
+        proctoringConfig?.recordScreenShareStop !== false;
+
+      if (shouldRecordViolation && !isLocked) {
+        showToast("CẢNH BÁO QUY CHẾ: Bạn vừa dừng chia sẻ màn hình! Hành vi này đã được ghi nhận vi phạm.");
+        reportViolationToBackend(
+          "tab_switch",
+          proctoringConfig?.tabSwitchSeverity || "high",
+          "Sinh viên dừng chia sẻ màn hình làm bài trong phiên thi."
+        );
+
+        setTabSwitchCount((prev) => {
+          const next = prev + 1;
+          if (activeRoomId && typeof window !== "undefined") {
+            try {
+              localStorage.setItem(`exam_tab_switch_${activeRoomId}`, String(next));
+            } catch {}
+          }
+          return next;
+        });
+      }
+    }
+
+    wasScreenSharingRef.current = isScreenSharing;
+  }, [isScreenSharing, examState, isScreenShareRequired, shouldBlockTabSwitch, proctoringConfig, isLocked, activeRoomId]);
+
   // Hỗ trợ phím Tab, Enter tự động thụt lề & Chặn Ctrl+V
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (isLocked) return;

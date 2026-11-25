@@ -9,6 +9,7 @@ import {
   BookOpen,
   Calendar,
   Camera,
+  CameraOff,
   CheckCircle2,
   Clock,
   Code2,
@@ -22,6 +23,8 @@ import {
   Volume2,
 } from "lucide-react";
 import { fetchWithAuth } from "@/services/apiClient";
+import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
+import LiveKitVideoFeed from "@/components/livekit/LiveKitVideoFeed";
 
 interface PendingExamSession {
   roomId?: number;
@@ -29,9 +32,11 @@ interface PendingExamSession {
   examTitle?: string;
   subject?: string;
   duration?: number;
+  roomType?: string;
   status?: string;
   isLate?: boolean;
   attendanceStatus?: string;
+  proctoringConfig?: any;
 }
 
 export default function StudentWaitingRoomPage() {
@@ -48,6 +53,34 @@ export default function StudentWaitingRoomPage() {
   const [isLateEntry, setIsLateEntry] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [isEntering, setIsEntering] = useState(false);
+
+  // Xác định giảng viên có yêu cầu bắt buộc camera hay không
+  const isCameraExplicitlyRequired =
+    session?.proctoringConfig?.requireCamera === true ||
+    session?.proctoringConfig?.webcam_required === true ||
+    (session?.roomType === "exam" && session?.proctoringConfig?.requireCamera !== false && session?.proctoringConfig?.webcam_required !== false);
+  const isCameraOffAllowed = !isCameraExplicitlyRequired;
+  const [isWaitingCamOff, setIsWaitingCamOff] = useState<boolean>(false);
+
+  // Kết nối LiveKit sớm ngay tại phòng chờ để đảm bảo luồng WebRTC trơn tru
+  const {
+    connectionState: livekitState,
+    localVideoTrack,
+    toggleCamera,
+    errorMsg: livekitError,
+  } = useLiveKitRoom({
+    roomId: session?.roomId,
+    mode: "publish",
+    enabled: Boolean(session?.roomId),
+    initialCameraEnabled: isCameraExplicitlyRequired,
+  });
+
+  const handleToggleWaitingCam = async () => {
+    if (!isCameraOffAllowed) return;
+    const nextState = !isWaitingCamOff;
+    setIsWaitingCamOff(nextState);
+    await toggleCamera(!nextState);
+  };
 
   // Đọc dữ liệu phòng từ Session Storage & thông tin thí sinh từ Local Storage
   useEffect(() => {
@@ -448,6 +481,79 @@ export default function StudentWaitingRoomPage() {
                 <p className="font-mono font-bold text-[#2A282D] dark:text-white">{session?.duration || 60} phút</p>
               </div>
             </div>
+          </div>
+
+          {/* LiveKit Video Feed Preview kết nối sớm tại phòng chờ */}
+          <div className="rounded-md border border-slate-300 bg-white p-4 space-y-3 dark:border-white/10 dark:bg-neutral-900">
+            <div className="flex items-center justify-between border-b border-slate-300 dark:border-white/10 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${
+                  livekitState === 'connected' ? 'bg-emerald-500 animate-pulse' : livekitState === 'connecting' ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'
+                }`} />
+                <h3 className="font-serif text-xs font-bold text-[#2A282D] dark:text-white">
+                  Luồng truyền hình LiveKit WebRTC
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10">
+                  {livekitState === 'connected' ? 'Đã kết nối' : livekitState === 'connecting' ? 'Đang kết nối...' : 'Chờ phòng'}
+                </span>
+                {isCameraOffAllowed && (
+                  <button
+                    type="button"
+                    onClick={handleToggleWaitingCam}
+                    className={`flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-semibold transition border cursor-pointer ${
+                      !isWaitingCamOff && localVideoTrack
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
+                        : "border-slate-300 bg-slate-100 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+                    }`}
+                    title={!isWaitingCamOff ? "Tắt Camera (Giảng viên không bắt buộc)" : "Bật Camera"}
+                  >
+                    {!isWaitingCamOff && localVideoTrack ? <Camera size={12} /> : <CameraOff size={12} />}
+                    <span>{!isWaitingCamOff && localVideoTrack ? "Tắt Cam" : "Bật Cam"}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="relative h-44 w-full overflow-hidden rounded-md border border-slate-300 bg-neutral-950 dark:border-white/10 flex items-center justify-center">
+              {!isWaitingCamOff && localVideoTrack ? (
+                <LiveKitVideoFeed track={localVideoTrack} muted className="h-full w-full object-cover" />
+              ) : isWaitingCamOff || isCameraOffAllowed ? (
+                <div className="flex flex-col items-center justify-center gap-1.5 text-slate-400 p-4 text-center">
+                  <CameraOff size={24} className="text-slate-500" />
+                  <p className="text-xs font-serif font-bold text-slate-300">Camera đang tắt</p>
+                  <p className="text-[10px] text-slate-500">Giảng viên không yêu cầu bắt buộc bật camera</p>
+                  {isCameraOffAllowed && (
+                    <button
+                      type="button"
+                      onClick={handleToggleWaitingCam}
+                      className="mt-1 rounded bg-stone-800 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-stone-700 transition cursor-pointer"
+                    >
+                      Bật Camera
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-2 text-slate-400 p-4 text-center">
+                  <LoaderCircle size={24} className="animate-spin text-brand-500" />
+                  <p className="text-xs font-mono">Đang khởi tạo kết nối LiveKit...</p>
+                  {livekitError && <p className="text-[10px] text-rose-400">{livekitError}</p>}
+                </div>
+              )}
+
+              {/* Tag trạng thái góc dưới */}
+              <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[9px] font-mono text-white">
+                <Radio size={10} className={livekitState === 'connected' ? 'text-emerald-400' : 'text-amber-400'} />
+                <span>SFU: {livekitState === 'connected' ? 'Sẵn sàng' : 'Khởi tạo'}</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-[#9F9690] leading-relaxed">
+              {isCameraOffAllowed
+                ? "💡 Phòng thi này không bắt buộc bật Camera. Bạn có thể chủ động tắt hoặc bật camera theo nhu cầu."
+                : "💡 LiveKit được kết nối trước ngay tại phòng chờ để đảm bảo hình ảnh mượt mà, không bị gián đoạn khi bắt đầu thi."}
+            </p>
           </div>
 
           {/* Quy chế thi quan trọng */}

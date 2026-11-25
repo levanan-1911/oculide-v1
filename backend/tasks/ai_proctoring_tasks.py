@@ -175,7 +175,7 @@ def analyze_frame(
     ai_object_enabled = cfg.get("aiObjectDetection", True)
     allow_tab_switch = cfg.get("allowTabSwitch", False)
     lockdown_fullscreen = cfg.get("lockdownFullscreen", True)
-    require_camera = cfg.get("requireCamera", True)
+    require_camera = cfg.get("requireCamera", cfg.get("webcam_required", True))
 
     # ─── 0. SỰ KIỆN TỪ PHÍA CLIENT (Chuyển tab, thoát toàn màn hình, tắt camera) ───────────
     if client_event == "tab_switch":

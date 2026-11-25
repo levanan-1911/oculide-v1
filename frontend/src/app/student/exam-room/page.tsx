@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
 import LiveKitVideoFeed from "@/components/livekit/LiveKitVideoFeed";
@@ -107,7 +107,16 @@ export default function ExamWorkspacePage() {
   const [examRoomType, setExamRoomType] = useState<'lab' | 'exam'>('lab');
   const [proctoringConfig, setProctoringConfig] = useState<any>(null);
   const isLabSession = examRoomType === "lab";
-  const isCameraOffAllowed = isLabSession && proctoringConfig?.requireCamera === false;
+
+  // Giảng viên không yêu cầu camera nếu:
+  // - proctoringConfig có requireCamera === false hoặc webcam_required === false
+  // - Hoặc phòng lab mà không có cấu hình bắt buộc requireCamera === true
+  const isCameraExplicitlyRequired =
+    proctoringConfig?.requireCamera === true ||
+    proctoringConfig?.webcam_required === true ||
+    (examRoomType === "exam" && proctoringConfig?.requireCamera !== false && proctoringConfig?.webcam_required !== false);
+  const isCameraOffAllowed = !isCameraExplicitlyRequired;
+  const [isUserCameraOff, setIsUserCameraOff] = useState<boolean>(false);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [examData, setExamData] = useState<ExamData>(initialEmptyExam);
   const [isLoadingExam, setIsLoadingExam] = useState<boolean>(true);
@@ -401,7 +410,29 @@ export default function ExamWorkspacePage() {
     roomId: activeRoomId,
     mode: "publish",
     enabled: Boolean(activeRoomId) && examState === "doing",
+    initialCameraEnabled: isCameraExplicitlyRequired,
   });
+
+  // Luồng camera vật lý trực tiếp
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const proctorClientRef = useRef<ProctoringClient | null>(null);
+
+  // Xử lý bật/tắt camera an toàn, đồng bộ cả LiveKit track và webcam dự phòng
+  const handleToggleCamera = useCallback(async (forceEnable?: boolean) => {
+    const target = forceEnable !== undefined ? forceEnable : Boolean(isUserCameraOff || !localVideoTrack);
+    if (!target) {
+      setIsUserCameraOff(true);
+      if (localStream) {
+        localStream.getTracks().forEach((t) => t.stop());
+        setLocalStream(null);
+      }
+      await toggleCamera(false);
+    } else {
+      setIsUserCameraOff(false);
+      await toggleCamera(true);
+    }
+  }, [isUserCameraOff, localVideoTrack, localStream, toggleCamera]);
   const [activeProblemIdx, setActiveProblemIdx] = useState(0);
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [selectedLanguage, setSelectedLanguage] = useState("cpp");
@@ -417,11 +448,6 @@ export default function ExamWorkspacePage() {
     return 60 * 60;
   });
 
-  // Luồng camera vật lý trực tiếp
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const localVideoRef = useRef<HTMLVideoElement | null>(null);
-  const proctorClientRef = useRef<ProctoringClient | null>(null);
-
   // Khởi động webcam dự phòng liên tục để phục vụ AI Proctoring và chụp bằng chứng vi phạm
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -429,6 +455,7 @@ export default function ExamWorkspacePage() {
 
     async function initCamera() {
       if (localVideoTrack) return;
+      if (isCameraOffAllowed && isUserCameraOff) return;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 640 }, height: { ideal: 480 } },
@@ -448,7 +475,7 @@ export default function ExamWorkspacePage() {
       }
     }
 
-    if (!localVideoTrack) {
+    if (!localVideoTrack && !(isCameraOffAllowed && isUserCameraOff)) {
       initCamera();
     }
 
@@ -458,7 +485,7 @@ export default function ExamWorkspacePage() {
         stream.getTracks().forEach((t) => t.stop());
       }
     };
-  }, [localVideoTrack]);
+  }, [localVideoTrack, isCameraOffAllowed, isUserCameraOff]);
 
   // Ưu tiên gắn trực tiếp localVideoTrack của LiveKit vào khung hình, tránh xung đột camera
   useEffect(() => {
@@ -563,8 +590,8 @@ export default function ExamWorkspacePage() {
     const token = getAuthToken() || "";
     const client = new ProctoringClient(activeSessionId, window.location.origin, token);
     proctorClientRef.current = client;
-    const hasActiveCamera = Boolean(localVideoTrack || localStream);
-    client.setCameraActive(hasActiveCamera);
+    const hasActiveCamera = Boolean((localVideoTrack || localStream) && !isUserCameraOff);
+    client.setCameraActive(hasActiveCamera, isCameraExplicitlyRequired);
     client.start(videoEl);
 
     return () => {
@@ -573,7 +600,7 @@ export default function ExamWorkspacePage() {
         proctorClientRef.current = null;
       }
     };
-  }, [activeSessionId, examState, isLocked, localVideoTrack, localStream]);
+  }, [activeSessionId, examState, isLocked, localVideoTrack, localStream, isUserCameraOff, isCameraExplicitlyRequired]);
 
   // YOLOv8 AI Proctoring State - Khởi tạo sạch sẽ, không giả lập tĩnh cứng
   const [yoloDetections, setYoloDetections] = useState<{
@@ -922,7 +949,8 @@ export default function ExamWorkspacePage() {
             } else if (msg.type === "room_config_update" && typeof msg.requireCamera === "boolean") {
               setProctoringConfig((prev: any) => ({ ...prev, requireCamera: msg.requireCamera }));
               if (msg.requireCamera) {
-                toggleCamera(true).catch(() => null);
+                setIsUserCameraOff(false);
+                handleToggleCamera(true).catch(() => null);
               }
             } else if (msg.type === "snapshot_update") {
               if (String(msg.student_id) === String(me.user_id)) {
@@ -1779,16 +1807,20 @@ export default function ExamWorkspacePage() {
                 {isCameraOffAllowed && (
                   <button
                     type="button"
-                    onClick={() => toggleCamera()}
-                    title={localVideoTrack ? "Tắt Camera (Được phép trong phòng Lab)" : "Bật Camera"}
+                    onClick={() => handleToggleCamera()}
+                    title={
+                      localVideoTrack && !isUserCameraOff
+                        ? "Tắt Camera (Được phép khi giảng viên không yêu cầu)"
+                        : "Bật Camera"
+                    }
                     className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
-                      localVideoTrack
+                      localVideoTrack && !isUserCameraOff
                         ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
                         : "border-slate-300 bg-slate-100 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
                     }`}
                   >
-                    {localVideoTrack ? <Camera size={12} /> : <CameraOff size={12} />}
-                    <span>{localVideoTrack ? "Cam Bật" : "Cam Tắt"}</span>
+                    {localVideoTrack && !isUserCameraOff ? <Camera size={12} /> : <CameraOff size={12} />}
+                    <span>{localVideoTrack && !isUserCameraOff ? "Cam Bật" : "Cam Tắt"}</span>
                   </button>
                 )}
 
@@ -1849,7 +1881,7 @@ export default function ExamWorkspacePage() {
               <div className="absolute bottom-58 right-4 z-20 flex flex-col items-end gap-1">
                 <div className="relative h-28 w-40 overflow-hidden rounded-md border border-slate-300 bg-neutral-950 p-0.5 shadow-md dark:border-white/10">
                   <div className="relative h-full w-full rounded bg-black overflow-hidden flex items-center justify-center">
-                    {localVideoTrack ? (
+                    {localVideoTrack && !isUserCameraOff ? (
                       <LiveKitVideoFeed
                         track={localVideoTrack}
                         muted
@@ -1858,10 +1890,10 @@ export default function ExamWorkspacePage() {
                     ) : isCameraOffAllowed ? (
                       <div className="flex flex-col items-center justify-center gap-1.5 text-slate-400 p-2 text-center bg-stone-900/90 h-full w-full">
                         <CameraOff size={20} className="text-slate-500" />
-                        <span className="text-[9px] font-mono">Camera đang tắt (Được phép trong Lab)</span>
+                        <span className="text-[9px] font-mono">Camera đang tắt (Giảng viên không yêu cầu)</span>
                         <button
                           type="button"
-                          onClick={() => toggleCamera(true)}
+                          onClick={() => handleToggleCamera(true)}
                           className="mt-1 rounded bg-stone-800 px-2 py-0.5 text-[9px] font-bold text-white hover:bg-stone-700 transition cursor-pointer"
                         >
                           Bật lại Cam

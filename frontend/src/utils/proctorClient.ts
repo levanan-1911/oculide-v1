@@ -68,11 +68,11 @@ export class ProctoringClient {
   /**
    * Cập nhật trạng thái bật/tắt camera từ UI/LiveKit
    */
-  public setCameraActive(active: boolean) {
+  public setCameraActive(active: boolean, isCameraRequired: boolean = true) {
     const wasActive = this.isCameraActive;
     this.isCameraActive = active;
-    if (wasActive && !active) {
-      // Khi vừa tắt camera, lập tức gửi sự kiện camera_off về server
+    if (wasActive && !active && isCameraRequired) {
+      // Chỉ khi giảng viên yêu cầu camera mà thí sinh tắt camera, mới gửi sự kiện camera_off về server
       this.sendCameraOffEvent();
     }
   }

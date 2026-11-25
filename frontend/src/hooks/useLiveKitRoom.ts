@@ -27,9 +27,15 @@ interface UseLiveKitRoomOptions {
   roomId?: number | null;
   mode: 'publish' | 'subscribe';
   enabled?: boolean;
+  initialCameraEnabled?: boolean;
 }
 
-export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomOptions) {
+export function useLiveKitRoom({
+  roomId,
+  mode,
+  enabled = true,
+  initialCameraEnabled = true,
+}: UseLiveKitRoomOptions) {
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [localVideoTrack, setLocalVideoTrack] = useState<LocalVideoTrack | null>(null);
@@ -226,15 +232,17 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
         setConnectionState('connected');
 
         if (mode === 'publish') {
-          try {
-            await room.localParticipant.setCameraEnabled(true);
-            const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-            if (camPub?.videoTrack) {
-              setLocalVideoTrack(camPub.videoTrack as LocalVideoTrack);
+          if (initialCameraEnabled !== false) {
+            try {
+              await room.localParticipant.setCameraEnabled(true);
+              const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+              if (camPub?.videoTrack) {
+                setLocalVideoTrack(camPub.videoTrack as LocalVideoTrack);
+              }
+            } catch (camErr: any) {
+              console.warn('Lỗi bật camera qua LiveKit:', camErr);
+              setErrorMsg('Không thể truy cập Camera trình duyệt (Vui lòng tắt các ứng dụng đang chiếm webcam như Meet/Zoom và cấp quyền).');
             }
-          } catch (camErr: any) {
-            console.warn('Lỗi bật camera qua LiveKit:', camErr);
-            setErrorMsg('Không thể truy cập Camera trình duyệt (Vui lòng tắt các ứng dụng đang chiếm webcam như Meet/Zoom và cấp quyền).');
           }
         } else {
           // Nạp các track video đã có sẵn từ sinh viên đang phát trước đó
@@ -290,7 +298,7 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
       setParticipantTracks({});
       setConnectionState('idle');
     };
-  }, [roomId, mode, enabled]);
+  }, [roomId, mode, enabled, initialCameraEnabled]);
 
   return {
     connectionState,

@@ -117,19 +117,10 @@ export default function ExamWorkspacePage() {
     (examRoomType === "exam" && proctoringConfig?.requireCamera !== false && proctoringConfig?.webcam_required !== false);
   const isCameraOffAllowed = !isCameraExplicitlyRequired;
 
-  // Bắt buộc chia sẻ màn hình nếu:
-  // - proctoringConfig có screenShare === "required" hoặc screen_share === "required"
-  // - hoặc requireScreenShare === true, require_screen === true
-  // - hoặc phòng thi chính thức (exam) mà không tắt tính năng này
+  // Tại phòng thực hành / phòng thi: Sinh viên bắt buộc phải chia sẻ màn hình từ đây (cấu hình bắt buộc)
   const isScreenShareRequired =
-    proctoringConfig?.screenShare === "required" ||
-    proctoringConfig?.screen_share === "required" ||
-    proctoringConfig?.requireScreenShare === true ||
-    proctoringConfig?.require_screen === true ||
-    (examRoomType === "exam" &&
-      proctoringConfig?.screenShare !== "disabled" &&
-      proctoringConfig?.screenShare !== "optional" &&
-      proctoringConfig?.requireScreenShare !== false);
+    proctoringConfig?.screenShare !== "disabled" &&
+    proctoringConfig?.requireScreenShare !== false;
   const [isUserCameraOff, setIsUserCameraOff] = useState<boolean>(false);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [examData, setExamData] = useState<ExamData>(initialEmptyExam);
@@ -2402,7 +2393,7 @@ export default function ExamWorkspacePage() {
                 Cần Chia Sẻ Màn Hình Để Tiếp Tục Làm Bài
               </h3>
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                Ca thi này yêu cầu chia sẻ màn hình trực tiếp để Giám thị theo dõi tính liêm chính học thuật. Toàn bộ thao tác làm bài tạm thời bị khóa cho đến khi bạn bật chia sẻ màn hình.
+                Phòng thực hành / ca thi này yêu cầu chia sẻ màn hình trực tiếp để Giám thị theo dõi tiến độ và tính liêm chính học thuật. Toàn bộ thao tác làm bài tạm thời bị khóa cho đến khi bạn bật chia sẻ màn hình.
               </p>
             </div>
 

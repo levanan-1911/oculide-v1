@@ -38,10 +38,10 @@ export default function StudentDeviceCheckPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Trạng thái kiểm tra thiết bị (Đã bỏ hoàn toàn Microphone theo yêu cầu)
+  // Trạng thái kiểm tra thiết bị (Chủ yếu kiểm tra Camera & AI Face ID trước khi vào phòng chờ)
   const [camStatus, setCamStatus] = useState<"testing" | "success" | "error">("testing");
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [screenStatus, setScreenStatus] = useState<"idle" | "testing" | "success">("idle");
+  const [screenStatus, setScreenStatus] = useState<"idle" | "testing" | "success">("success");
   const [networkStatus, setNetworkStatus] = useState<"testing" | "success">("testing");
 
   // Xác thực AI Face ID
@@ -100,22 +100,7 @@ export default function StudentDeviceCheckPage() {
     try {
       const saved = sessionStorage.getItem("oculide_student_pending_exam");
       if (saved) {
-        const parsed = JSON.parse(saved);
-        setSessionInfo(parsed);
-        const pConfig = parsed?.proctoringConfig;
-        const rType = parsed?.roomType || "exam";
-        const required =
-          pConfig?.screenShare === "required" ||
-          pConfig?.screen_share === "required" ||
-          pConfig?.requireScreenShare === true ||
-          pConfig?.require_screen === true ||
-          (rType === "exam" &&
-            pConfig?.screenShare !== "disabled" &&
-            pConfig?.screenShare !== "optional" &&
-            pConfig?.requireScreenShare !== false);
-        if (!required) {
-          setScreenStatus("success");
-        }
+        setSessionInfo(JSON.parse(saved));
       }
     } catch {
       // Bỏ qua nếu không đọc được
@@ -196,25 +181,11 @@ export default function StudentDeviceCheckPage() {
     router.push(sessionInfo?.roomId ? `/student/waiting-room?roomId=${sessionInfo.roomId}` : "/student/waiting-room");
   };
 
-  const proctoring = (sessionInfo as any)?.proctoringConfig;
-  const roomType = (sessionInfo as any)?.roomType || "exam";
-  const isScreenShareRequired =
-    proctoring?.screenShare === "required" ||
-    proctoring?.screen_share === "required" ||
-    proctoring?.requireScreenShare === true ||
-    proctoring?.require_screen === true ||
-    (roomType === "exam" &&
-      proctoring?.screenShare !== "disabled" &&
-      proctoring?.screenShare !== "optional" &&
-      proctoring?.requireScreenShare !== false);
-
   const isCameraRequired = (sessionInfo as any)?.proctoringConfig?.requireCamera !== false && (sessionInfo as any)?.roomType !== 'lab';
   const isCamReady = !isCameraRequired || (camStatus === "success" && faceVerified);
-  const isScreenReady = !isScreenShareRequired || screenStatus === "success";
 
   const isAllReady =
     isCamReady &&
-    isScreenReady &&
     !isSavingCheck;
 
   return (
@@ -436,29 +407,14 @@ export default function StudentDeviceCheckPage() {
                   <div>
                     <p className="font-serif font-bold text-[#2A282D] dark:text-white">
                       Chia sẻ toàn màn hình
-                      {isScreenShareRequired && (
-                        <span className="ml-2 text-[10px] text-rose-500 font-mono font-semibold uppercase">
-                          (Bắt buộc)
-                        </span>
-                      )}
                     </p>
-                    <p className="text-[11px] text-slate-500">Giám sát chống chuyển Tab</p>
+                    <p className="text-[11px] text-slate-500">Sẽ kích hoạt bắt buộc khi vào phòng làm bài</p>
                   </div>
                 </div>
 
-                {screenStatus === "success" ? (
-                  <span className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
-                    <CheckCircle2 size={13} /> Sẵn sàng
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleRequestScreenShare}
-                    className="system-primary-action rounded bg-slate-900 px-3 py-1.5 font-serif text-[11px] font-bold text-white hover:bg-slate-800 transition cursor-pointer"
-                  >
-                    {screenStatus === "testing" ? "Đang cấp quyền..." : "Cấp quyền"}
-                  </button>
-                )}
+                <span className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
+                  <CheckCircle2 size={13} /> Sẵn sàng
+                </span>
               </div>
 
               {/* ITEM 3: ĐƯỜNG TRUYỀN MẠNG */}

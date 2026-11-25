@@ -719,6 +719,13 @@ async def submit_exam_endpoint(
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
 
+    # Quy chế khảo thí: Không cho phép nộp bài lại nếu thí sinh đã hoàn thành phiên nộp bài
+    if is_student_already_submitted(room_id, current_user["user_id"]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bạn đã hoàn thành và nộp bài thi cho phòng này rồi. Không thể nộp lại."
+        )
+
     finalize_student_submission(room_id, current_user["user_id"])
 
     # Broadcast thông báo sinh viên đã nộp bài qua WebSocket để Giảng viên giám sát cập nhật ngay

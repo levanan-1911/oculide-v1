@@ -15,7 +15,6 @@ import {
   Cpu,
   HardDrive,
   FileCode2,
-  RotateCcw,
   Download,
   AlertTriangle,
   ChevronDown,
@@ -413,15 +412,10 @@ export default function SubmissionDetailPage() {
             )}
 
             <span className="text-slate-300 dark:text-slate-700">•</span>
-
-            {/* Nút Nộp lại dẫn về trang phòng thi hoặc làm lại */}
-            <Link
-              href="/student/exam-room"
-              className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-brand-700 dark:hover:text-brand-200 transition"
-            >
-              <RotateCcw size={14} />
-              <span>Nộp lại</span>
-            </Link>
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 size={13} />
+              <span>Đã hoàn thành nộp bài</span>
+            </span>
           </div>
 
           {/* Các nút công cụ bổ trợ (Tải về / Sao chép mã) */}

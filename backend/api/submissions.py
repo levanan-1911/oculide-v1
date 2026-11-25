@@ -7,7 +7,7 @@ from schemas.submission import (
     SubmissionResponse, GradingResultResponse
 )
 from core.permissions import get_current_user
-from database.room_db import get_room_by_id
+from database.room_db import get_room_by_id, is_student_already_submitted
 from database.template_db import is_question_valid_for_room
 from database.question_db import get_question_by_id
 from database.session_db import get_session_by_id
@@ -41,6 +41,13 @@ async def create_submission_endpoint(
     room_status = (room.get("status") or "").lower()
     if not room.get("is_active") and room_status not in ("dang_dien_ra", "in_progress", "ongoing"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phòng đã đóng, không nhận bài nộp")
+
+    # Quy chế khảo thí: Không cho phép nộp lại sau khi đã hoàn thành nộp bài
+    if is_student_already_submitted(submission_data.room_id, current_user["user_id"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn đã hoàn thành và nộp bài thi cho phòng này. Không thể nộp lại bài làm mới."
+        )
         
     question = get_question_by_id(submission_data.question_id)
     if not question:

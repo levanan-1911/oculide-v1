@@ -428,7 +428,7 @@ def get_rooms_for_student(student_id: int, skip: int = 0, limit: int = 100, room
             {where_sql}
             ORDER BY p.start_time DESC, p.created_at DESC
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        """, tuple(params + [skip, limit]))
+        """, tuple([student_id, student_id] + params + [skip, limit]))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
         results = []

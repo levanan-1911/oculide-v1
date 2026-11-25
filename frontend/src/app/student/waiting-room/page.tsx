@@ -280,11 +280,11 @@ export default function StudentWaitingRoomPage() {
               </div>
               <div>
                 <h2 className="font-serif text-base font-bold text-[#2A282D] dark:text-white">
-                  {session?.examTitle || "Kiểm tra Lập trình C++ & Thuật toán Cơ bản"}
+                  {session?.examTitle || "Phòng thi & thực hành trực tuyến"}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-[#9F9690]">
-                  Môn học: <span className="font-semibold text-[#2A282D] dark:text-stone-300">{session?.subject || "PRJ301"}</span>
-                  {!isRoomClosed && <> · Mã phòng: <span className="font-mono font-bold text-slate-900 dark:text-[#f0c2cf]">{session?.roomCode || "OCL-C001"}</span></>}
+                  Môn học: <span className="font-semibold text-[#2A282D] dark:text-stone-300">{session?.subject || "Học phần thực hành"}</span>
+                  {!isRoomClosed && <> · Mã phòng: <span className="font-mono font-bold text-slate-900 dark:text-[#f0c2cf]">{session?.roomCode || "—"}</span></>}
                 </p>
               </div>
             </div>

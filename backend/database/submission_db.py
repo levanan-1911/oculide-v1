@@ -12,6 +12,10 @@ def get_submission_by_id(submission_id: int, include_hidden_details: bool = True
                    s.room_id, 
                    p.room_code,
                    p.room_name,
+                   lh.class_id,
+                   lh.class_code,
+                   lh.class_name,
+                   lh.course_code AS course_name,
                    s.student_id, 
                    u.full_name AS student_name,
                    u.identifier_code AS student_code,
@@ -32,6 +36,7 @@ def get_submission_by_id(submission_id: int, include_hidden_details: bool = True
             FROM Submissions s
             JOIN Questions q ON s.question_id = q.question_id
             LEFT JOIN Rooms p ON s.room_id = p.room_id
+            LEFT JOIN Classes lh ON p.class_id = lh.class_id
             LEFT JOIN Users u ON s.student_id = u.user_id
             WHERE s.submission_id = ?
         """, (submission_id,))

@@ -41,79 +41,6 @@ type Submission = {
   memory: string;
 };
 
-const sampleSubmissions: Submission[] = [
-  {
-    id: "cb_111",
-    problem: "Tính tổng các số trong chuỗi",
-    exam: "Lab 04 - Xử lý chuỗi nâng cao",
-    classCode: "INT202",
-    className: "Lập trình Python",
-    courseName: "INT202 - Lập trình Python (D21CQCN01-B)",
-    language: "Python 3.10",
-    submittedAt: "2026-10-31T20:51:00",
-    status: "accepted",
-    score: 100,
-    runtime: "0.004s",
-    memory: "1.82 MB",
-  },
-  {
-    id: "SUB-1001",
-    problem: "Tìm phần tử lớn nhất",
-    exam: "Lab 01 - Cấu trúc dữ liệu cơ bản",
-    classCode: "CS101",
-    className: "Cấu trúc dữ liệu & Giải thuật",
-    courseName: "CS101 - Cấu trúc dữ liệu & Giải thuật (D21CQCN02)",
-    language: "C++",
-    submittedAt: "2026-10-27T09:30:00",
-    status: "accepted",
-    score: 100,
-    runtime: "0.12s",
-    memory: "12 MB",
-  },
-  {
-    id: "SUB-1002",
-    problem: "Sắp xếp mảng QuickSort",
-    exam: "Lab 01 - Cấu trúc dữ liệu cơ bản",
-    classCode: "CS101",
-    className: "Cấu trúc dữ liệu & Giải thuật",
-    courseName: "CS101 - Cấu trúc dữ liệu & Giải thuật (D21CQCN02)",
-    language: "C++",
-    submittedAt: "2026-10-27T10:15:00",
-    status: "failed",
-    score: 50,
-    runtime: "0.45s",
-    memory: "14 MB",
-  },
-  {
-    id: "SUB-1003",
-    problem: "Tính tổng dãy số Fibonacci",
-    exam: "Thi Giữa Kỳ - Thuật toán đệ quy",
-    classCode: "CS101",
-    className: "Cấu trúc dữ liệu & Giải thuật",
-    courseName: "CS101 - Cấu trúc dữ liệu & Giải thuật (D21CQCN02)",
-    language: "C++",
-    submittedAt: "2026-10-26T14:20:00",
-    status: "accepted",
-    score: 100,
-    runtime: "0.18s",
-    memory: "18 MB",
-  },
-  {
-    id: "SUB-1004",
-    problem: "Kiểm tra số nguyên tố",
-    exam: "Lab 02 - Hàm & Module",
-    classCode: "INT202",
-    className: "Lập trình Python",
-    courseName: "INT202 - Lập trình Python (D21CQCN01-B)",
-    language: "Python 3.10",
-    submittedAt: "2026-10-25T08:45:00",
-    status: "accepted",
-    score: 100,
-    runtime: "0.09s",
-    memory: "10 MB",
-  },
-];
-
 const statusConfig: Record<
   SubmissionStatus,
   { label: string; className: string; icon: typeof CheckCircle2; spin?: boolean }
@@ -162,7 +89,7 @@ export default function StudentSubmissionsPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | SubmissionStatus>("all");
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grouped" | "table">("grouped");
-  const [submissions, setSubmissions] = useState<Submission[]>(sampleSubmissions);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -198,40 +125,38 @@ export default function StudentSubmissionsPage() {
 
         if (cancelled || !Array.isArray(rows)) return;
 
-        if (rows.length > 0) {
-          const mapped: Submission[] = rows.map((s) => {
-            const pct = s.score_percentage ?? 0;
-            const mappedStatus: SubmissionStatus =
-              s.status === "completed"
-                ? pct >= 100
-                  ? "accepted"
-                  : "failed"
-                : s.status === "failed"
-                ? "failed"
-                : "pending";
+        const mapped: Submission[] = rows.map((s) => {
+          const pct = s.score_percentage ?? 0;
+          const mappedStatus: SubmissionStatus =
+            s.status === "completed"
+              ? pct >= 100
+                ? "accepted"
+                : "failed"
+              : s.status === "failed"
+              ? "failed"
+              : "pending";
 
-            const courseLabel = s.course_name || s.class_name || "Học phần thực hành";
-            const classLabel = s.class_name || s.class_code || "Lớp học phần";
+          const courseLabel = s.course_name || s.class_name || "Học phần thực hành";
+          const classLabel = s.class_name || s.class_code || "Lớp học phần";
 
-            return {
-              id: String(s.submission_id),
-              problem: s.question_title || `Câu hỏi #${s.question_id}`,
-              exam: s.room_name || s.room_code || `Phiên #${s.room_id}`,
-              roomId: s.room_id,
-              classId: s.class_id,
-              classCode: s.class_code || "CHUNG",
-              className: classLabel,
-              courseName: courseLabel,
-              language: s.language,
-              submittedAt: s.submitted_at,
-              status: mappedStatus,
-              score: s.status === "completed" ? Math.round(pct) : null,
-              runtime: "—",
-              memory: "—",
-            };
-          });
-          setSubmissions(mapped);
-        }
+          return {
+            id: String(s.submission_id),
+            problem: s.question_title || `Câu hỏi #${s.question_id}`,
+            exam: s.room_name || s.room_code || `Phiên #${s.room_id}`,
+            roomId: s.room_id,
+            classId: s.class_id,
+            classCode: s.class_code || "CHUNG",
+            className: classLabel,
+            courseName: courseLabel,
+            language: s.language,
+            submittedAt: s.submitted_at,
+            status: mappedStatus,
+            score: s.status === "completed" ? Math.round(pct) : null,
+            runtime: "—",
+            memory: "—",
+          };
+        });
+        setSubmissions(mapped);
       } catch (err) {
         console.error("Lỗi khi tải lịch sử bài nộp:", err);
       } finally {

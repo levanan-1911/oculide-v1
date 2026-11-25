@@ -6,6 +6,7 @@ import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
 import LiveKitVideoFeed from "@/components/livekit/LiveKitVideoFeed";
 import { fetchWithAuth, getAuthToken } from "@/services/apiClient";
 import { ProctoringClient } from "@/utils/proctorClient";
+import { buildRoomWebSocketUrl } from "@/utils/websocket";
 import {
   AlertOctagon,
   AlertTriangle,
@@ -173,8 +174,15 @@ export default function ExamWorkspacePage() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const qRoomId = params.get("roomId") || params.get("room_id");
+      const qRoomCode = params.get("room") || params.get("code") || params.get("roomCode");
       if (qRoomId && !isNaN(Number(qRoomId))) {
         setActiveRoomId(Number(qRoomId));
+      } else if (qRoomCode) {
+        void fetchWithAuth<any>(`/api/v1/rooms/public/${encodeURIComponent(qRoomCode)}`)
+          .then((res) => {
+            if (res?.room_id) setActiveRoomId(Number(res.room_id));
+          })
+          .catch(() => {});
       }
     }
   }, []);
@@ -412,6 +420,7 @@ export default function ExamWorkspacePage() {
   // Luồng camera vật lý trực tiếp
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const proctorClientRef = useRef<ProctoringClient | null>(null);
 
   // Khởi động webcam dự phòng liên tục để phục vụ AI Proctoring và chụp bằng chứng vi phạm
   useEffect(() => {
@@ -553,12 +562,16 @@ export default function ExamWorkspacePage() {
 
     const token = getAuthToken() || "";
     const client = new ProctoringClient(activeSessionId, window.location.origin, token);
+    proctorClientRef.current = client;
     const hasActiveCamera = Boolean(localVideoTrack || localStream);
     client.setCameraActive(hasActiveCamera);
     client.start(videoEl);
 
     return () => {
       client.stop();
+      if (proctorClientRef.current === client) {
+        proctorClientRef.current = null;
+      }
     };
   }, [activeSessionId, examState, isLocked, localVideoTrack, localStream]);
 
@@ -810,8 +823,7 @@ export default function ExamWorkspacePage() {
         const token = getAuthToken();
         if (cancelled || !me?.user_id || !token || typeof window === "undefined") return;
 
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsUrl = `${protocol}//${window.location.host}/ws/${activeRoomId}/${me.user_id}?token=${encodeURIComponent(token)}`;
+        const wsUrl = buildRoomWebSocketUrl(activeRoomId, me.user_id, token);
         ws = new WebSocket(wsUrl);
         ws.onmessage = (event) => {
           try {
@@ -872,6 +884,39 @@ export default function ExamWorkspacePage() {
                   noticeType: msg.notice_type || "info",
                   sender: msg.instructor_name || "Giảng viên",
                   time: msg.timestamp || new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
+                });
+              }
+            } else if (msg.type === "chat_message") {
+              // Tin nhắn chung cả lớp hoặc tin nhắn riêng từ giảng viên
+              const myIds = [
+                String(me.user_id),
+                String((me as any).student_id || ""),
+                String((me as any).user_code || ""),
+                String((me as any).username || ""),
+              ].filter(Boolean);
+              const recipientStr = msg.recipient_id ? String(msg.recipient_id).trim() : "";
+              const isForMe =
+                !recipientStr ||
+                recipientStr.toLowerCase() === "all" ||
+                myIds.some((id) => id.toLowerCase() === recipientStr.toLowerCase());
+
+              if (isForMe && msg.message) {
+                setIncomingAnnouncement({
+                  id: Date.now(),
+                  message: msg.message,
+                  noticeType: "info",
+                  sender: msg.sender_name || "Giảng viên",
+                  time: new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
+                });
+              }
+            } else if (msg.type === "instructor_hint") {
+              if (msg.message) {
+                setIncomingAnnouncement({
+                  id: Date.now(),
+                  message: `[Gợi ý] ${msg.message}`,
+                  noticeType: "info",
+                  sender: "Giảng viên",
+                  time: new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
                 });
               }
             } else if (msg.type === "room_config_update" && typeof msg.requireCamera === "boolean") {
@@ -1789,6 +1834,7 @@ export default function ExamWorkspacePage() {
                     ...prev,
                     [currentProblem.id]: e.target.value,
                   }));
+                  proctorClientRef.current?.reportCodeChange(e.target.value.length);
                 }}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}

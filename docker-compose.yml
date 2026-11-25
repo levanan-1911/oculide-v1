@@ -162,7 +162,6 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-      - ./ai_workers:/app/ai_workers
       - yolo_weights:/root/.config/ultralytics
     networks:
       - exam-network

@@ -252,3 +252,188 @@ def test_violations_idor_blocked_for_other_student():
             )
         )
     assert exc3.value.status_code == 403
+
+
+def test_typing_exemption_capped_and_extended_screen_and_fail_closed():
+    from tasks.ai_proctoring_tasks import analyze_frame, _LOCAL_SESSION_STATE
+    from api.violations import analyze_webcam_snapshot
+    from schemas.violation import SnapshotAnalyzeRequest
+
+    _LOCAL_SESSION_STATE.clear()
+    recorded = []
+
+    def _base_res(**kw):
+        d = {
+            "success": True,
+            "face_detected": True,
+            "face_count": 1,
+            "looking_at_screen": False,
+            "head_on_screen": False,
+            "head_pose": {"pitch": -20.0, "yaw": 0.0, "roll": 0.0},
+            "gaze": {"gaze_direction": "center", "is_deviated": False},
+            "liveness": {"ear": 0.3, "eyes_closed": False},
+            "lighting": {"camera_status": "normal", "is_camera_off": False, "is_camera_covered": False},
+            "detected_objects": [],
+            "violations": [],
+            "confidence_score": 0.90,
+            "method": "mediapipe_facemesh",
+            "dhash": "abcdef0123456789",
+        }
+        d.update(kw)
+        return d
+
+    with patch("tasks.ai_proctoring_tasks._save_snapshot_image", return_value="/uploads/test.jpg"), \
+         patch("tasks.ai_proctoring_tasks.create_snapshot"), \
+         patch("tasks.ai_proctoring_tasks.create_violation", side_effect=lambda **k: recorded.append(k)), \
+         patch("tasks.ai_proctoring_tasks.create_system_log"), \
+         patch("tasks.ai_proctoring_tasks._get_redis_client", return_value=None):
+
+        # B4: Hiệu chỉnh góc nhìn thẳng (3 frame pitch=0), sau đó giả mạo is_typing=True cúi xuống -20° liên tục -> vẫn bị phạt looking_away
+        t = 5000.0
+        for i in range(3):
+            res_cal = _base_res(
+                looking_at_screen=True,
+                head_on_screen=True,
+                head_pose={"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
+                dhash=f"{(i + 1) * 11111:016x}",
+            )
+            with patch("time.time", return_value=t), \
+                 patch("tasks.ai_proctoring_tasks.proctor_detector.process_frame", return_value=res_cal):
+                analyze_frame(1, 10, 601, f"cal{i}", False, "periodic")
+            t += 4.0
+
+        for i in range(10):  # 0..36s cúi xuống -25° kèm is_typing=True (vượt 15s miễn trừ + 15s dwell)
+            res = _base_res(
+                head_pose={"pitch": -25.0, "yaw": 0.0, "roll": 0.0},
+                dhash=f"{(i + 10) * 11111:016x}",
+            )
+            with patch("time.time", return_value=t), \
+                 patch("tasks.ai_proctoring_tasks.proctor_detector.process_frame", return_value=res):
+                analyze_frame(1, 10, 601, f"t{i}", True, "periodic")
+            t += 4.0
+        assert "looking_away" in [v["violation_type"] for v in recorded]
+
+        # B9: extended_screen event ghi nhận suspicious_object
+        _LOCAL_SESSION_STATE.clear()
+        recorded.clear()
+        with patch("time.time", return_value=6000.0), \
+             patch("tasks.ai_proctoring_tasks.proctor_detector.process_frame", return_value=_base_res(looking_at_screen=True)):
+            analyze_frame(1, 10, 602, "ext", False, "extended_screen")
+        assert [v["violation_type"] for v in recorded] == ["suspicious_object"]
+
+    # B10: Celery/Redis lỗi -> trả HTTP 503 (fail-closed) thay vì 202 accepted
+    def _exec_sync(coro):
+        try:
+            coro.send(None)
+        except StopIteration as stop:
+            return stop.value
+        finally:
+            coro.close()
+
+    student = {"user_id": 10, "role": "student"}
+    session = {"session_id": 603, "room_id": 1, "student_id": 10}
+    with patch("api.violations.get_session_by_id", return_value=session), \
+         patch("api.violations.get_room_by_id", return_value={"room_id": 1, "room_type": "exam"}), \
+         patch("api.violations.create_system_log"), \
+         patch("celery_app.celery_app.send_task", side_effect=RuntimeError("Redis down")):
+        resp = _exec_sync(
+            analyze_webcam_snapshot(
+                SnapshotAnalyzeRequest(session_id=603, snapshot_data="abc"),
+                current_user=student,
+            )
+        )
+        assert resp.status_code == 503
+
+
+def test_risk_engine_weights_and_threshold():
+    from database.violation_db import compute_risk_score_from_items, LOCK_RISK_THRESHOLD
+
+    items = [
+        {"severity": "low", "review_status": "pending"},       # +0
+        {"severity": "medium", "review_status": "pending"},    # +2
+        {"severity": "high", "review_status": "confirmed"},    # +4
+        {"severity": "critical", "review_status": "rejected"}, # +0 (bị bác bỏ)
+    ]
+    score = compute_risk_score_from_items(items)
+    assert score == 6
+    assert score < LOCK_RISK_THRESHOLD
+
+    items.append({"severity": "high", "review_status": "pending"})  # +4 -> 10
+    assert compute_risk_score_from_items(items) == 10
+    assert compute_risk_score_from_items(items) >= LOCK_RISK_THRESHOLD
+
+
+def test_personal_calibration_and_snapshot_db_throttling():
+    from tasks.ai_proctoring_tasks import analyze_frame, _LOCAL_SESSION_STATE
+
+    _LOCAL_SESSION_STATE.clear()
+    snap_calls = []
+    recorded = []
+
+    def _pose_res(pitch, yaw, idx):
+        return {
+            "success": True,
+            "face_detected": True,
+            "face_count": 1,
+            "looking_at_screen": True,
+            "head_on_screen": True,
+            "head_pose": {"pitch": pitch, "yaw": yaw, "roll": 0.0},
+            "gaze": {"gaze_direction": "center", "is_deviated": False},
+            "liveness": {"ear": 0.3, "eyes_closed": False},
+            "lighting": {"camera_status": "normal", "is_camera_off": False, "is_camera_covered": False},
+            "detected_objects": [],
+            "violations": [],
+            "confidence_score": 0.95,
+            "method": "mediapipe_facemesh",
+            "dhash": f"{(idx + 50) * 99991:016x}",
+        }
+
+    with patch("tasks.ai_proctoring_tasks._save_snapshot_image", return_value="/uploads/test.jpg"), \
+         patch("tasks.ai_proctoring_tasks.create_snapshot", side_effect=lambda **k: snap_calls.append(k)), \
+         patch("tasks.ai_proctoring_tasks.create_violation", side_effect=lambda **k: recorded.append(k)), \
+         patch("tasks.ai_proctoring_tasks.create_system_log"), \
+         patch("tasks.ai_proctoring_tasks._get_redis_client", return_value=None):
+
+        # Webcam đặt thấp: tư thế nhìn thẳng của thí sinh là pitch=-18, yaw=8
+        t = 100.0
+        for i in range(5):  # 0..16s bình thường
+            with patch("time.time", return_value=t), \
+                 patch("tasks.ai_proctoring_tasks.proctor_detector.process_frame", return_value=_pose_res(-18.0, 8.0, i)):
+                out = analyze_frame(1, 10, 701, f"cal{i}", False, "periodic")
+            t += 4.0
+
+        assert out["calibrated"] is True
+        assert out["looking_at_screen"] is True
+        assert len(recorded) == 0
+        # Tối ưu DB Snapshots: 5 frame bình thường trong 16s chỉ ghi DB 1 lần (chu kỳ 30s)
+        assert len(snap_calls) == 1
+
+
+def test_ide_telemetry_and_ast_plagiarism():
+    from services.ide_behavior_service import (
+        analyze_ide_telemetry,
+        compute_code_similarity,
+        find_room_plagiarism_pairs,
+    )
+
+    burst = analyze_ide_telemetry(prev_len=20, curr_len=280, elapsed_sec=2.0, keystroke_count=3)
+    assert burst["is_suspicious_burst"] is True
+
+    normal = analyze_ide_telemetry(prev_len=20, curr_len=280, elapsed_sec=45.0, keystroke_count=240)
+    assert normal["is_suspicious_burst"] is False
+
+    py_a = "def solve(arr):\n    total = 0\n    for x in arr:\n        if x > 0:\n            total += x\n    return total\n"
+    py_b = "def calc(nums):\n    ans = 0\n    for item in nums:\n        if item > 0:\n            ans += item\n    return ans\n"
+    py_diff = "def fib(n):\n    return n if n <= 1 else fib(n-1) + fib(n-2)\n"
+
+    assert compute_code_similarity(py_a, py_b, "python") >= 0.85
+    assert compute_code_similarity(py_a, py_diff, "python") < 0.75
+
+    subs = [
+        {"submission_id": 1, "student_id": 11, "student_name": "A", "question_id": 5, "language": "python", "code_content": py_a},
+        {"submission_id": 2, "student_id": 12, "student_name": "B", "question_id": 5, "language": "python", "code_content": py_b},
+        {"submission_id": 3, "student_id": 13, "student_name": "C", "question_id": 5, "language": "python", "code_content": py_diff},
+    ]
+    pairs = find_room_plagiarism_pairs(subs, threshold=0.78)
+    assert len(pairs) == 1
+    assert {pairs[0]["student_a_id"], pairs[0]["student_b_id"]} == {11, 12}

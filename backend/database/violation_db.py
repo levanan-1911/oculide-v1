@@ -1,7 +1,109 @@
 from core.config import get_db_connection
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from database.room_db import get_current_vn_time
+
+# Trọng số rủi ro chuẩn cho Risk Engine
+SEVERITY_RISK_WEIGHTS: Dict[str, int] = {
+    "low": 0,
+    "medium": 2,
+    "warning": 2,
+    "high": 4,
+    "critical": 6,
+}
+LOCK_RISK_THRESHOLD = 10
+
+
+def compute_risk_score_from_items(items: List[Dict[str, Any]]) -> int:
+    """Tính tổng điểm rủi ro có trọng số từ danh sách vi phạm (bỏ qua vi phạm đã bị bác bỏ)."""
+    total = 0
+    for item in items:
+        if item.get("review_status") == "rejected":
+            continue
+        sev = str(item.get("severity") or "warning").lower()
+        total += SEVERITY_RISK_WEIGHTS.get(sev, 2)
+    return total
+
+
+def get_session_risk_score(session_id: int) -> Dict[str, Any]:
+    """Truy vấn tổng điểm rủi ro có trọng số của một phiên thi từ CSDL."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT COALESCE(SUM(
+                CASE
+                    WHEN LOWER(severity) = 'critical' THEN 6
+                    WHEN LOWER(severity) = 'high' THEN 4
+                    WHEN LOWER(severity) IN ('medium', 'warning') THEN 2
+                    ELSE 0
+                END
+            ), 0)
+            FROM Violations
+            WHERE session_id = ?
+              AND (review_status IS NULL OR review_status != 'rejected')
+        """, (session_id,))
+        row = cursor.fetchone()
+        score = int(row[0]) if row and row[0] is not None else 0
+        return {
+            "session_id": session_id,
+            "risk_score": score,
+            "threshold": LOCK_RISK_THRESHOLD,
+            "is_lock_triggered": score >= LOCK_RISK_THRESHOLD,
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_ai_precision_metrics(room_id: Optional[int] = None) -> Dict[str, Any]:
+    """Thống kê vòng phản hồi (Precision) từ kết quả giám thị xác nhận/bác bỏ cảnh báo AI."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        where_sql = "WHERE room_id = ?" if room_id is not None else ""
+        params = (room_id,) if room_id is not None else ()
+        cursor.execute(f"""
+            SELECT violation_type,
+                   SUM(CASE WHEN review_status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed_cnt,
+                   SUM(CASE WHEN review_status = 'rejected' THEN 1 ELSE 0 END) AS rejected_cnt,
+                   SUM(CASE WHEN review_status IS NULL OR review_status = 'pending' THEN 1 ELSE 0 END) AS pending_cnt
+            FROM Violations
+            {where_sql}
+            GROUP BY violation_type
+        """, params)
+        rows = cursor.fetchall()
+        by_type = []
+        total_confirmed = 0
+        total_rejected = 0
+        total_pending = 0
+        for row in rows:
+            conf = int(row[1] or 0)
+            rej = int(row[2] or 0)
+            pend = int(row[3] or 0)
+            reviewed = conf + rej
+            total_confirmed += conf
+            total_rejected += rej
+            total_pending += pend
+            by_type.append({
+                "violation_type": row[0],
+                "confirmed": conf,
+                "rejected": rej,
+                "pending": pend,
+                "precision_pct": round((conf / reviewed) * 100, 1) if reviewed > 0 else None,
+            })
+        total_reviewed = total_confirmed + total_rejected
+        return {
+            "room_id": room_id,
+            "total_confirmed": total_confirmed,
+            "total_rejected": total_rejected,
+            "total_pending": total_pending,
+            "overall_precision_pct": round((total_confirmed / total_reviewed) * 100, 1) if total_reviewed > 0 else None,
+            "by_type": by_type,
+        }
+    finally:
+        cursor.close()
+        conn.close()
 
 def create_violation(
     session_id: int,
@@ -32,17 +134,24 @@ def create_violation(
         """, (session_id, room_id, student_id, violation_type, severity, description, snapshot_url, now_vn))
         row = cursor.fetchone()
 
-        # Đếm tổng số vi phạm hợp lệ (loại trừ mức low và các vi phạm đã bị giám thị bác bỏ)
+        # Risk Engine: Tính tổng điểm rủi ro có trọng số (medium/warning=2, high=4, critical=6; bỏ qua low & rejected)
         cursor.execute("""
-            SELECT COUNT(*) FROM Violations
+            SELECT COALESCE(SUM(
+                CASE
+                    WHEN LOWER(severity) = 'critical' THEN 6
+                    WHEN LOWER(severity) = 'high' THEN 4
+                    WHEN LOWER(severity) IN ('medium', 'warning') THEN 2
+                    ELSE 0
+                END
+            ), 0)
+            FROM Violations
             WHERE session_id = ?
               AND (review_status IS NULL OR review_status != 'rejected')
-              AND severity IN ('medium', 'high', 'critical', 'warning')
         """, (session_id,))
-        v_count_row = cursor.fetchone()
-        total_v = v_count_row[0] if v_count_row else 0
-        if total_v >= 3:
-            # Khóa phiên thi ở mức CSDL nếu đạt ngưỡng >= 3 vi phạm hợp lệ
+        risk_row = cursor.fetchone()
+        risk_score = int(risk_row[0]) if risk_row and risk_row[0] is not None else 0
+        if risk_score >= LOCK_RISK_THRESHOLD:
+            # Khóa phiên thi ở mức CSDL khi điểm rủi ro đạt ngưỡng >= 10
             cursor.execute(
                 "UPDATE ExamSessions SET status = 'locked' WHERE session_id = ? AND status NOT IN ('completed', 'da_nop', 'submitted')",
                 (session_id,)

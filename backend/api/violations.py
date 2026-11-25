@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Query, Body
+from fastapi.responses import JSONResponse
 from typing import Optional, List, Dict, Any
 import json
 
@@ -9,10 +10,12 @@ from schemas.violation import (
 from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
 from database.violation_db import (
     create_violation, get_violations_by_session, get_violations_by_student,
-    get_violations_by_room, update_violation_review, get_student_violation_stats
+    get_violations_by_room, update_violation_review, get_student_violation_stats,
+    get_session_risk_score, get_ai_precision_metrics
 )
 from database.session_db import get_session_by_id, get_sessions_by_student
 from database.room_db import get_room_by_id
+from database.system_log_db import create_system_log
 from websocket.connection_manager import manager
 
 router = APIRouter()
@@ -167,7 +170,33 @@ async def analyze_webcam_snapshot(
         return {"status": "queued", "message": "Ảnh đã được đưa vào hàng đợi phân tích"}
 
     except Exception as e:
-        return {"status": "accepted", "message": f"Snapshot accepted (local mode: {e})"}
+        # B10: Fail-closed visibility — không âm thầm bỏ qua khi mất hàng đợi Celery/Redis
+        try:
+            create_system_log(
+                log_level="error",
+                module="AIProctoring",
+                message=f"Không thể đẩy snapshot phiên {data.session_id} vào Celery queue 'proctoring': {e}"
+            )
+        except Exception:
+            pass
+        try:
+            await manager.broadcast_json(session["room_id"], {
+                "type": "proctoring_degraded",
+                "room_id": session["room_id"],
+                "student_id": session["student_id"],
+                "session_id": data.session_id,
+                "message": "Mất kết nối hàng đợi phân tích AI Proctoring"
+            })
+        except Exception:
+            pass
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "degraded",
+                "proctoring_active": False,
+                "message": "Hàng đợi phân tích AI Proctoring tạm thời không khả dụng"
+            }
+        )
 
 @router.get("/session/{session_id}", response_model=List[ViolationResponse])
 async def get_session_violations(
@@ -245,3 +274,26 @@ async def get_room_violation_statistics(
 ):
     """Thống kê chi tiết các vi phạm theo loại và mức độ cảnh báo qua Stored Procedure"""
     return get_student_violation_stats(room_id, student_id)
+
+
+@router.get("/session/{session_id}/risk")
+async def get_session_risk(
+    session_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lấy điểm rủi ro có trọng số (Risk Engine) của phiên thi"""
+    session = get_session_by_id(session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phiên thi")
+    if current_user.get("role") == "student" and session["student_id"] != current_user.get("user_id"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem điểm rủi ro của sinh viên khác")
+    return get_session_risk_score(session_id)
+
+
+@router.get("/room/{room_id}/ai-metrics")
+async def get_room_ai_precision_metrics(
+    room_id: int,
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Thống kê vòng phản hồi (Precision) từ kết quả giám thị xác nhận/bác bỏ cảnh báo AI"""
+    return get_ai_precision_metrics(room_id)

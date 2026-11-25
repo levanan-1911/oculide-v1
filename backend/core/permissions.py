@@ -9,7 +9,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any
     """Dependency trích xuất và xác thực người dùng hiện tại từ JWT token"""
     if token:
         payload = decode_access_token(token)
-        if payload:
+        # Không cho phép dùng Refresh Token (dài hạn 7 ngày) thay cho Access Token
+        if payload and payload.get("token_type") != "refresh":
             raw_id = payload.get("user_id")
             if raw_id is None:
                 raw_id = payload.get("sub")

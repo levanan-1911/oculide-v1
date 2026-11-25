@@ -116,6 +116,20 @@ export default function ExamWorkspacePage() {
     proctoringConfig?.webcam_required === true ||
     (examRoomType === "exam" && proctoringConfig?.requireCamera !== false && proctoringConfig?.webcam_required !== false);
   const isCameraOffAllowed = !isCameraExplicitlyRequired;
+
+  // Bắt buộc chia sẻ màn hình nếu:
+  // - proctoringConfig có screenShare === "required" hoặc screen_share === "required"
+  // - hoặc requireScreenShare === true, require_screen === true
+  // - hoặc phòng thi chính thức (exam) mà không tắt tính năng này
+  const isScreenShareRequired =
+    proctoringConfig?.screenShare === "required" ||
+    proctoringConfig?.screen_share === "required" ||
+    proctoringConfig?.requireScreenShare === true ||
+    proctoringConfig?.require_screen === true ||
+    (examRoomType === "exam" &&
+      proctoringConfig?.screenShare !== "disabled" &&
+      proctoringConfig?.screenShare !== "optional" &&
+      proctoringConfig?.requireScreenShare !== false);
   const [isUserCameraOff, setIsUserCameraOff] = useState<boolean>(false);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [examData, setExamData] = useState<ExamData>(initialEmptyExam);
@@ -502,34 +516,75 @@ export default function ExamWorkspacePage() {
     }
   }, [localVideoTrack, localStream, isCameraExpanded]);
 
-  // Tự động yêu cầu chia sẻ màn hình khi sinh viên vào phòng thi / phòng thực hành (Lab) - Chỉ hỏi 1 lần duy nhất
-  const [hasPromptedScreenShare, setHasPromptedScreenShare] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return sessionStorage.getItem("exam_screen_shared_once") === "true";
-  });
+  // Trạng thái yêu cầu chia sẻ màn hình bắt buộc
   const [showScreenShareModal, setShowScreenShareModal] = useState(false);
+  const [isRequestingScreenShare, setIsRequestingScreenShare] = useState(false);
+  const [screenShareError, setScreenShareError] = useState<string | null>(null);
+
+  const handleTriggerScreenShare = async () => {
+    setIsRequestingScreenShare(true);
+    setScreenShareError(null);
+    try {
+      const ok = await enableScreenShare();
+      if (!ok) {
+        setScreenShareError("Bạn chưa hoàn tất chọn màn hình hoặc đã bấm hủy. Vui lòng bấm lại nút bên dưới và chọn Toàn bộ màn hình (Entire Screen).");
+      } else {
+        setShowScreenShareModal(false);
+      }
+    } catch (err: any) {
+      setScreenShareError(err?.message || "Không thể khởi động chia sẻ màn hình. Vui lòng cấp quyền cho trình duyệt.");
+    } finally {
+      setIsRequestingScreenShare(false);
+    }
+  };
 
   useEffect(() => {
-    if (livekitState !== "connected" || isScreenSharing || hasPromptedScreenShare) return;
+    if (livekitState !== "connected" || isScreenSharing) return;
 
-    let isSubscribed = true;
-    setHasPromptedScreenShare(true);
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("exam_screen_shared_once", "true");
+    if (isScreenShareRequired) {
+      setShowScreenShareModal(true);
     }
+  }, [livekitState, isScreenSharing, isScreenShareRequired]);
 
-    enableScreenShare().then((success) => {
-      if (!isSubscribed) return;
-      if (!success) {
-        // Cần tương tác người dùng (user activation) -> Mở modal để sinh viên bấm 1 click
-        setShowScreenShareModal(true);
-      }
-    });
+  // ─── CHẶN SINH VIÊN TỰ Ý THOÁT PHÒNG THI KHI ĐANG LÀM BÀI ─────────
+  const [showExitPreventedModal, setShowExitPreventedModal] = useState(false);
 
-    return () => {
-      isSubscribed = false;
+  // 1. Chặn reload / đóng tab trình duyệt
+  useEffect(() => {
+    if (examState !== "doing") return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Bạn đang trong ca thi chính thức. Theo quy chế khảo thí, thí sinh không được tự ý rời khỏi phòng thi trước khi nộp bài!";
+      return e.returnValue;
     };
-  }, [livekitState, isScreenSharing, hasPromptedScreenShare, enableScreenShare]);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [examState]);
+
+  // 2. Chặn nút Back / Forward và phím điều hướng của trình duyệt
+  useEffect(() => {
+    if (examState !== "doing") return;
+    window.history.pushState(null, "", window.location.href);
+
+    const handlePopState = () => {
+      window.history.pushState(null, "", window.location.href);
+      setShowExitPreventedModal(true);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        e.preventDefault();
+        setShowExitPreventedModal(true);
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [examState]);
 
   // Cảnh báo AI & Đếm Vi Phạm - Phục hồi từ localStorage khi F5 reload trang
   const [pasteCount, setPasteCount] = useState<number>(() => {
@@ -2333,58 +2388,92 @@ export default function ExamWorkspacePage() {
       )}
 
       {/* MODAL YÊU CẦU CHIA SẺ MÀN HÌNH BẮT BUỘC KHI VÀO PHÒNG */}
-      {showScreenShareModal && !isScreenSharing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-md border border-slate-300 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-neutral-900 space-y-4 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-800 dark:bg-white/10 dark:text-white border border-slate-200 dark:border-white/10">
-              <Monitor size={28} />
+      {((isScreenShareRequired && !isScreenSharing && examState === "doing") || (showScreenShareModal && !isScreenSharing)) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+          <div className="w-full max-w-lg rounded-xl border border-rose-500/30 bg-white p-6 shadow-2xl dark:border-rose-500/30 dark:bg-neutral-900 space-y-4 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 animate-pulse">
+              <Monitor size={32} />
             </div>
-            <div className="space-y-1">
-              <h3 className="font-serif text-lg font-bold text-slate-900 dark:text-white">
-                Yêu Cầu Chia Sẻ Màn Hình Làm Bài
+            <div className="space-y-1.5">
+              <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">
+                {isScreenShareRequired ? "Yêu cầu bắt buộc" : "Khuyến nghị giám sát"}
+              </span>
+              <h3 className="font-serif text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
+                Cần Chia Sẻ Màn Hình Để Tiếp Tục Làm Bài
               </h3>
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                Theo quy chế phòng {examRoomType === 'exam' ? 'thi trực tuyến' : 'thực hành (Lab)'}, sinh viên bắt buộc phải chia sẻ màn hình để Giảng viên giám sát tiến độ và tính liêm chính học thuật.
+                Ca thi này yêu cầu chia sẻ màn hình trực tiếp để Giám thị theo dõi tính liêm chính học thuật. Toàn bộ thao tác làm bài tạm thời bị khóa cho đến khi bạn bật chia sẻ màn hình.
               </p>
             </div>
+
+            {screenShareError && (
+              <div className="rounded-md border border-rose-300 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 text-left">
+                {screenShareError}
+              </div>
+            )}
+
             <div className="rounded-md border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-3 text-left space-y-2 text-xs">
-              <p className="font-semibold text-slate-800 dark:text-slate-200">Hướng dẫn chọn màn hình:</p>
+              <p className="font-semibold text-slate-800 dark:text-slate-200">Hướng dẫn thực hiện:</p>
               <ul className="space-y-1 text-slate-600 dark:text-slate-400 list-disc list-inside">
-                <li>Ưu tiên chọn tab <strong>&quot;Toàn bộ màn hình&quot; (Entire Screen)</strong></li>
-                <li>Hoặc chọn <strong>&quot;Cửa sổ&quot; (Window)</strong> chứa IDE / Trình duyệt thi</li>
+                <li>Bấm nút <strong>&quot;CHIA SẺ MÀN HÌNH NGAY&quot;</strong> bên dưới.</li>
+                <li>Tại cửa sổ chọn của trình duyệt, chọn tab <strong>&quot;Toàn bộ màn hình&quot; (Entire Screen)</strong>.</li>
+                <li>Bấm <strong>Chia sẻ (Share)</strong> để hệ thống tự động mở khóa giao diện làm bài.</li>
               </ul>
             </div>
+
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={async () => {
-                  const ok = await enableScreenShare();
-                  setShowScreenShareModal(false);
-                  if (typeof window !== "undefined") {
-                    sessionStorage.setItem("exam_screen_shared_once", "true");
-                  }
-                }}
-                className="system-primary-action flex-1 flex items-center justify-center gap-2 rounded-md bg-slate-900 py-3 font-serif text-xs sm:text-sm font-bold text-white shadow-2xs hover:bg-slate-800 transition cursor-pointer"
+                disabled={isRequestingScreenShare}
+                onClick={handleTriggerScreenShare}
+                className="system-primary-action flex-1 flex items-center justify-center gap-2 rounded-lg bg-rose-600 py-3.5 font-serif text-xs sm:text-sm font-bold text-white shadow-lg hover:bg-rose-700 transition cursor-pointer disabled:opacity-50"
               >
-                <Monitor size={16} />
-                <span>CHIA SẺ MÀN HÌNH NGAY</span>
+                <Monitor size={18} />
+                <span>{isRequestingScreenShare ? "ĐANG XÁC THỰC MÀN HÌNH..." : "CHIA SẺ MÀN HÌNH NGAY"}</span>
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowScreenShareModal(false);
-                  if (typeof window !== "undefined") {
-                    sessionStorage.setItem("exam_screen_shared_once", "true");
-                  }
-                }}
-                className="rounded-md border border-slate-300 px-4 py-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5 transition cursor-pointer"
-              >
-                Đóng
-              </button>
+              {!isScreenShareRequired && (
+                <button
+                  type="button"
+                  onClick={() => setShowScreenShareModal(false)}
+                  className="rounded-lg border border-slate-300 px-4 py-3.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5 transition cursor-pointer"
+                >
+                  Bỏ qua
+                </button>
+              )}
             </div>
+
             <p className="font-mono text-[11px] text-slate-400">
-              * Sinh viên có thể chọn Entire Screen hoặc Tab/Cửa sổ IDE đang mở để làm bài mượt mà.
+              * Tuyệt đối không bấm nút &quot;Dừng chia sẻ&quot; trên thanh thông báo của trình duyệt trong suốt thời gian thi.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CẢNH BÁO QUY CHẾ: KHÔNG ĐƯỢC TỰ Ý THOÁT PHÒNG THI */}
+      {showExitPreventedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-xl border border-amber-500/30 bg-white p-6 shadow-2xl dark:border-amber-500/30 dark:bg-neutral-900 space-y-4 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
+              <ShieldAlert size={28} />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="font-serif text-lg font-bold text-slate-900 dark:text-white">
+                Không Thể Tự Ý Rời Khỏi Phòng Thi
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Theo quy chế khảo thí, sinh viên đang trong phiên làm bài <strong>tuyệt đối không được tự ý rời khỏi phòng thi</strong> khi chưa hoàn thành bài thi.
+              </p>
+            </div>
+            <div className="rounded-md border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 text-left">
+              Nếu bạn đã hoàn thành bài làm, vui lòng bấm nút <strong>&quot;Nộp bài&quot;</strong> ở góc trên bên phải màn hình để hệ thống ghi nhận kết quả chính thức.
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowExitPreventedModal(false)}
+              className="w-full rounded-md bg-slate-900 py-3 font-serif text-xs sm:text-sm font-bold text-white hover:bg-slate-800 transition cursor-pointer"
+            >
+              Đã hiểu, quay lại làm bài
+            </button>
           </div>
         </div>
       )}

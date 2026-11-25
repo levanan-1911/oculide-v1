@@ -41,7 +41,7 @@ export default function StudentDeviceCheckPage() {
   // Trạng thái kiểm tra thiết bị (Đã bỏ hoàn toàn Microphone theo yêu cầu)
   const [camStatus, setCamStatus] = useState<"testing" | "success" | "error">("testing");
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [screenStatus, setScreenStatus] = useState<"idle" | "testing" | "success">("success");
+  const [screenStatus, setScreenStatus] = useState<"idle" | "testing" | "success">("idle");
   const [networkStatus, setNetworkStatus] = useState<"testing" | "success">("testing");
 
   // Xác thực AI Face ID
@@ -100,7 +100,22 @@ export default function StudentDeviceCheckPage() {
     try {
       const saved = sessionStorage.getItem("oculide_student_pending_exam");
       if (saved) {
-        setSessionInfo(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setSessionInfo(parsed);
+        const pConfig = parsed?.proctoringConfig;
+        const rType = parsed?.roomType || "exam";
+        const required =
+          pConfig?.screenShare === "required" ||
+          pConfig?.screen_share === "required" ||
+          pConfig?.requireScreenShare === true ||
+          pConfig?.require_screen === true ||
+          (rType === "exam" &&
+            pConfig?.screenShare !== "disabled" &&
+            pConfig?.screenShare !== "optional" &&
+            pConfig?.requireScreenShare !== false);
+        if (!required) {
+          setScreenStatus("success");
+        }
       }
     } catch {
       // Bỏ qua nếu không đọc được
@@ -181,12 +196,25 @@ export default function StudentDeviceCheckPage() {
     router.push(sessionInfo?.roomId ? `/student/waiting-room?roomId=${sessionInfo.roomId}` : "/student/waiting-room");
   };
 
+  const proctoring = (sessionInfo as any)?.proctoringConfig;
+  const roomType = (sessionInfo as any)?.roomType || "exam";
+  const isScreenShareRequired =
+    proctoring?.screenShare === "required" ||
+    proctoring?.screen_share === "required" ||
+    proctoring?.requireScreenShare === true ||
+    proctoring?.require_screen === true ||
+    (roomType === "exam" &&
+      proctoring?.screenShare !== "disabled" &&
+      proctoring?.screenShare !== "optional" &&
+      proctoring?.requireScreenShare !== false);
+
   const isCameraRequired = (sessionInfo as any)?.proctoringConfig?.requireCamera !== false && (sessionInfo as any)?.roomType !== 'lab';
   const isCamReady = !isCameraRequired || (camStatus === "success" && faceVerified);
+  const isScreenReady = !isScreenShareRequired || screenStatus === "success";
 
   const isAllReady =
     isCamReady &&
-    screenStatus === "success" &&
+    isScreenReady &&
     !isSavingCheck;
 
   return (
@@ -406,7 +434,14 @@ export default function StudentDeviceCheckPage() {
                     <Monitor size={18} />
                   </div>
                   <div>
-                    <p className="font-serif font-bold text-[#2A282D] dark:text-white">Chia sẻ toàn màn hình</p>
+                    <p className="font-serif font-bold text-[#2A282D] dark:text-white">
+                      Chia sẻ toàn màn hình
+                      {isScreenShareRequired && (
+                        <span className="ml-2 text-[10px] text-rose-500 font-mono font-semibold uppercase">
+                          (Bắt buộc)
+                        </span>
+                      )}
+                    </p>
                     <p className="text-[11px] text-slate-500">Giám sát chống chuyển Tab</p>
                   </div>
                 </div>

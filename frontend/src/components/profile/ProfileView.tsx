@@ -175,32 +175,15 @@ const [passwordMsg, setPasswordMsg] = useState<{
 
 const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-// Chính sách mật khẩu áp dụng cho Admin, Instructor và Student
+// Chính sách mật khẩu tối thiểu 8 ký tự
 const passwordRequirements = [
   {
-    label: 'Ít nhất 12 ký tự',
-    met: newPassword.length >= 12,
-  },
-  {
-    label: 'Có ít nhất 1 chữ hoa (A–Z)',
-    met: /[A-Z]/.test(newPassword),
-  },
-  {
-    label: 'Có ít nhất 1 chữ thường (a–z)',
-    met: /[a-z]/.test(newPassword),
-  },
-  {
-    label: 'Có ít nhất 1 chữ số (0–9)',
-    met: /[0-9]/.test(newPassword),
-  },
-  {
-    label: 'Có ít nhất 1 ký tự đặc biệt',
-    met: /[!@#$%^&*()_+\-=[\]{};:'",.<>/?\\|`~]/.test(newPassword),
+    label: 'Tối thiểu 8 ký tự',
+    met: newPassword.length >= 8,
   },
 ];
 
-const isPasswordStrong =
-  passwordRequirements.every((item) => item.met);
+const isPasswordStrong = newPassword.length >= 8;
 
 const isInstructorPasswordLocked =
   role === 'instructor' &&
@@ -628,7 +611,7 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
           idLabel: 'Mã số sinh viên (MSSV)',
           badgeClass: 'bg-stone-100 text-stone-700 border-stone-300 dark:bg-white/10 dark:text-stone-200',
           icon: User,
-          activityTabLabel: 'Kết quả thi & Giám sát AI',
+          activityTabLabel: '',
         };
 
   const RoleIcon = roleMeta.icon;
@@ -738,7 +721,7 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
           {[
             { id: 'info', label: 'Thông tin cá nhân', icon: User },
             { id: 'security', label: 'Bảo mật & Mật khẩu', icon: KeyRound },
-            ...(role !== 'admin'
+            ...(role === 'instructor'
               ? [{ id: 'activity', label: roleMeta.activityTabLabel, icon: Table2 }]
               : []),
           ].map((tab) => {

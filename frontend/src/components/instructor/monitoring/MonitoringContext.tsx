@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { fetchWithAuth } from '@/services/apiClient';
 import { isRoomCurrentlyRunning } from '@/components/instructor/classes/types';
 
@@ -15,6 +15,7 @@ export interface ViolationAlert {
   timestamp: string;
   description: string;
   status: 'pending' | 'warned' | 'recorded' | 'dismissed';
+  snapshotUrl?: string | null;
 }
 
 export interface SentAnnouncement {
@@ -60,6 +61,7 @@ interface MonitoringContextType {
   simulateViolation: (typeOverride?: string) => void;
   toastNotice: string | null;
   clearToastNotice: () => void;
+  registerWsSender?: (fn: ((data: any) => void) | null) => void;
 }
 
 const MonitoringContext = createContext<MonitoringContextType | null>(null);
@@ -293,13 +295,19 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
     [session.roomCode, session.attendedStudents]
   );
 
+  const wsSenderRef = useRef<((msg: any) => void) | null>(null);
+  const registerWsSender = useCallback((fn: ((msg: any) => void) | null) => {
+    wsSenderRef.current = fn;
+  }, []);
+
   // Gửi thông báo đến sinh viên (Toàn bộ / Nhóm / Cá nhân)
   const sendAnnouncement = useCallback(
     (
       targetType: 'all' | 'group' | 'individual',
       targetLabel: string,
       message: string,
-      type: 'info' | 'warning' | 'time' | 'urgent'
+      type: 'info' | 'warning' | 'time' | 'urgent',
+      studentId?: string
     ) => {
       const newAnn: SentAnnouncement = {
         id: `ANN-${Date.now().toString().slice(-4)}`,
@@ -313,6 +321,22 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
       setAnnouncements((prev) => [newAnn, ...prev]);
       setToastNotice(`Đã gửi thông báo đến: ${targetLabel}`);
       setTimeout(() => setToastNotice(null), 3500);
+
+      if (wsSenderRef.current) {
+        try {
+          wsSenderRef.current({
+            type: 'announcement',
+            target_type: targetType,
+            target_id: studentId,
+            target_label: targetLabel,
+            message,
+            notice_type: type,
+            timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          });
+        } catch {
+          // ignore ws error
+        }
+      }
     },
     []
   );
@@ -423,6 +447,7 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
         simulateViolation,
         toastNotice,
         clearToastNotice,
+        registerWsSender,
       }}
     >
       {children}

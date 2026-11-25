@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Query, Body
 from fastapi.responses import JSONResponse
 from typing import Optional, List, Dict, Any
+import json
 
 from schemas.violation import (
     ViolationCreateRequest, AIViolationHookRequest, SnapshotAnalyzeRequest,
@@ -144,14 +145,25 @@ async def analyze_webcam_snapshot(
     room = get_room_by_id(session["room_id"])
     if room and room.get("room_type") == "classroom":
         return {"status": "skipped", "message": "Classroom mode: AI proctoring disabled"}
-        
+
+    # Đọc cấu hình proctoring_config của phòng để áp dụng đúng các cờ AI & Ràng buộc
+    proctoring_config = room.get("proctoring_config") if room else None
+    if isinstance(proctoring_config, str):
+        try:
+            proctoring_config = json.loads(proctoring_config)
+        except Exception:
+            proctoring_config = {}
+    elif not isinstance(proctoring_config, dict):
+        proctoring_config = {}
+
     try:
         from celery_app import celery_app
         celery_app.send_task(
             "tasks.ai_proctoring_tasks.analyze_frame",
             args=[
                 session["room_id"], session["student_id"], data.session_id,
-                data.snapshot_data, data.is_typing, data.client_event
+                data.snapshot_data, data.is_typing, data.client_event,
+                proctoring_config
             ],
             queue="proctoring"
         )

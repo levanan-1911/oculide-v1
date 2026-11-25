@@ -138,7 +138,9 @@ function ExamJoinContent() {
       try {
         const roomsData = await fetchWithAuth<ApiStudentRoom[]>("/api/v1/rooms?limit=100");
         if (isMounted && Array.isArray(roomsData)) {
-          setExams(roomsData.map(mapApiRoomToStudentExam));
+          const mapped = roomsData.map(mapApiRoomToStudentExam);
+          // Không hiển thị phòng thi đã kết thúc hoặc đã hoàn thành ở module phòng thi của sinh viên
+          setExams(mapped.filter((e) => e.status !== "Đã kết thúc" && e.status !== "Đã hoàn thành"));
         }
       } catch {
         if (isMounted) setExams([]);
@@ -649,14 +651,14 @@ function ExamJoinContent() {
               </div>
             )}
 
-            {exams.filter((e) => e.status !== "Đã hoàn thành").length > 0 && (
+            {exams.filter((e) => e.status !== "Đã hoàn thành" && e.status !== "Đã kết thúc").length > 0 && (
               <div className="border-t border-slate-300 dark:border-white/10 pt-3 space-y-2">
                 <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   Chọn nhanh ca thi / phòng Lab khả dụng
                 </p>
                 <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
                   {exams
-                    .filter((e) => e.status !== "Đã hoàn thành")
+                    .filter((e) => e.status !== "Đã hoàn thành" && e.status !== "Đã kết thúc")
                     .map((exam) => (
                       <button
                         key={exam.id}

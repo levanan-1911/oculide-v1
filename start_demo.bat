@@ -42,16 +42,21 @@ if not errorlevel 1 (
     echo [OK] Cloudflare Tunnel da dang chay san.
     set "TUNNEL_FOUND=1"
 ) else (
-    if exist "D:\Oculide\cloudflared.exe" (
+    if exist "%~dp0..\cloudflared.exe" (
+        echo [*] Dang khoi chay Cloudflare Tunnel...
+        start /min "Cloudflare Tunnel (oculide.id.vn)" "%~dp0..\cloudflared.exe" tunnel run --token eyJhIjoiMWRjM2U4ZDI5Mjg1MzlmZDEzZmFkMTgzZTNkZDJjMGQiLCJ0IjoiMmNkZjc5OTctZGQ4OS00NjliLTliNmUtZjVhNWIyN2IyZGM2IiwicyI6Ik9UUTFaVGhoWVdNdE16ZzRZeTAwWVRBekxUbGtNalV0WkdRMllXRmtObUpoTkRRMSJ9
+        timeout /t 3 /nobreak >nul
+        set "TUNNEL_FOUND=1"
+    ) else if exist "D:\Oculide\cloudflared.exe" (
         echo [*] Dang khoi chay Cloudflare Tunnel tu D:\Oculide...
-        start /min "Cloudflare Tunnel (oculide.id.vn)" "D:\Oculide\cloudflared.exe" tunnel run oculide-tunnel
+        start /min "Cloudflare Tunnel (oculide.id.vn)" "D:\Oculide\cloudflared.exe" tunnel run --token eyJhIjoiMWRjM2U4ZDI5Mjg1MzlmZDEzZmFkMTgzZTNkZDJjMGQiLCJ0IjoiMmNkZjc5OTctZGQ4OS00NjliLTliNmUtZjVhNWIyN2IyZGM2IiwicyI6Ik9UUTFaVGhoWVdNdE16ZzRZeTAwWVRBekxUbGtNalV0WkdRMllXRmtObUpoTkRRMSJ9
         timeout /t 3 /nobreak >nul
         set "TUNNEL_FOUND=1"
     ) else (
         where cloudflared >nul 2>&1
         if not errorlevel 1 (
             echo [*] Dang khoi chay Cloudflare Tunnel tu he thong...
-            start /min "Cloudflare Tunnel (oculide.id.vn)" cloudflared tunnel run oculide-tunnel
+            start /min "Cloudflare Tunnel (oculide.id.vn)" cloudflared tunnel run --token eyJhIjoiMWRjM2U4ZDI5Mjg1MzlmZDEzZmFkMTgzZTNkZDJjMGQiLCJ0IjoiMmNkZjc5OTctZGQ4OS00NjliLTliNmUtZjVhNWIyN2IyZGM2IiwicyI6Ik9UUTFaVGhoWVdNdE16ZzRZeTAwWVRBekxUbGtNalV0WkdRMllXRmtObUpoTkRRMSJ9
             timeout /t 3 /nobreak >nul
             set "TUNNEL_FOUND=1"
         ) else (

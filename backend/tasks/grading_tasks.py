@@ -47,8 +47,8 @@ def _run_in_docker_sandbox(
     )
     return {
         "stdout": res.get("stdout", ""),
-        "error": res.get("error"),
-        "execution_ms": res.get("execution_ms", 0)
+        "error": res.get("error") or res.get("stderr"),
+        "execution_ms": int(res.get("execution_ms", 0))
     }
 
 @celery_app.task(name="tasks.grading_tasks.grade_submission", bind=True, max_retries=2)

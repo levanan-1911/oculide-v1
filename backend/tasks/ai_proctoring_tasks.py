@@ -261,8 +261,43 @@ def analyze_frame(
             pass
 
     # B. Quay đầu / Liếc mắt rời màn hình (Chỉ áp dụng khi camera mở rõ và có đúng 1 khuôn mặt)
-    pitch_angle = result.get("head_pose", {}).get("pitch", 0.0)
-    yaw_angle = abs(result.get("head_pose", {}).get("yaw", 0.0))
+    raw_pitch = float(result.get("head_pose", {}).get("pitch", 0.0))
+    raw_yaw = float(result.get("head_pose", {}).get("yaw", 0.0))
+
+    # Hiệu chỉnh góc nhìn cá nhân (Calibration 10s đầu) do vị trí webcam laptop cao/thấp khác nhau
+    if face_count == 1 and result.get("method") == "mediapipe_facemesh" and not is_cam_off_or_covered:
+        if not session_state.get("calibration_done"):
+            cal_start = session_state.get("calibration_start")
+            if not cal_start:
+                session_state["calibration_start"] = now
+                cal_start = now
+            samples = session_state.get("calibration_samples", [])
+            if abs(raw_yaw) <= 30.0 and -35.0 <= raw_pitch <= 30.0:
+                samples.append([raw_pitch, raw_yaw])
+                session_state["calibration_samples"] = samples
+            if len(samples) >= 3 or (now - cal_start >= 10.0 and len(samples) >= 1):
+                p_sorted = sorted(s[0] for s in samples)
+                y_sorted = sorted(s[1] for s in samples)
+                mid = len(samples) // 2
+                base_p = max(-20.0, min(15.0, p_sorted[mid]))
+                base_y = max(-15.0, min(15.0, y_sorted[mid]))
+                session_state["baseline_pitch"] = round(base_p, 2)
+                session_state["baseline_yaw"] = round(base_y, 2)
+                session_state["calibration_done"] = True
+
+    if session_state.get("calibration_done"):
+        baseline_pitch = float(session_state.get("baseline_pitch", 0.0))
+        baseline_yaw = float(session_state.get("baseline_yaw", 0.0))
+        pitch_angle = round(raw_pitch - baseline_pitch, 2)
+        rel_yaw = round(raw_yaw - baseline_yaw, 2)
+        yaw_angle = abs(rel_yaw)
+        gaze_deviated = bool(result.get("gaze", {}).get("is_deviated", False))
+        head_on_screen = (yaw_angle <= 25.0 and -22.0 <= pitch_angle <= 25.0)
+        looking_at_screen = (head_on_screen and not gaze_deviated) if result.get("method") == "mediapipe_facemesh" else looking_at_screen
+    else:
+        pitch_angle = raw_pitch
+        yaw_angle = abs(raw_yaw)
+
     is_looking_down = (pitch_angle < -15.0 and yaw_angle <= 25.0)
 
     # Chống giả mạo is_typing=true: chỉ miễn trừ khi cúi nhẹ nhìn bàn phím (-28 <= pitch < -15) và tối đa 15s liên tục
@@ -506,9 +541,14 @@ def analyze_frame(
         session_state["identical_frame_count"] = 0
         session_state["frozen_camera_violation_triggered"] = False
 
-    # 4. Quản lý lưu trữ ảnh snapshot (Tối ưu I/O: Chỉ ghi đĩa khi có vi phạm hoặc chu kỳ mẫu 30s)
+    # 4. Quản lý lưu trữ ảnh snapshot & tối ưu DB Snapshots:
+    # Chỉ ghi đĩa và ghi bảng Snapshots khi có vi phạm, cảnh báo mềm (warning), hoặc theo chu kỳ mẫu 30s
     last_saved_time = session_state.get("last_saved_snapshot_time", 0.0)
-    should_save_disk = (len(confirmed_violations) > 0) or (now - last_saved_time >= 30.0)
+    should_save_disk = (
+        len(confirmed_violations) > 0
+        or attention_status == "warning"
+        or (now - last_saved_time >= 30.0)
+    )
 
     snapshot_url = None
     if should_save_disk:
@@ -520,23 +560,31 @@ def analyze_frame(
     if not snapshot_url:
         snapshot_url = session_state.get("last_snapshot_url") or f"/uploads/snapshots/placeholder_{session_id}_{student_id}.jpg"
 
-    # Lưu bản ghi vào bảng Snapshots
-    try:
-        create_snapshot(
-            session_id=session_id,
-            student_id=student_id,
-            image_url=snapshot_url,
-            face_detected=result["face_detected"],
-            face_count=result["face_count"],
-            looking_at_screen=result["looking_at_screen"],
-            confidence_score=result["confidence_score"]
-        )
-    except Exception as db_err:
-        create_system_log(
-            log_level="error",
-            module="AIProctoring",
-            message=f"Lỗi khi lưu snapshot phiên {session_id}: {str(db_err)}"
-        )
+    # Chỉ INSERT vào bảng Snapshots khi có sự kiện hoặc chu kỳ 30s (giảm ~85% tải ghi DB)
+    last_db_time = session_state.get("last_db_snapshot_time", 0.0)
+    should_save_db = (
+        len(confirmed_violations) > 0
+        or attention_status == "warning"
+        or (now - last_db_time >= 30.0)
+    )
+    if should_save_db:
+        try:
+            create_snapshot(
+                session_id=session_id,
+                student_id=student_id,
+                image_url=snapshot_url,
+                face_detected=result["face_detected"],
+                face_count=result["face_count"],
+                looking_at_screen=looking_at_screen,
+                confidence_score=result["confidence_score"]
+            )
+            session_state["last_db_snapshot_time"] = now
+        except Exception as db_err:
+            create_system_log(
+                log_level="error",
+                module="AIProctoring",
+                message=f"Lỗi khi lưu snapshot phiên {session_id}: {str(db_err)}"
+            )
 
     # Lưu lại trạng thái phiên thi
     _save_session_state(r, session_id, session_state)
@@ -597,6 +645,15 @@ def analyze_frame(
                 "gaze": None if is_cam_off_or_covered else result.get("gaze"),
                 "liveness": None if is_cam_off_or_covered else result.get("liveness"),
                 "confidence_score": 0.0 if is_cam_off_or_covered else result["confidence_score"],
+                "calibrated": bool(session_state.get("calibration_done", False)),
+                "baseline_pose": (
+                    {
+                        "pitch": session_state.get("baseline_pitch", 0.0),
+                        "yaw": session_state.get("baseline_yaw", 0.0),
+                    }
+                    if session_state.get("calibration_done")
+                    else None
+                ),
                 "snapshot_url": snapshot_url,
                 "timestamp": get_current_vn_time().isoformat()
             }
@@ -611,5 +668,6 @@ def analyze_frame(
         "looking_at_screen": looking_at_screen,
         "attention_status": attention_status,
         "violations_count": len(confirmed_violations),
+        "calibrated": bool(session_state.get("calibration_done", False)),
         "snapshot_url": snapshot_url
     }

@@ -53,6 +53,10 @@ export class ProctoringClient {
   private isCameraActive: boolean = true;
   private lastTypingTimestamp: number = 0;
   private lastExtendedScreenTimestamp: number = 0;
+  private keystrokeWindowCount: number = 0;
+  private lastCodeLength: number = 0;
+  private lastCodeSampleTimestamp: number = Date.now();
+  private lastBurstAlertTimestamp: number = 0;
   private currentIntervalMs: number = 4000; // Mặc định 4 giây
 
   constructor(sessionId: number, apiUrl: string, authToken: string) {
@@ -125,7 +129,50 @@ export class ProctoringClient {
 
   private handleKeyDown = () => {
     this.lastTypingTimestamp = Date.now();
+    this.keystrokeWindowCount += 1;
   };
+
+  /**
+   * Theo dõi biến động độ dài mã nguồn để phát hiện code xuất hiện đột ngột (bỏ qua gõ phím)
+   */
+  public reportCodeChange(currLen: number) {
+    if (!this.isRunning) return;
+    const now = Date.now();
+    const delta = currLen - this.lastCodeLength;
+    const elapsedSec = Math.max(0.5, (now - this.lastCodeSampleTimestamp) / 1000);
+
+    if (
+      delta >= 120 &&
+      elapsedSec <= 10 &&
+      this.keystrokeWindowCount < Math.floor(delta * 0.25) &&
+      now - this.lastBurstAlertTimestamp >= 30000
+    ) {
+      this.lastBurstAlertTimestamp = now;
+      const token =
+        this.authToken ||
+        (typeof window !== "undefined" ? localStorage.getItem("oculide_token") || "" : "");
+      fetch(`${this.apiUrl}/api/v1/submissions/ide-telemetry`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          session_id: this.sessionId,
+          prev_len: this.lastCodeLength,
+          curr_len: currLen,
+          elapsed_sec: elapsedSec,
+          keystroke_count: this.keystrokeWindowCount,
+        }),
+      }).catch(() => {});
+    }
+
+    if (elapsedSec >= 5 || delta >= 120) {
+      this.lastCodeLength = currLen;
+      this.lastCodeSampleTimestamp = now;
+      this.keystrokeWindowCount = 0;
+    }
+  }
 
   /**
    * Kiểm tra sinh viên có đang thao tác gõ bàn phím không

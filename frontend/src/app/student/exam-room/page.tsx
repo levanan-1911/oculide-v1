@@ -1400,6 +1400,7 @@ export default function ExamWorkspacePage() {
                     ...prev,
                     [currentProblem.id]: e.target.value,
                   }));
+                  proctorClientRef.current?.reportCodeChange(e.target.value.length);
                 }}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}

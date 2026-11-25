@@ -9,7 +9,8 @@ from schemas.violation import (
 from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
 from database.violation_db import (
     create_violation, get_violations_by_session, get_violations_by_student,
-    get_violations_by_room, update_violation_review, get_student_violation_stats
+    get_violations_by_room, update_violation_review, get_student_violation_stats,
+    get_session_risk_score, get_ai_precision_metrics
 )
 from database.session_db import get_session_by_id, get_sessions_by_student
 from database.room_db import get_room_by_id
@@ -261,3 +262,26 @@ async def get_room_violation_statistics(
 ):
     """Thống kê chi tiết các vi phạm theo loại và mức độ cảnh báo qua Stored Procedure"""
     return get_student_violation_stats(room_id, student_id)
+
+
+@router.get("/session/{session_id}/risk")
+async def get_session_risk(
+    session_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lấy điểm rủi ro có trọng số (Risk Engine) của phiên thi"""
+    session = get_session_by_id(session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phiên thi")
+    if current_user.get("role") == "student" and session["student_id"] != current_user.get("user_id"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem điểm rủi ro của sinh viên khác")
+    return get_session_risk_score(session_id)
+
+
+@router.get("/room/{room_id}/ai-metrics")
+async def get_room_ai_precision_metrics(
+    room_id: int,
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Thống kê vòng phản hồi (Precision) từ kết quả giám thị xác nhận/bác bỏ cảnh báo AI"""
+    return get_ai_precision_metrics(room_id)

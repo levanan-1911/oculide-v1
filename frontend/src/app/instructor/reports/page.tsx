@@ -130,7 +130,20 @@ export default function InstructorReportsPage() {
         if (Array.isArray(clsList)) {
           setClasses(clsList);
           if (clsList.length > 0) {
-            setSelectedClassId(clsList[0].class_id);
+            let initialClassId = clsList[0].class_id;
+            if (typeof window !== 'undefined') {
+              const urlParams = new URLSearchParams(window.location.search);
+              const paramClassId = urlParams.get('class_id');
+              if (paramClassId) {
+                const found = clsList.find((c) => c.class_id === Number(paramClassId));
+                if (found) initialClassId = found.class_id;
+              }
+              const paramTab = urlParams.get('tab');
+              if (paramTab === 'results' || paramTab === 'attendance' || paramTab === 'scores' || paramTab === 'overview') {
+                setActiveReportTab(paramTab as typeof activeReportTab);
+              }
+            }
+            setSelectedClassId(initialClassId);
           }
         }
       } catch {

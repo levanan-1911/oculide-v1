@@ -717,6 +717,15 @@ export default function InstructorClassManagerView() {
 
                   {/* Tạo phòng và truy cập phòng hiện có: Tuân thủ nghiêm ngặt 3 trạng thái của vòng đời lớp */}
                   <div className="flex w-full flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:w-auto">
+                    <Link
+                      href={`/instructor/reports?class_id=${encodeURIComponent(currentClass.id)}&tab=results`}
+                      className="inline-flex h-9 w-full sm:w-auto items-center justify-center gap-1.5 rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.06] px-3 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-2xs transition whitespace-nowrap cursor-pointer shrink-0"
+                      title="Quản lý và thẩm định các biên bản vi phạm AI của lớp học phần này"
+                    >
+                      <ShieldAlert className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                      <span>Vi Phạm AI</span>
+                    </Link>
+
                     {activeRoomForCurrentClass ? (
                       /* Trạng thái 3: ĐANG CÓ PHIÊN LIVE - Chỉ hiển thị nút Giám Sát, ẩn nút Tạo Phòng & Vào Phòng Chờ */
                       <Link

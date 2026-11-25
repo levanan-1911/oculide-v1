@@ -10,11 +10,12 @@ from schemas.violation import (
 from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
 from database.violation_db import (
     create_violation, get_violations_by_session, get_violations_by_student,
-    get_violations_by_room, update_violation_review, get_student_violation_stats,
-    get_session_risk_score, get_ai_precision_metrics
+    get_violations_by_room, get_violations_by_class, update_violation_review,
+    get_student_violation_stats, get_session_risk_score, get_ai_precision_metrics
 )
 from database.session_db import get_session_by_id, get_sessions_by_student
 from database.room_db import get_room_by_id
+from database.classes_db import get_class_by_id
 from database.system_log_db import create_system_log
 from websocket.connection_manager import manager
 
@@ -215,12 +216,27 @@ async def get_session_violations(
 async def get_student_violations(
     student_id: int,
     room_id: Optional[int] = None,
+    class_id: Optional[int] = Query(None, description="Lọc danh sách vi phạm theo lớp học phần"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    """Lấy các vi phạm của một sinh viên (Chống IDOR)"""
+    """Lấy các vi phạm của một sinh viên, có thể lọc theo room_id hoặc class_id (Chống IDOR)"""
     if current_user["role"] == "student" and student_id != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem vi phạm của sinh viên khác")
-    return get_violations_by_student(student_id, room_id=room_id)
+    return get_violations_by_student(student_id, room_id=room_id, class_id=class_id)
+
+@router.get("/class/{class_id}", response_model=List[ViolationResponse])
+async def get_class_violations(
+    class_id: int,
+    review_status: Optional[str] = Query(None, pattern="^(pending|confirmed|rejected)$"),
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Giảng viên / Admin lấy toàn bộ danh sách vi phạm AI thuộc một lớp học phần, có thể lọc theo review_status"""
+    cls = get_class_by_id(class_id)
+    if not cls:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy lớp học phần")
+    if current_user["role"] != "admin" and cls.get("instructor_id") != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem vi phạm của lớp học phần này")
+    return get_violations_by_class(class_id, review_status=review_status)
 
 @router.get("/room/{room_id}", response_model=List[ViolationResponse])
 async def get_room_violations(

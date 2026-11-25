@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  BookOpen,
   Camera,
   CheckCircle2,
   Clock,
+  GraduationCap,
   Info,
   LoaderCircle,
   RotateCcw,
@@ -25,6 +27,9 @@ interface ApiViolation {
   room_id?: number | null;
   room_code?: string | null;
   room_name?: string | null;
+  class_id?: number | null;
+  class_code?: string | null;
+  class_name?: string | null;
   violation_type: string;
   severity: string;
   description?: string | null;
@@ -39,6 +44,9 @@ interface ApiViolation {
 interface ViolationItem {
   id: number;
   examTitle: string;
+  classId?: number | null;
+  classCode?: string | null;
+  className?: string | null;
   timestamp: string;
   type: string;
   typeName: string;
@@ -48,6 +56,14 @@ interface ViolationItem {
   statusClass: string;
   evidenceNote: string;
   snapshotUrl?: string | null;
+}
+
+interface EnrolledClassItem {
+  class_id: number;
+  class_code: string;
+  class_name: string;
+  semester_name?: string;
+  instructor_name?: string;
 }
 
 const VIOLATION_TYPE_NAMES: Record<string, string> = {
@@ -82,6 +98,8 @@ function formatViolationTime(isoStr: string): string {
 
 export default function StudentViolationsPage() {
   const [violations, setViolations] = useState<ViolationItem[]>([]);
+  const [enrolledClasses, setEnrolledClasses] = useState<EnrolledClassItem[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<number | "all">("all");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -90,7 +108,7 @@ export default function StudentViolationsPage() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadViolations() {
+    async function loadViolationsAndClasses() {
       setLoading(true);
       try {
         let studentId: number | null = null;
@@ -111,52 +129,63 @@ export default function StudentViolationsPage() {
         }
 
         if (studentId) {
-          const data = await fetchWithAuth<ApiViolation[]>(
-            `/api/v1/violations/student/${studentId}`
-          );
-          if (isMounted && Array.isArray(data)) {
-            const mapped: ViolationItem[] = data.map((v) => {
-              const rawStatus = (v.review_status || "pending").toLowerCase();
-              let status: ViolationStatus = "pending";
-              let statusText = "Đang chờ GV xem xét";
-              let statusClass = "bg-amber-50 text-amber-700 border-amber-200/80";
+          const [data, classesData] = await Promise.all([
+            fetchWithAuth<ApiViolation[]>(`/api/v1/violations/student/${studentId}`),
+            fetchWithAuth<EnrolledClassItem[]>("/api/v1/classes").catch(() => []),
+          ]);
 
-              if (rawStatus === "rejected") {
-                status = "rejected";
-                statusText = "Đã hủy (Không tính vi phạm)";
-                statusClass = "bg-slate-100 text-slate-600 border-slate-200";
-              } else if (rawStatus === "confirmed" || rawStatus === "approved") {
-                status = "confirmed";
-                statusText = "Đã xác nhận vi phạm";
-                statusClass = "bg-rose-50 text-rose-700 border-rose-200/80";
-              }
+          if (isMounted) {
+            if (Array.isArray(classesData)) {
+              setEnrolledClasses(classesData);
+            }
 
-              const examTitle =
-                v.room_name && v.room_code
-                  ? `${v.room_code} • ${v.room_name}`
-                  : v.room_name || v.room_code || `Phiên thi #${v.session_id}`;
+            if (Array.isArray(data)) {
+              const mapped: ViolationItem[] = data.map((v) => {
+                const rawStatus = (v.review_status || "pending").toLowerCase();
+                let status: ViolationStatus = "pending";
+                let statusText = "Đang chờ GV xem xét";
+                let statusClass = "bg-amber-50 text-amber-700 border-amber-200/80";
 
-              const typeName =
-                VIOLATION_TYPE_NAMES[v.violation_type] ||
-                v.violation_type.replace(/_/g, " ").toUpperCase();
+                if (rawStatus === "rejected") {
+                  status = "rejected";
+                  statusText = "Đã hủy (Không tính vi phạm)";
+                  statusClass = "bg-slate-100 text-slate-600 border-slate-200";
+                } else if (rawStatus === "confirmed" || rawStatus === "approved") {
+                  status = "confirmed";
+                  statusText = "Đã xác nhận vi phạm";
+                  statusClass = "bg-rose-50 text-rose-700 border-rose-200/80";
+                }
 
-              return {
-                id: v.violation_id,
-                examTitle,
-                timestamp: formatViolationTime(v.detected_at),
-                type: v.violation_type,
-                typeName,
-                severity: v.severity || "medium",
-                status,
-                statusText,
-                statusClass,
-                evidenceNote:
-                  v.description ||
-                  `Hệ thống phát hiện hành vi ${typeName.toLowerCase()} trong ca thi.`,
-                snapshotUrl: v.snapshot_url,
-              };
-            });
-            setViolations(mapped);
+                const examTitle =
+                  v.room_name && v.room_code
+                    ? `${v.room_code} • ${v.room_name}`
+                    : v.room_name || v.room_code || `Phiên thi #${v.session_id}`;
+
+                const typeName =
+                  VIOLATION_TYPE_NAMES[v.violation_type] ||
+                  v.violation_type.replace(/_/g, " ").toUpperCase();
+
+                return {
+                  id: v.violation_id,
+                  examTitle,
+                  classId: v.class_id,
+                  classCode: v.class_code,
+                  className: v.class_name,
+                  timestamp: formatViolationTime(v.detected_at),
+                  type: v.violation_type,
+                  typeName,
+                  severity: v.severity || "medium",
+                  status,
+                  statusText,
+                  statusClass,
+                  evidenceNote:
+                    v.description ||
+                    `Hệ thống phát hiện hành vi ${typeName.toLowerCase()} trong ca thi.`,
+                  snapshotUrl: v.snapshot_url,
+                };
+              });
+              setViolations(mapped);
+            }
           }
         }
       } catch {
@@ -166,18 +195,25 @@ export default function StudentViolationsPage() {
       }
     }
 
-    loadViolations();
+    loadViolationsAndClasses();
     return () => {
       isMounted = false;
     };
   }, []);
 
+  const classFilteredViolations = useMemo(() => {
+    if (selectedClassId === "all") return violations;
+    return violations.filter((v) => v.classId === selectedClassId);
+  }, [violations, selectedClassId]);
+
   const filteredViolations = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-    return violations.filter((v) => {
+    return classFilteredViolations.filter((v) => {
       const matchesSearch =
         !keyword ||
         v.examTitle.toLowerCase().includes(keyword) ||
+        (v.classCode && v.classCode.toLowerCase().includes(keyword)) ||
+        (v.className && v.className.toLowerCase().includes(keyword)) ||
         v.typeName.toLowerCase().includes(keyword) ||
         v.evidenceNote.toLowerCase().includes(keyword);
 
@@ -186,16 +222,16 @@ export default function StudentViolationsPage() {
 
       return matchesSearch && matchesStatus;
     });
-  }, [search, filterStatus, violations]);
+  }, [search, filterStatus, classFilteredViolations]);
 
   const counts = useMemo(
     () => ({
-      all: violations.length,
-      pending: violations.filter((v) => v.status === "pending").length,
-      rejected: violations.filter((v) => v.status === "rejected").length,
-      confirmed: violations.filter((v) => v.status === "confirmed").length,
+      all: classFilteredViolations.length,
+      pending: classFilteredViolations.filter((v) => v.status === "pending").length,
+      rejected: classFilteredViolations.filter((v) => v.status === "rejected").length,
+      confirmed: classFilteredViolations.filter((v) => v.status === "confirmed").length,
     }),
-    [violations]
+    [classFilteredViolations]
   );
 
   return (
@@ -238,13 +274,77 @@ export default function StudentViolationsPage() {
         </div>
       </div>
 
+      {/* Lọc & Quản lý Vi phạm theo Lớp Học phần */}
+      <section className="rounded-md border border-slate-300 bg-white p-4 sm:p-5 dark:border-white/10 dark:bg-neutral-900 space-y-3 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-white/10 pb-3">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="h-5 w-5 text-slate-800 dark:text-[#f0c2cf]" />
+            <h2 className="font-serif text-sm sm:text-base font-bold text-[#2A282D] dark:text-white">
+              Quản lý Vi phạm theo Lớp Học phần
+            </h2>
+          </div>
+          <span className="text-xs text-slate-500 font-mono">
+            {selectedClassId === "all"
+              ? `Tất cả (${enrolledClasses.length} lớp học phần)`
+              : enrolledClasses.find((c) => c.class_id === selectedClassId)?.class_code || "Lớp học phần"}
+          </span>
+        </div>
+
+        {/* Danh sách tab Lớp học phần */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setSelectedClassId("all")}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+              selectedClassId === "all"
+                ? "system-selected-module shadow-2xs font-bold"
+                : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-white/5 dark:text-slate-300 dark:border-white/10"
+            }`}
+          >
+            <span>Tất cả lớp học phần</span>
+            <span className="rounded-full bg-slate-200 dark:bg-white/20 px-1.5 py-0.2 text-[10px]">
+              {violations.length}
+            </span>
+          </button>
+
+          {enrolledClasses.map((cls) => {
+            const classVioCount = violations.filter((v) => v.classId === cls.class_id).length;
+            const isSelected = selectedClassId === cls.class_id;
+            return (
+              <button
+                key={cls.class_id}
+                type="button"
+                onClick={() => setSelectedClassId(cls.class_id)}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                  isSelected
+                    ? "system-selected-module shadow-2xs font-bold"
+                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-white/5 dark:text-slate-300 dark:border-white/10"
+                }`}
+              >
+                <BookOpen size={13} className={isSelected ? "text-slate-900 dark:text-[#f0c2cf]" : "text-slate-400"} />
+                <span>{cls.class_code} • {cls.class_name}</span>
+                {classVioCount > 0 && (
+                  <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${
+                    isSelected ? "bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200" : "bg-slate-200 text-slate-700 dark:bg-white/20 dark:text-slate-300"
+                  }`}>
+                    {classVioCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       {/* Thẻ Thống Kê Tổng Quan */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-3 items-stretch">
         <div className="flex items-center justify-between rounded-md border border-slate-300 bg-white p-5 dark:border-white/10 dark:bg-neutral-900">
           <div>
             <p className="text-xs font-mono font-medium text-slate-500 dark:text-[#9F9690]">Tổng ghi nhận cảnh báo</p>
             <p className="mt-2 text-3xl font-serif font-bold text-[#2A282D] dark:text-white">{counts.all}</p>
-            <p className="mt-1 text-[11px] text-slate-500">Tất cả bài thi</p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {selectedClassId === "all" ? "Tất cả bài thi" : (enrolledClasses.find((c) => c.class_id === selectedClassId)?.class_code || "Lớp đã chọn")}
+            </p>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-md bg-slate-900/10 text-slate-900 dark:bg-slate-900/20 dark:text-[#f0c2cf]">
             <ShieldAlert size={22} />
@@ -358,7 +458,7 @@ export default function StudentViolationsPage() {
               <table className="w-full text-left text-xs text-[#5A5555] dark:text-stone-300">
                 <thead className="bg-slate-50 dark:bg-neutral-950 border-b border-slate-300 dark:border-white/10 text-slate-500 uppercase font-mono font-semibold text-[11px] tracking-wider">
                   <tr>
-                    <th className="px-6 py-3.5">Ca thi / Bài Lab</th>
+                    <th className="px-6 py-3.5">Lớp học phần &amp; Ca thi</th>
                     <th className="px-6 py-3.5">Thời gian ghi nhận</th>
                     <th className="px-6 py-3.5">Loại hành vi cảnh báo</th>
                     <th className="px-6 py-3.5">Mức độ</th>
@@ -369,8 +469,16 @@ export default function StudentViolationsPage() {
                 <tbody className="divide-y divide-slate-300 dark:divide-white/10">
                   {filteredViolations.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02] transition">
-                      <td className="px-6 py-4 font-serif font-bold text-[#2A282D] dark:text-white text-sm">
-                        {item.examTitle}
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-800 border border-slate-200 dark:bg-white/10 dark:text-slate-200 dark:border-white/10 px-2 py-0.5 text-[10.5px] font-mono font-bold">
+                            <BookOpen size={10} className="text-slate-500 dark:text-slate-400" />
+                            <span>{item.classCode ? `${item.classCode} • ${item.className}` : "Lớp tự do"}</span>
+                          </span>
+                          <span className="font-serif font-bold text-[#2A282D] dark:text-white text-sm">
+                            {item.examTitle}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4 font-mono text-slate-500">
                         {item.timestamp}
@@ -427,9 +535,15 @@ export default function StudentViolationsPage() {
                   className="rounded-md border border-slate-300 p-4 space-y-3 dark:border-white/10"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-serif font-bold text-[#2A282D] dark:text-white text-sm">
-                      {item.examTitle}
-                    </h3>
+                    <div className="space-y-1">
+                      <span className="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-800 border border-slate-200 dark:bg-white/10 dark:text-slate-200 dark:border-white/10 px-2 py-0.5 text-[10px] font-mono font-bold">
+                        <BookOpen size={10} className="text-slate-500 dark:text-slate-400" />
+                        <span>{item.classCode ? `${item.classCode} • ${item.className}` : "Lớp tự do"}</span>
+                      </span>
+                      <h3 className="font-serif font-bold text-[#2A282D] dark:text-white text-sm">
+                        {item.examTitle}
+                      </h3>
+                    </div>
                     <span
                       className={`inline-block shrink-0 rounded border px-2.5 py-0.5 font-serif text-[10px] font-semibold ${item.statusClass}`}
                     >

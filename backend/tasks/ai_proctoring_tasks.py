@@ -124,8 +124,8 @@ def analyze_frame(
         pass
 
     # 1. Cơ chế Kiểm soát Tần suất (Backpressure Rate Limiting: tối đa 1 frame/2s mỗi session)
-    # Không drop các sự kiện quan trọng từ client (tab_switch, fullscreen_exit, camera_off)
-    is_priority_event = client_event in ("tab_switch", "fullscreen_exit", "camera_off", "camera_disabled")
+    # Không drop các sự kiện quan trọng từ client (tab_switch, fullscreen_exit, camera_off, extended_screen)
+    is_priority_event = client_event in ("tab_switch", "fullscreen_exit", "camera_off", "camera_disabled", "extended_screen")
     if r and not is_priority_event:
         try:
             ratelimit_key = f"ratelimit:ai_frame:{session_id}"
@@ -195,6 +195,14 @@ def analyze_frame(
             attention_status = "violation"
         # Đánh dấu đã kích hoạt để mục E không đếm trùng thêm 1 lần nữa
         session_state["dark_violation_triggered"] = True
+    elif client_event == "extended_screen":
+        if _add_violation_with_cooldown(
+            "suspicious_object",
+            "high",
+            "Phát hiện thí sinh đang kết nối hoặc mở rộng sang màn hình phụ thứ hai",
+            cooldown_sec=60.0,
+        ):
+            attention_status = "violation"
 
     # Kiểm tra trạng thái camera tắt hoặc bị che ống kính
     is_cam_off = lighting.get("is_camera_off", False) or (client_event in ("camera_off", "camera_disabled"))
@@ -226,27 +234,49 @@ def analyze_frame(
 
         for obj in detected_objects:
             c_name = obj.get("class_name", "").lower()
-            if "book" in c_name or "laptop" in c_name:
+            if "book" in c_name or "laptop" in c_name or "tv" in c_name:
                 obj_key = f"obj_{c_name}_start"
                 if not session_state.get(obj_key):
                     session_state[obj_key] = now
                 elif now - session_state[obj_key] >= 3.0:
                     if _add_violation_with_cooldown(
                         "suspicious_object",
-                        "high" if "laptop" in c_name else "medium",
+                        "high" if ("laptop" in c_name or "tv" in c_name) else "medium",
                         f"Phát hiện vật thể khả nghi ({c_name}) duy trì trong khung hình camera",
                         cooldown_sec=30.0,
                     ):
                         attention_status = "violation"
                     session_state[obj_key] = None
 
+    # B12: Ghi nhận cảnh báo một lần mỗi phiên nếu hệ thống AI đang chạy ở chế độ fallback Haar Cascade
+    if result.get("method") == "opencv_cascade" and not session_state.get("haar_fallback_warned"):
+        session_state["haar_fallback_warned"] = True
+        try:
+            create_system_log(
+                log_level="warning",
+                module="AIProctoring",
+                message=f"Phiên {session_id}: MediaPipe không khả dụng, đang chạy fallback OpenCV Haar Cascade (mất Head Pose/Gaze/Liveness)"
+            )
+        except Exception:
+            pass
+
     # B. Quay đầu / Liếc mắt rời màn hình (Chỉ áp dụng khi camera mở rõ và có đúng 1 khuôn mặt)
     pitch_angle = result.get("head_pose", {}).get("pitch", 0.0)
     yaw_angle = abs(result.get("head_pose", {}).get("yaw", 0.0))
     is_looking_down = (pitch_angle < -15.0 and yaw_angle <= 25.0)
 
-    # Nếu đang gõ phím và nhìn xuống bàn phím -> bỏ qua
-    is_typing_looking_at_keyboard = is_typing and is_looking_down
+    # Chống giả mạo is_typing=true: chỉ miễn trừ khi cúi nhẹ nhìn bàn phím (-28 <= pitch < -15) và tối đa 15s liên tục
+    if is_typing and (-28.0 <= pitch_angle < -15.0) and yaw_angle <= 25.0:
+        typing_down_start = session_state.get("typing_down_start")
+        if not typing_down_start:
+            session_state["typing_down_start"] = now
+            typing_down_duration = 0.0
+        else:
+            typing_down_duration = now - typing_down_start
+        is_typing_looking_at_keyboard = (typing_down_duration < 15.0)
+    else:
+        session_state["typing_down_start"] = None
+        is_typing_looking_at_keyboard = False
 
     if face_count == 1 and not is_cam_off_or_covered:
         if not looking_at_screen and not is_typing_looking_at_keyboard:

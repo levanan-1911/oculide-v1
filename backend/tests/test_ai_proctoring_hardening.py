@@ -252,3 +252,79 @@ def test_violations_idor_blocked_for_other_student():
             )
         )
     assert exc3.value.status_code == 403
+
+
+def test_typing_exemption_capped_and_extended_screen_and_fail_closed():
+    from tasks.ai_proctoring_tasks import analyze_frame, _LOCAL_SESSION_STATE
+    from api.violations import analyze_webcam_snapshot
+    from schemas.violation import SnapshotAnalyzeRequest
+
+    _LOCAL_SESSION_STATE.clear()
+    recorded = []
+
+    def _base_res(**kw):
+        d = {
+            "success": True,
+            "face_detected": True,
+            "face_count": 1,
+            "looking_at_screen": False,
+            "head_on_screen": False,
+            "head_pose": {"pitch": -20.0, "yaw": 0.0, "roll": 0.0},
+            "gaze": {"gaze_direction": "center", "is_deviated": False},
+            "liveness": {"ear": 0.3, "eyes_closed": False},
+            "lighting": {"camera_status": "normal", "is_camera_off": False, "is_camera_covered": False},
+            "detected_objects": [],
+            "violations": [],
+            "confidence_score": 0.90,
+            "method": "mediapipe_facemesh",
+            "dhash": "abcdef0123456789",
+        }
+        d.update(kw)
+        return d
+
+    with patch("tasks.ai_proctoring_tasks._save_snapshot_image", return_value="/uploads/test.jpg"), \
+         patch("tasks.ai_proctoring_tasks.create_snapshot"), \
+         patch("tasks.ai_proctoring_tasks.create_violation", side_effect=lambda **k: recorded.append(k)), \
+         patch("tasks.ai_proctoring_tasks.create_system_log"), \
+         patch("tasks.ai_proctoring_tasks._get_redis_client", return_value=None):
+
+        # B4: Giả mạo is_typing=True liên tục quá 15s (và 15s dwell) -> vẫn bị phạt looking_away
+        t = 5000.0
+        for i in range(9):  # 0..32s
+            res = _base_res(dhash=f"{(i + 10) * 11111:016x}")
+            with patch("time.time", return_value=t), \
+                 patch("tasks.ai_proctoring_tasks.proctor_detector.process_frame", return_value=res):
+                analyze_frame(1, 10, 601, f"t{i}", True, "periodic")
+            t += 4.0
+        assert "looking_away" in [v["violation_type"] for v in recorded]
+
+        # B9: extended_screen event ghi nhận suspicious_object
+        _LOCAL_SESSION_STATE.clear()
+        recorded.clear()
+        with patch("time.time", return_value=6000.0), \
+             patch("tasks.ai_proctoring_tasks.proctor_detector.process_frame", return_value=_base_res(looking_at_screen=True)):
+            analyze_frame(1, 10, 602, "ext", False, "extended_screen")
+        assert [v["violation_type"] for v in recorded] == ["suspicious_object"]
+
+    # B10: Celery/Redis lỗi -> trả HTTP 503 (fail-closed) thay vì 202 accepted
+    def _exec_sync(coro):
+        try:
+            coro.send(None)
+        except StopIteration as stop:
+            return stop.value
+        finally:
+            coro.close()
+
+    student = {"user_id": 10, "role": "student"}
+    session = {"session_id": 603, "room_id": 1, "student_id": 10}
+    with patch("api.violations.get_session_by_id", return_value=session), \
+         patch("api.violations.get_room_by_id", return_value={"room_id": 1, "room_type": "exam"}), \
+         patch("api.violations.create_system_log"), \
+         patch("celery_app.celery_app.send_task", side_effect=RuntimeError("Redis down")):
+        resp = _exec_sync(
+            analyze_webcam_snapshot(
+                SnapshotAnalyzeRequest(session_id=603, snapshot_data="abc"),
+                current_user=student,
+            )
+        )
+        assert resp.status_code == 503

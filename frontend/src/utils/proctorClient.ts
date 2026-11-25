@@ -11,7 +11,7 @@ export interface SnapshotPayload {
   session_id: number;
   snapshot_data: string;
   is_typing: boolean;
-  client_event?: "tab_switch" | "fullscreen_exit" | "blur" | "periodic" | "camera_off" | "camera_disabled";
+  client_event?: "tab_switch" | "fullscreen_exit" | "blur" | "periodic" | "camera_off" | "camera_disabled" | "extended_screen";
 }
 
 /**
@@ -52,6 +52,7 @@ export class ProctoringClient {
   private isRunning: boolean = false;
   private isCameraActive: boolean = true;
   private lastTypingTimestamp: number = 0;
+  private lastExtendedScreenTimestamp: number = 0;
   private currentIntervalMs: number = 4000; // Mặc định 4 giây
 
   constructor(sessionId: number, apiUrl: string, authToken: string) {
@@ -174,11 +175,21 @@ export class ProctoringClient {
     const b64 = captureAndCompressFrame(this.videoElement);
     if (!b64) return;
 
+    // B9: Kiểm tra màn hình mở rộng (Extended Display) tối đa 1 lần / 60 giây
+    const isExtended =
+      typeof window !== "undefined" &&
+      Boolean((window.screen as { isExtended?: boolean } | undefined)?.isExtended);
+    const shouldSendExtended =
+      isExtended && Date.now() - this.lastExtendedScreenTimestamp >= 60000;
+    if (shouldSendExtended) {
+      this.lastExtendedScreenTimestamp = Date.now();
+    }
+
     const res = await this.postAnalyze({
       session_id: this.sessionId,
       snapshot_data: b64,
       is_typing: this.isTyping(),
-      client_event: "periodic"
+      client_event: shouldSendExtended ? "extended_screen" : "periodic"
     });
 
     // Điều chỉnh chu kỳ gửi snapshot động dựa trên trạng thái trả về từ server

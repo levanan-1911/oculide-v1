@@ -60,6 +60,12 @@ class AIProctorDetector:
             except Exception as e:
                 logger.warning(f"Không thể khởi tạo MediaPipe FaceMesh: {e}")
                 self.face_mesh = None
+        else:
+            logger.warning(
+                "MediaPipe FaceMesh (mp.solutions.face_mesh) không khả dụng; "
+                "hệ thống sẽ fallback sang OpenCV Haar Cascade (mất Head Pose/Gaze/Liveness). "
+                "Vui lòng cài đặt mediapipe==0.10.18."
+            )
 
         # 3. Nạp OpenCV Haar Cascade như một lớp Fallback toàn năng
         try:
@@ -406,7 +412,7 @@ class AIProctorDetector:
                 frame,
                 conf=0.40,
                 verbose=False,
-                classes=[67, 73, 63]  # 67: cell phone, 73: book, 63: laptop
+                classes=[67, 73, 63, 62]  # 67: cell phone, 73: book, 63: laptop, 62: tv/monitor
             )
             for r in results:
                 for box in r.boxes:
@@ -533,11 +539,11 @@ class AIProctorDetector:
                     "severity": "medium",
                     "description": f"Phát hiện tài liệu/sách vở đáng ngờ (Độ tin cậy: {obj['confidence']*100:.1f}%)"
                 })
-            elif "laptop" in c_name:
+            elif "laptop" in c_name or "tv" in c_name:
                 violations.append({
                     "type": "suspicious_object",
                     "severity": "high",
-                    "description": f"Phát hiện màn hình/laptop phụ thứ hai (Độ tin cậy: {obj['confidence']*100:.1f}%)"
+                    "description": f"Phát hiện màn hình/thiết bị phụ ({c_name}) (Độ tin cậy: {obj['confidence']*100:.1f}%)"
                 })
 
         # Tính điểm tin cậy tổng thể (Confidence Score: 0.0 - 1.0)
@@ -561,6 +567,7 @@ class AIProctorDetector:
             "violations": violations,
             "confidence_score": confidence_score,
             "method": face_res.get("method", "none"),
+            "degraded_fallback": (face_res.get("method") == "opencv_cascade"),
             "dhash": frame_dhash
         }
 

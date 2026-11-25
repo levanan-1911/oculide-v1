@@ -5,10 +5,10 @@ import base64
 import sys
 import os
 
-# Add root path to sys.path
-root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
+# Add backend path to sys.path
+backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
 from ai_workers.detector import proctor_detector, AIProctorDetector
 from services.livekit_service import livekit_service
@@ -37,25 +37,36 @@ def test_ai_detector_decode_image():
     assert proctor_detector.decode_image(None) is None
 
 def test_ai_detector_blank_image_no_face_violation():
-    # Khung hình màu đen không có người
+    # 1. Khung hình màu đen tuyệt đối -> camera bị tắt/che
     blank_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    res = proctor_detector.process_frame(blank_frame)
-    
+    res_blank = proctor_detector.process_frame(blank_frame)
+
+    assert res_blank["success"] is True
+    assert res_blank["face_detected"] is False
+    assert res_blank["face_count"] == 0
+    assert res_blank["looking_at_screen"] is False
+    assert "camera_blocked" in [v["type"] for v in res_blank["violations"]]
+
+    # 2. Khung hình sáng có chi tiết phân bố toàn khung nhưng không có người -> vắng mặt (no_face_detected)
+    empty_room = np.full((480, 640, 3), 120, dtype=np.uint8)
+    cv2.rectangle(empty_room, (80, 60), (280, 400), (40, 180, 90), 4)
+    cv2.rectangle(empty_room, (360, 80), (580, 420), (190, 90, 50), 4)
+    cv2.putText(empty_room, "Empty Desk", (180, 220), cv2.FONT_HERSHEY_SIMPLEX, 1, (240, 240, 240), 2)
+    res = proctor_detector.process_frame(empty_room)
+
     assert res["success"] is True
     assert res["face_detected"] is False
     assert res["face_count"] == 0
     assert res["looking_at_screen"] is False
-    
-    # Kiểm tra vi phạm vắng mặt được phát hiện
-    violation_types = [v["type"] for v in res["violations"]]
-    assert "no_face_detected" in violation_types
-    # Điểm tin cậy bị trừ
+    assert "no_face_detected" in [v["type"] for v in res["violations"]]
     assert res["confidence_score"] < 0.90
 
 def test_ai_detector_multiple_faces_violation_logic():
     detector = AIProctorDetector(enable_yolo=False)
-    # Giả lập kết quả detect nhiều hơn 1 mặt
-    fake_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    # Khung hình sáng có chi tiết phân bố đều để vượt qua kiểm tra che/tắt camera
+    fake_frame = np.full((120, 120, 3), 128, dtype=np.uint8)
+    cv2.rectangle(fake_frame, (10, 10), (110, 110), (40, 200, 80), 3)
+    cv2.line(fake_frame, (0, 0), (120, 120), (220, 50, 50), 2)
     
     # Mock hàm detect_faces trả về 2 khuôn mặt
     original_detect_faces = detector.detect_faces
@@ -108,14 +119,15 @@ def test_livekit_create_and_delete_room_simulation():
     assert isinstance(deleted, bool)
 
 def test_illumination_and_quality_check():
-    # 1. Khung hình quá tối (< 35)
+    # 1. Khung hình quá tối (< 18)
     dark_frame = np.full((100, 100, 3), 10, dtype=np.uint8)
     res_dark = proctor_detector.check_illumination_and_quality(dark_frame)
     assert res_dark["is_too_dark"] is True
     assert res_dark["lighting_ok"] is False
 
-    # 2. Khung hình đủ sáng (chuẩn phòng thi)
-    normal_frame = np.full((100, 100, 3), 128, dtype=np.uint8)
+    # 2. Khung hình đủ sáng có chi tiết (chuẩn phòng thi)
+    normal_frame = np.full((120, 120, 3), 128, dtype=np.uint8)
+    cv2.rectangle(normal_frame, (20, 20), (100, 100), (40, 200, 80), 3)
     res_normal = proctor_detector.check_illumination_and_quality(normal_frame)
     assert res_normal["is_too_dark"] is False
     assert res_normal["is_overexposed"] is False

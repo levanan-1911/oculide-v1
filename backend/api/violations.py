@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Query, Body
+from fastapi.responses import JSONResponse
 from typing import Optional, List, Dict, Any
 
 from schemas.violation import (
@@ -12,6 +13,7 @@ from database.violation_db import (
 )
 from database.session_db import get_session_by_id, get_sessions_by_student
 from database.room_db import get_room_by_id
+from database.system_log_db import create_system_log
 from websocket.connection_manager import manager
 
 router = APIRouter()
@@ -155,7 +157,33 @@ async def analyze_webcam_snapshot(
         return {"status": "queued", "message": "Ảnh đã được đưa vào hàng đợi phân tích"}
 
     except Exception as e:
-        return {"status": "accepted", "message": f"Snapshot accepted (local mode: {e})"}
+        # B10: Fail-closed visibility — không âm thầm bỏ qua khi mất hàng đợi Celery/Redis
+        try:
+            create_system_log(
+                log_level="error",
+                module="AIProctoring",
+                message=f"Không thể đẩy snapshot phiên {data.session_id} vào Celery queue 'proctoring': {e}"
+            )
+        except Exception:
+            pass
+        try:
+            await manager.broadcast_json(session["room_id"], {
+                "type": "proctoring_degraded",
+                "room_id": session["room_id"],
+                "student_id": session["student_id"],
+                "session_id": data.session_id,
+                "message": "Mất kết nối hàng đợi phân tích AI Proctoring"
+            })
+        except Exception:
+            pass
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "degraded",
+                "proctoring_active": False,
+                "message": "Hàng đợi phân tích AI Proctoring tạm thời không khả dụng"
+            }
+        )
 
 @router.get("/session/{session_id}", response_model=List[ViolationResponse])
 async def get_session_violations(

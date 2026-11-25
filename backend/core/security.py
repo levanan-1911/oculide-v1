@@ -19,16 +19,16 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
-    """Tạo JWT access token (mặc định 30 phút theo chuẩn an toàn khảo thí)"""
+    """Tạo JWT access token (mặc định 45 phút theo chuẩn an toàn khảo thí)"""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         try:
             from services.system_settings_manager import SystemSettingsManager
-            mins = SystemSettingsManager.get_settings().jwt_token_expiry_minutes or 30
+            mins = SystemSettingsManager.get_settings().jwt_token_expiry_minutes or 45
         except Exception:
-            mins = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES or 30
+            mins = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES or 45
         expire = datetime.now(timezone.utc) + timedelta(minutes=mins)
     to_encode.update({"exp": expire, "token_type": "access"})
     encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)

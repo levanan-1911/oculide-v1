@@ -121,6 +121,14 @@ export default function ExamWorkspacePage() {
   const isScreenShareRequired =
     proctoringConfig?.screenShare !== "disabled" &&
     proctoringConfig?.requireScreenShare !== false;
+
+  // Cấu hình Chặn tab / Thoát phòng từ Giảng viên (tùy cấu hình giảng viên có chặn tab hay không)
+  const shouldBlockTabSwitch = Boolean(
+    proctoringConfig?.blockTabSwitch === true ||
+    proctoringConfig?.allowTabSwitch === false ||
+    proctoringConfig?.lockdownFullscreen === true ||
+    (examRoomType === "exam" && proctoringConfig?.allowTabSwitch !== true)
+  );
   const [isUserCameraOff, setIsUserCameraOff] = useState<boolean>(false);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [examData, setExamData] = useState<ExamData>(initialEmptyExam);
@@ -518,9 +526,17 @@ export default function ExamWorkspacePage() {
     try {
       const ok = await enableScreenShare();
       if (!ok) {
-        setScreenShareError("Bạn chưa hoàn tất chọn màn hình hoặc đã bấm hủy. Vui lòng bấm lại nút bên dưới và chọn Toàn bộ màn hình (Entire Screen).");
+        setScreenShareError("Vui lòng cấp quyền chia sẻ Toàn bộ màn hình (Entire Screen) để tiếp tục làm bài.");
       } else {
         setShowScreenShareModal(false);
+        // Khi được cấp quyền chia sẻ màn hình -> Ép chế độ toàn màn hình (Fullscreen)
+        try {
+          if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen().catch(() => {});
+          }
+        } catch (fsErr) {
+          console.warn("Lỗi kích hoạt toàn màn hình:", fsErr);
+        }
       }
     } catch (err: any) {
       setScreenShareError(err?.message || "Không thể khởi động chia sẻ màn hình. Vui lòng cấp quyền cho trình duyệt.");
@@ -534,15 +550,27 @@ export default function ExamWorkspacePage() {
 
     if (isScreenShareRequired) {
       setShowScreenShareModal(true);
+      // Tự động kích hoạt yêu cầu chia sẻ màn hình ngay khi kết nối LiveKit
+      void enableScreenShare().then((ok) => {
+        if (ok) {
+          setShowScreenShareModal(false);
+          try {
+            if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+              void document.documentElement.requestFullscreen().catch(() => {});
+            }
+          } catch {}
+        }
+      }).catch(() => {});
     }
-  }, [livekitState, isScreenSharing, isScreenShareRequired]);
+  }, [livekitState, isScreenSharing, isScreenShareRequired, enableScreenShare]);
 
   // ─── CHẶN SINH VIÊN TỰ Ý THOÁT PHÒNG THI KHI ĐANG LÀM BÀI ─────────
+  // Tùy cấu hình của giảng viên có chặn tab hay không (shouldBlockTabSwitch)
   const [showExitPreventedModal, setShowExitPreventedModal] = useState(false);
 
-  // 1. Chặn reload / đóng tab trình duyệt
+  // 1. Chặn reload / đóng tab trình duyệt (chỉ khi giảng viên cấu hình chặn tab)
   useEffect(() => {
-    if (examState !== "doing") return;
+    if (examState !== "doing" || !shouldBlockTabSwitch) return;
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "Bạn đang trong ca thi chính thức. Theo quy chế khảo thí, thí sinh không được tự ý rời khỏi phòng thi trước khi nộp bài!";
@@ -550,11 +578,11 @@ export default function ExamWorkspacePage() {
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [examState]);
+  }, [examState, shouldBlockTabSwitch]);
 
-  // 2. Chặn nút Back / Forward và phím điều hướng của trình duyệt
+  // 2. Chặn nút Back / Forward và phím điều hướng của trình duyệt (chỉ khi giảng viên cấu hình chặn tab)
   useEffect(() => {
-    if (examState !== "doing") return;
+    if (examState !== "doing" || !shouldBlockTabSwitch) return;
     window.history.pushState(null, "", window.location.href);
 
     const handlePopState = () => {
@@ -575,7 +603,7 @@ export default function ExamWorkspacePage() {
       window.removeEventListener("popstate", handlePopState);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [examState]);
+  }, [examState, shouldBlockTabSwitch]);
 
   // Cảnh báo AI & Đếm Vi Phạm - Phục hồi từ localStorage khi F5 reload trang
   const [pasteCount, setPasteCount] = useState<number>(() => {
@@ -697,21 +725,8 @@ export default function ExamWorkspacePage() {
     }
   };
 
-  const isTabSwitchBlocked =
-    examRoomType === "exam" ||
-    proctoringConfig?.lockdownFullscreen === true ||
-    proctoringConfig?.blockTabSwitch === true ||
-    proctoringConfig?.allowTabSwitch === false;
+  const isTabSwitchBlocked = shouldBlockTabSwitch;
   const totalViolations = pasteCount + (isTabSwitchBlocked ? tabSwitchCount : 0) + aiViolationCount;
-
-  // Xác định quy chế giám sát tab và toàn màn hình:
-  // Chỉ chặn chuyển tab khi phòng là Exam HOẶC GV cấu hình bật lockdownFullscreen / blockTabSwitch / allowTabSwitch === false
-  const shouldBlockTabSwitch = Boolean(
-    examRoomType === "exam" ||
-    proctoringConfig?.lockdownFullscreen === true ||
-    proctoringConfig?.blockTabSwitch === true ||
-    proctoringConfig?.allowTabSwitch === false
-  );
 
   // Khóa thi khi quá 3 lần vi phạm - Chỉ tự động khóa bài đối với phòng Thi chính thức (exam) hoặc cấu hình autoLock=true.
   // Đối với phòng Lab (thực hành tra cứu tài liệu), không tự động khóa máy để tránh cản trở sinh viên.
@@ -2378,63 +2393,68 @@ export default function ExamWorkspacePage() {
         </main>
       )}
 
-      {/* MODAL YÊU CẦU CHIA SẺ MÀN HÌNH BẮT BUỘC KHI VÀO PHÒNG */}
-      {((isScreenShareRequired && !isScreenSharing && examState === "doing") || (showScreenShareModal && !isScreenSharing)) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
-          <div className="w-full max-w-lg rounded-xl border border-rose-500/30 bg-white p-6 shadow-2xl dark:border-rose-500/30 dark:bg-neutral-900 space-y-4 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 animate-pulse">
-              <Monitor size={32} />
+      {/* MÀN HÌNH ÉP CHIA SẺ MÀN HÌNH & TỰ ĐỘNG ÉP TOÀN MÀN HÌNH KHI ĐƯỢC CẤP QUYỀN */}
+      {isScreenShareRequired && !isScreenSharing && examState === "doing" && (
+        <div
+          onClick={!isRequestingScreenShare ? handleTriggerScreenShare : undefined}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 cursor-pointer select-none"
+        >
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isRequestingScreenShare) handleTriggerScreenShare();
+            }}
+            className="w-full max-w-lg rounded-2xl border border-rose-500/40 bg-neutral-900/95 p-7 sm:p-8 shadow-2xl text-center space-y-5 text-white"
+          >
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse">
+              <Monitor size={40} />
             </div>
-            <div className="space-y-1.5">
-              <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">
-                {isScreenShareRequired ? "Yêu cầu bắt buộc" : "Khuyến nghị giám sát"}
+
+            <div className="space-y-2">
+              <span className="inline-block px-3 py-1 rounded-full text-xs font-mono font-bold uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                Yêu cầu hệ thống bắt buộc
               </span>
-              <h3 className="font-serif text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
-                Cần Chia Sẻ Màn Hình Để Tiếp Tục Làm Bài
-              </h3>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                Phòng thực hành / ca thi này yêu cầu chia sẻ màn hình trực tiếp để Giám thị theo dõi tiến độ và tính liêm chính học thuật. Toàn bộ thao tác làm bài tạm thời bị khóa cho đến khi bạn bật chia sẻ màn hình.
+              <h2 className="font-serif text-xl sm:text-2xl font-bold tracking-tight text-white">
+                Cung Cấp Quyền Chia Sẻ Màn Hình
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-md mx-auto">
+                Hệ thống yêu cầu chia sẻ <strong>Toàn bộ màn hình (Entire Screen)</strong> để bắt đầu làm bài. Khi được cấp quyền, hệ thống sẽ tự động ép chế độ Toàn màn hình (Fullscreen).
               </p>
             </div>
 
             {screenShareError && (
-              <div className="rounded-md border border-rose-300 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 text-left">
+              <div className="rounded-lg border border-rose-500/50 bg-rose-950/60 p-3.5 text-xs text-rose-200 text-left">
                 {screenShareError}
               </div>
             )}
 
-            <div className="rounded-md border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-3 text-left space-y-2 text-xs">
-              <p className="font-semibold text-slate-800 dark:text-slate-200">Hướng dẫn thực hiện:</p>
-              <ul className="space-y-1 text-slate-600 dark:text-slate-400 list-disc list-inside">
-                <li>Bấm nút <strong>&quot;CHIA SẺ MÀN HÌNH NGAY&quot;</strong> bên dưới.</li>
-                <li>Tại cửa sổ chọn của trình duyệt, chọn tab <strong>&quot;Toàn bộ màn hình&quot; (Entire Screen)</strong>.</li>
-                <li>Bấm <strong>Chia sẻ (Share)</strong> để hệ thống tự động mở khóa giao diện làm bài.</li>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-left space-y-1.5 text-xs text-slate-300">
+              <p className="font-semibold text-white">Hướng dẫn:</p>
+              <ul className="space-y-1 list-disc list-inside text-slate-300">
+                <li>Bấm vào <strong>màn hình này</strong> để mở hộp thoại chia sẻ của trình duyệt.</li>
+                <li>Chọn tab <strong>&quot;Toàn bộ màn hình&quot; (Entire Screen)</strong>.</li>
+                <li>Bấm <strong>Chia sẻ (Share)</strong> để hệ thống tự động ép Fullscreen và mở giao diện bài thi.</li>
               </ul>
             </div>
 
-            <div className="flex gap-2">
+            <div className="pt-2">
               <button
                 type="button"
                 disabled={isRequestingScreenShare}
                 onClick={handleTriggerScreenShare}
-                className="system-primary-action flex-1 flex items-center justify-center gap-2 rounded-lg bg-rose-600 py-3.5 font-serif text-xs sm:text-sm font-bold text-white shadow-lg hover:bg-rose-700 transition cursor-pointer disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-rose-600 py-4 font-serif text-xs sm:text-sm font-bold text-white shadow-xl hover:bg-rose-500 transition active:scale-98 cursor-pointer disabled:opacity-50"
               >
                 <Monitor size={18} />
-                <span>{isRequestingScreenShare ? "ĐANG XÁC THỰC MÀN HÌNH..." : "CHIA SẺ MÀN HÌNH NGAY"}</span>
+                <span>
+                  {isRequestingScreenShare
+                    ? "Đang chờ bạn chọn màn hình..."
+                    : "Bấm vào đây để Cung cấp quyền chia sẻ màn hình"}
+                </span>
               </button>
-              {!isScreenShareRequired && (
-                <button
-                  type="button"
-                  onClick={() => setShowScreenShareModal(false)}
-                  className="rounded-lg border border-slate-300 px-4 py-3.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5 transition cursor-pointer"
-                >
-                  Bỏ qua
-                </button>
-              )}
             </div>
 
             <p className="font-mono text-[11px] text-slate-400">
-              * Tuyệt đối không bấm nút &quot;Dừng chia sẻ&quot; trên thanh thông báo của trình duyệt trong suốt thời gian thi.
+              * Hệ thống sẽ tự động chuyển sang chế độ Toàn màn hình (Fullscreen) ngay sau khi được cấp quyền.
             </p>
           </div>
         </div>

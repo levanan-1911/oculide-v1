@@ -572,6 +572,19 @@ export default function InstructorReportsPage() {
     const publishedCount = records.filter((r) => r.isPublished).length;
     const allPublished = total > 0 && publishedCount === total;
 
+    let aiConfirmed = 0;
+    let aiRejected = 0;
+    let aiPending = 0;
+    for (const r of records) {
+      for (const v of r.violations) {
+        if (v.status === 'confirmed') aiConfirmed++;
+        else if (v.status === 'rejected') aiRejected++;
+        else aiPending++;
+      }
+    }
+    const aiReviewed = aiConfirmed + aiRejected;
+    const aiPrecisionPct = aiReviewed > 0 ? Math.round((aiConfirmed / aiReviewed) * 100) : null;
+
     return {
       total,
       avgScore,
@@ -580,6 +593,10 @@ export default function InstructorReportsPage() {
       studentsWithPendingViolations,
       publishedCount,
       allPublished,
+      aiConfirmed,
+      aiRejected,
+      aiPending,
+      aiPrecisionPct,
     };
   }, [records]);
 
@@ -1000,6 +1017,19 @@ export default function InstructorReportsPage() {
               </div>
             </>
           )}
+          <span>•</span>
+          <div className="flex items-center gap-1" title="Tỷ lệ cảnh báo AI được giám thị xác nhận đúng (Confirmed / (Confirmed + Rejected))">
+            <ShieldAlert className="h-3.5 w-3.5" />
+            <span>
+              Độ chính xác AI:{' '}
+              <strong className="text-slate-800 dark:text-white font-mono">
+                {stats.aiPrecisionPct !== null ? `${stats.aiPrecisionPct}%` : 'Chưa duyệt'}
+              </strong>{' '}
+              <span className="font-mono">
+                ({stats.aiConfirmed} đúng / {stats.aiRejected} bác bỏ / {stats.aiPending} chờ)
+              </span>
+            </span>
+          </div>
         </div>
       </div>
 

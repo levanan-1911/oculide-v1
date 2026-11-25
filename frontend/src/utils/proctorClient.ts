@@ -11,7 +11,7 @@ export interface SnapshotPayload {
   session_id: number;
   snapshot_data: string;
   is_typing: boolean;
-  client_event?: "tab_switch" | "fullscreen_exit" | "blur" | "periodic" | "camera_off" | "camera_disabled";
+  client_event?: "tab_switch" | "fullscreen_exit" | "blur" | "periodic" | "camera_off" | "camera_disabled" | "extended_screen";
 }
 
 /**
@@ -52,6 +52,11 @@ export class ProctoringClient {
   private isRunning: boolean = false;
   private isCameraActive: boolean = true;
   private lastTypingTimestamp: number = 0;
+  private lastExtendedScreenTimestamp: number = 0;
+  private keystrokeWindowCount: number = 0;
+  private lastCodeLength: number = 0;
+  private lastCodeSampleTimestamp: number = Date.now();
+  private lastBurstAlertTimestamp: number = 0;
   private currentIntervalMs: number = 4000; // Mặc định 4 giây
 
   constructor(sessionId: number, apiUrl: string, authToken: string) {
@@ -124,7 +129,50 @@ export class ProctoringClient {
 
   private handleKeyDown = () => {
     this.lastTypingTimestamp = Date.now();
+    this.keystrokeWindowCount += 1;
   };
+
+  /**
+   * Theo dõi biến động độ dài mã nguồn để phát hiện code xuất hiện đột ngột (bỏ qua gõ phím)
+   */
+  public reportCodeChange(currLen: number) {
+    if (!this.isRunning) return;
+    const now = Date.now();
+    const delta = currLen - this.lastCodeLength;
+    const elapsedSec = Math.max(0.5, (now - this.lastCodeSampleTimestamp) / 1000);
+
+    if (
+      delta >= 120 &&
+      elapsedSec <= 10 &&
+      this.keystrokeWindowCount < Math.floor(delta * 0.25) &&
+      now - this.lastBurstAlertTimestamp >= 30000
+    ) {
+      this.lastBurstAlertTimestamp = now;
+      const token =
+        this.authToken ||
+        (typeof window !== "undefined" ? localStorage.getItem("oculide_token") || "" : "");
+      fetch(`${this.apiUrl}/api/v1/submissions/ide-telemetry`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          session_id: this.sessionId,
+          prev_len: this.lastCodeLength,
+          curr_len: currLen,
+          elapsed_sec: elapsedSec,
+          keystroke_count: this.keystrokeWindowCount,
+        }),
+      }).catch(() => {});
+    }
+
+    if (elapsedSec >= 5 || delta >= 120) {
+      this.lastCodeLength = currLen;
+      this.lastCodeSampleTimestamp = now;
+      this.keystrokeWindowCount = 0;
+    }
+  }
 
   /**
    * Kiểm tra sinh viên có đang thao tác gõ bàn phím không
@@ -174,11 +222,21 @@ export class ProctoringClient {
     const b64 = captureAndCompressFrame(this.videoElement);
     if (!b64) return;
 
+    // B9: Kiểm tra màn hình mở rộng (Extended Display) tối đa 1 lần / 60 giây
+    const isExtended =
+      typeof window !== "undefined" &&
+      Boolean((window.screen as { isExtended?: boolean } | undefined)?.isExtended);
+    const shouldSendExtended =
+      isExtended && Date.now() - this.lastExtendedScreenTimestamp >= 60000;
+    if (shouldSendExtended) {
+      this.lastExtendedScreenTimestamp = Date.now();
+    }
+
     const res = await this.postAnalyze({
       session_id: this.sessionId,
       snapshot_data: b64,
       is_typing: this.isTyping(),
-      client_event: "periodic"
+      client_event: shouldSendExtended ? "extended_screen" : "periodic"
     });
 
     // Điều chỉnh chu kỳ gửi snapshot động dựa trên trạng thái trả về từ server

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Query
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 from schemas.submission import (
@@ -9,12 +10,15 @@ from core.permissions import get_current_user
 from database.room_db import get_room_by_id
 from database.template_db import is_question_valid_for_room
 from database.question_db import get_question_by_id
+from database.session_db import get_session_by_id
+from database.violation_db import create_violation
 from database.submission_db import (
     create_submission, get_submission_by_id, get_submissions_by_student,
     get_submissions_by_question, get_submissions_by_room,
     update_submission_status, get_grading_results
 )
 from services.grading_service import grade_submission_sync
+from services.ide_behavior_service import analyze_ide_telemetry, find_room_plagiarism_pairs
 
 router = APIRouter()
 
@@ -147,6 +151,61 @@ async def get_submission_results(
     if current_user["role"] == "student" and sub["student_id"] != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem kết quả bài nộp của người khác")
     return get_grading_results(submission_id, include_hidden_details=(current_user["role"] != "student"))
+
+@router.get("/room/{room_id}/plagiarism")
+async def check_room_plagiarism_endpoint(
+    room_id: int,
+    threshold: float = Query(0.78, ge=0.5, le=1.0),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Giảng viên kiểm tra độ tương đồng AST/Token giữa các bài nộp trong phòng thi"""
+    if current_user["role"] not in ("instructor", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ giảng viên mới được kiểm tra đạo văn")
+    subs = get_submissions_by_room(room_id)
+    pairs = find_room_plagiarism_pairs(subs, threshold=threshold)
+    return {
+        "room_id": room_id,
+        "threshold_pct": round(threshold * 100, 1),
+        "total_submissions": len(subs),
+        "flagged_pairs": pairs,
+    }
+
+
+class IDETelemetryRequest(BaseModel):
+    session_id: int
+    prev_len: int = Field(..., ge=0)
+    curr_len: int = Field(..., ge=0)
+    elapsed_sec: float = Field(..., gt=0)
+    keystroke_count: int = Field(..., ge=0)
+
+
+@router.post("/ide-telemetry")
+async def report_ide_telemetry(
+    payload: IDETelemetryRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Nhận nhịp độ gõ phím (keystroke dynamics) và phát hiện code xuất hiện đột ngột"""
+    session = get_session_by_id(payload.session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phiên thi")
+    if current_user.get("role") == "student" and session["student_id"] != current_user.get("user_id"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền gửi telemetry cho phiên khác")
+
+    analysis = analyze_ide_telemetry(
+        payload.prev_len, payload.curr_len, payload.elapsed_sec, payload.keystroke_count
+    )
+    if analysis["is_suspicious_burst"]:
+        room = get_room_by_id(session["room_id"])
+        if not room or room.get("room_type") != "classroom":
+            create_violation(
+                session_id=payload.session_id,
+                student_id=session["student_id"],
+                violation_type="copy_paste",
+                severity="high",
+                description=analysis["reason"],
+            )
+    return analysis
+
 
 @router.get("/room/{room_id}", response_model=List[SubmissionResponse])
 async def get_submissions_by_room_endpoint(

@@ -329,6 +329,7 @@ export default function ExamWorkspacePage() {
   // Luồng camera vật lý trực tiếp
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const proctorClientRef = useRef<ProctoringClient | null>(null);
 
   // Khởi động webcam dự phòng liên tục để phục vụ AI Proctoring và chụp bằng chứng vi phạm
   useEffect(() => {
@@ -470,12 +471,16 @@ export default function ExamWorkspacePage() {
 
     const token = getAuthToken() || "";
     const client = new ProctoringClient(activeSessionId, window.location.origin, token);
+    proctorClientRef.current = client;
     const hasActiveCamera = Boolean(localVideoTrack || localStream);
     client.setCameraActive(hasActiveCamera);
     client.start(videoEl);
 
     return () => {
       client.stop();
+      if (proctorClientRef.current === client) {
+        proctorClientRef.current = null;
+      }
     };
   }, [activeSessionId, examState, isLocked, localVideoTrack, localStream]);
 
@@ -1738,6 +1743,7 @@ export default function ExamWorkspacePage() {
                     ...prev,
                     [currentProblem.id]: e.target.value,
                   }));
+                  proctorClientRef.current?.reportCodeChange(e.target.value.length);
                 }}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}

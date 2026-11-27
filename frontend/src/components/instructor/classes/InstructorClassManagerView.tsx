@@ -45,10 +45,39 @@ import {
   ClassLab,
   ClassExam,
   StudentRow,
-  INSTRUCTOR_ROOMS_STORAGE_KEY,
   RoomSession,
+  isRoomCurrentlyRunning,
 } from './types';
 import { fetchWithAuth } from '@/services/apiClient';
+
+function mapApiRoomsToSessions(apiRooms: any[]): RoomSession[] {
+  const nowMs = Date.now();
+  return apiRooms.map((r) => {
+    const rawStatus = String(r.status || '').toLowerCase();
+    const isInactive =
+      r.is_active === false || r.is_active === 0 || r.is_active === '0' || r.is_active === 'false';
+    const endMs = r.end_time ? new Date(String(r.end_time)).getTime() : NaN;
+    const isExpired = Number.isFinite(endMs) && endMs <= nowMs;
+    const mappedStatus: RoomSession['status'] = isRoomCurrentlyRunning(r, nowMs)
+      ? 'in_progress'
+      : !isInactive && !isExpired && ['scheduled', 'waiting', 'chua_mo'].includes(rawStatus)
+      ? 'waiting'
+      : 'ended';
+    return {
+      id: r.room_code,
+      classId: r.class_code || String(r.class_id || ''),
+      className: r.class_name || r.room_name,
+      password: r.passcode || '',
+      type: r.room_type === 'exam' ? 'exam' : 'lab',
+      title: r.room_name,
+      durationMinutes: r.duration_minutes || 60,
+      status: mappedStatus,
+      createdAt: r.created_at || '',
+      proctoringConfig: { lockdownFullscreen: false, aiFaceDetection: false, aiObjectDetection: false, allowTabSwitch: true },
+      attendees: [],
+    };
+  });
+}
 
 export default function InstructorClassManagerView() {
   const searchParams = useSearchParams();
@@ -182,32 +211,11 @@ export default function InstructorClassManagerView() {
           try {
             const apiRooms = await fetchWithAuth<any[]>('/api/v1/rooms');
             if (!isCancelled && Array.isArray(apiRooms)) {
-              const mappedRooms: RoomSession[] = apiRooms.map((r) => ({
-                id: r.room_code,
-                classId: r.class_code || String(r.class_id || ''),
-                className: r.class_name || r.room_name,
-                password: r.passcode || '',
-                type: r.room_type === 'exam' ? 'exam' : 'lab',
-                title: r.room_name,
-                durationMinutes: r.duration_minutes || 60,
-                status: ['in_progress', 'dang_dien_ra'].includes(String(r.status || '').toLowerCase())
-                  ? 'in_progress'
-                  : ['scheduled', 'waiting', 'chua_mo'].includes(String(r.status || '').toLowerCase())
-                  ? 'waiting'
-                  : 'ended',
-                createdAt: r.created_at || '',
-                proctoringConfig: { lockdownFullscreen: false, aiFaceDetection: false, aiObjectDetection: false, allowTabSwitch: true },
-                attendees: [],
-              }));
-              setCreatedRooms(mappedRooms);
+              setCreatedRooms(mapApiRoomsToSessions(apiRooms));
             }
-          } catch {
-            if (typeof window !== 'undefined') {
-              try {
-                const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-                if (raw) setCreatedRooms(JSON.parse(raw));
-              } catch {}
-            }
+          } catch (error) {
+            console.error('Không thể tải phòng từ máy chủ:', error);
+            setCreatedRooms([]);
           }
         };
 
@@ -227,32 +235,11 @@ export default function InstructorClassManagerView() {
       try {
         const apiRooms = await fetchWithAuth<any[]>('/api/v1/rooms');
         if (!isCancelled && Array.isArray(apiRooms)) {
-          const mappedRooms: RoomSession[] = apiRooms.map((r) => ({
-            id: r.room_code,
-            classId: r.class_code || String(r.class_id || ''),
-            className: r.class_name || r.room_name,
-            password: r.passcode || '',
-            type: r.room_type === 'exam' ? 'exam' : 'lab',
-            title: r.room_name,
-            durationMinutes: r.duration_minutes || 60,
-            status: ['in_progress', 'dang_dien_ra'].includes(String(r.status || '').toLowerCase())
-              ? 'in_progress'
-              : ['scheduled', 'waiting', 'chua_mo'].includes(String(r.status || '').toLowerCase())
-              ? 'waiting'
-              : 'ended',
-            createdAt: r.created_at || '',
-            proctoringConfig: { lockdownFullscreen: false, aiFaceDetection: false, aiObjectDetection: false, allowTabSwitch: true },
-            attendees: [],
-          }));
-          setCreatedRooms(mappedRooms);
+          setCreatedRooms(mapApiRoomsToSessions(apiRooms));
         }
-      } catch {
-        if (typeof window !== 'undefined') {
-          try {
-            const rawRooms = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-            if (rawRooms) setCreatedRooms(JSON.parse(rawRooms));
-          } catch {}
-        }
+      } catch (error) {
+        console.error('Không thể đồng bộ phòng từ máy chủ:', error);
+        if (!isCancelled) setCreatedRooms([]);
       }
     };
 
@@ -717,14 +704,6 @@ export default function InstructorClassManagerView() {
 
                   {/* Tạo phòng và truy cập phòng hiện có: Tuân thủ nghiêm ngặt 3 trạng thái của vòng đời lớp */}
                   <div className="flex w-full flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:w-auto">
-                    <Link
-                      href={`/instructor/reports?class_id=${encodeURIComponent(currentClass.id)}&tab=results`}
-                      className="inline-flex h-9 w-full sm:w-auto items-center justify-center gap-1.5 rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.06] px-3 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-2xs transition whitespace-nowrap cursor-pointer shrink-0"
-                      title="Quản lý và thẩm định các biên bản vi phạm AI của lớp học phần này"
-                    >
-                      <ShieldAlert className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
-                      <span>Vi Phạm AI</span>
-                    </Link>
 
                     {activeRoomForCurrentClass ? (
                       /* Trạng thái 3: ĐANG CÓ PHIÊN LIVE - Chỉ hiển thị nút Giám Sát, ẩn nút Tạo Phòng & Vào Phòng Chờ */
@@ -742,7 +721,7 @@ export default function InstructorClassManagerView() {
                         className="system-primary-action inline-flex h-9 w-full sm:w-auto items-center justify-center gap-2 rounded-md bg-blue-700 hover:bg-blue-800 px-4 text-xs font-bold text-white shadow-2xs transition whitespace-nowrap cursor-pointer shrink-0"
                       >
                         <Users className="h-3.5 w-3.5 shrink-0" />
-                        <span>Vào Phòng Chờ ({waitingRoomForCurrentClass.id})</span>
+                        <span>Mở Phòng ({waitingRoomForCurrentClass.id})</span>
                       </Link>
                     ) : (
                       /* Trạng thái 1: TRỐNG / PHIÊN LIVE CŨ ĐÃ KẾT THÚC - Hiển thị nút Tạo Phòng để mở buổi tiếp theo */
@@ -757,49 +736,24 @@ export default function InstructorClassManagerView() {
                   </div>
                 </div>
 
-                {/* 3 Tabs điều khiển */}
-                <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-300 dark:border-white/10 pt-2">
+                {/* Thanh tiêu đề danh sách sinh viên + lối tắt sang Lịch */}
+                <div className="flex items-center justify-between gap-2 border-b border-slate-300 dark:border-white/10 pt-2 pb-1">
                   <button
                     type="button"
                     onClick={() => setActiveTab('students')}
                     aria-pressed={activeTab === 'students'}
-                    className={`flex h-9 shrink-0 items-center gap-1.5 px-3 text-xs font-bold transition-colors cursor-pointer border-b-2 ${
-                      activeTab === 'students'
-                        ? 'system-selected-tab'
-                        : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                    }`}
+                    className="system-selected-tab flex h-9 shrink-0 items-center gap-1.5 px-3 text-xs font-bold transition-colors cursor-pointer border-b-2"
                   >
                     <Users className="h-3.5 w-3.5" />
                     <span>Danh Sách Sinh Viên ({currentClass.students?.length || 0})</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('labs')}
-                    aria-pressed={activeTab === 'labs'}
-                    className={`flex h-9 shrink-0 items-center gap-1.5 px-3 text-xs font-bold transition-colors cursor-pointer border-b-2 ${
-                      activeTab === 'labs'
-                        ? 'system-selected-tab'
-                        : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                    }`}
+                  <Link
+                    href="/instructor/schedules"
+                    className="inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white transition"
                   >
-                    <Code2 className="h-3.5 w-3.5" />
-                    <span>Bài Thực Hành ({currentClass.labs?.length || 0})</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('exams')}
-                    aria-pressed={activeTab === 'exams'}
-                    className={`flex h-9 shrink-0 items-center gap-1.5 px-3 text-xs font-bold transition-colors cursor-pointer border-b-2 ${
-                      activeTab === 'exams'
-                        ? 'system-selected-tab'
-                        : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <FileCode2 className="h-3.5 w-3.5" />
-                    <span>Bài Kiểm Tra &amp; Thi ({currentClass.exams?.length || 0})</span>
-                  </button>
+                    <span>Xem lịch của lớp →</span>
+                  </Link>
                 </div>
               </div>
 

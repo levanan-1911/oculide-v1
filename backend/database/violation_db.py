@@ -372,6 +372,18 @@ def update_violation_review(violation_id: int, reviewed_by: int, review_status: 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            "SELECT is_reviewed, review_status FROM Violations WHERE violation_id = ?",
+            (violation_id,),
+        )
+        existing = cursor.fetchone()
+        if not existing:
+            return None
+        existing_reviewed = bool(existing[0])
+        existing_status = str(existing[1] or "").lower()
+        if existing_reviewed or existing_status in ("confirmed", "rejected"):
+            raise ValueError("Cảnh báo này đã được thẩm định trước đó, không thể chỉnh sửa lại quyết định.")
+
         cursor.execute("""
             UPDATE Violations 
             SET is_reviewed = 1, review_status = ?, reviewed_by = ?, reviewed_at = GETDATE()

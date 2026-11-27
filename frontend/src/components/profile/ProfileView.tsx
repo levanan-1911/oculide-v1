@@ -123,32 +123,18 @@ function ProfileViewContent({ role }: ProfileViewProps) {
   }, [tabParam, role]);
 
   // Thông tin chung
-  const [name, setName] = useState(
-    role === 'instructor'
-      ? 'Phạm Văn Long'
-      : role === 'admin'
-      ? 'Quản trị viên Hệ thống'
-      : 'Nguyễn Văn An'
-  );
-  const [email, setEmail] = useState(
-    role === 'instructor'
-      ? 'long.pham@oculide.edu.vn'
-      : role === 'admin'
-      ? 'admin@oculide.edu.vn'
-      : 'an.nv@school.edu.vn'
-  );
-  const [phone, setPhone] = useState('0912 345 678');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [avatar, setAvatar] = useState<string | null>(null);
 
   // Trường chuyên biệt theo Role
-  const [identifier, setIdentifier] = useState(
-    role === 'instructor' ? 'GV2026_089' : role === 'admin' ? 'ADMIN_ROOT_01' : 'SE184801'
-  );
-  const [academicDegree, setAcademicDegree] = useState('Thạc sĩ Kỹ thuật Phần mềm');
-  const [department, setDepartment] = useState('Khoa Công Nghệ Thông Tin');
-  const [office, setOffice] = useState('Phòng 402 - Tòa A - Cơ sở Hòa Khánh');
-  const [studentClass, setStudentClass] = useState('K27-SE01');
-  const [major, setMajor] = useState('Kỹ thuật Phần mềm (Software Engineering)');
+  const [identifier, setIdentifier] = useState('');
+  const [academicDegree, setAcademicDegree] = useState('');
+  const [department, setDepartment] = useState('');
+  const [office, setOffice] = useState('');
+  const [studentClass, setStudentClass] = useState('');
+  const [major, setMajor] = useState('');
 
   // Đổi mật khẩu
   // Đổi mật khẩu
@@ -824,6 +810,7 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
               <input
                 type="tel"
                 value={phone}
+                placeholder="Chưa cập nhật"
                 onChange={(e) => setPhone(e.target.value)}
                 className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-100"
               />
@@ -839,6 +826,7 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
                   <input
                     type="text"
                     value={academicDegree}
+                    placeholder="Chưa cập nhật"
                     onChange={(e) => setAcademicDegree(e.target.value)}
                     className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-100"
                   />
@@ -850,6 +838,7 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
                   <input
                     type="text"
                     value={office}
+                    placeholder="Chưa cập nhật"
                     onChange={(e) => setOffice(e.target.value)}
                     className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-100"
                   />
@@ -867,6 +856,7 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
                   <input
                     type="text"
                     value={studentClass}
+                    placeholder="Chưa cập nhật"
                     onChange={(e) => setStudentClass(e.target.value)}
                     className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-100"
                   />
@@ -878,6 +868,7 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
                   <input
                     type="text"
                     value={major}
+                    placeholder="Chưa cập nhật"
                     onChange={(e) => setMajor(e.target.value)}
                     className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-100"
                   />
@@ -892,6 +883,7 @@ const lockoutSecondsRemaining = isInstructorPasswordLocked
               <input
                 type="text"
                 value={department}
+                placeholder="Chưa cập nhật"
                 onChange={(e) => setDepartment(e.target.value)}
                 className="w-full rounded-md border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-100"
               />

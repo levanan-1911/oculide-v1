@@ -57,7 +57,7 @@ export class ProctoringClient {
   private lastCodeLength: number = 0;
   private lastCodeSampleTimestamp: number = Date.now();
   private lastBurstAlertTimestamp: number = 0;
-  private currentIntervalMs: number = 4000; // Mặc định 4 giây
+  private currentIntervalMs: number = 2000; // Chu kỳ 2 giây giúp ghi nhận vi phạm nhanh hơn
 
   constructor(sessionId: number, apiUrl: string, authToken: string) {
     this.sessionId = sessionId;
@@ -241,8 +241,7 @@ export class ProctoringClient {
 
     // Điều chỉnh chu kỳ gửi snapshot động dựa trên trạng thái trả về từ server
     if (res && res.status === "queued") {
-      // Nếu server đang ổn định -> duy trì 4 giây
-      this.currentIntervalMs = 4000;
+      this.currentIntervalMs = 2000;
     }
   }
 

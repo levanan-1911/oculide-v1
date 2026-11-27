@@ -18,36 +18,11 @@ import {
 } from 'lucide-react';
 import InstitutionalFooter from '@/components/common/InstitutionalFooter';
 import BrandLogo from '@/components/common/BrandLogo';
+import HeroInteractivePreview from '@/components/home/HeroInteractivePreview';
 
 export default function HomePage() {
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [mounted, setMounted] = useState(false);
-
-  const staticCode = [
-    '// Thuật toán: Tìm giá trị lớn thứ hai trong dãy số nguyên (Chuẩn C++17)',
-    '#include <iostream>',
-    '#include <vector>',
-    '#include <limits>',
-    'using namespace std;',
-    '',
-    'int findSecondLargest(const vector<int>& a) {',
-    '    if (a.size() < 2) return -1;',
-    '    int first = numeric_limits<int>::min();',
-    '    int second = numeric_limits<int>::min();',
-    '    for (int x : a) {',
-    '        if (x > first) { second = first; first = x; }',
-    '        else if (x > second && x < first) { second = x; }',
-    '    }',
-    '    return (second == numeric_limits<int>::min()) ? -1 : second;',
-    '}',
-    '',
-    'int main() {',
-    '    ios_base::sync_with_stdio(false);',
-    '    cin.tie(NULL);',
-    '    // Khởi tạo và chấm tự động qua Docker Sandbox',
-    '    return 0;',
-    '}'
-  ];
 
   useEffect(() => {
     setMounted(true);
@@ -186,58 +161,8 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Cột phải: Bản in mã nguồn tĩnh cổ điển (Không animation chuyển động) */}
-              <div className="lg:col-span-5">
-                <div className="rounded border border-slate-300 bg-slate-50 text-slate-800 shadow-xs dark:border-white/10 dark:bg-[#1c1820] dark:text-slate-200">
-                  {/* Thanh tiêu đề bản in mã nguồn */}
-                  <div className="flex h-9 items-center justify-between border-b border-slate-300 bg-[#f0ebed] px-3 dark:border-white/10 dark:bg-[#25202b]">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-brand-600 dark:text-[#deb5c0]" />
-                      <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
-                        bai_kiem_tra_thuat_toan.cpp
-                      </span>
-                    </div>
-                    <span className="rounded border border-brand-300 bg-brand-50 px-2 py-0.5 font-mono text-[10px] font-bold text-brand-700 dark:border-[#deb5c0]/30 dark:bg-[#deb5c0]/10 dark:text-[#deb5c0]">
-                      G++ 17 Sandbox
-                    </span>
-                  </div>
-
-                  {/* Khung mã nguồn tĩnh */}
-                  <div className="p-3.5 font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 max-h-[220px] overflow-y-auto">
-                    {staticCode.map((line, idx) => (
-                      <div key={idx} className="flex">
-                        <span className="w-6 select-none text-right pr-2 text-slate-400 dark:text-slate-600 font-mono text-[10px]">
-                          {idx + 1}
-                        </span>
-                        <span className="whitespace-pre">{line}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Bảng đối chiếu kết quả khảo thí */}
-                  <div className="border-t border-slate-300 bg-[#ffffff] p-3 text-xs dark:border-white/10 dark:bg-[#161318]">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-300 dark:border-white/10 mb-2">
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        AI Proctoring (LiveKit SFU):
-                      </span>
-                      <span className="font-mono font-bold text-slate-900 dark:text-[#deb5c0]">
-                        Trực tuyến • Hợp lệ
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-[11px] font-serif">
-                      <div className="rounded border border-slate-300 bg-slate-50 p-1.5 dark:border-white/10 dark:bg-[#1c1820]">
-                        <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Thí sinh:</span>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">1 người trước webcam</span>
-                      </div>
-                      <div className="rounded border border-slate-300 bg-slate-50 p-1.5 dark:border-white/10 dark:bg-[#1c1820]">
-                        <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Màn hình:</span>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">Đã khóa toàn màn hình</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {/* Cột phải: Mô phỏng động chạy Code & AI Proctoring */}
+              <HeroInteractivePreview />
 
             </div>
           </div>

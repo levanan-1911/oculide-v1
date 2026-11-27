@@ -170,8 +170,8 @@ function AdminDashboardContent() {
       total: 0,
     },
     systemStatus: {
-      value: '100%',
-      subtext: 'Tất cả dịch vụ đang hoạt động ổn định',
+      value: '—',
+      subtext: 'Chưa có dữ liệu',
     },
     backupStatus: {
       value: '0',
@@ -211,8 +211,8 @@ function AdminDashboardContent() {
               total: data.kpi.active_classes?.total || 0,
             },
             systemStatus: {
-              value: data.kpi.system_status?.value || '100%',
-              subtext: data.kpi.system_status?.subtext || 'Tất cả dịch vụ đang hoạt động ổn định',
+              value: data.kpi.system_status?.value || '—',
+              subtext: data.kpi.system_status?.subtext || 'Chưa có dữ liệu',
             },
             backupStatus: {
               value: data.kpi.backup_status?.value || '0',

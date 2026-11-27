@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import SystemHealthTab from './SystemHealthTab';
 import {
   Settings,
   Shield,
@@ -70,6 +71,33 @@ function formatTimestamp(dtStr?: string | null): string {
   } catch {
     return String(dtStr);
   }
+}
+
+function splitTimeDate(ts: string): { time: string; date: string } {
+  const parts = (ts || '').trim().split(/\s+/);
+  if (parts.length >= 2 && parts[0].includes('-')) {
+    const [y, m, d] = parts[0].split('-');
+    return { time: parts[1], date: `${d}/${m}/${y}` };
+  }
+  return { time: ts || '—', date: '' };
+}
+
+function formatFriendlyIp(ip?: string | null): string {
+  const raw = (ip || '').trim();
+  if (!raw || raw === '—') return '—';
+  const cleaned = raw.replace(/^::ffff:/i, '');
+  if (cleaned === '::1' || cleaned === '127.0.0.1' || cleaned === 'localhost') {
+    return '127.0.0.1 (Localhost)';
+  }
+  return cleaned;
+}
+
+function parseUserAgentShort(ua?: string | null): string {
+  if (!ua) return 'Không ghi nhận';
+  const s = ua.toLowerCase();
+  const browser = s.includes('edg/') ? 'Edge' : s.includes('chrome/') ? 'Chrome' : s.includes('firefox/') ? 'Firefox' : s.includes('safari/') ? 'Safari' : 'Trình duyệt';
+  const os = s.includes('windows') ? 'Windows' : s.includes('mac os') || s.includes('macintosh') ? 'macOS' : s.includes('android') ? 'Android' : s.includes('iphone') || s.includes('ipad') ? 'iOS' : s.includes('linux') ? 'Linux' : 'OS khác';
+  return `${browser} / ${os}`;
 }
 
 function formatConciseAction(rawAction: string): string {
@@ -329,6 +357,10 @@ const DEFAULT_SETTINGS: SystemSettings = {
   jwtTokenExpiryMinutes: 60,
   maintenanceMode: false,
   maintenanceMessage: 'Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.',
+  maintenanceDurationMinutes: 30,
+  maintenanceEndsAt: null,
+  maintenanceOnBackupSchedule: false,
+  maintenanceScheduleTime: '02:00',
 
   // 4. Thời gian & Chính sách Sao lưu
   backupScheduleEnabled: true,
@@ -338,84 +370,6 @@ const DEFAULT_SETTINGS: SystemSettings = {
   backupRetentionDays: 30,
   backupMaxCopies: 10,
 };
-
-const INITIAL_SERVICES: ServiceHealthItem[] = [
-  {
-    id: 'backend_api',
-    name: 'Core Backend API (FastAPI)',
-    category: 'Application Server',
-    status: 'healthy',
-    latencyMs: 38,
-    uptimePercent: 99.95,
-    lastChecked: 'Vừa xong',
-    metrics: [
-      { label: 'CPU Usage', value: '14%' },
-      { label: 'RAM', value: '512 MB' },
-      { label: 'Requests/phút', value: 340 },
-    ],
-    description: 'Xử lý xác thực người dùng, điều hướng phòng thi và quản lý API dữ liệu.',
-  },
-  {
-    id: 'code_sandbox',
-    name: 'Máy chủ Chấm Code (Docker Sandbox / Judge)',
-    category: 'Execution Engine',
-    status: 'healthy',
-    latencyMs: 110,
-    uptimePercent: 99.8,
-    lastChecked: 'Vừa xong',
-    metrics: [
-      { label: 'Worker sẵn sàng', value: '4/4' },
-      { label: 'Hàng đợi', value: '0 jobs' },
-      { label: 'Thời gian chấm TB', value: '0.85s' },
-    ],
-    description: 'Môi trường sandbox an toàn thực thi và chấm test case cho C/C++, Java, Python.',
-  },
-  {
-    id: 'livekit_media',
-    name: 'LiveKit WebRTC Media Server',
-    category: 'Streaming Engine',
-    status: 'healthy',
-    latencyMs: 45,
-    uptimePercent: 99.9,
-    lastChecked: 'Vừa xong',
-    metrics: [
-      { label: 'Phòng đang mở', value: '2 phòng' },
-      { label: 'Luồng Media', value: '12 Screen + 12 Cam' },
-      { label: 'Băng thông', value: '7.8 Mbps' },
-    ],
-    description: 'Truyền tải video chia sẻ màn hình (bắt buộc) và webcam thời gian thực từ laptop sinh viên về màn hình giám sát của giảng viên.',
-  },
-  {
-    id: 'database',
-    name: 'Cơ sở Dữ liệu (Microsoft SQL Server)',
-    category: 'Data Storage',
-    status: 'healthy',
-    latencyMs: 8,
-    uptimePercent: 100,
-    lastChecked: 'Vừa xong',
-    metrics: [
-      { label: 'Connection Pool', value: '12/50' },
-      { label: 'Dung lượng DB', value: '48.5 MB' },
-      { label: 'Đọc/Ghi TB', value: '4.2ms' },
-    ],
-    description: 'Lưu trữ thông tin người dùng, lớp học, ngân hàng câu hỏi và bản nháp bài thi.',
-  },
-  {
-    id: 'redis_cache',
-    name: 'Redis Cache & Event Queue',
-    category: 'In-Memory Cache',
-    status: 'healthy',
-    latencyMs: 2,
-    uptimePercent: 100,
-    lastChecked: 'Vừa xong',
-    metrics: [
-      { label: 'Bộ nhớ dùng', value: '24.2 MB' },
-      { label: 'Hit Rate', value: '96.4%' },
-      { label: 'Active Keys', value: 1820 },
-    ],
-    description: 'Quản lý phiên đăng nhập (JWT token blacklisting) và hàng đợi thông báo vi phạm.',
-  },
-];
 
 const INITIAL_BACKUPS: BackupItem[] = [];
 
@@ -437,8 +391,11 @@ export default function AdminSystemView() {
 
   // State Cấu hình (Settings)
   const [settings, setSettings] = useState<SystemSettings>(DEFAULT_SETTINGS);
+  const [savedSettingsSnapshot, setSavedSettingsSnapshot] = useState<string | null>(null);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const hasSettingsChanges =
+    savedSettingsSnapshot !== null && JSON.stringify(settings) !== savedSettingsSnapshot;
 
   // State Nhật ký (Logs)
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
@@ -450,7 +407,7 @@ export default function AdminSystemView() {
   const pageSize = 15;
 
   // State Dịch vụ (Services Health)
-  const [services, setServices] = useState<ServiceHealthItem[]>(INITIAL_SERVICES);
+  const [services, setServices] = useState<ServiceHealthItem[]>([]);
   const [isPinging, setIsPinging] = useState(false);
 
   // State Thống kê lưu trữ
@@ -472,6 +429,11 @@ export default function AdminSystemView() {
 
   // Modal xem chi tiết Log
   const [selectedLog, setSelectedLog] = useState<AuditLogItem | null>(null);
+  const [showRawJson, setShowRawJson] = useState(false);
+
+  useEffect(() => {
+    setShowRawJson(false);
+  }, [selectedLog]);
 
   // ── TRA CỨU BẰNG CHỨNG PHÚC KHẢO (EVIDENCE & APPEAL AUDIT) ──
   const [isEvidenceViolationsOpen, setIsEvidenceViolationsOpen] = useState(false);
@@ -508,9 +470,20 @@ export default function AdminSystemView() {
 
   // Bộ lọc Log
   const [searchLog, setSearchLog] = useState('');
+  const [debouncedSearchLog, setDebouncedSearchLog] = useState('');
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterDateRange, setFilterDateRange] = useState<'all' | 'today' | '7d' | 'custom'>('all');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [isExportingLogs, setIsExportingLogs] = useState(false);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearchLog(searchLog.trim()), 300);
+    return () => window.clearTimeout(t);
+  }, [searchLog]);
 
   // Toast thông báo
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -527,19 +500,40 @@ export default function AdminSystemView() {
       const res = await fetchWithAuth<any>('/api/v1/system-logs?skip=0&limit=300');
       if (res && Array.isArray(res.items)) {
         const mapped: AuditLogItem[] = res.items.map((item: any) => {
-          const sev = mapSeverity(item.log_level);
+          const sev = mapSeverity(item.severity || item.log_level);
+          const actorObj = item.actor_json && typeof item.actor_json === 'object' ? item.actor_json : {};
+          const metaObj = item.extra_data && typeof item.extra_data === 'object' ? item.extra_data : {};
+          const normSev: 'INFO' | 'WARN' | 'CRITICAL' =
+            sev === 'CRITICAL' ? 'CRITICAL' : sev === 'WARNING' || sev === 'SECURITY' ? 'WARN' : 'INFO';
+          const normStatus: 'SUCCESS' | 'FAILED' =
+            item.status === 'FAILED' || sev === 'CRITICAL' ? 'FAILED' : 'SUCCESS';
           return {
             id: `LOG_${String(item.log_id).padStart(4, '0')}`,
             timestamp: formatTimestamp(item.created_at),
-            actorName: cleanMojibake(item.actor_name || item.username || (item.user_id ? `User #${item.user_id}` : 'Hệ thống')),
+            actorName: cleanMojibake(actorObj.fullName || item.actor_name || item.username || (item.user_id ? `User #${item.user_id}` : 'Hệ thống')),
             actorRole: mapRole(item.actor_role),
-            action: formatConciseAction(item.module),
+            actorCode: actorObj.code || item.actor_code || item.username || '',
+            action: formatConciseAction(item.action_label || item.module),
+            eventCode: item.event_code || 'SYSTEM_EVENT',
+            actionLabel: item.action_label || formatConciseAction(item.module),
             category: inferCategory(item.module || '', item.message || ''),
+            normalizedCategory: (item.category || 'SYSTEM') as any,
             severity: sev,
-            ipAddress: item.ip_address || '127.0.0.1',
-            status: sev === 'CRITICAL' ? 'failure' : sev === 'WARNING' || sev === 'SECURITY' ? 'flagged' : 'success',
+            normalizedSeverity: normSev,
+            ipAddress: item.ip_address || '—',
+            status: normStatus === 'FAILED' ? 'failure' : sev === 'WARNING' || sev === 'SECURITY' ? 'flagged' : 'success',
+            normalizedStatus: normStatus,
             details: item.message || '',
-            payload: item.extra_data || undefined,
+            attemptCount: Number(metaObj.attemptCount || 1),
+            userAgent: item.user_agent || '',
+            sessionId: metaObj.sessionId || undefined,
+            requestId: metaObj.requestId || undefined,
+            errorCode: metaObj.errorCode || undefined,
+            errorReason: metaObj.reason || undefined,
+            target: item.target_json && typeof item.target_json === 'object' ? item.target_json : null,
+            beforeData: metaObj.before ?? undefined,
+            afterData: metaObj.after ?? undefined,
+            payload: metaObj,
           };
         });
         setLogs(mapped);
@@ -602,7 +596,7 @@ export default function AdminSystemView() {
     try {
       const data = await fetchWithAuth<any>('/api/v1/admin/system/settings?_t=' + Date.now());
       if (data) {
-        setSettings({
+        const loadedSettings: SystemSettings = {
           maxCodeFileSizeMb: data.max_code_file_size_mb ?? 2,
           maxSandboxWorkers: data.max_sandbox_workers ?? 4,
           maxLiveKitBitrateKbps: data.max_livekit_bitrate_kbps ?? 350,
@@ -613,13 +607,19 @@ export default function AdminSystemView() {
           jwtTokenExpiryMinutes: data.jwt_token_expiry_minutes ?? 60,
           maintenanceMode: Boolean(data.maintenance_mode),
           maintenanceMessage: data.maintenance_message ?? '',
+          maintenanceDurationMinutes: data.maintenance_duration_minutes ?? 30,
+          maintenanceEndsAt: data.maintenance_ends_at ?? null,
+          maintenanceOnBackupSchedule: Boolean(data.maintenance_on_backup_schedule),
+          maintenanceScheduleTime: data.maintenance_schedule_time ?? '02:00',
           backupScheduleEnabled: data.backup_schedule_enabled ?? true,
           backupFrequency: data.backup_frequency ?? 'daily',
           backupTime: data.backup_time ?? '02:00',
           backupOnMaintenance: data.backup_on_maintenance ?? true,
           backupRetentionDays: data.backup_retention_days ?? 30,
           backupMaxCopies: data.backup_max_copies ?? 10,
-        });
+        };
+        setSettings(loadedSettings);
+        setSavedSettingsSnapshot(JSON.stringify(loadedSettings));
       }
     } catch (err) {
       console.error('Lỗi khi tải cấu hình hệ thống:', err);
@@ -762,6 +762,10 @@ export default function AdminSystemView() {
         jwt_token_expiry_minutes: settings.jwtTokenExpiryMinutes,
         maintenance_mode: settings.maintenanceMode,
         maintenance_message: settings.maintenanceMessage,
+        maintenance_duration_minutes: settings.maintenanceDurationMinutes,
+        maintenance_ends_at: settings.maintenanceEndsAt ?? null,
+        maintenance_on_backup_schedule: settings.maintenanceOnBackupSchedule,
+        maintenance_schedule_time: settings.maintenanceScheduleTime,
         backup_schedule_enabled: settings.backupScheduleEnabled,
         backup_frequency: settings.backupFrequency,
         backup_time: settings.backupTime,
@@ -778,7 +782,7 @@ export default function AdminSystemView() {
 
       if (res) {
         showToast('Đã lưu thành công các tham số cấu hình hạ tầng hệ thống vào máy chủ!');
-        setSettings({
+        const updatedSettings: SystemSettings = {
           maxCodeFileSizeMb: res.max_code_file_size_mb ?? settings.maxCodeFileSizeMb,
           maxSandboxWorkers: res.max_sandbox_workers ?? settings.maxSandboxWorkers,
           maxLiveKitBitrateKbps: res.max_livekit_bitrate_kbps ?? settings.maxLiveKitBitrateKbps,
@@ -789,13 +793,19 @@ export default function AdminSystemView() {
           jwtTokenExpiryMinutes: res.jwt_token_expiry_minutes ?? settings.jwtTokenExpiryMinutes,
           maintenanceMode: Boolean(res.maintenance_mode),
           maintenanceMessage: res.maintenance_message ?? '',
+          maintenanceDurationMinutes: res.maintenance_duration_minutes ?? settings.maintenanceDurationMinutes,
+          maintenanceEndsAt: res.maintenance_ends_at ?? null,
+          maintenanceOnBackupSchedule: Boolean(res.maintenance_on_backup_schedule),
+          maintenanceScheduleTime: res.maintenance_schedule_time ?? settings.maintenanceScheduleTime,
           backupScheduleEnabled: res.backup_schedule_enabled ?? settings.backupScheduleEnabled,
           backupFrequency: res.backup_frequency ?? settings.backupFrequency,
           backupTime: res.backup_time ?? settings.backupTime,
           backupOnMaintenance: res.backup_on_maintenance ?? settings.backupOnMaintenance,
           backupRetentionDays: res.backup_retention_days ?? settings.backupRetentionDays,
           backupMaxCopies: res.backup_max_copies ?? settings.backupMaxCopies,
-        });
+        };
+        setSettings(updatedSettings);
+        setSavedSettingsSnapshot(JSON.stringify(updatedSettings));
         loadSystemLogs();
         loadSystemHealth();
         loadBackups();
@@ -823,6 +833,10 @@ export default function AdminSystemView() {
         jwt_token_expiry_minutes: settings.jwtTokenExpiryMinutes,
         maintenance_mode: settings.maintenanceMode,
         maintenance_message: settings.maintenanceMessage,
+        maintenance_duration_minutes: settings.maintenanceDurationMinutes,
+        maintenance_ends_at: settings.maintenanceEndsAt ?? null,
+        maintenance_on_backup_schedule: settings.maintenanceOnBackupSchedule,
+        maintenance_schedule_time: settings.maintenanceScheduleTime,
         backup_schedule_enabled: settings.backupScheduleEnabled,
         backup_frequency: settings.backupFrequency,
         backup_time: settings.backupTime,
@@ -839,6 +853,7 @@ export default function AdminSystemView() {
 
       if (res) {
         showToast('Đã lưu thành công chính sách thời gian & thời hạn lưu trữ sao lưu!');
+        setSavedSettingsSnapshot(JSON.stringify(settings));
         await loadBackups();
         loadSystemLogs();
       }
@@ -964,30 +979,94 @@ export default function AdminSystemView() {
     }
   };
 
+  // Xuất báo cáo CSV theo bộ lọc hiện tại
+  const handleExportLogsCsv = async () => {
+    setIsExportingLogs(true);
+    try {
+      const params = new URLSearchParams();
+      if (filterSeverity !== 'all') params.set('severity', filterSeverity === 'WARNING' ? 'WARN' : filterSeverity);
+      if (filterCategory !== 'all' && ['AUTH', 'EXAM', 'USER', 'SYSTEM'].includes(filterCategory)) {
+        params.set('category', filterCategory);
+      }
+      if (filterStatus !== 'all') params.set('status', filterStatus);
+      if (filterRole !== 'all') params.set('role', filterRole);
+      if (debouncedSearchLog) params.set('search', debouncedSearchLog);
+      if (filterDateRange !== 'all') params.set('date_range', filterDateRange);
+      if (filterDateRange === 'custom') {
+        if (customStartDate) params.set('start_date', customStartDate);
+        if (customEndDate) params.set('end_date', customEndDate);
+      }
+      const token = localStorage.getItem('oculide_token');
+      const res = await fetch(`/api/v1/system-logs/export?${params.toString()}`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `oculide_audit_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Đã xuất báo cáo nhật ký hệ thống (CSV) thành công!');
+    } catch {
+      showToast('Không thể xuất báo cáo nhật ký hệ thống.');
+    } finally {
+      setIsExportingLogs(false);
+    }
+  };
+
   // Lọc Log theo tiêu chí
   const filteredLogs = useMemo(() => {
+    const q = debouncedSearchLog.toLowerCase();
+    const now = new Date();
+    const todayPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
     return logs.filter((log) => {
       const matchSearch =
-        log.actorName.toLowerCase().includes(searchLog.toLowerCase()) ||
-        log.action.toLowerCase().includes(searchLog.toLowerCase()) ||
-        log.ipAddress.includes(searchLog) ||
-        log.details.toLowerCase().includes(searchLog.toLowerCase());
+        !q ||
+        log.actorName.toLowerCase().includes(q) ||
+        (log.actorCode || '').toLowerCase().includes(q) ||
+        (log.eventCode || '').toLowerCase().includes(q) ||
+        (log.actionLabel || log.action).toLowerCase().includes(q) ||
+        log.ipAddress.toLowerCase().includes(q) ||
+        log.details.toLowerCase().includes(q);
 
-      const matchSeverity = filterSeverity === 'all' || log.severity === filterSeverity;
+      const sevNorm = log.normalizedSeverity || (log.severity === 'WARNING' ? 'WARN' : log.severity === 'CRITICAL' ? 'CRITICAL' : 'INFO');
+      const matchSeverity =
+        filterSeverity === 'all' ||
+        sevNorm === filterSeverity ||
+        log.severity === filterSeverity;
+
       const matchCategory =
         filterCategory === 'all' ||
-        log.category === filterCategory ||
-        (filterCategory === 'SETTINGS' && log.category === 'SYSTEM');
-      const matchRole = filterRole === 'all' || log.actorRole === filterRole;
+        log.normalizedCategory === filterCategory ||
+        log.category === filterCategory;
 
-      return matchSearch && matchSeverity && matchCategory && matchRole;
+      const matchRole = filterRole === 'all' || log.actorRole === filterRole;
+      const matchStatus = filterStatus === 'all' || log.normalizedStatus === filterStatus;
+
+      let matchDate = true;
+      const datePart = (log.timestamp || '').slice(0, 10);
+      if (filterDateRange === 'today') {
+        matchDate = datePart === todayPrefix;
+      } else if (filterDateRange === '7d') {
+        const dt = new Date(log.timestamp);
+        matchDate = !isNaN(dt.getTime()) && dt >= sevenDaysAgo;
+      } else if (filterDateRange === 'custom') {
+        if (customStartDate && datePart < customStartDate) matchDate = false;
+        if (customEndDate && datePart > customEndDate) matchDate = false;
+      }
+
+      return matchSearch && matchSeverity && matchCategory && matchRole && matchStatus && matchDate;
     });
-  }, [logs, searchLog, filterSeverity, filterCategory, filterRole]);
+  }, [logs, debouncedSearchLog, filterSeverity, filterCategory, filterRole, filterStatus, filterDateRange, customStartDate, customEndDate]);
 
   // Reset về trang 1 khi đổi bộ lọc
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchLog, filterSeverity, filterCategory, filterRole]);
+  }, [debouncedSearchLog, filterSeverity, filterCategory, filterRole, filterStatus, filterDateRange, customStartDate, customEndDate]);
 
   // Phân trang
   const totalPages = Math.max(1, Math.ceil(filteredLogs.length / pageSize));
@@ -1059,18 +1138,6 @@ export default function AdminSystemView() {
               >
                 <RefreshCw className={`h-3.5 w-3.5 text-slate-600 dark:text-slate-300 ${isPinging ? 'animate-spin' : ''}`} />
                 <span>Kiểm tra kết nối</span>
-              </button>
-            )}
-
-            {activeTab === 'backup' && (
-              <button
-                type="button"
-                onClick={handleCreateBackup}
-                disabled={isCreatingBackup}
-                className="system-primary-action inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-4 text-xs font-semibold text-white shadow-xs hover:bg-slate-800 transition cursor-pointer"
-              >
-                <Download className={`h-3.5 w-3.5 ${isCreatingBackup ? '' : ''}`} />
-                <span>{isCreatingBackup ? 'Đang tạo bản sao lưu...' : 'Tạo sao lưu ngay'}</span>
               </button>
             )}
           </div>
@@ -1469,7 +1536,7 @@ export default function AdminSystemView() {
                                         onClick={() =>
                                           setSelectedSnapshot({
                                             violationId: item.violation_id,
-                                            url: item.snapshot_url || '/uploads/snapshots/sample_tab_switch.jpg',
+                                            url: item.snapshot_url || '',
                                             title: typeMap[item.violation_type] || item.violation_type,
                                             desc: item.description,
                                             time: new Date(item.detected_at).toLocaleString('vi-VN'),
@@ -1666,7 +1733,7 @@ export default function AdminSystemView() {
               </div>
 
           {/* Thanh tìm kiếm & Bộ lọc nâng cao */}
-          <div className="rounded-md border border-slate-300 bg-white p-4 shadow-xs dark:border-white/10 dark:bg-neutral-900">
+          <div className="rounded-md border border-slate-300 bg-white p-4 shadow-xs dark:border-white/10 dark:bg-neutral-900 space-y-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -1674,51 +1741,91 @@ export default function AdminSystemView() {
                   type="text"
                   value={searchLog}
                   onChange={(e) => setSearchLog(e.target.value)}
-                  placeholder="Tìm theo tên tác nhân, hành động, địa chỉ IP (172.16...), mã phòng thi, chi tiết..."
-                  className="h-9 w-full rounded-md border border-slate-300 bg-white pl-9 pr-4 text-xs text-slate-800 placeholder-slate-400 outline-none transition focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-[#0f172a]/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:placeholder-slate-500"
+                  placeholder="Tìm theo tên người thực hiện, mã GV/MSSV, mã sự kiện hoặc IP..."
+                  className="h-9 w-full rounded-md border border-slate-300 bg-white pl-9 pr-4 text-xs text-slate-800 placeholder-slate-400 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-[#0f172a]/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:placeholder-slate-500"
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <select
+                  aria-label="Lọc theo phân hệ"
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 dark:border-white cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200"
+                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200"
                 >
-                  <option value="all">Tất cả khu vực</option>
-                  <option value="LOGIN">Đăng nhập & Phiên (LOGIN)</option>
-                  <option value="PASSWORD">Đổi mật khẩu & Tài khoản (PASSWORD)</option>
-                  <option value="SETTINGS">Cấu hình Hạ tầng (SETTINGS)</option>
-                  <option value="BACKUP">Sao lưu & CSDL (BACKUP)</option>
-                  <option value="SECURITY">An ninh Hệ thống (SECURITY)</option>
-                  <option value="EVIDENCE">Bằng chứng & Hồ sơ Phúc khảo</option>
+                  <option value="all">Tất cả phân hệ</option>
+                  <option value="AUTH">Xác thực &amp; Phiên (AUTH)</option>
+                  <option value="EXAM">Thi &amp; Lớp học (EXAM)</option>
+                  <option value="USER">Người dùng (USER)</option>
+                  <option value="SYSTEM">Hệ thống (SYSTEM)</option>
+                  <option value="EVIDENCE">Bằng chứng Phúc khảo</option>
                 </select>
 
                 <select
+                  aria-label="Lọc theo mức độ"
                   value={filterSeverity}
                   onChange={(e) => setFilterSeverity(e.target.value)}
-                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 dark:border-white cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200"
+                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200"
                 >
                   <option value="all">Tất cả mức độ</option>
                   <option value="INFO">Thông tin (INFO)</option>
-                  <option value="WARNING">Cảnh báo (WARNING)</option>
+                  <option value="WARN">Cảnh báo (WARN)</option>
                   <option value="CRITICAL">Nghiêm trọng (CRITICAL)</option>
-                  <option value="SECURITY">Bảo mật (SECURITY)</option>
                 </select>
 
                 <select
-                  value={filterRole}
-                  onChange={(e) => setFilterRole(e.target.value)}
-                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 dark:border-white cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200"
+                  aria-label="Lọc theo trạng thái"
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200"
                 >
-                  <option value="all">Tất cả vai trò</option>
-                  <option value="admin">Quản trị viên</option>
-                  <option value="instructor">Giảng viên</option>
-                  <option value="student">Sinh viên</option>
-                  <option value="system">Hệ thống</option>
+                  <option value="all">Tất cả trạng thái</option>
+                  <option value="SUCCESS">Thành công</option>
+                  <option value="FAILED">Thất bại</option>
                 </select>
+
+                <select
+                  aria-label="Lọc theo khoảng thời gian"
+                  value={filterDateRange}
+                  onChange={(e) => setFilterDateRange(e.target.value as any)}
+                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200"
+                >
+                  <option value="all">Mọi thời điểm</option>
+                  <option value="today">Hôm nay</option>
+                  <option value="7d">7 ngày qua</option>
+                  <option value="custom">Tùy chọn ngày</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleExportLogsCsv}
+                  disabled={isExportingLogs}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer dark:border-white/10 dark:bg-white/5 dark:text-slate-200 disabled:opacity-50"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>{isExportingLogs ? 'Đang xuất...' : 'Xuất CSV'}</span>
+                </button>
               </div>
             </div>
+
+            {filterDateRange === 'custom' && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-2.5 text-xs dark:border-white/10">
+                <span className="font-semibold text-slate-500">Từ ngày:</span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="h-8 rounded border border-slate-300 bg-white px-2 text-xs dark:border-white/10 dark:bg-neutral-950 dark:text-white"
+                />
+                <span className="font-semibold text-slate-500">Đến ngày:</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="h-8 rounded border border-slate-300 bg-white px-2 text-xs dark:border-white/10 dark:bg-neutral-950 dark:text-white"
+                />
+              </div>
+            )}
           </div>
 
           {/* Bảng Dữ liệu Nhật ký */}
@@ -1727,17 +1834,18 @@ export default function AdminSystemView() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-                    <th className="px-6 py-4 w-44">Thời gian</th>
-                    <th className="px-5 py-4 w-52">Tác nhân</th>
-                    <th className="px-5 py-4">Hành động</th>
-                    <th className="px-5 py-4 w-36 text-right">Địa chỉ IP</th>
-                    <th className="px-5 py-4 w-32 text-center">Thao tác</th>
+                    <th className="px-5 py-3.5 w-36">Thời gian</th>
+                    <th className="px-5 py-3.5 w-52">Người thực hiện</th>
+                    <th className="px-5 py-3.5">Hành động</th>
+                    <th className="px-4 py-3.5 w-44">Mức độ &amp; Trạng thái</th>
+                    <th className="px-5 py-3.5 w-40 text-right">Địa chỉ IP</th>
+                    <th className="px-5 py-3.5 w-28 text-center">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs text-slate-700 dark:divide-white/5 dark:text-slate-300">
                   {filteredLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-5 py-12 text-center text-slate-400">
+                      <td colSpan={6} className="px-5 py-12 text-center text-slate-400">
                         {isLoadingLogs ? (
                           <div className="flex items-center justify-center gap-2">
                             <RefreshCw className="h-4 w-4 animate-spin text-slate-900 dark:text-white" />
@@ -1751,43 +1859,91 @@ export default function AdminSystemView() {
                   ) : (
                     paginatedLogs.map((log) => {
                       const displayActor = getFormattedActor(log.actorName, log.actorRole);
+                      const { time, date } = splitTimeDate(log.timestamp);
+                      const sevNorm = log.normalizedSeverity || 'INFO';
+                      const statusNorm = log.normalizedStatus || 'SUCCESS';
+                      const roleBadge = log.actorRole === 'instructor' ? 'LECTURER' : log.actorRole.toUpperCase();
                       return (
                         <tr
                           key={log.id}
                           onClick={() => setSelectedLog(log)}
                           className="hover:bg-slate-50/80 transition dark:hover:bg-white/5 cursor-pointer"
                         >
-                          <td className="px-6 py-3.5 font-mono text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                            {log.timestamp}
+                          <td className="px-5 py-3 font-mono whitespace-nowrap">
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">{time}</div>
+                            {date && <div className="text-[10px] text-slate-400">{date}</div>}
                           </td>
 
-                          <td className="px-5 py-3.5 whitespace-nowrap">
-                            <div className="font-bold text-slate-900 dark:text-white">
-                              {displayActor}
+                          <td className="px-5 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900 dark:text-white">{displayActor}</span>
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[9px] font-bold text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                                {roleBadge}
+                              </span>
                             </div>
-                            <div className="text-[11px] text-slate-400 font-medium">
-                              {getRoleDisplay(log.actorRole)}
+                            {log.actorCode && (
+                              <div className="text-[10px] font-mono text-slate-400 mt-0.5">{log.actorCode}</div>
+                            )}
+                          </td>
+
+                          <td className="px-5 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-900 dark:text-white">
+                                {log.actionLabel || log.action}
+                              </span>
+                              {(log.attemptCount || 1) > 1 && (
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+                                  x{log.attemptCount} lần
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 font-mono text-[10px] text-slate-400">
+                              {log.eventCode || log.category}
                             </div>
                           </td>
 
-                          <td className="px-5 py-3.5">
-                            <div className="font-semibold text-slate-900 dark:text-white">
-                              {log.action}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`inline-flex items-center rounded px-2 py-0.5 font-mono text-[10px] font-bold ${
+                                  sevNorm === 'CRITICAL'
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300'
+                                    : sevNorm === 'WARN'
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'
+                                    : 'bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300'
+                                }`}
+                              >
+                                {sevNorm}
+                              </span>
+                              <span
+                                className={`inline-flex items-center gap-1 text-[11px] font-semibold ${
+                                  statusNorm === 'FAILED'
+                                    ? 'text-red-600 dark:text-red-400'
+                                    : 'text-emerald-700 dark:text-emerald-400'
+                                }`}
+                              >
+                                {statusNorm === 'FAILED' ? (
+                                  <AlertTriangle className="h-3 w-3" />
+                                ) : (
+                                  <CheckCircle2 className="h-3 w-3" />
+                                )}
+                                <span>{statusNorm === 'FAILED' ? 'Thất bại' : 'Thành công'}</span>
+                              </span>
                             </div>
                           </td>
 
-                          <td className="px-5 py-3.5 text-right font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                            {log.ipAddress}
+                          <td className="px-5 py-3 text-right font-mono text-[11px] text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                            {formatFriendlyIp(log.ipAddress)}
                           </td>
 
-                          <td className="px-5 py-3.5 text-center whitespace-nowrap">
+                          <td className="px-5 py-3 text-center whitespace-nowrap">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedLog(log);
                               }}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 dark:text-white hover:border-slate-900 dark:border-white/30 transition cursor-pointer dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 dark:text-white hover:border-slate-900 transition cursor-pointer dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
                               title="Xem chi tiết bản ghi nhật ký"
                             >
                               <Eye className="h-3.5 w-3.5 text-slate-400" />
@@ -1849,97 +2005,7 @@ export default function AdminSystemView() {
       {/* ========================================================= */}
       {/* TAB 2: SỨC KHỎE DỊCH VỤ (SYSTEM HEALTH)                    */}
       {/* ========================================================= */}
-      {activeTab === 'health' && (
-        <div className="space-y-5">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-md border border-slate-300 bg-white p-4 shadow-xs dark:border-white/10 dark:bg-neutral-900">
-            <div className="flex items-center gap-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300 shrink-0">
-                <CheckCircle2 className="h-5 w-5" />
-              </span>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Hệ thống vận hành ổn định
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Tất cả {services.length} dịch vụ đang hoạt động bình thường, không ghi nhận sự cố gián đoạn kết nối.
-                </p>
-              </div>
-            </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap pl-12 sm:pl-0">
-              Trạng thái: <strong className="font-bold text-slate-800 dark:text-slate-200">Hoạt động bình thường</strong>
-            </div>
-          </div>
-
-          {/* Lưới danh sách 5 dịch vụ cốt lõi */}
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {services.map((svc) => (
-              <div
-                key={svc.id}
-                className="flex flex-col justify-between rounded-md border border-slate-300 bg-white p-5 shadow-xs transition hover:shadow-md dark:border-white/10 dark:bg-neutral-900"
-              >
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300">
-                        {svc.id === 'backend_api' ? (
-                          <Server className="h-4 w-4" />
-                        ) : svc.id === 'code_sandbox' ? (
-                          <Terminal className="h-4 w-4" />
-                        ) : svc.id === 'livekit_media' ? (
-                          <Radio className="h-4 w-4" />
-                        ) : svc.id === 'database' ? (
-                          <Database className="h-4 w-4" />
-                        ) : (
-                          <Activity className="h-4 w-4" />
-                        )}
-                      </span>
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
-                          {svc.name}
-                        </h4>
-                        <span className="text-[10px] text-slate-400 font-medium">
-                          {svc.category}
-                        </span>
-                      </div>
-                    </div>
-
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Hoạt động
-                    </span>
-                  </div>
-
-                  <p className="mt-3 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                    {svc.description}
-                  </p>
-
-                  {/* Các chỉ số hiệu năng Metrics */}
-                  <div className="mt-4 grid grid-cols-3 gap-2 rounded-md bg-slate-50 dark:bg-white/5 p-2.5">
-                    {svc.metrics.map((m, idx) => (
-                      <div key={idx} className="text-center">
-                        <span className="block text-[10px] font-semibold text-slate-400">
-                          {m.label}
-                        </span>
-                        <span className="mt-0.5 block text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                          {m.value}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-4 flex items-center justify-between border-t border-slate-100 dark:border-white/10 pt-3 text-[11px] text-slate-400 dark:text-slate-500">
-                  <span>
-                    Độ trễ: <strong className="text-slate-700 dark:text-slate-200">{svc.latencyMs} ms</strong>
-                  </span>
-                  <span>
-                    Uptime: <strong className="text-slate-700 dark:text-slate-200">{svc.uptimePercent}%</strong>
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {activeTab === 'health' && <SystemHealthTab services={services} />}
 
       {/* ========================================================= */}
       {/* TAB 3: CẤU HÌNH HẠ TẦNG (INFRASTRUCTURE SETTINGS)          */}
@@ -2236,28 +2302,87 @@ export default function AdminSystemView() {
                     />
                   </div>
 
-                  {settings.maintenanceMode && (
-                    <div className="mt-3 space-y-2 border-t border-red-200/60 dark:border-red-500/20 pt-2.5">
+                  <div className="mt-3 space-y-2.5 border-t border-slate-200/80 dark:border-white/10 pt-3">
+                    {settings.maintenanceMode && (
                       <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 bg-slate-100 dark:bg-white/5 dark:text-slate-300 px-2.5 py-1.5 rounded border border-slate-200 dark:border-white/10">
                         <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-slate-600 dark:text-slate-400" />
                         <span>Cổng an toàn: Admin luôn có thể đăng nhập bình thường tại trang /login để tắt chế độ bảo trì này.</span>
                       </div>
-                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                        Thông báo hiển thị cho người dùng khi đăng nhập
+                    )}
+
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 rounded border border-slate-200 bg-white px-3 py-2.5 text-[11px] font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.maintenanceOnBackupSchedule}
+                          onChange={(e) =>
+                            setSettings({
+                              ...settings,
+                              maintenanceOnBackupSchedule: e.target.checked,
+                            })
+                          }
+                          className="h-4 w-4 rounded text-red-600 cursor-pointer accent-red-600"
+                        />
+                        <span>Tự động bật bảo trì hằng ngày lúc</span>
                       </label>
-                      <textarea
-                        rows={2}
-                        value={settings.maintenanceMessage}
+                      <input
+                        type="time"
+                        aria-label="Giờ tự động bật bảo trì"
+                        value={settings.maintenanceScheduleTime}
                         onChange={(e) =>
                           setSettings({
                             ...settings,
-                            maintenanceMessage: e.target.value,
+                            maintenanceScheduleTime: e.target.value,
                           })
                         }
-                        className="w-full rounded border border-red-200 bg-white dark:bg-white/5 dark:border-red-500/30 p-2 text-xs text-slate-800 dark:text-white outline-none"
+                        className="h-8 rounded border border-slate-300 bg-slate-50 px-2.5 font-mono text-xs font-semibold text-slate-900 outline-none focus:border-slate-900 dark:border-white/10 dark:bg-neutral-900 dark:text-white"
                       />
                     </div>
-                  )}
+
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                      Thời lượng bảo trì tối đa
+                    </label>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <select
+                        aria-label="Thời lượng bảo trì tối đa"
+                        value={settings.maintenanceDurationMinutes}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            maintenanceDurationMinutes: Number(e.target.value),
+                          })
+                        }
+                        className="h-9 rounded border border-slate-300 bg-white dark:bg-neutral-900 dark:border-white/10 px-2.5 text-xs font-semibold text-slate-800 dark:text-white outline-none cursor-pointer"
+                      >
+                        <option value={15}>15 phút (tự động tắt khi hết giờ)</option>
+                        <option value={30}>30 phút (tự động tắt khi hết giờ)</option>
+                        <option value={60}>60 phút / 1 giờ (tự động tắt)</option>
+                        <option value={120}>120 phút / 2 giờ (tự động tắt)</option>
+                        <option value={240}>240 phút / 4 giờ (tự động tắt)</option>
+                        <option value={0}>Không giới hạn (tắt thủ công)</option>
+                      </select>
+                      {settings.maintenanceMode && settings.maintenanceEndsAt && (
+                        <span className="text-[11px] font-mono font-semibold text-red-700 dark:text-red-300">
+                          Dự kiến kết thúc: {formatTimestamp(settings.maintenanceEndsAt)}
+                        </span>
+                      )}
+                    </div>
+
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                      Thông báo hiển thị cho người dùng khi đăng nhập
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={settings.maintenanceMessage}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          maintenanceMessage: e.target.value,
+                        })
+                      }
+                      className="w-full rounded border border-slate-300 bg-white dark:bg-white/5 dark:border-white/10 p-2 text-xs text-slate-800 dark:text-white outline-none"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -2276,8 +2401,8 @@ export default function AdminSystemView() {
 
             <button
               type="submit"
-              disabled={isSavingSettings}
-              className="system-primary-action inline-flex items-center gap-2 rounded-md bg-slate-900 px-6 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+              disabled={isSavingSettings || !hasSettingsChanges}
+              className="system-primary-action inline-flex items-center gap-2 rounded-md bg-slate-900 px-6 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-slate-800 transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSavingSettings ? (
                 <>
@@ -2455,8 +2580,8 @@ export default function AdminSystemView() {
                 <button
                   type="button"
                   onClick={handleSaveBackupPolicy}
-                  disabled={isSavingBackupPolicy}
-                  className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+                  disabled={isSavingBackupPolicy || !hasSettingsChanges}
+                  className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-800 transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSavingBackupPolicy ? (
                     <>
@@ -2760,108 +2885,275 @@ export default function AdminSystemView() {
       {/* ========================================================= */}
       {selectedLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-2xl rounded-md bg-white dark:bg-neutral-900 border border-slate-300 dark:border-white/10 p-6 shadow-2xl sm:p-7">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-100 text-slate-900 dark:bg-white/10 dark:text-white dark:bg-white/10 dark:text-white font-bold">
-                  <Terminal className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    Chi Tiết Bản Ghi Nhật Ký [{selectedLog.id}]
-                  </h3>
-                  <span className="text-xs text-slate-400 font-mono">
-                    {selectedLog.timestamp}
-                  </span>
-                </div>
-              </div>
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-md bg-white dark:bg-neutral-900 border border-slate-300 dark:border-white/10 shadow-2xl overflow-hidden">
+            {/* Header Modal: Log ID, Thời gian (1 lần duy nhất), Mức độ + Trạng thái, Phân hệ tag */}
+            {(() => {
+              const { time, date } = splitTimeDate(selectedLog.timestamp);
+              const sevNorm = selectedLog.normalizedSeverity || 'INFO';
+              const statusNorm = selectedLog.normalizedStatus || 'SUCCESS';
+              const catNorm = selectedLog.normalizedCategory || 'SYSTEM';
+              const catTagMap: Record<string, string> = {
+                AUTH: 'AUTH • Tài khoản & Bảo mật',
+                EXAM: 'EXAM • Quản lý Đề & Ca thi',
+                USER: 'USER • Quản lý Người dùng',
+                SYSTEM: 'SYSTEM • Cấu hình Hệ thống',
+              };
+              const roleBadge =
+                selectedLog.actorRole === 'instructor'
+                  ? 'LECTURER'
+                  : selectedLog.actorRole === 'system'
+                  ? 'SYSTEM_CRON'
+                  : selectedLog.actorRole.toUpperCase();
 
-              <button
-                type="button"
-                onClick={() => setSelectedLog(null)}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+              const beforeObj =
+                selectedLog.beforeData && typeof selectedLog.beforeData === 'object'
+                  ? (selectedLog.beforeData as Record<string, unknown>)
+                  : null;
+              const afterObj =
+                selectedLog.afterData && typeof selectedLog.afterData === 'object'
+                  ? (selectedLog.afterData as Record<string, unknown>)
+                  : null;
 
-            <div className="mt-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4 rounded-md bg-slate-50 dark:bg-white/5 p-4 text-xs">
-                <div>
-                  <span className="text-slate-400 font-medium">Tác nhân thực hiện:</span>
-                  <div className="font-bold text-slate-900 dark:text-white mt-0.5">
-                    {getFormattedActor(selectedLog.actorName, selectedLog.actorRole)}
-                  </div>
-                  <span className="text-[11px] text-slate-500 block mt-0.5">
-                    Vai trò: {getRoleDisplay(selectedLog.actorRole)}
-                  </span>
-                </div>
+              const changedEntries =
+                beforeObj && afterObj
+                  ? Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]))
+                      .filter((k) => k !== 'updated_at' && k !== 'updated_by')
+                      .filter((k) => JSON.stringify(beforeObj[k]) !== JSON.stringify(afterObj[k]))
+                      .map((k) => ({ key: k, before: beforeObj[k], after: afterObj[k] }))
+                  : [];
 
-                <div>
-                  <span className="text-slate-400 font-medium">Hành động:</span>
-                  <div className="font-bold text-slate-900 dark:text-white mt-0.5">{selectedLog.action}</div>
-                  <span className="text-[10px] text-slate-500 font-mono font-bold dark:text-slate-400">
-                    Mức độ: {selectedLog.severity}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-slate-400 font-medium">Khu vực lưu trữ:</span>
-                  <div className="mt-1">
-                    {(() => {
-                      const meta = getCategoryMeta(selectedLog.category);
-                      const Icon = meta.badgeIcon;
-                      return (
-                        <span className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-[11px] font-bold ${meta.badgeColor}`}>
-                          <Icon className="h-3 w-3 shrink-0" />
-                          <span>{meta.label}</span>
+              return (
+                <>
+                  <div className="flex items-start justify-between gap-3 border-b border-slate-200 dark:border-white/10 px-6 py-4 bg-slate-50/70 dark:bg-white/[0.03] shrink-0">
+                    <div className="min-w-0 space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm font-extrabold text-slate-900 dark:text-white">
+                          {selectedLog.id}
                         </span>
-                      );
-                    })()}
+                        <span className="text-slate-300 dark:text-white/20">•</span>
+                        <span className="font-mono text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          {date ? `${date} ${time}` : selectedLog.timestamp}
+                        </span>
+                        <span
+                          className={`inline-flex items-center rounded px-2 py-0.5 font-mono text-[10px] font-bold ${
+                            sevNorm === 'CRITICAL'
+                              ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300'
+                              : sevNorm === 'WARN'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'
+                              : 'bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-slate-300'
+                          }`}
+                        >
+                          {sevNorm}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold ${
+                            statusNorm === 'FAILED'
+                              ? 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300'
+                              : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
+                          }`}
+                        >
+                          {statusNorm === 'FAILED' ? (
+                            <AlertTriangle className="h-3 w-3" />
+                          ) : (
+                            <CheckCircle2 className="h-3 w-3" />
+                          )}
+                          <span>{statusNorm === 'FAILED' ? 'Thất bại' : 'Thành công'}</span>
+                        </span>
+                      </div>
+                      <div>
+                        <span className="inline-flex items-center rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                          {catTagMap[catNorm] || catNorm}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLog(null)}
+                      className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 dark:hover:bg-white/10 transition cursor-pointer shrink-0"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
                   </div>
-                  <span className="text-[10px] text-slate-400 font-medium mt-0.5 block">
-                    {getCategoryMeta(selectedLog.category).description}
-                  </span>
-                </div>
 
-                <div>
-                  <span className="text-slate-400 font-medium">Địa chỉ IP kết nối:</span>
-                  <div className="font-mono font-bold text-slate-900 mt-0.5">
-                    {selectedLog.ipAddress}
+                  {/* Body 3 khối chuẩn hóa */}
+                  <div className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+                    {/* Khối 1: Định danh & Hành động */}
+                    <section className="rounded-md border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03] space-y-3">
+                      <h4 className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+                        1. Định danh &amp; Hành động
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">Người thực hiện</span>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                            <span className="font-bold text-slate-900 dark:text-white">
+                              {getFormattedActor(selectedLog.actorName, selectedLog.actorRole)}
+                            </span>
+                            <span className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[9px] font-bold text-slate-700 dark:bg-white/10 dark:text-slate-200">
+                              {roleBadge}
+                            </span>
+                          </div>
+                          {selectedLog.actorCode && (
+                            <span className="block font-mono text-[10px] text-slate-400 mt-0.5">
+                              Mã định danh: {selectedLog.actorCode}
+                            </span>
+                          )}
+                        </div>
+
+                        <div>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">Sự kiện</span>
+                          <div className="mt-0.5 font-bold text-slate-900 dark:text-white">
+                            {selectedLog.actionLabel || selectedLog.action}
+                          </div>
+                          <span className="block font-mono text-[10px] text-slate-400 mt-0.5">
+                            {selectedLog.eventCode || 'SYSTEM_EVENT'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {selectedLog.target && (
+                        <div className="border-t border-slate-200/80 pt-2.5 dark:border-white/10">
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">Đối tượng bị tác động: </span>
+                          <span className="font-semibold text-slate-900 dark:text-white">
+                            {selectedLog.target.entityType ? `${selectedLog.target.entityType}: ` : ''}
+                            {selectedLog.target.label || selectedLog.target.entityId}
+                          </span>
+                        </div>
+                      )}
+                    </section>
+
+                    {/* Khối 2: Ngữ cảnh kỹ thuật & Truy vết */}
+                    <section className="rounded-md border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03] space-y-2.5">
+                      <h4 className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+                        2. Ngữ cảnh kỹ thuật &amp; Truy vết
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">Địa chỉ IP</span>
+                          <div className="mt-0.5 font-mono font-bold text-slate-900 dark:text-white">
+                            {formatFriendlyIp(selectedLog.ipAddress)}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">Thiết bị &amp; Trình duyệt</span>
+                          <div className="mt-0.5 font-semibold text-slate-800 dark:text-slate-200">
+                            {parseUserAgentShort(selectedLog.userAgent)}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">Session / Request ID</span>
+                          <div className="mt-0.5 font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate" title={selectedLog.sessionId || selectedLog.requestId || '—'}>
+                            {selectedLog.sessionId ? `sess_${selectedLog.sessionId.slice(0, 12)}...` : selectedLog.requestId || '—'}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    {/* Khối 3: Chi tiết thay đổi / Dữ liệu bổ sung */}
+                    {(changedEntries.length > 0 || statusNorm === 'FAILED' || sevNorm !== 'INFO' || selectedLog.errorCode || (selectedLog.attemptCount || 1) > 1) && (
+                      <section className="rounded-md border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-neutral-950 space-y-3">
+                        <h4 className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+                          3. Chi tiết thay đổi &amp; Cảnh báo
+                        </h4>
+
+                        {(statusNorm === 'FAILED' || sevNorm !== 'INFO' || selectedLog.errorCode) && (
+                          <div className="rounded border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-200 space-y-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-mono font-bold">
+                                {selectedLog.errorCode || selectedLog.eventCode}
+                              </span>
+                              {(selectedLog.attemptCount || 1) > 1 && (
+                                <span className="rounded-full bg-amber-200/80 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-900 dark:bg-amber-500/30 dark:text-amber-200">
+                                  Lặp lại {selectedLog.attemptCount} lần
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] leading-relaxed">
+                              {selectedLog.errorReason || selectedLog.details}
+                            </p>
+                          </div>
+                        )}
+
+                        {changedEntries.length > 0 && (
+                          <div className="overflow-x-auto rounded border border-slate-200 dark:border-white/10">
+                            <table className="w-full text-left text-[11px]">
+                              <thead className="bg-slate-50 dark:bg-white/5 text-[10px] font-mono uppercase text-slate-500">
+                                <tr>
+                                  <th className="px-3 py-2">Trường thay đổi</th>
+                                  <th className="px-3 py-2">Giá trị cũ (Before)</th>
+                                  <th className="px-3 py-2">Giá trị mới (After)</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-white/5 font-mono">
+                                {changedEntries.map((entry) => (
+                                  <tr key={entry.key}>
+                                    <td className="px-3 py-2 font-bold text-slate-800 dark:text-slate-200">{entry.key}</td>
+                                    <td className="px-3 py-2 text-red-600 dark:text-red-400 line-through">
+                                      {JSON.stringify(entry.before)}
+                                    </td>
+                                    <td className="px-3 py-2 font-semibold text-emerald-700 dark:text-emerald-400">
+                                      {JSON.stringify(entry.after)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </section>
+                    )}
+
+                    {/* Raw JSON Toggle */}
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowRawJson((prev) => !prev)}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white cursor-pointer"
+                      >
+                        <Terminal className="h-3.5 w-3.5" />
+                        <span>{showRawJson ? 'Ẩn dữ liệu thô (JSON)' : 'Xem dữ liệu thô (JSON)'}</span>
+                      </button>
+
+                      {showRawJson && (
+                        <pre className="mt-2 max-h-48 overflow-auto rounded border border-slate-200 bg-slate-50 p-3 font-mono text-[10px] text-slate-700 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-300">
+                          {JSON.stringify(
+                            {
+                              id: selectedLog.id,
+                              eventCode: selectedLog.eventCode,
+                              category: catNorm,
+                              severity: sevNorm,
+                              status: statusNorm,
+                              actor: {
+                                name: selectedLog.actorName,
+                                code: selectedLog.actorCode,
+                                role: roleBadge,
+                              },
+                              target: selectedLog.target,
+                              ipAddress: selectedLog.ipAddress,
+                              sessionId: selectedLog.sessionId,
+                              payload: selectedLog.payload,
+                            },
+                            null,
+                            2
+                          )}
+                        </pre>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-[10px] text-slate-400 font-medium">
-                    IPv4 Client Address
-                  </span>
-                </div>
 
-                <div>
-                  <span className="text-slate-400 font-medium">Thời gian ghi nhận:</span>
-                  <div className="font-mono font-medium text-slate-900 mt-0.5">{selectedLog.timestamp}</div>
-                  <span className="text-[10px] text-slate-500 font-mono font-bold dark:text-slate-400">
-                    Log ID: {selectedLog.id}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <span className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Mô tả sự kiện:
-                </span>
-                <p className="rounded-md border border-slate-100 dark:border-white/10 bg-white dark:bg-white/5 p-3 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                  {formatLogDescription(selectedLog.details || selectedLog.action, selectedLog.actorName, selectedLog.actorRole)}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setSelectedLog(null)}
-                className="system-primary-action rounded-md bg-slate-900 px-5 py-2 text-xs font-bold text-white hover:bg-slate-800 transition cursor-pointer"
-              >
-                Đóng cửa sổ
-              </button>
-            </div>
+                  <div className="border-t border-slate-200 dark:border-white/10 px-6 py-3.5 flex justify-end bg-slate-50/70 dark:bg-white/[0.02] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLog(null)}
+                      className="system-primary-action rounded-md bg-slate-900 px-5 py-2 text-xs font-bold text-white hover:bg-slate-800 transition cursor-pointer"
+                    >
+                      Đóng cửa sổ
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -3055,7 +3347,7 @@ export default function AdminSystemView() {
                                     onClick={() =>
                                       setSelectedSnapshot({
                                         violationId: item.violation_id,
-                                        url: item.snapshot_url || '/uploads/snapshots/sample_tab_switch.jpg',
+                                        url: item.snapshot_url || '',
                                         title: typeMap[item.violation_type] || item.violation_type,
                                         desc: item.description,
                                         time: new Date(item.detected_at).toLocaleString('vi-VN'),

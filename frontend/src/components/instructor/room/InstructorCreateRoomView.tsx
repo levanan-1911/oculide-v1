@@ -31,64 +31,12 @@ import {
   Loader2,
 } from 'lucide-react';
 import {
-  ClassRow,
   QuestionTemplate,
   RoomSession,
-  ScheduleSessionItem,
   generateClassRoomCode,
   generateRandomAlphanumericPassword,
-  SAMPLE_QUESTION_TEMPLATES,
-  INSTRUCTOR_STORAGE_KEY,
-  INSTRUCTOR_ROOMS_STORAGE_KEY,
-  INSTRUCTOR_SCHEDULES_STORAGE_KEY,
 } from '@/components/instructor/classes/types';
 import { fetchWithAuth } from '@/services/apiClient';
-
-const DEFAULT_CLASSES: Array<{ id: string; name: string; studentCount: number }> = [
-  { id: 'CS101', name: 'Nhập môn Lập trình C/C++', studentCount: 48 },
-  { id: 'PRJ301', name: 'Lập trình ứng dụng Java Web', studentCount: 45 },
-  { id: 'CSD201', name: 'Cấu trúc dữ liệu & Giải thuật', studentCount: 42 },
-  { id: 'CS102', name: 'Kỹ thuật Lập trình nâng cao', studentCount: 50 },
-];
-
-const INITIAL_DEFAULT_SESSIONS = [
-  {
-    source: 'default',
-    classId: 'CS101',
-    className: 'Nhập môn Lập trình C/C++',
-    roomCode: 'CS101-LAB3',
-    dateIso: getTodayDateString(),
-    displayDate: 'Hôm nay',
-    startTime: '07:30',
-    endTime: '09:50',
-    status: 'in_progress',
-    title: 'Lab 03: Vòng lặp For/While & Mảng 1 chiều',
-  },
-  {
-    source: 'default',
-    classId: 'PRJ301',
-    className: 'Lập trình ứng dụng Java Web',
-    roomCode: 'PRJ-KT01',
-    dateIso: getTodayDateString(),
-    displayDate: 'Hôm nay',
-    startTime: '13:30',
-    endTime: '15:00',
-    status: 'waiting',
-    title: 'Kiểm tra quá trình: Servlet & MVC Pattern',
-  },
-  {
-    source: 'default',
-    classId: 'CSD201',
-    className: 'Cấu trúc dữ liệu & Giải thuật',
-    roomCode: 'CSD-BST4',
-    dateIso: getTodayDateString(),
-    displayDate: 'Hôm nay',
-    startTime: '15:15',
-    endTime: '17:35',
-    status: 'waiting',
-    title: 'Lab 04: Cây nhị phân tìm kiếm (BST)',
-  },
-];
 
 function getTodayDateString(): string {
   const now = new Date();
@@ -171,19 +119,15 @@ export default function InstructorCreateRoomView() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const queryClass = searchParams?.get('class') || 'CS101';
+  const queryClass = searchParams?.get('class') || 'unassigned';
   const queryType = searchParams?.get('type') === 'exam' ? 'exam' : 'lab';
   const returnToSchedules = searchParams?.get('returnTo') === 'schedules';
 
-  const [classesList, setClassesList] = useState(DEFAULT_CLASSES);
+  const [classesList, setClassesList] = useState<Array<{ id: string; name: string; studentCount: number }>>([]);
   const [selectedClassId, setSelectedClassId] = useState(queryClass);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [roomType, setRoomType] = useState<'lab' | 'midterm'>(queryType === 'exam' ? 'midterm' : 'lab');
-  const [roomTitle, setRoomTitle] = useState(() => {
-    return queryType === 'exam'
-      ? `Bài Kiểm Tra: ${queryClass} - Đánh giá quá trình`
-      : `Buổi Thực Hành: ${queryClass} - Lập trình & Thuật toán`;
-  });
+  const [roomTitle, setRoomTitle] = useState('');
   // Các giá trị ngẫu nhiên/ngày giờ được khởi tạo sau khi hydrate để HTML server và client giống nhau.
   const [roomCode, setRoomCode] = useState('');
   const [roomPassword, setRoomPassword] = useState('');
@@ -238,17 +182,18 @@ export default function InstructorCreateRoomView() {
                   ? 'exam'
                   : 'lab',
             category: t.type === 'lab' ? 'Thực hành' : 'Thi',
-            language: 'C/C++/Java/Python',
+            language: t.language || '—',
             questionCount: t.question_count || 0,
-            durationMinutes: t.duration_minutes || 60,
-            description: t.description || `Bộ đề mẫu tạo lúc ${t.created_at || ''}`,
+            durationMinutes: t.duration_minutes || 0,
+            description: t.description || '',
           }));
           setTemplatesList([defaultOption, ...mapped]);
         } else {
-          setTemplatesList([defaultOption, ...SAMPLE_QUESTION_TEMPLATES.filter((t) => t.type === (roomType === 'lab' ? 'lab' : 'exam'))]);
+          setTemplatesList([defaultOption]);
         }
-      } catch {
-        setTemplatesList([defaultOption, ...SAMPLE_QUESTION_TEMPLATES.filter((t) => t.type === (roomType === 'lab' ? 'lab' : 'exam'))]);
+      } catch (error) {
+        console.error('Không thể tải bộ đề từ máy chủ:', error);
+        setTemplatesList([defaultOption]);
       }
     }
     loadTemplates();
@@ -371,34 +316,8 @@ export default function InstructorCreateRoomView() {
           });
         });
       }
-    } catch {
-      // fallback
-    }
-
-    // 2. Dự phòng thêm từ lịch nếu có ca lên lịch trước
-    if (typeof window !== 'undefined') {
-      try {
-        const rawSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-        if (rawSched) {
-          const parsedSched: ScheduleSessionItem[] = JSON.parse(rawSched);
-          parsedSched.forEach((s) => {
-            if (s.status === 'Đã kết thúc') return;
-            if (list.some((item) => item.roomCode.toLowerCase() === s.roomCode.toLowerCase())) return;
-            list.push({
-              source: 'schedule',
-              classId: s.classCode.split('-')[0],
-              className: s.className,
-              roomCode: s.roomCode,
-              dateIso: normalizeDateToIso(s.date),
-              displayDate: s.date,
-              startTime: s.startTime,
-              endTime: s.endTime,
-              status: s.status,
-              title: s.title,
-            });
-          });
-        }
-      } catch {}
+    } catch (error) {
+      console.error('Không thể tải phòng từ máy chủ để kiểm tra xung đột:', error);
     }
 
     setExistingSessions(list);
@@ -546,35 +465,13 @@ export default function InstructorCreateRoomView() {
   const [requireCamera, setRequireCamera] = useState(queryType === 'exam');
   const [aiFaceDetection, setAiFaceDetection] = useState(queryType === 'exam');
   const [aiPhoneDetection, setAiPhoneDetection] = useState(queryType === 'exam');
-  const [lockdownFullscreen, setLockdownFullscreen] = useState(queryType === 'exam');
+  const lockdownFullscreen = true; // Ép chia sẻ màn hình & toàn màn hình luôn bắt buộc trong IDE
   const [blockTabSwitch, setBlockTabSwitch] = useState(queryType === 'exam');
+  const [autoPublishResults, setAutoPublishResults] = useState(queryType !== 'exam');
   const [webAccessPolicy, setWebAccessPolicy] = useState<'strict' | 'whitelist' | 'open'>(
     queryType === 'exam' ? 'strict' : 'open'
   );
   const [maxTabSwitches, setMaxTabSwitches] = useState<number>(queryType === 'exam' ? 0 : 999);
-
-  // Khởi tạo danh sách lớp từ localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem(INSTRUCTOR_STORAGE_KEY);
-        if (raw) {
-          const parsed: ClassRow[] = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setClassesList(
-              parsed.map((c) => ({
-                id: c.id,
-                name: c.name,
-                studentCount: c.studentCount || c.students?.length || 40,
-              }))
-            );
-          }
-        }
-      } catch {
-        // fallback
-      }
-    }
-  }, []);
 
   // Cập nhật cấu hình ràng buộc mặc định khi đổi loại phòng (Lab vs Midterm)
   const handleApplyPreset = (type: 'lab' | 'midterm') => {
@@ -591,8 +488,8 @@ export default function InstructorCreateRoomView() {
       setRequireCamera(false);
       setAiFaceDetection(false);
       setAiPhoneDetection(false);
-      setLockdownFullscreen(false);
       setBlockTabSwitch(false);
+      setAutoPublishResults(true);
       setWebAccessPolicy('open');
       setMaxTabSwitches(999);
     } else if (type === 'midterm') {
@@ -604,8 +501,8 @@ export default function InstructorCreateRoomView() {
       setRequireCamera(true);
       setAiFaceDetection(true);
       setAiPhoneDetection(true);
-      setLockdownFullscreen(true);
       setBlockTabSwitch(true);
+      setAutoPublishResults(false);
       setWebAccessPolicy('strict');
       setMaxTabSwitches(2);
     }
@@ -664,7 +561,15 @@ export default function InstructorCreateRoomView() {
     );
   }, [existingSessions, selectedClassId]);
 
-  const curClass = classesList.find((c) => c.id === selectedClassId) || classesList[0];
+  const curClass =
+    selectedClassId === 'unassigned'
+      ? { id: '', name: 'Chưa gán lớp', studentCount: 0 }
+      : classesList.find((c) => c.id === selectedClassId) ||
+        classesList[0] || {
+          id: '',
+          name: 'Chưa gán lớp',
+          studentCount: 0,
+        };
   const selectedTemplate =
     templatesList.find((t) => t.id === selectedTemplateId) || templatesList[0];
 
@@ -675,6 +580,11 @@ export default function InstructorCreateRoomView() {
     // Chặn submit trước khi mã phòng, PIN và ngày giờ địa phương được khởi tạo.
     if (!isClientReady || !roomCode || !roomPassword || !scheduledDate) {
       showToast('Hệ thống đang chuẩn bị thông tin phòng. Vui lòng thử lại sau giây lát.');
+      return;
+    }
+
+    if (selectedClassId !== 'unassigned' && !curClass.id) {
+      showToast('Không tìm thấy lớp học trên máy chủ. Vui lòng tải lại danh sách lớp.');
       return;
     }
 
@@ -723,6 +633,8 @@ export default function InstructorCreateRoomView() {
           allowTabSwitch: !blockTabSwitch,
           maxTabSwitches: blockTabSwitch ? (maxTabSwitches || 2) : 999,
           requireCamera,
+          autoPublishResults,
+          results_published: autoPublishResults,
         },
         status: 'chua_mo',
       };
@@ -730,42 +642,6 @@ export default function InstructorCreateRoomView() {
       await fetchWithAuth('/api/v1/rooms', {
         method: 'POST',
         body: JSON.stringify(payload),
-      });
-
-      let studentsToSeed: Array<{ id: string; name: string; email: string }> = [];
-      if (typeof window !== 'undefined') {
-        try {
-          const raw = localStorage.getItem(INSTRUCTOR_STORAGE_KEY);
-          if (raw) {
-            const parsed: ClassRow[] = JSON.parse(raw);
-            const found = parsed.find((c) => c.id === selectedClassId);
-            if (found && found.students && found.students.length > 0) {
-              studentsToSeed = found.students;
-            }
-          }
-        } catch {
-          // fallback
-        }
-      }
-
-      if (studentsToSeed.length === 0) {
-        studentsToSeed = [
-          { id: '29211200333', name: 'Hoàng Đình Khôi', email: '29211200333@dtu.edu.vn' },
-          { id: 'SV2026001', name: 'Nguyễn Văn An', email: 'sv2026001@dtu.edu.vn' },
-          { id: '29211200888', name: 'Trần Thu Hà', email: '29211200888@dtu.edu.vn' },
-        ];
-      }
-
-      const attendees = studentsToSeed.map((s, idx) => {
-        const isJoined = idx < Math.ceil(studentsToSeed.length * 0.85);
-        return {
-          studentId: s.id,
-          studentName: s.name,
-          studentEmail: s.email,
-          status: (isJoined ? 'waiting' : 'absent') as 'waiting' | 'absent',
-          joinedAt: isJoined ? `07:${30 + (idx % 15)}:${10 + (idx % 50)}` : undefined,
-          cameraReady: isJoined,
-        };
       });
 
       const newRoom: RoomSession = {
@@ -791,70 +667,13 @@ export default function InstructorCreateRoomView() {
           aiObjectDetection: aiPhoneDetection,
           allowTabSwitch: !blockTabSwitch,
         },
-        attendees,
+        attendees: [],
       };
 
-      if (typeof window !== 'undefined') {
-        try {
-          let existingRooms: RoomSession[] = [];
-          const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-          if (raw) existingRooms = JSON.parse(raw);
-          localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify([newRoom, ...existingRooms]));
-
-          // Lưu vào Lịch Giảng Dạy (/instructor/schedules)
-          if (saveToSchedule) {
-            const isToday = scheduledDate === getTodayDateString();
-            const displayDate = isToday
-              ? 'Hôm nay'
-              : new Date(scheduledDate).toLocaleDateString('vi-VN', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                });
-
-            const newScheduleItem: ScheduleSessionItem = {
-              id: `SES-${roomCode}`,
-              classCode: curClass.id,
-              className: curClass.name,
-              title: newRoom.title,
-              type: roomType === 'lab' ? 'LAB' : 'EXAM',
-              language: selectedTemplate.language || 'C++',
-              startTime: startTime,
-              endTime: endTime,
-              date: displayDate,
-              roomCode: roomCode,
-              passcode: roomPassword,
-              status: 'Sắp diễn ra',
-              enrolledStudents: curClass.studentCount,
-              attendedStudents: 0,
-              isAiProctored: Boolean(requireCamera || aiFaceDetection || aiPhoneDetection || lockdownFullscreen),
-            };
-
-            let existingSchedules: ScheduleSessionItem[] = [];
-            const rawSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-            if (rawSched) existingSchedules = JSON.parse(rawSched);
-            localStorage.setItem(
-              INSTRUCTOR_SCHEDULES_STORAGE_KEY,
-              JSON.stringify([newScheduleItem, ...existingSchedules.filter((s) => s.roomCode !== roomCode)])
-            );
-          }
-
-          window.dispatchEvent(new Event('storage'));
-        } catch (err) {
-          console.error(err);
-        }
-      }
-
       showToast(`Đã tạo phòng ${roomCode} và lưu vào CSDL hệ thống thành công!`);
-
-      // Điều hướng vào phòng chờ để điểm danh sinh viên trước khi bắt đầu
       setTimeout(() => {
-        router.push(
-          `/instructor/room/${encodeURIComponent(roomCode)}${
-            returnToSchedules ? '?returnTo=schedules' : ''
-          }`
-        );
-      }, 400);
+        router.push('/instructor/schedules');
+      }, 350);
     } catch (err: any) {
       console.error('Lỗi tạo phòng:', err);
       showToast(err.message || 'Lỗi khi tạo phòng học trên hệ thống');
@@ -1478,25 +1297,17 @@ export default function InstructorCreateRoomView() {
               </span>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className={`flex items-start gap-2.5 rounded-md border p-3 cursor-pointer transition ${
-                  lockdownFullscreen
-                    ? 'border-slate-900 bg-slate-100 dark:border-white dark:bg-white/10 shadow-2xs'
-                    : 'border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
-                }`}>
-                  <input
-                    type="checkbox"
-                    checked={lockdownFullscreen}
-                    onChange={(e) => setLockdownFullscreen(e.target.checked)}
-                    className="mt-0.5 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
-                  />
+                <div className="flex items-start gap-2.5 rounded-md border border-slate-300 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/[0.03]">
+                  <Maximize className="mt-0.5 h-4 w-4 shrink-0 text-slate-700 dark:text-slate-300" />
                   <div>
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                      <Maximize className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" />
-                      Khóa Toàn Màn Hình (Lockdown)
+                      Chia sẻ &amp; Khóa Toàn Màn Hình (Bắt buộc)
                     </span>
-                    <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">Ngăn thu nhỏ cửa sổ trình duyệt hoặc thoát fullscreen</p>
+                    <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">
+                      Mặc định luôn bật khi sinh viên làm bài trong IDE và tự động tắt khi nộp bài.
+                    </p>
                   </div>
-                </label>
+                </div>
 
                 <label className={`flex items-start gap-2.5 rounded-md border p-3 cursor-pointer transition ${
                   blockTabSwitch
@@ -1515,6 +1326,28 @@ export default function InstructorCreateRoomView() {
                       Chặn Chuyển Tab Trình Duyệt
                     </span>
                     <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">Cảnh báo vi phạm ngay khi mở tab hoặc ứng dụng khác</p>
+                  </div>
+                </label>
+
+                <label className={`sm:col-span-2 flex items-start gap-2.5 rounded-md border p-3 cursor-pointer transition ${
+                  autoPublishResults
+                    ? 'border-slate-900 bg-slate-100 dark:border-white dark:bg-white/10 shadow-2xs'
+                    : 'border-slate-300 dark:border-white/10 bg-white dark:bg-neutral-900 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={autoPublishResults}
+                    onChange={(e) => setAutoPublishResults(e.target.checked)}
+                    className="mt-0.5 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-slate-700 dark:text-slate-300" />
+                      Công bố điểm ngay sau khi sinh viên nộp bài
+                    </span>
+                    <p className="text-[10.5px] text-slate-500 mt-0.5 leading-normal">
+                      Khi tích chọn, sinh viên sẽ thấy điểm ngay sau khi nộp bài; nếu bỏ tích, cần giảng viên công bố điểm trong Báo cáo.
+                    </p>
                   </div>
                 </label>
               </div>

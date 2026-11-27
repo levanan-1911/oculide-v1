@@ -62,9 +62,9 @@ export default function AdminTopbar({
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [mounted, setMounted] = useState(false);
   const [userProfile, setUserProfile] = useState({
-    name: 'Lê Phương',
-    email: 'admin@school.edu.vn',
-    initials: 'LP',
+    name: 'Quản trị viên',
+    email: '',
+    initials: 'AD',
   });
 
   // ── DROPDOWNS OPEN STATES ──
@@ -95,9 +95,9 @@ export default function AdminTopbar({
       const stored = localStorage.getItem('oculide_user');
       if (stored) {
         const parsed = JSON.parse(stored);
-        const name = parsed.name || parsed.fullName || parsed.username || 'Lê Phương';
-        const email = parsed.email || 'admin@school.edu.vn';
-        const words = name.trim().split(' ');
+        const name = (parsed.full_name || parsed.name || parsed.fullName || parsed.username || 'Quản trị viên').trim();
+        const email = parsed.email || '';
+        const words = name.split(/\s+/).filter(Boolean);
         const initials = words.length >= 2 
           ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
           : name.slice(0, 2).toUpperCase();
@@ -168,7 +168,15 @@ export default function AdminTopbar({
   }, []);
 
   // Xử lý đăng xuất
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const token = localStorage.getItem('oculide_token');
+    if (token) {
+      await fetch('/api/v1/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        keepalive: true,
+      }).catch(() => {});
+    }
     localStorage.removeItem('oculide_token');
     localStorage.removeItem('oculide_user');
     localStorage.removeItem('oculide_refresh_token');
@@ -504,7 +512,7 @@ export default function AdminTopbar({
           )}
         </div>
 
-        {/* 4. NÚT AVATAR (`LP` - LONG PHẠM) */}
+        {/* 4. NÚT AVATAR */}
         <div ref={profileRef} className="relative">
           <button
             type="button"
@@ -517,7 +525,7 @@ export default function AdminTopbar({
             title={`${userProfile.name} (Quản trị viên)`}
             className="flex h-9 w-9 items-center justify-center rounded-md bg-brand text-xs font-serif font-bold text-white shadow-2xs hover:bg-brand-600 cursor-pointer"
           >
-            LP
+            {userProfile.initials}
           </button>
 
           {/* DROPDOWN PROFILE USER MENU */}
@@ -526,7 +534,7 @@ export default function AdminTopbar({
               {/* Header profile info */}
               <div className="p-3 border-b border-slate-300 dark:border-white/10 flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-serif font-bold text-white shadow-xs">
-                  LP
+                  {userProfile.initials}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-[#2A282D] dark:text-white truncate text-sm">

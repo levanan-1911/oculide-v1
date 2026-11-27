@@ -33,6 +33,7 @@ export interface StudentDetailInfo {
   status: 'normal' | 'warning' | 'critical' | 'submitted';
   statusText: string;
   isLate?: boolean;
+  isLocked?: boolean;
   violationsCount: number;
   entryTime: string;
   fps: number;
@@ -244,43 +245,17 @@ export default function StudentDetailModal({
                   </p>
                 </div>
               ) : (
-                /* Giả lập Màn hình làm bài của Sinh viên (Oculide Code IDE) nếu SV chưa bật share màn hình */
-                <div className="absolute inset-0 bg-neutral-950 flex flex-col font-mono text-xs">
-                  {/* Thanh tab IDE của sinh viên */}
-                  <div className="flex items-center justify-between bg-neutral-900 px-3 py-1.5 border-b border-white/10 text-[11px] text-stone-400">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-stone-600" />
-                      <span className="h-2.5 w-2.5 rounded-full bg-stone-500" />
-                      <span className="h-2.5 w-2.5 rounded-full bg-stone-400" />
-                      <span className="ml-2 px-2 py-0.5 rounded bg-black/40 text-stone-300 font-bold border border-white/10 flex items-center gap-1">
-                        <FileCode2 className="h-3 w-3 text-stone-400" />
-                        {student.currentFile}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px]">
-                      <span className="text-stone-300 font-bold">Docker Sandbox #dk-ready</span>
-                      <span className="text-stone-500">•</span>
-                      <span>Line 24, Col 12</span>
-                    </div>
+                /* Chưa nhận được luồng chia sẻ màn hình thật từ LiveKit */
+                <div className="absolute inset-0 bg-neutral-950 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-stone-900 border border-white/10 text-stone-400">
+                    <Monitor className="h-7 w-7" />
                   </div>
-
-                  {/* Code Editor Body */}
-                  <div className="flex-1 p-3 overflow-hidden text-stone-300 space-y-1 text-[11px] font-mono leading-relaxed bg-neutral-950">
-                    <p className="text-stone-500">{`// Đề bài: ${sessionType === 'EXAM' ? 'Kiểm tra quá trình' : 'Bài thực hành Lab'} - Oculide`}</p>
-                    <pre className="text-stone-200 font-mono select-none">{student.codeSnippet}</pre>
-                  </div>
-
-                  {/* Terminal Test Runner ở đáy màn hình SV */}
-                  <div className="h-20 bg-stone-950 border-t border-white/10 p-2.5 text-[10px] font-mono text-stone-400 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-stone-400">
-                      <span className="flex items-center gap-1 font-bold text-stone-300">
-                        <Terminal className="h-3 w-3 text-stone-400" />
-                        Oculide Test Runner
-                      </span>
-                      <span className="text-stone-200 font-bold">Passed: {student.passedCases}</span>
-                    </div>
-                    <p className="text-stone-400">
-                      $ g++ -O2 solution.cpp -o solution &amp;&amp; ./solution <span className="text-stone-300">✓ Testcase 1-4 OK</span>
+                  <div className="space-y-1 max-w-md">
+                    <h3 className="text-sm font-bold text-white font-serif">
+                      Chưa nhận được luồng chia sẻ màn hình
+                    </h3>
+                    <p className="text-xs text-stone-400 leading-relaxed">
+                      Thí sinh có thể đang ở bước kiểm tra thiết bị / phòng chờ, hoặc chưa cấp quyền chia sẻ màn hình trong trình duyệt.
                     </p>
                   </div>
                 </div>

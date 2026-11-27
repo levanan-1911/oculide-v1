@@ -19,9 +19,9 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useMonitoring } from './monitoring/MonitoringContext';
-import { INSTRUCTOR_ROOMS_STORAGE_KEY, RoomSession } from '@/components/instructor/classes/types';
 import { fetchWithAuth } from '@/services/apiClient';
 import { INSTRUCTOR_PROFILE_UPDATED_EVENT } from '@/utils/instructorProfile';
+import { isRoomCurrentlyRunning } from './classes/types';
 
 interface InstructorTopbarProps {
   title?: string;
@@ -86,37 +86,23 @@ export default function InstructorTopbar({
       try {
         const rooms = await fetchWithAuth<any[]>('/api/v1/rooms');
         if (!isCancelled && Array.isArray(rooms)) {
-          const running = rooms.find(
-            (r) => r.status === 'dang_dien_ra' || r.status === 'in_progress'
-          );
+          const running = rooms.find((r) => isRoomCurrentlyRunning(r));
           if (running) {
+            const endMs = running.end_time ? new Date(running.end_time).getTime() : NaN;
+            const remaining = Number.isFinite(endMs)
+              ? Math.max(1, Math.ceil((endMs - Date.now()) / 60000))
+              : Number(running.duration_minutes) || 0;
             setActiveRunningRoom({
               roomCode: running.room_code || String(running.room_id),
-              remainingMinutes: running.duration_minutes || 60,
+              remainingMinutes: remaining,
             });
             return;
           }
           setActiveRunningRoom(null);
           return;
         }
-      } catch {
-        // Fallback localStorage nếu mất mạng
-        try {
-          const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-          if (raw) {
-            const rooms: RoomSession[] = JSON.parse(raw);
-            const running = rooms.find((r) => r.status === 'in_progress');
-            if (running && !isCancelled) {
-              setActiveRunningRoom({
-                roomCode: running.id,
-                remainingMinutes: running.durationMinutes || 60,
-              });
-              return;
-            }
-          }
-        } catch {
-          // ignore
-        }
+      } catch (error) {
+        console.error('Không thể tải phòng đang diễn ra từ máy chủ:', error);
       }
       if (!isCancelled) setActiveRunningRoom(null);
     }
@@ -180,7 +166,15 @@ export default function InstructorTopbar({
     };
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const token = localStorage.getItem('oculide_token');
+    if (token) {
+      await fetch('/api/v1/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        keepalive: true,
+      }).catch(() => {});
+    }
     localStorage.removeItem('oculide_token');
     localStorage.removeItem('oculide_user');
     localStorage.removeItem('oculide_refresh_token');

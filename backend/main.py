@@ -2,17 +2,26 @@ import os
 import asyncio
 import inspect
 import json
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 try:
     import redis.asyncio as redis_async
 except ImportError:
     redis_async = None
 
-from core.config import settings, get_cors_origins
+from core.config import settings, get_cors_origins, get_trusted_hosts
+from core.rate_limit import rate_limit_middleware
+from core.request_context import extract_request_ip, set_request_context, reset_request_context
+
+logger = logging.getLogger("oculide.api")
 from core.security import decode_access_token
 from api import (
     auth, admin, rooms, questions, submissions, sessions, violations, chat, livekit,
@@ -74,15 +83,104 @@ async def lifespan(app: FastAPI):
                         retry_interval = min(retry_interval * 2, 60)
                     
             listener_task = asyncio.create_task(redis_listener())
+            app.state.redis_client = redis_client
         except Exception as e:
             print(f"Lưu ý: Redis chưa sẵn sàng ({e}). Chạy chế độ độc lập.")
+            app.state.redis_client = None
     else:
         print("Lưu ý: Thư viện redis chưa cài đặt. Chạy chế độ độc lập.")
+        app.state.redis_client = None
+
+    # Background Scheduler: Tự động bật bảo trì & sao lưu CSDL theo khung giờ cấu hình + tự động kết thúc bảo trì khi hết hạn
+    async def scheduled_maintenance_and_backup_loop():
+        from datetime import datetime, timedelta
+        from services.system_settings_manager import SystemSettingsManager
+        from services.backup_service import BackupService
+        from database.system_log_db import create_system_log, cleanup_old_audit_logs
+
+        last_backup_slot = None
+        last_maint_slot = None
+        last_retention_day = None
+        while True:
+            try:
+                sys_settings = SystemSettingsManager.get_settings()
+                now = datetime.now()
+                current_hhmm = now.strftime("%H:%M")
+                current_slot = now.strftime("%Y-%m-%d %H:%M")
+
+                # 1. Tự động bật bảo trì theo khung giờ linh hoạt
+                maint_hhmm = (sys_settings.maintenance_schedule_time or sys_settings.backup_time or "02:00").strip()
+                if (
+                    sys_settings.maintenance_on_backup_schedule
+                    and not sys_settings.maintenance_mode
+                    and current_hhmm == maint_hhmm
+                    and last_maint_slot != current_slot
+                ):
+                    last_maint_slot = current_slot
+                    duration = int(sys_settings.maintenance_duration_minutes or 0)
+                    ends_at = (now + timedelta(minutes=duration)).isoformat() if duration > 0 else None
+                    SystemSettingsManager.update_settings(
+                        {"maintenance_mode": True, "maintenance_ends_at": ends_at},
+                        updated_by="system_scheduler",
+                    )
+                    try:
+                        create_system_log(
+                            log_level="warning",
+                            module="Bảo trì tự động",
+                            message=f"Hệ thống tự động bật chế độ bảo trì theo lịch ({current_hhmm}, thời lượng={duration} phút).",
+                            extra_data={"ends_at": ends_at},
+                        )
+                    except Exception:
+                        pass
+
+                    if sys_settings.backup_on_maintenance:
+                        try:
+                            await asyncio.to_thread(
+                                BackupService.create_database_backup,
+                                backup_type="maintenance",
+                                actor_id=None,
+                                ip_address="127.0.0.1",
+                            )
+                        except Exception as bk_err:
+                            print(f"⚠️ Lỗi sao lưu khi tự động bật bảo trì: {bk_err}")
+
+                # 2. Tự động sao lưu CSDL theo khung giờ backup_time
+                if sys_settings.backup_schedule_enabled and current_hhmm == (sys_settings.backup_time or "02:00").strip():
+                    is_weekly_ok = sys_settings.backup_frequency != "weekly" or now.weekday() == 6
+                    if is_weekly_ok and last_backup_slot != current_slot:
+                        last_backup_slot = current_slot
+                        try:
+                            await asyncio.to_thread(
+                                BackupService.create_database_backup,
+                                backup_type="auto",
+                                actor_id=None,
+                                ip_address="127.0.0.1",
+                            )
+                        except Exception as bk_err:
+                            print(f"⚠️ Lỗi sao lưu tự động theo lịch: {bk_err}")
+                # 3. Dọn dẹp log định kỳ mỗi ngày (xóa INFO > 90 ngày, giữ WARN/CRITICAL >= 1 năm)
+                today_str = now.strftime("%Y-%m-%d")
+                if last_retention_day != today_str:
+                    last_retention_day = today_str
+                    try:
+                        await asyncio.to_thread(cleanup_old_audit_logs, 90, 365)
+                    except Exception:
+                        pass
+            except asyncio.CancelledError:
+                break
+            except Exception as sched_err:
+                print(f"⚠️ Lỗi scheduler bảo trì/backup: {sched_err}")
+
+            await asyncio.sleep(30)
+
+    scheduler_task = asyncio.create_task(scheduled_maintenance_and_backup_loop())
         
     yield
     
     # Shutdown
     print("🛑 Đang đóng ứng dụng...")
+    if scheduler_task:
+        scheduler_task.cancel()
     if listener_task:
         listener_task.cancel()
     if redis_client:
@@ -106,15 +204,94 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Trusted Host Middleware (chống Host Header Injection)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=get_trusted_hosts())
+
+# GZip Compression (giảm 70-85% dung lượng JSON qua mạng ngoài / DevTunnel)
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# Rate Limiting Middleware (Redis + In-Memory Fallback)
+app.middleware("http")(rate_limit_middleware)
+
+
+# Request Context Middleware (tự động trích xuất IP & User-Agent cho toàn bộ Audit Log)
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    tokens = set_request_context(
+        extract_request_ip(request),
+        request.headers.get("user-agent"),
+    )
+    try:
+        return await call_next(request)
+    finally:
+        reset_request_context(tokens)
+
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),
     allow_origin_regex=r"^https://.*\.devtunnels\.ms$",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "X-Session-Id"],
 )
+
+
+# Global Exception Handlers (Error Envelope thống nhất, không rò rỉ stack trace / lỗi SQL)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    safe_errors = []
+    for err in exc.errors():
+        safe_errors.append({
+            "loc": err.get("loc"),
+            "msg": err.get("msg"),
+            "type": err.get("type"),
+        })
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "success": False,
+            "errorCode": "VALIDATION_ERROR",
+            "message": "Dữ liệu đầu vào không hợp lệ",
+            "detail": safe_errors,
+        },
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail
+    error_code = f"HTTP_{exc.status_code}"
+    message = "Yêu cầu không hợp lệ"
+    if isinstance(detail, dict):
+        error_code = str(detail.get("code") or detail.get("errorCode") or error_code)
+        message = str(detail.get("message") or message)
+    elif isinstance(detail, str) and detail.strip():
+        message = detail
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "errorCode": error_code,
+            "message": message,
+            "detail": detail,
+        },
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error at %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "success": False,
+            "errorCode": "INTERNAL_SERVER_ERROR",
+            "message": "Lỗi hệ thống nội bộ, vui lòng thử lại sau",
+            "detail": None,
+        },
+    )
 
 # Health Checks (Deep Component Probes & Docker/K8s Self-Healing)
 @app.get("/health", tags=["Health"])
@@ -140,7 +317,8 @@ async def health_check():
                 await res
         redis_status = {"status": "up" if pong else "down"}
     except Exception as e:
-        redis_status = {"status": "down", "error": str(e)}
+        logger.warning("Health check Redis ping failed: %s", e)
+        redis_status = {"status": "down"}
 
     is_db_up = db_status.get("status") == "up"
     is_redis_up = redis_status.get("status") == "up"
@@ -152,7 +330,7 @@ async def health_check():
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "components": {
-            "database": db_status,
+            "database": {"status": db_status.get("status", "down")},
             "redis": redis_status
         }
     }
@@ -170,9 +348,10 @@ async def health_readiness():
     from core.database import ping_database
     db_status = ping_database()
     if db_status.get("status") != "up":
+        logger.error("Readiness probe failed: %s", db_status.get("error"))
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"status": "not_ready", "error": db_status.get("error")}
+            content={"status": "unhealthy"}
         )
     return {"status": "ready"}
 
@@ -231,8 +410,8 @@ app.include_router(users.router, prefix="/api/users", tags=["Users (Legacy)"], i
 app.include_router(templates.router, prefix="/api/templates", tags=["Question Templates (Legacy)"], include_in_schema=False)
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications (Legacy)"], include_in_schema=False)
 
-# Cấu hình Mount phục vụ ảnh tĩnh Webcam Snapshots
-uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
+# Cấu hình Mount phục vụ ảnh tĩnh Webcam Snapshots (ưu tiên UPLOADS_DIR bên ngoài source code)
+uploads_dir = os.getenv("UPLOADS_DIR") or os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(os.path.join(uploads_dir, "snapshots"), exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 

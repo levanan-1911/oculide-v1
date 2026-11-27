@@ -19,12 +19,15 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "max_livekit_bitrate_kbps": 350,
     "auto_cleanup_drafts_days": 30,
     "audit_log_retention_days": 90,
-    "allowed_email_domain": "@gmail.com",
     "allowed_email_domain": "",
     "max_login_attempts": 5,
     "jwt_token_expiry_minutes": 45,
     "maintenance_mode": False,
     "maintenance_message": "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",
+    "maintenance_duration_minutes": 30,
+    "maintenance_ends_at": None,
+    "maintenance_on_backup_schedule": False,
+    "maintenance_schedule_time": "02:00",
     "backup_schedule_enabled": True,
     "backup_frequency": "daily",
     "backup_time": "02:00",
@@ -95,6 +98,19 @@ class SystemSettingsManager:
             logger.error(f"Lỗi khi đọc file cấu hình hệ thống: {e}. Sử dụng cấu hình mặc định.")
             cls._cached_settings = SystemSettingsModel(**DEFAULT_SYSTEM_SETTINGS)
 
+        # Tự động tắt chế độ bảo trì nếu đã quá thời điểm kết thúc dự kiến
+        if cls._cached_settings.maintenance_mode and cls._cached_settings.maintenance_ends_at:
+            try:
+                ends_at = datetime.fromisoformat(cls._cached_settings.maintenance_ends_at)
+                if datetime.now() >= ends_at:
+                    logger.info("Hết thời lượng bảo trì cấu hình -> Tự động tắt chế độ bảo trì.")
+                    cls._cached_settings = cls.update_settings(
+                        {"maintenance_mode": False, "maintenance_ends_at": None},
+                        updated_by="system_auto_expire"
+                    )
+            except Exception:
+                pass
+
         return cls._cached_settings
 
     @classmethod
@@ -135,5 +151,6 @@ class SystemSettingsManager:
         return PublicConfigResponse(
             maintenance_mode=settings.maintenance_mode,
             maintenance_message=settings.maintenance_message,
+            maintenance_ends_at=settings.maintenance_ends_at,
             allowed_email_domain=settings.allowed_email_domain
         )

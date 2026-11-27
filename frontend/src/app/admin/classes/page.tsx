@@ -3,6 +3,7 @@
 import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import EditClassModal from '@/components/admin/classes/EditClassModal';
 import {
   AlertTriangle,
   BookOpen,
@@ -49,7 +50,6 @@ import {
   INITIAL_CLASSES,
   StudentRow,
   StudentStatus,
-  getStoredClasses,
   saveStoredClasses,
 } from './types';
 import { exportStyledExcel } from '@/utils/excelExporter';
@@ -259,37 +259,23 @@ function ClassManagerContent() {
     }
   }, []);
 
-  // Sync with localStorage on client mount & handle newly created class param
+  // Đồng bộ danh sách lớp học thực tế từ CSDL Backend (SQL Server)
   useEffect(() => {
-    const stored = getStoredClasses();
-    setClasses(stored);
-    const createdId = searchParams.get('created');
-    setSelectedClassId((currentSelected) => {
-      if (createdId && stored.some((c) => c.id === createdId)) {
-        return createdId;
-      }
-      if (stored.length > 0 && !stored.some((c) => c.id === currentSelected)) {
-        return stored[0].id;
-      }
-      return currentSelected;
-    });
+    let isCancelled = false;
 
-    // Đồng bộ danh sách lớp học thực tế từ CSDL Backend (SQL Server)
     async function syncClassesFromApi() {
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
-        let res = await fetch('/api/v1/classes', {
+        const res = await fetch('/api/v1/classes', {
           headers: {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         });
-        if ((res.status === 401 || res.status === 403) && token) {
-          res = await fetch('/api/v1/classes');
-        }
+        if (isCancelled) return;
         if (res.ok) {
           const apiClasses = await res.json();
           if (Array.isArray(apiClasses)) {
-            // Nguồn dữ liệu lớp học lấy trực tiếp 100% từ bảng LopHoc trong CSDL SQL Server
+            // Nguồn dữ liệu lớp học lấy trực tiếp 100% từ bảng Classes trong CSDL SQL Server
             const realClasses: ClassRow[] = apiClasses.map((apiCls: any) => ({
               id: apiCls.class_code,
               name: apiCls.class_name,
@@ -328,17 +314,27 @@ function ClassManagerContent() {
               activeIdToLoad = realClasses[0].id;
             }
 
+            setSelectedClassId(activeIdToLoad);
             if (activeIdToLoad) {
-              setSelectedClassId(activeIdToLoad);
               fetchStudentsForClass(activeIdToLoad);
             }
           }
+        } else {
+          setClasses([]);
+          setSelectedClassId('');
         }
       } catch (err) {
         console.error('Không thể đồng bộ lớp từ CSDL:', err);
+        if (!isCancelled) {
+          setClasses([]);
+          setSelectedClassId('');
+        }
       }
     }
     syncClassesFromApi();
+    return () => {
+      isCancelled = true;
+    };
   }, [searchParams, fetchStudentsForClass]);
 
   // Tải danh mục học kỳ từ CSDL bảng HocKy để đồng bộ bộ lọc
@@ -389,7 +385,8 @@ function ClassManagerContent() {
   useEffect(() => {
     if (!selectedClassId) return;
     const currentCls = classes.find((c) => c.id === selectedClassId);
-    if (!currentCls || (currentCls.studentCount > 0 && currentCls.students.length === 0)) {
+    if (!currentCls) return;
+    if (currentCls.studentCount > 0 && currentCls.students.length === 0) {
       fetchStudentsForClass(selectedClassId);
     }
   }, [selectedClassId, classes, fetchStudentsForClass]);
@@ -2344,196 +2341,14 @@ function ClassManagerContent() {
       )}
 
       {/* Modal Chỉnh sửa thông tin lớp */}
-      {editingClass && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/45 p-4 sm:p-6 pt-12 sm:pt-16 pb-12 sm:pb-16 backdrop-blur-[2px] overflow-y-auto"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeEditModal();
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="edit-class-title"
-            className="my-auto w-full max-w-lg max-h-[calc(100vh-6rem)] sm:max-h-[calc(100vh-8rem)] flex flex-col rounded-xl overflow-hidden bg-white p-6 shadow-2xl border border-slate-300 dark:bg-neutral-900 dark:border-white/10"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/10 shrink-0">
-              <h2 id="edit-class-title" className="text-base font-bold text-slate-900 dark:text-white">
-                Chỉnh sửa lớp {editingClass.id}
-              </h2>
-              <button
-                type="button"
-                onClick={closeEditModal}
-                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/10 dark:hover:text-white cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={saveEditClass} className="mt-4 space-y-4 overflow-y-auto flex-1 pr-1">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">Mã lớp *</label>
-                <input
-                  name="classId"
-                  defaultValue={editingClass.id}
-                  required
-                  className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-slate-400/20 uppercase dark:border-white/10 dark:bg-neutral-950 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">Tên lớp *</label>
-                <input
-                  name="className"
-                  defaultValue={editingClass.name}
-                  required
-                  className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-slate-400/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">Học kỳ *</label>
-                <select
-                  name="semester"
-                  defaultValue={editingClass.semester}
-                  className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-slate-400/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white cursor-pointer"
-                >
-                  {availableSemesters.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">Giảng viên phụ trách</label>
-                  <span className="text-[10px] font-semibold text-slate-900 dark:text-white bg-slate-100 dark:bg-white/10 px-2 py-0.5 rounded-md dark:bg-rose-950/40">
-                    Admin phân công
-                  </span>
-                </div>
-                <select
-                  name="instructorId"
-                  defaultValue={editingClass.instructor_id ?? ''}
-                  className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-slate-400/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white cursor-pointer"
-                >
-                  <option value="">-- Chưa phân công giảng viên --</option>
-                  {instructorsList.map((inst) => (
-                    <option key={inst.user_id} value={inst.user_id}>
-                      {inst.full_name} ({inst.username})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">Mã môn học</label>
-                  <input
-                    name="courseCode"
-                    defaultValue={editingClass.courseCode || ''}
-                    placeholder="VD: CMU-CS 316"
-                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-slate-400/20 uppercase dark:border-white/10 dark:bg-neutral-950 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">Mã phân lớp</label>
-                  <input
-                    name="sectionCode"
-                    defaultValue={editingClass.sectionCode || ''}
-                    placeholder="VD: AIS, DDIS"
-                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-slate-400/20 uppercase dark:border-white/10 dark:bg-neutral-950 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              {/* Lịch học bắt buộc và thời lượng tín chỉ */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">Ngày bắt đầu *</label>
-                  <input
-                    type="date"
-                    name="startDate"
-                    required
-                    defaultValue={editingClass.startDate || '2026-09-01'}
-                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-slate-400/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">Ngày kết thúc *</label>
-                  <input
-                    type="date"
-                    name="endDate"
-                    required
-                    defaultValue={editingClass.endDate || '2027-01-15'}
-                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-slate-400/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">Số buổi học *</label>
-                  <input
-                    type="number"
-                    name="totalSessions"
-                    min={1}
-                    max={60}
-                    required
-                    defaultValue={editingClass.totalSessions || 15}
-                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-slate-400/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200">Giờ học (tín chỉ) *</label>
-                  <input
-                    type="number"
-                    name="creditHours"
-                    min={1}
-                    max={10}
-                    required
-                    defaultValue={editingClass.creditHours || 3}
-                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none focus:border-slate-900 dark:border-white focus:ring-1 focus:ring-slate-400/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              {/* Thông báo quy chế đóng lớp tự động */}
-              <div className="rounded-md border border-slate-200 bg-slate-50/80 p-3 text-xs dark:border-white/10 dark:bg-white/5">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
-                  Quy chế tự động đóng lớp
-                </span>
-                <p className="text-[11.5px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                  Lớp học phần tự động chuyển sang trạng thái <strong>Đã kết thúc</strong> khi quá hạn ngày kết thúc. Quản trị viên không can thiệp đóng lớp thủ công.
-                </p>
-              </div>
-
-              {editError && (
-                <p role="alert" className="text-xs font-medium text-red-600">
-                  {editError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
-                <button
-                  type="button"
-                  onClick={closeEditModal}
-                  className="h-9 rounded-md border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-200 cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="system-primary-action h-9 rounded-md bg-slate-900 px-4 text-xs font-semibold text-white transition hover:bg-slate-800 cursor-pointer"
-                >
-                  Lưu thay đổi
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
+      <EditClassModal
+        editingClass={editingClass}
+        onClose={closeEditModal}
+        onSubmit={saveEditClass}
+        availableSemesters={availableSemesters}
+        instructorsList={instructorsList}
+        editError={editError}
+      />
 
       {/* Modal Xác nhận xóa lớp */}
       {deletingClass && (

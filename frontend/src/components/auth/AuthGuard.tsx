@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { refreshAccessToken } from '@/services/apiClient';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -49,13 +50,34 @@ function clearSessionAndRedirect(reason?: string) {
 
 export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [maintenanceWarning, setMaintenanceWarning] = useState<string | null>(null);
+  const lastWarnedMinuteRef = useRef<number | null>(null);
+  const warningTimerRef = useRef<number | null>(null);
+
+  const triggerMaintenanceWarning = (minutesRemaining: number, startTime: string) => {
+    const currentMinute = Math.floor(Date.now() / 60000);
+    if (lastWarnedMinuteRef.current === currentMinute) return;
+    lastWarnedMinuteRef.current = currentMinute;
+    setMaintenanceWarning(
+      `Hệ thống sẽ bắt đầu bảo trì sau khoảng ${minutesRemaining} phút nữa (lúc ${startTime}). Vui lòng lưu công việc đang thực hiện.`
+    );
+    if (warningTimerRef.current) {
+      window.clearTimeout(warningTimerRef.current);
+    }
+    warningTimerRef.current = window.setTimeout(() => {
+      setMaintenanceWarning(null);
+    }, 5000);
+  };
 
   useEffect(() => {
-    // 1. Kiểm tra sự tồn tại của token và thông tin người dùng trong localStorage
+    // 1. Kiểm tra sự tồn tại của session cookie, token và thông tin người dùng
+    const hasSessionCookie = document.cookie
+      .split(';')
+      .some((c) => c.trim().startsWith('oculide_token='));
     const token = localStorage.getItem('oculide_token');
     const rawUser = localStorage.getItem('oculide_user');
 
-    if (!token || !rawUser || isTokenExpired(token)) {
+    if (!hasSessionCookie || !token || !rawUser || isTokenExpired(token)) {
       clearSessionAndRedirect();
       return;
     }
@@ -67,34 +89,89 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
       return;
     }
 
-    try {
-      const user = JSON.parse(rawUser);
-      const userRole = user.role?.toLowerCase();
+    let cancelled = false;
 
-      // 2. Kiểm tra quyền hạn theo vai trò (Role-Based Access Control)
-      if (!userRole || !allowedRoles.includes(userRole)) {
-        if (userRole === 'admin') {
-          window.location.replace('/admin/dashboard');
-        } else if (userRole === 'instructor') {
-          window.location.replace('/instructor/dashboard');
-        } else {
-          window.location.replace('/student/dashboard');
-        }
-        return;
+    const redirectByRole = (role: string) => {
+      if (role === 'admin') {
+        window.location.replace('/admin/dashboard');
+      } else if (role === 'instructor') {
+        window.location.replace('/instructor/dashboard');
+      } else {
+        window.location.replace('/student/dashboard');
       }
+    };
 
-      // Đảm bảo Cookie luôn đồng bộ với localStorage (max-age 1800 giây = 30 phút)
-      document.cookie = `oculide_token=${token}; path=/; max-age=${TOKEN_COOKIE_MAX_AGE}; SameSite=Lax`;
-      document.cookie = `oculide_role=${userRole}; path=/; max-age=${TOKEN_COOKIE_MAX_AGE}; SameSite=Lax`;
+    const verifyAndSyncSession = async () => {
+      try {
+        const localUser = JSON.parse(rawUser);
+        let effectiveRole = (localUser.role || '').toLowerCase();
 
-      // Cập nhật timestamp hoạt động ban đầu
-      localStorage.setItem('oculide_last_activity', Date.now().toString());
+        try {
+          const meRes = await fetch('/api/v1/auth/me', {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          });
+          if (cancelled) return;
 
-      // Xác thực thành công -> Cho phép hiển thị giao diện
-      setIsAuthorized(true);
-    } catch {
-      clearSessionAndRedirect();
-    }
+          if (meRes.status === 401) {
+            clearSessionAndRedirect();
+            return;
+          }
+
+          if (meRes.ok) {
+            const meData = await meRes.json();
+            if (cancelled) return;
+            const mergedUser = { ...localUser, ...meData };
+            localStorage.setItem('oculide_user', JSON.stringify(mergedUser));
+            if (meData?.role) {
+              effectiveRole = String(meData.role).toLowerCase();
+            }
+          }
+        } catch {
+          // Nếu mạng tạm gián đoạn, dùng role cục bộ để không chặn oan
+        }
+
+        if (cancelled) return;
+
+        // 2. Kiểm tra quyền hạn theo vai trò mới nhất từ Backend
+        if (!effectiveRole || !allowedRoles.includes(effectiveRole as any)) {
+          document.cookie = `oculide_role=${effectiveRole || ''}; path=/; SameSite=Lax`;
+          redirectByRole(effectiveRole);
+          return;
+        }
+
+        // Đảm bảo session cookie luôn đồng bộ với localStorage (tự xóa khi đóng trình duyệt)
+        document.cookie = `oculide_token=${token}; path=/; SameSite=Lax`;
+        document.cookie = `oculide_role=${effectiveRole}; path=/; SameSite=Lax`;
+
+        // Cập nhật timestamp hoạt động ban đầu
+        localStorage.setItem('oculide_last_activity', Date.now().toString());
+
+        // Nếu không phải Admin, kiểm tra ngay trạng thái bảo trì hoặc cảnh báo trước 5 phút
+        if (effectiveRole !== 'admin') {
+          fetch('/api/v1/auth/maintenance-status', { cache: 'no-store' })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((m) => {
+              if (m?.maintenance_mode) {
+                clearSessionAndRedirect('maintenance');
+              } else if (m?.upcoming_maintenance && m?.minutes_remaining) {
+                triggerMaintenanceWarning(m.minutes_remaining, m.maintenance_start_time || '');
+              }
+            })
+            .catch(() => {});
+        }
+
+        // Xác thực thành công -> Cho phép hiển thị giao diện
+        setIsAuthorized(true);
+      } catch {
+        clearSessionAndRedirect();
+      }
+    };
+
+    verifyAndSyncSession();
+    return () => {
+      cancelled = true;
+    };
   }, [allowedRoles]);
 
   // Lắng nghe sự kiện thao tác của người dùng để reset thời gian treo máy
@@ -114,19 +191,65 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
     events.forEach((ev) => window.addEventListener(ev, handleUserActivity, { passive: true }));
 
-    // Định kỳ 15 giây kiểm tra một lần xem tài khoản có bị treo quá 30 phút hoặc token hết hạn không
-    const checkInterval = setInterval(() => {
+    // Định kỳ 20 giây gửi heartbeat duy trì phiên, kiểm tra treo máy, token hết hạn và bảo trì
+    const checkInterval = setInterval(async () => {
+      const lastActivity = Number(localStorage.getItem('oculide_last_activity') || Date.now());
+      if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+        clearSessionAndRedirect('idle_timeout');
+        return;
+      }
+
       const token = localStorage.getItem('oculide_token');
-      if (!token || isTokenExpired(token)) {
+      if (!token) {
         clearSessionAndRedirect('token_expired');
         return;
       }
 
-      const lastActivity = Number(localStorage.getItem('oculide_last_activity') || Date.now());
-      if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
-        clearSessionAndRedirect('idle_timeout');
+      if (isTokenExpired(token)) {
+        const refreshed = await refreshAccessToken();
+        if (!refreshed) {
+          clearSessionAndRedirect('token_expired');
+          return;
+        }
       }
-    }, 15000);
+
+      const activeToken = localStorage.getItem('oculide_token');
+      if (activeToken) {
+        try {
+          const hbRes = await fetch('/api/v1/auth/heartbeat', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${activeToken}` },
+          });
+          if (hbRes.status === 401) {
+            const hbBody = await hbRes.json().catch(() => ({}));
+            if (hbBody?.detail?.code === 'SESSION_REVOKED') {
+              clearSessionAndRedirect('session_revoked');
+              return;
+            }
+          }
+        } catch {
+          // ignore transient network errors
+        }
+      }
+
+      try {
+        const rawUser = localStorage.getItem('oculide_user');
+        const role = rawUser ? String(JSON.parse(rawUser)?.role || '').toLowerCase() : '';
+        if (role && role !== 'admin') {
+          const res = await fetch('/api/v1/auth/maintenance-status', { cache: 'no-store' });
+          if (res.ok) {
+            const m = await res.json().catch(() => null);
+            if (m?.maintenance_mode) {
+              clearSessionAndRedirect('maintenance');
+            } else if (m?.upcoming_maintenance && m?.minutes_remaining) {
+              triggerMaintenanceWarning(m.minutes_remaining, m.maintenance_start_time || '');
+            }
+          }
+        }
+      } catch {
+        // ignore network errors during periodic check
+      }
+    }, 20000);
 
     return () => {
       events.forEach((ev) => window.removeEventListener(ev, handleUserActivity));
@@ -145,5 +268,19 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {maintenanceWarning && (
+        <aside
+          role="alert"
+          aria-live="assertive"
+          className="fixed top-5 right-5 z-[100] max-w-md rounded-md border border-amber-300 border-l-4 border-l-amber-600 bg-amber-50 px-4 py-3 text-xs text-amber-950 shadow-lg dark:border-amber-500/40 dark:border-l-amber-400 dark:bg-neutral-900 dark:text-amber-200"
+        >
+          <p className="font-serif font-bold">Thông báo bảo trì sắp diễn ra</p>
+          <p className="mt-0.5 leading-relaxed">{maintenanceWarning}</p>
+        </aside>
+      )}
+      {children}
+    </>
+  );
 }

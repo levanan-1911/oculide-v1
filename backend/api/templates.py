@@ -18,7 +18,7 @@ router = APIRouter()
 @router.get("")
 async def list_exam_templates(
     room_type: Optional[str] = None,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required),
 ):
     """
     Lấy danh sách Bộ đề mẫu kèm câu hỏi & test cases từ CSDL.

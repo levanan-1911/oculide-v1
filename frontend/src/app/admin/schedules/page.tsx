@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import SearchableLecturerCombobox from '@/components/common/SearchableLecturerCombobox';
 import {
   AlertTriangle,
   Calendar,
@@ -36,8 +37,6 @@ import AdminTopbar from '@/components/admin/AdminTopbar';
 import { fetchWithAuth } from '@/services/apiClient';
 import {
   ExamScheduleItem,
-  getStoredSchedules,
-  saveStoredSchedules,
   ScheduleStatus,
 } from './types';
 import { exportStyledExcel } from '@/utils/excelExporter';
@@ -88,50 +87,6 @@ function calculateEndTime(startTime: string, durationMinutes: number): string {
   return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
 }
 
-// Ngân hàng đề thi lập trình thực hành (Tái sử dụng từ role Giảng viên)
-const AVAILABLE_CODING_TEMPLATES = [
-  {
-    id: 1,
-    code: 'TPL-EXAM-01',
-    title: 'Đề thi Kết thúc học phần: Thuật toán & Cấu trúc Dữ liệu',
-    courseCode: 'CS404',
-    language: 'C++ / Python',
-    totalProblems: 4,
-    durationMinutes: 90,
-    author: 'TS. Nguyễn Văn Nam',
-  },
-  {
-    id: 2,
-    code: 'TPL-EXAM-02',
-    title: 'Đề thi Thực hành: Lập trình Hướng đối tượng & Design Patterns',
-    courseCode: 'CS316',
-    language: 'Java / C#',
-    totalProblems: 3,
-    durationMinutes: 90,
-    author: 'ThS. Trần Hoàng Yến',
-  },
-  {
-    id: 3,
-    code: 'TPL-EXAM-03',
-    title: 'Đề thi Lập trình Web Fullstack & Thiết kế RESTful API',
-    courseCode: 'IS385',
-    language: 'TypeScript / Node.js',
-    totalProblems: 3,
-    durationMinutes: 120,
-    author: 'Phạm Vũ Long',
-  },
-  {
-    id: 4,
-    code: 'TPL-EXAM-04',
-    title: 'Đề thi Cơ sở Dữ liệu Nâng cao & Tối ưu Truy vấn SQL',
-    courseCode: 'DB201',
-    language: 'PostgreSQL / SQL',
-    totalProblems: 5,
-    durationMinutes: 90,
-    author: 'TS. Lê Hải Đăng',
-  },
-];
-
 export default function ScheduleManagerPage() {
   const [schedules, setSchedules] = useState<ExamScheduleItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -149,29 +104,27 @@ export default function ScheduleManagerPage() {
   // Inspector notes logbook
   const [inspectorNote, setInspectorNote] = useState('');
   const [isTakingNote, setIsTakingNote] = useState(false);
-  const [inspectionNotesList, setInspectionNotesList] = useState<Array<{ time: string; text: string }>>([
-    { time: '08:00', text: 'Mở phòng thi kết thúc học phần đúng giờ. Giám thị đã phổ biến quy chế thi lập trình trên máy.' },
-    { time: '08:15', text: 'Thanh tra đào tạo kiểm tra trực ban: Toàn bộ máy tính sinh viên hoạt động ổn định trên IDE của hệ thống.' }
-  ]);
+  const [inspectionNotesList, setInspectionNotesList] = useState<Array<{ time: string; text: string }>>([]);
 
   // Modal Tạo Lịch Thi Cuối Kỳ (Chỉ Lập Trình)
   const [isCreateFinalExamOpen, setIsCreateFinalExamOpen] = useState(false);
   const [newExamForm, setNewExamForm] = useState({
-    title: 'Thi Cuối Kỳ: Lập Trình Thuật Toán & Cấu Trúc Dữ Liệu',
-    courseCode: 'CS404',
-    lecturer: 'TS. Nguyễn Văn Nam',
-    date: '2026-11-25',
+    title: '',
+    courseCode: '',
+    lecturer: '',
+    date: '',
     startTime: '08:00',
-    durationMinutes: 90,
-    studentCount: 50,
+    durationMinutes: 0,
+    studentCount: 0,
     assignTemplateNow: false,
-    selectedTemplateId: 1,
+    selectedTemplateId: '',
   });
 
   // Modal Gán / Đổi Đề Thi Cho Ca Thi (Chọn từ Ngân hàng đề thi kết thúc học phần đã thẩm định)
   const [attachTemplateSchedule, setAttachTemplateSchedule] = useState<ExamScheduleItem | null>(null);
   const [availableFinalTemplates, setAvailableFinalTemplates] = useState<any[]>([]);
-  const [selectedTemplateToAttach, setSelectedTemplateToAttach] = useState<number | string>(2);
+  const [instructorAccounts, setInstructorAccounts] = useState<Array<{ user_id: number; full_name: string; email?: string; student_id?: string }>>([]);
+  const [selectedTemplateToAttach, setSelectedTemplateToAttach] = useState<number | string>('');
   const [isAttaching, setIsAttaching] = useState(false);
 
   // Modal Thanh Tra Màn Hình & Code Thí Sinh Thời Gian Thực
@@ -187,16 +140,16 @@ export default function ScheduleManagerPage() {
       const data = await fetchWithAuth<any[]>('/api/v1/admin/templates?template_type=final_exam');
       if (Array.isArray(data) && data.length > 0) {
         const finalsOnly = data.filter((t: any) => t.type === 'final_exam' || t.template_type === 'final_exam' || (t.title && (t.title.toLowerCase().includes('kết thúc') || t.title.toLowerCase().includes('cuối kỳ'))));
-        const finalResults = finalsOnly.length > 0 ? finalsOnly : data;
-        setAvailableFinalTemplates(finalResults);
-        if (finalResults[0]) {
-          setSelectedTemplateToAttach(finalResults[0].template_id || finalResults[0].id);
+        setAvailableFinalTemplates(finalsOnly);
+        if (finalsOnly[0]) {
+          setSelectedTemplateToAttach(finalsOnly[0].template_id || finalsOnly[0].id);
         }
       } else {
-        setAvailableFinalTemplates(AVAILABLE_CODING_TEMPLATES.filter((t) => t.id === 1 || t.title.includes('Kết thúc')));
+        setAvailableFinalTemplates([]);
       }
-    } catch {
-      setAvailableFinalTemplates(AVAILABLE_CODING_TEMPLATES.filter((t) => t.id === 1 || t.title.includes('Kết thúc')));
+    } catch (error) {
+      console.error('Không thể tải danh sách đề thi từ máy chủ:', error);
+      setAvailableFinalTemplates([]);
     }
   };
 
@@ -218,6 +171,15 @@ export default function ScheduleManagerPage() {
     }
   };
 
+  const loadInstructors = async () => {
+    try {
+      const res = await fetchWithAuth<{ users?: any[] }>('/api/v1/admin/users?role=instructor&page=1&page_size=100');
+      setInstructorAccounts(Array.isArray(res?.users) ? res.users : []);
+    } catch {
+      setInstructorAccounts([]);
+    }
+  };
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('oculide_schedules_mock');
@@ -225,6 +187,7 @@ export default function ScheduleManagerPage() {
     }
     loadSchedulesFromApi();
     loadFinalTemplates();
+    loadInstructors();
   }, []);
 
   // Tự động kiểm tra và đóng phòng khi hết thời gian làm bài thi
@@ -295,16 +258,7 @@ export default function ScheduleManagerPage() {
       const data = await fetchWithAuth<any>(`/api/v1/admin/schedules/${roomId}/students/${studentId}/live-screen`);
       setStudentLiveScreenData(data);
     } catch {
-      // Fallback mock live code preview
-      setStudentLiveScreenData({
-        student_id: studentId,
-        full_name: student.full_name,
-        student_code: student.student_code,
-        session_status: 'in_progress',
-        code_content: `# Bài làm môn: ${selectedSchedule?.title || 'Lập trình thuật toán'}\n# Thí sinh: ${student.full_name} (${student.student_code})\n\ndef solve_problem(nums, target):\n    hash_map = {}\n    for i, num in enumerate(nums):\n        diff = target - num\n        if diff in hash_map:\n            return [hash_map[diff], i]\n        hash_map[num] = i\n    return []\n\nif __name__ == "__main__":\n    print("Output test:", solve_problem([2, 7, 11, 15], 9))\n`,
-        programming_language: 'python',
-        last_saved_at: new Date().toLocaleTimeString('vi-VN'),
-      });
+      setStudentLiveScreenData(null);
     } finally {
       setIsLoadingLiveScreen(false);
     }
@@ -377,8 +331,25 @@ export default function ScheduleManagerPage() {
 
     const cleanCourse = newExamForm.courseCode.trim().toUpperCase();
     const templateObj = newExamForm.assignTemplateNow
-      ? AVAILABLE_CODING_TEMPLATES.find((t) => t.id === Number(newExamForm.selectedTemplateId))
+      ? availableFinalTemplates.find(
+          (template) =>
+            Number(template.template_id || template.id) === Number(newExamForm.selectedTemplateId)
+        )
       : null;
+
+    if (
+      !newExamForm.date ||
+      Number(newExamForm.durationMinutes) <= 0 ||
+      Number(newExamForm.studentCount) <= 0
+    ) {
+      alert('Vui lòng nhập ngày thi, thời lượng và sĩ số hợp lệ.');
+      return;
+    }
+
+    if (newExamForm.assignTemplateNow && !templateObj) {
+      alert('Không tìm thấy đề thi đã chọn trong dữ liệu máy chủ.');
+      return;
+    }
 
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
@@ -391,119 +362,31 @@ export default function ScheduleManagerPage() {
         body: JSON.stringify({
           title: newExamForm.title.trim(),
           course_code: cleanCourse,
-          lecturer: newExamForm.lecturer.trim() || 'TS. Nguyễn Văn Nam',
+          lecturer: newExamForm.lecturer.trim(),
           exam_date: newExamForm.date,
           start_time: newExamForm.startTime,
-          duration_minutes: Number(newExamForm.durationMinutes) || 90,
-          student_count: Number(newExamForm.studentCount) || 50,
-          template_id: templateObj ? templateObj.id : null,
+          duration_minutes: Number(newExamForm.durationMinutes),
+          student_count: Number(newExamForm.studentCount),
+          template_id: templateObj ? templateObj.template_id || templateObj.id : null,
         }),
       });
 
-      if (res.ok) {
-        const createdData = await res.json();
-        const newScheduleItem: ExamScheduleItem = {
-          id: createdData.room_code || `EXAM-FINAL-${cleanCourse}-${Date.now().toString().slice(-4)}`,
-          room_id: createdData.room_id,
-          title: newExamForm.title.trim(),
-          courseCode: cleanCourse,
-          classId: cleanCourse,
-          className: `Khóa thi kết thúc học phần • ${cleanCourse}`,
-          studentCount: Number(newExamForm.studentCount) || 50,
-          lecturer: newExamForm.lecturer || 'TS. Nguyễn Văn Nam',
-          templateId: templateObj ? templateObj.code : '',
-          templateTitle: templateObj ? templateObj.title : 'Chưa gán đề thi (Bảo mật chống lộ đề)',
-          templateVersion: 'v1.0 (Lập trình thực hành)',
-          date: newExamForm.date,
-          startTime: newExamForm.startTime,
-          endTime: calculateEndTime(newExamForm.startTime, Number(newExamForm.durationMinutes) || 90),
-          durationMinutes: Number(newExamForm.durationMinutes) || 90,
-          room: 'Phòng thi máy tính tập trung',
-          roomCode: createdData.room_code || `EXAM_${cleanCourse}`,
-          roomPassword: Math.floor(100000 + Math.random() * 900000).toString(),
-          status: 'scheduled',
-          examFormat: 'coding',
-          proctoringPolicy: {
-            webcam: 'optional',
-            screenShare: 'optional',
-            clipboard: 'block',
-            notifications: ['Bảng thanh tra', 'Thông báo phòng máy'],
-            faceMissingThresholdSec: 15,
-            faceMissingSeverity: 'medium',
-            webcamLostThresholdSec: 10,
-            webcamLostSeverity: 'high',
-            screenStopThresholdSec: 5,
-            screenStopSeverity: 'critical',
-            tabSwitchLimit: 2,
-            tabSwitchSeverity: 'high',
-          },
-          attendedStudents: 0,
-          createdAt: new Date().toLocaleDateString('vi-VN'),
-          creatorRole: 'system',
-        };
-
-        const updated = [newScheduleItem, ...schedules];
-        setSchedules(updated);
-        saveStoredSchedules(updated);
-        setIsCreateFinalExamOpen(false);
-        setNotification({
-          type: 'success',
-          message: `Đã khởi tạo lịch thi cuối kỳ môn "${newExamForm.title}" thành công. Lịch thi được bảo mật chỉ Admin xem trước.`,
-        });
-        return;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.detail || 'Không thể tạo lịch thi trên máy chủ.');
       }
-    } catch (err) {
-      console.warn('Backend API error when creating exam:', err);
+      setIsCreateFinalExamOpen(false);
+      await loadSchedulesFromApi();
+      setNotification({
+        type: 'success',
+        message: data.message || `Đã khởi tạo lịch thi cuối kỳ môn "${newExamForm.title}" thành công.`,
+      });
+    } catch (err: any) {
+      setNotification({
+        type: 'info',
+        message: err?.message || 'Không thể tạo lịch thi. Vui lòng thử lại.',
+      });
     }
-
-    // Client-side fallback if backend unavailable
-    const newScheduleItem: ExamScheduleItem = {
-      id: `EXAM-FINAL-${cleanCourse}-${Date.now().toString().slice(-4)}`,
-      title: newExamForm.title.trim(),
-      courseCode: cleanCourse,
-      classId: cleanCourse,
-      className: `Khóa thi kết thúc học phần • ${cleanCourse}`,
-      studentCount: Number(newExamForm.studentCount) || 50,
-      lecturer: newExamForm.lecturer || 'TS. Nguyễn Văn Nam',
-      templateId: templateObj ? templateObj.code : '',
-      templateTitle: templateObj ? templateObj.title : 'Chưa gán đề thi (Bảo mật chống lộ đề)',
-      templateVersion: 'v1.0 (Lập trình thực hành)',
-      date: newExamForm.date,
-      startTime: newExamForm.startTime,
-      endTime: calculateEndTime(newExamForm.startTime, Number(newExamForm.durationMinutes) || 90),
-      durationMinutes: Number(newExamForm.durationMinutes) || 90,
-      room: 'Phòng thi máy tính tập trung',
-      roomCode: `EXAM_${cleanCourse}`,
-      roomPassword: Math.floor(100000 + Math.random() * 900000).toString(),
-      status: 'scheduled',
-      examFormat: 'coding',
-      proctoringPolicy: {
-        webcam: 'optional',
-        screenShare: 'optional',
-        clipboard: 'block',
-        notifications: ['Bảng thanh tra', 'Thông báo phòng máy'],
-        faceMissingThresholdSec: 15,
-        faceMissingSeverity: 'medium',
-        webcamLostThresholdSec: 10,
-        webcamLostSeverity: 'high',
-        screenStopThresholdSec: 5,
-        screenStopSeverity: 'critical',
-        tabSwitchLimit: 2,
-        tabSwitchSeverity: 'high',
-      },
-      attendedStudents: 0,
-      createdAt: new Date().toLocaleDateString('vi-VN'),
-      creatorRole: 'system',
-    };
-
-    const updated = [newScheduleItem, ...schedules];
-    setSchedules(updated);
-    saveStoredSchedules(updated);
-    setIsCreateFinalExamOpen(false);
-    setNotification({
-      type: 'success',
-      message: `Đã tạo lịch thi cuối kỳ môn "${newExamForm.title}" thành công!`,
-    });
   };
 
   // Handle Attach Template to Exam (Đổi / Gán đề thi kết thúc học phần từ danh sách)
@@ -519,8 +402,13 @@ export default function ScheduleManagerPage() {
       return;
     }
 
+    const roomId = attachTemplateSchedule.room_id || Number(attachTemplateSchedule.id);
+    if (!Number.isInteger(roomId) || roomId <= 0) {
+      alert('Không tìm thấy mã phòng hợp lệ trên máy chủ.');
+      return;
+    }
+
     setIsAttaching(true);
-    const roomId = attachTemplateSchedule.room_id || Number(attachTemplateSchedule.id) || 1;
 
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
@@ -639,16 +527,7 @@ export default function ScheduleManagerPage() {
   }
 
   // Room students list for Ongoing Live Inspection modal
-  const roomStudentsList = useMemo(() => {
-    if (modalStudents.length > 0) return modalStudents;
-    return [
-      { student_id: 1, student_code: '0123456', full_name: 'Long Phạm', attendance_status: 'present', progress: 'Đang làm bài (75%)', pc: 'PC-01' },
-      { student_id: 2, student_code: '20110002', full_name: 'Trần Thị Bích', attendance_status: 'present', progress: 'Đang làm bài (80%)', pc: 'PC-02' },
-      { student_id: 3, student_code: '20110003', full_name: 'Lê Văn Cường', attendance_status: 'present', progress: 'Đang làm bài (60%)', pc: 'PC-03' },
-      { student_id: 4, student_code: '20110004', full_name: 'Hoàng Minh Tuấn', attendance_status: 'absent', progress: 'Chưa vào phòng', pc: 'PC-04' },
-      { student_id: 5, student_code: '20110005', full_name: 'Nguyễn Văn Nam', attendance_status: 'present', progress: 'Đang làm bài (70%)', pc: 'PC-05' },
-    ];
-  }, [modalStudents]);
+  const roomStudentsList = modalStudents;
 
   const filteredRoomStudents = useMemo(() => {
     if (!studentSearchInRoom.trim()) return roomStudentsList;
@@ -777,55 +656,19 @@ export default function ScheduleManagerPage() {
 
             {/* Toolbar: 2 tầng gọn gàng, vừa vặn 100% trong khung, không tràn thanh cuộn */}
             <div className="flex flex-col gap-3 rounded-lg border border-slate-300 bg-white p-3.5 shadow-sm dark:border-white/10 dark:bg-neutral-900 transition-colors">
-              {/* Tầng 1: Type Tabs bên trái + Tìm kiếm bên phải */}
+              {/* Tầng 1: Bộ lọc trạng thái bên trái + Tìm kiếm bên phải */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                {/* Type Tabs: shrink-0, không overflow-x-auto */}
-                <div className="inline-flex h-9 shrink-0 items-center rounded-lg border border-slate-300 bg-slate-50 p-1 dark:border-white/10 dark:bg-neutral-950">
-                  <button
-                    type="button"
-                    onClick={() => setTypeTab('all')}
-                    className={`h-full whitespace-nowrap rounded-md px-3 text-xs font-semibold transition cursor-pointer ${
-                      typeTab === 'all'
-                        ? 'system-selected-module shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                    }`}
-                  >
-                    Tất cả ({formalSchedules.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTypeTab('ongoing')}
-                    className={`h-full whitespace-nowrap rounded-md px-3 text-xs font-semibold transition cursor-pointer ${
-                      typeTab === 'ongoing'
-                        ? 'system-selected-module shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                    }`}
-                  >
-                    Đang diễn ra ({ongoingCount})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTypeTab('scheduled')}
-                    className={`h-full whitespace-nowrap rounded-md px-3 text-xs font-semibold transition cursor-pointer ${
-                      typeTab === 'scheduled'
-                        ? 'system-selected-module shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                    }`}
-                  >
-                    Sắp tới ({scheduledCount})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTypeTab('completed')}
-                    className={`h-full whitespace-nowrap rounded-md px-3 text-xs font-semibold transition cursor-pointer ${
-                      typeTab === 'completed'
-                        ? 'system-selected-module shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                    }`}
-                  >
-                    Đã kết thúc ({completedCount})
-                  </button>
-                </div>
+                <select
+                  aria-label="Lọc theo trạng thái"
+                  value={typeTab}
+                  onChange={(e) => setTypeTab(e.target.value as typeof typeTab)}
+                  className="h-9 w-full sm:w-auto rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 dark:focus:border-white focus:ring-1 focus:ring-slate-900 dark:focus:ring-white/20 cursor-pointer dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200"
+                >
+                  <option value="all">Tất cả trạng thái ({formalSchedules.length})</option>
+                  <option value="ongoing">Đang diễn ra ({ongoingCount})</option>
+                  <option value="scheduled">Sắp tới ({scheduledCount})</option>
+                  <option value="completed">Đã kết thúc ({completedCount})</option>
+                </select>
 
                 {/* Ô tìm kiếm */}
                 <div className="relative w-full sm:w-72 md:w-80">
@@ -1071,7 +914,12 @@ export default function ScheduleManagerPage() {
                                       type="button"
                                       onClick={() => {
                                         setAttachTemplateSchedule(item);
-                                        setSelectedTemplateToAttach(item.templateId || (availableFinalTemplates[0]?.template_id || 1));
+                                        setSelectedTemplateToAttach(
+                                          item.templateId ||
+                                            availableFinalTemplates[0]?.template_id ||
+                                            availableFinalTemplates[0]?.id ||
+                                            ''
+                                        );
                                       }}
                                       className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 shadow-2xs transition cursor-pointer whitespace-nowrap"
                                       title="Gán hoặc đổi đề thi kết thúc học phần"
@@ -1136,7 +984,7 @@ export default function ScheduleManagerPage() {
                     Tạo lịch thi kết thúc học phần (Chỉ Lập Trình)
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Khởi tạo ca thi chính thức, phân công giám thị và thiết lập bảo mật đề thi
+                    100% Thực hành lập trình trên sandbox • Khởi tạo ca thi chính thức, phân công giám thị và thiết lập bảo mật đề thi
                   </p>
                 </div>
               </div>
@@ -1151,7 +999,7 @@ export default function ScheduleManagerPage() {
 
             {/* Form Body */}
             <form onSubmit={handleCreateFinalExam} className="overflow-y-auto flex-1 p-6 space-y-4 text-xs">
-              {/* Tên kỳ thi */}
+              {/* Hàng 1: Tên kỳ thi (100%) */}
               <div>
                 <label className="block font-bold text-slate-700 dark:text-slate-200 mb-1">
                   Tên kỳ thi / môn thi chính thức *
@@ -1166,7 +1014,7 @@ export default function ScheduleManagerPage() {
                 />
               </div>
 
-              {/* Grid 2 cols: Mã học phần & Cán bộ coi thi */}
+              {/* Hàng 2 (50% - 50%): Mã môn học phần | Sĩ số dự thi */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-200 mb-1">
@@ -1184,35 +1032,36 @@ export default function ScheduleManagerPage() {
 
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-200 mb-1">
-                    Cán bộ coi thi chính (Giám thị) *
+                    Sĩ số dự thi theo danh sách phòng đào tạo *
                   </label>
                   <input
-                    type="text"
+                    type="number"
                     required
-                    value={newExamForm.lecturer}
-                    onChange={(e) => setNewExamForm({ ...newExamForm, lecturer: e.target.value })}
-                    placeholder="Ví dụ: TS. Nguyễn Văn Nam"
+                    min={1}
+                    max={500}
+                    value={newExamForm.studentCount}
+                    onChange={(e) => setNewExamForm({ ...newExamForm, studentCount: Number(e.target.value) })}
                     className="h-9 w-full rounded-lg border border-slate-300 px-3 font-medium outline-none focus:border-slate-900 dark:focus:border-white focus:ring-1 focus:ring-[#0f172a]/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
                   />
                 </div>
               </div>
 
-              {/* Hình thức thi: 100% Lập trình thực hành */}
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-white/10 dark:bg-white/5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800 dark:text-slate-200">
-                    Hình thức bài thi: 100% Thực hành lập trình trên máy (Coding Only)
-                  </span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-300 text-[11px]">
-                    Đã chuẩn hóa
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Kỳ thi tập trung kiểm tra năng lực viết code, kiểm thử tự động qua testcase trên sandbox và camera giám sát trực ban.
-                </p>
+              {/* Hàng 3 (100%): Cán bộ coi thi chính (Searchable Combobox) */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-200 mb-1">
+                  Cán bộ coi thi chính (Giám thị) *
+                </label>
+                <SearchableLecturerCombobox
+                  valueName={newExamForm.lecturer}
+                  courseCodeHint={newExamForm.courseCode}
+                  ariaLabel="Cán bộ coi thi chính (Giám thị)"
+                  placeholder="-- Tìm & chọn giảng viên trong hệ thống --"
+                  onSelect={(inst) => setNewExamForm({ ...newExamForm, lecturer: inst.fullName })}
+                  required
+                />
               </div>
 
-              {/* Grid 3 cols: Ngày thi, Giờ bắt đầu, Thời lượng */}
+              {/* Hàng 4 (3 cột đều nhau): Ngày thi | Giờ bắt đầu | Thời lượng */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-200 mb-1">
@@ -1255,22 +1104,6 @@ export default function ScheduleManagerPage() {
                     className="h-9 w-full rounded-lg border border-slate-300 px-3 font-medium outline-none focus:border-slate-900 dark:focus:border-white focus:ring-1 focus:ring-[#0f172a]/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
                   />
                 </div>
-              </div>
-
-              {/* Sĩ số dự thi */}
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Sĩ số dự thi theo danh sách phòng đào tạo (sinh viên) *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  max={500}
-                  value={newExamForm.studentCount}
-                  onChange={(e) => setNewExamForm({ ...newExamForm, studentCount: Number(e.target.value) })}
-                  className="h-9 w-full rounded-lg border border-slate-300 px-3 font-medium outline-none focus:border-slate-900 dark:focus:border-white focus:ring-1 focus:ring-[#0f172a]/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
-                />
               </div>
 
               {/* Bảo mật đề thi: Tùy chọn gán đề thi ngay hay thêm sau */}
@@ -1324,12 +1157,13 @@ export default function ScheduleManagerPage() {
                     </label>
                     <select
                       value={newExamForm.selectedTemplateId}
-                      onChange={(e) => setNewExamForm({ ...newExamForm, selectedTemplateId: Number(e.target.value) })}
+                      onChange={(e) => setNewExamForm({ ...newExamForm, selectedTemplateId: e.target.value })}
                       className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 font-medium outline-none focus:border-slate-900 dark:focus:border-white dark:border-white/10 dark:bg-neutral-950 dark:text-white"
                     >
-                      {AVAILABLE_CODING_TEMPLATES.map((tpl) => (
-                        <option key={tpl.id} value={tpl.id}>
-                          {tpl.code} • {tpl.title} ({tpl.language})
+                      <option value="">Chọn đề thi</option>
+                      {availableFinalTemplates.map((tpl) => (
+                        <option key={tpl.template_id || tpl.id} value={tpl.template_id || tpl.id}>
+                          {tpl.template_code || tpl.code || tpl.template_id || tpl.id} • {tpl.title} ({tpl.language || '—'})
                         </option>
                       ))}
                     </select>
@@ -1446,14 +1280,14 @@ export default function ScheduleManagerPage() {
                                 {tpl.template_code || tpl.code || `TPL-${tplKey}`}
                               </span>
                               <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                                {tpl.language || 'C++ / Python'}
+                                {tpl.language || '—'}
                               </span>
                             </div>
                             <p className="text-xs font-bold text-slate-900 dark:text-white mt-0.5">
                               {tpl.title}
                             </p>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                              Thời lượng: {tpl.durationMinutes || tpl.duration_minutes || 90} phút • Tác giả: {tpl.lecturer || tpl.author || 'Ban ra đề / Khảo thí'} • {tpl.questionCount || tpl.totalProblems || 2} bài tập
+                              Thời lượng: {tpl.durationMinutes || tpl.duration_minutes || '—'} phút • Tác giả: {tpl.lecturer || tpl.author || '—'} • {tpl.questionCount || tpl.totalProblems || '—'} bài tập
                             </p>
                           </div>
                         </label>
@@ -1584,10 +1418,10 @@ export default function ScheduleManagerPage() {
                       Đề thi lập trình
                     </p>
                     <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white truncate">
-                      {selectedSchedule.templateId || 'TPL-EXAM-01'}
+                      {selectedSchedule.templateId || '—'}
                     </p>
                     <p className="text-[10px] text-slate-700 dark:text-slate-300 font-semibold mt-0.5">
-                      Đã bảo mật &amp; đồng bộ
+                      {selectedSchedule.templateId ? 'Đã bảo mật & đồng bộ' : 'Chưa gán đề thi'}
                     </p>
                   </div>
                 </div>
@@ -1897,7 +1731,12 @@ export default function ScheduleManagerPage() {
                             const sched = selectedSchedule;
                             setSelectedSchedule(null);
                             setAttachTemplateSchedule(sched);
-                            setSelectedTemplateToAttach(sched.templateId || (availableFinalTemplates[0]?.template_id || 1));
+                            setSelectedTemplateToAttach(
+                              sched.templateId ||
+                                availableFinalTemplates[0]?.template_id ||
+                                availableFinalTemplates[0]?.id ||
+                                ''
+                            );
                           }}
                           className="system-primary-action inline-flex items-center gap-1 rounded bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer"
                         >
@@ -1911,7 +1750,12 @@ export default function ScheduleManagerPage() {
                           const sched = selectedSchedule;
                           setSelectedSchedule(null);
                           setAttachTemplateSchedule(sched);
-                          setSelectedTemplateToAttach(sched.templateId || (availableFinalTemplates[0]?.template_id || 1));
+                          setSelectedTemplateToAttach(
+                            sched.templateId ||
+                              availableFinalTemplates[0]?.template_id ||
+                              availableFinalTemplates[0]?.id ||
+                              ''
+                          );
                         }}
                         className="system-primary-action inline-flex items-center gap-1 rounded bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer"
                       >

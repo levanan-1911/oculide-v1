@@ -29,7 +29,7 @@ export function middleware(request: NextRequest) {
 
   const payload = rawToken ? parseJwtPayload(rawToken) : null;
   const tokenValid = Boolean(rawToken && payload && !isTokenExpired(payload));
-  const userRole = (payload?.role || cookieRole || '').toLowerCase();
+  const userRole = (cookieRole || payload?.role || '').toLowerCase();
 
   // 1. Nếu đã đăng nhập hợp lệ mà truy cập trang /login -> Tự động chuyển hướng về Dashboard tương ứng
   if (pathname === '/login') {
@@ -74,6 +74,11 @@ export function middleware(request: NextRequest) {
 
   if (pathname.startsWith('/instructor') && userRole !== 'instructor' && userRole !== 'admin') {
     return NextResponse.redirect(new URL('/student/dashboard', request.url));
+  }
+
+  if (pathname.startsWith('/student') && userRole !== 'student') {
+    const target = userRole === 'admin' ? '/admin/dashboard' : '/instructor/dashboard';
+    return NextResponse.redirect(new URL(target, request.url));
   }
 
   return NextResponse.next();

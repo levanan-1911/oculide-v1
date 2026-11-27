@@ -12,6 +12,7 @@ def get_submission_by_id(submission_id: int, include_hidden_details: bool = True
                    s.room_id, 
                    p.room_code,
                    p.room_name,
+                   p.room_type,
                    lh.class_id,
                    lh.class_code,
                    lh.class_name,
@@ -27,7 +28,7 @@ def get_submission_by_id(submission_id: int, include_hidden_details: bool = True
                    s.submitted_at, 
                    s.grading_status AS status,
                    COALESCE((
-                       SELECT SUM(tc.points)
+                       SELECT SUM(COALESCE(gr.score_awarded, tc.points))
                        FROM GradingResults gr
                        JOIN TestCases tc ON gr.test_case_id = tc.test_case_id
                        WHERE gr.submission_id = s.submission_id AND gr.is_passed = 1
@@ -57,7 +58,9 @@ def get_submission_by_id(submission_id: int, include_hidden_details: bool = True
         cursor.close()
         conn.close()
 
-def get_submissions_by_student(student_id: int, room_id: Optional[int] = None) -> List[Dict]:
+def get_submissions_by_student(student_id: int, room_id: Optional[int] = None, skip: int = 0, limit: int = 100) -> List[Dict]:
+    skip = max(0, int(skip))
+    limit = max(1, min(int(limit), 100))
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -73,6 +76,7 @@ def get_submissions_by_student(student_id: int, room_id: Optional[int] = None) -
                    s.room_id, 
                    p.room_code,
                    p.room_name,
+                   p.room_type,
                    lh.class_id,
                    lh.class_code,
                    lh.class_name,
@@ -86,7 +90,7 @@ def get_submissions_by_student(student_id: int, room_id: Optional[int] = None) -
                    s.submitted_at, 
                    s.grading_status AS status,
                    COALESCE((
-                       SELECT SUM(tc.points)
+                       SELECT SUM(COALESCE(gr.score_awarded, tc.points))
                        FROM GradingResults gr
                        JOIN TestCases tc ON gr.test_case_id = tc.test_case_id
                        WHERE gr.submission_id = s.submission_id AND gr.is_passed = 1
@@ -98,7 +102,8 @@ def get_submissions_by_student(student_id: int, room_id: Optional[int] = None) -
             LEFT JOIN Classes lh ON p.class_id = lh.class_id
             {where_sql}
             ORDER BY s.submitted_at DESC
-        """, tuple(params))
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        """, tuple(params + [skip, limit]))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
         results = []
@@ -114,7 +119,9 @@ def get_submissions_by_student(student_id: int, room_id: Optional[int] = None) -
         cursor.close()
         conn.close()
 
-def get_submissions_by_question(question_id: int) -> List[Dict]:
+def get_submissions_by_question(question_id: int, skip: int = 0, limit: int = 100) -> List[Dict]:
+    skip = max(0, int(skip))
+    limit = max(1, min(int(limit), 100))
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -140,7 +147,8 @@ def get_submissions_by_question(question_id: int) -> List[Dict]:
             JOIN Users u ON s.student_id = u.user_id
             WHERE s.question_id = ?
             ORDER BY s.submitted_at DESC
-        """, (question_id,))
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        """, (question_id, skip, limit))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
         results = []
@@ -218,7 +226,9 @@ def update_submission_status(submission_id: int, status: str) -> bool:
         cursor.close()
         conn.close()
 
-def get_submissions_by_room(room_id: int) -> List[Dict]:
+def get_submissions_by_room(room_id: int, skip: int = 0, limit: int = 100) -> List[Dict]:
+    skip = max(0, int(skip))
+    limit = max(1, min(int(limit), 100))
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -238,7 +248,7 @@ def get_submissions_by_room(room_id: int) -> List[Dict]:
                    s.submitted_at,
                    s.grading_status AS status,
                    COALESCE((
-                       SELECT SUM(tc.points)
+                       SELECT SUM(COALESCE(gr.score_awarded, tc.points))
                        FROM GradingResults gr
                        JOIN TestCases tc ON gr.test_case_id = tc.test_case_id
                        WHERE gr.submission_id = s.submission_id AND gr.is_passed = 1
@@ -250,7 +260,8 @@ def get_submissions_by_room(room_id: int) -> List[Dict]:
             LEFT JOIN Rooms p ON s.room_id = p.room_id
             WHERE s.room_id = ?
             ORDER BY s.submitted_at DESC
-        """, (room_id,))
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        """, (room_id, skip, limit))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
         results = []
@@ -314,6 +325,7 @@ def save_grading_results(submission_id: int, results: List[Dict], final_status: 
     """
     from core.database import get_db_cursor
     with get_db_cursor(commit=True) as cursor:
+        cursor.execute("DELETE FROM GradingResults WHERE submission_id = ?", (submission_id,))
         for r in results:
             cursor.execute("""
                 INSERT INTO GradingResults (
@@ -329,7 +341,7 @@ def save_grading_results(submission_id: int, results: List[Dict], final_status: 
                 r.get("execution_time_ms") or 0,
                 r.get("memory_used_mb") or 0,
                 r.get("error_message"),
-                r.get("points_earned") or (10.0 if r.get("is_passed") else 0.0)
+                r.get("points_earned") if r.get("points_earned") is not None else (10.0 if r.get("is_passed") else 0.0)
             ))
         cursor.execute("UPDATE Submissions SET grading_status = ? WHERE submission_id = ?", (final_status, submission_id))
         return True

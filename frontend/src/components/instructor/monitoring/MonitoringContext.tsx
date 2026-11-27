@@ -58,22 +58,12 @@ interface MonitoringContextType {
   ) => void;
   dismissToast: () => void;
   reviewViolation: (id: string, action: 'warn' | 'record' | 'dismiss') => void;
-  simulateViolation: (typeOverride?: string) => void;
   toastNotice: string | null;
   clearToastNotice: () => void;
   registerWsSender?: (fn: ((data: any) => void) | null) => void;
 }
 
 const MonitoringContext = createContext<MonitoringContextType | null>(null);
-
-const SAMPLE_STUDENTS = [
-  { id: 'SE184801', name: 'Nguyễn Văn An' },
-  { id: 'SE184802', name: 'Trần Thị Bình' },
-  { id: 'SE184803', name: 'Lê Hoàng Cường' },
-  { id: 'SE184804', name: 'Phạm Minh Châu' },
-  { id: 'SE184805', name: 'Đặng Tuấn Dương' },
-  { id: 'SE184806', name: 'Vũ Hải Yến' },
-];
 
 const EMPTY_SESSION: MonitoringSessionInfo = {
   id: '',
@@ -92,29 +82,6 @@ const EMPTY_SESSION: MonitoringSessionInfo = {
 // TUÂN THỦ: Không theo dõi mic sinh viên!
 // Hệ thống đã KHÓA TAB (Lockdown Mode): Sinh viên không thể mở tab khác hay mở ứng dụng ngoài một cách thông thường.
 // Cảnh báo tập trung vào: Hành vi vật lý qua Camera (quay mặt, người thứ 2, dùng điện thoại) & Cố ý thoát chế độ toàn màn hình Fullscreen.
-const VIOLATION_TYPES = [
-  {
-    type: 'Quay mặt khỏi camera > 10s',
-    severity: 'medium' as const,
-    desc: 'Không phát hiện khuôn mặt chính diện với màn hình quá 10 giây.',
-  },
-  {
-    type: 'Phát hiện khuôn mặt lạ / Người thứ 2',
-    severity: 'critical' as const,
-    desc: 'AI phát hiện thêm khuôn mặt thứ hai xuất hiện trong webcam.',
-  },
-  {
-    type: 'Phát hiện thiết bị di động (Smartphone)',
-    severity: 'critical' as const,
-    desc: 'AI phát hiện vật thể dạng điện thoại thông minh trong khu vực làm bài.',
-  },
-  {
-    type: 'Cố ý thao tác thoát toàn màn hình',
-    severity: 'high' as const,
-    desc: 'Học viên cố tình bấm tổ hợp phím hệ thống nhằm thoát chế độ khóa toàn màn hình Fullscreen.',
-  },
-];
-
 export function MonitoringProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<MonitoringSessionInfo>(EMPTY_SESSION);
 
@@ -389,48 +356,6 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
     [activeToast]
   );
 
-  // Giả lập vi phạm AI theo thời gian thực (chỉ khi AI đang bật)
-  const simulateViolation = useCallback(
-    (typeOverride?: string) => {
-      if (!session.roomCode) {
-        setToastNotice('Hiện không có phòng nào đang diễn ra để giả lập cảnh báo.');
-        setTimeout(() => setToastNotice(null), 3000);
-        return;
-      }
-
-      if (!session.isAiActive) {
-        setToastNotice('Buổi thực hành Lab đang tắt AI Proctoring. Chuyển sang ca Kiểm tra để bật AI.');
-        setTimeout(() => setToastNotice(null), 3000);
-        return;
-      }
-
-      const student = SAMPLE_STUDENTS[Math.floor(Math.random() * SAMPLE_STUDENTS.length)];
-      const vTemplate = typeOverride
-        ? VIOLATION_TYPES.find((v) => v.type === typeOverride) || VIOLATION_TYPES[0]
-        : VIOLATION_TYPES[Math.floor(Math.random() * VIOLATION_TYPES.length)];
-
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-      const newViolation: ViolationAlert = {
-        id: `VIO-${Date.now().toString().slice(-4)}`,
-        studentId: student.id,
-        studentName: student.name,
-        classCode: session.classCode,
-        roomCode: session.roomCode,
-        type: vTemplate.type,
-        severity: vTemplate.severity,
-        timestamp: timeStr,
-        description: vTemplate.desc,
-        status: 'pending',
-      };
-
-      setViolations((prev) => [newViolation, ...prev]);
-      setActiveToast(newViolation);
-    },
-    [session.isAiActive, session.classCode, session.roomCode]
-  );
-
   return (
     <MonitoringContext.Provider
       value={{
@@ -444,7 +369,6 @@ export function MonitoringProvider({ children }: { children: React.ReactNode }) 
         sendAnnouncement,
         dismissToast,
         reviewViolation,
-        simulateViolation,
         toastNotice,
         clearToastNotice,
         registerWsSender,

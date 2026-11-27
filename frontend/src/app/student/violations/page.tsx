@@ -111,35 +111,17 @@ export default function StudentViolationsPage() {
     async function loadViolationsAndClasses() {
       setLoading(true);
       try {
-        let studentId: number | null = null;
-        try {
-          const stored = localStorage.getItem("oculide_user");
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            const idVal = Number(parsed.user_id || parsed.id);
-            if (!Number.isNaN(idVal) && idVal > 0) studentId = idVal;
+        const [data, classesData] = await Promise.all([
+          fetchWithAuth<ApiViolation[]>("/api/v1/violations/my"),
+          fetchWithAuth<EnrolledClassItem[]>("/api/v1/classes").catch(() => []),
+        ]);
+
+        if (isMounted) {
+          if (Array.isArray(classesData)) {
+            setEnrolledClasses(classesData);
           }
-        } catch {
-          // ignore
-        }
 
-        if (!studentId) {
-          const me = await fetchWithAuth<{ user_id: number }>("/api/v1/auth/me");
-          if (me && me.user_id) studentId = me.user_id;
-        }
-
-        if (studentId) {
-          const [data, classesData] = await Promise.all([
-            fetchWithAuth<ApiViolation[]>(`/api/v1/violations/student/${studentId}`),
-            fetchWithAuth<EnrolledClassItem[]>("/api/v1/classes").catch(() => []),
-          ]);
-
-          if (isMounted) {
-            if (Array.isArray(classesData)) {
-              setEnrolledClasses(classesData);
-            }
-
-            if (Array.isArray(data)) {
+          if (Array.isArray(data)) {
               const mapped: ViolationItem[] = data.map((v) => {
                 const rawStatus = (v.review_status || "pending").toLowerCase();
                 let status: ViolationStatus = "pending";
@@ -187,7 +169,6 @@ export default function StudentViolationsPage() {
               setViolations(mapped);
             }
           }
-        }
       } catch {
         if (isMounted) setViolations([]);
       } finally {
@@ -255,18 +236,18 @@ export default function StudentViolationsPage() {
           </p>
         </div>
 
-        <div className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-slate-900/10 px-3.5 py-2 text-xs font-serif font-semibold text-slate-900 border border-slate-900/20 dark:bg-slate-900/20 dark:text-[#f0c2cf] shadow-2xs">
-          <ShieldCheck className="h-4 w-4 text-slate-900 dark:text-[#f0c2cf]" />
+        <div className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-brand-50 px-3.5 py-2 text-xs font-serif font-semibold text-brand-700 border border-brand/20 dark:bg-brand-500/10 dark:text-[#f0c2cf] dark:border-brand-500/30 shadow-2xs">
+          <ShieldCheck className="h-4 w-4 text-brand-700 dark:text-[#f0c2cf]" />
           Chính sách đạo đức AI Oculide
         </div>
       </header>
 
       {/* Banner Thông báo Đạo đức AI */}
-      <div className="rounded-md border border-slate-300 bg-slate-900/5 p-4 sm:p-5 flex items-start gap-3.5 dark:border-white/10 dark:bg-slate-900/15">
-        <Info className="h-5 w-5 text-slate-900 dark:text-[#f0c2cf] shrink-0 mt-0.5" />
+      <div className="rounded-md border border-brand/20 bg-brand-50/40 p-4 sm:p-5 flex items-start gap-3.5 dark:border-brand-500/25 dark:bg-brand-500/10">
+        <Info className="h-5 w-5 text-brand-700 dark:text-[#f0c2cf] shrink-0 mt-0.5" />
         <div className="text-xs text-[#2A282D] dark:text-[#E8E6E8] leading-relaxed space-y-1">
           <p>
-            <strong className="font-serif font-bold text-slate-900 dark:text-[#f0c2cf]">Lưu ý quan trọng:</strong> Hệ thống AI chỉ tự động ghi nhận các khoảnh khắc bất thường ở trạng thái tạm thời (<code className="rounded bg-white dark:bg-neutral-900 px-1.5 py-0.5 font-mono text-[11px] font-bold border border-slate-300 dark:border-white/10 text-slate-900 dark:text-[#f0c2cf]">Chờ GV xem xét</code>).
+            <strong className="font-serif font-bold text-brand-700 dark:text-[#f0c2cf]">Lưu ý quan trọng:</strong> Hệ thống AI chỉ tự động ghi nhận các khoảnh khắc bất thường ở trạng thái tạm thời (<code className="rounded bg-white dark:bg-neutral-900 px-1.5 py-0.5 font-mono text-[11px] font-bold border border-brand/20 dark:border-white/10 text-brand-700 dark:text-[#f0c2cf]">Chờ GV xem xét</code>).
           </p>
           <p className="text-[#5A5555] dark:text-[#9F9690]">
             AI <strong>không bao giờ</strong> tự ý trừ điểm bài thi của bạn. Quyết định cuối cùng luôn do chính Giảng viên bộ môn xem xét bằng chứng video/ảnh chụp và phê duyệt.
@@ -302,7 +283,11 @@ export default function StudentViolationsPage() {
             }`}
           >
             <span>Tất cả lớp học phần</span>
-            <span className="rounded-full bg-slate-200 dark:bg-white/20 px-1.5 py-0.2 text-[10px]">
+            <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono font-bold ${
+              selectedClassId === "all"
+                ? "bg-white/20 text-white"
+                : "bg-slate-200 text-slate-700 dark:bg-white/15 dark:text-slate-200"
+            }`}>
               {violations.length}
             </span>
           </button>
@@ -321,7 +306,7 @@ export default function StudentViolationsPage() {
                     : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-white/5 dark:text-slate-300 dark:border-white/10"
                 }`}
               >
-                <BookOpen size={13} className={isSelected ? "text-slate-900 dark:text-[#f0c2cf]" : "text-slate-400"} />
+                <BookOpen size={13} className={isSelected ? "text-white" : "text-slate-400"} />
                 <span>{cls.class_code} • {cls.class_name}</span>
                 {classVioCount > 0 && (
                   <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${

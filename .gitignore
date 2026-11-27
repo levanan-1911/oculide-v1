@@ -31,6 +31,7 @@ venv/
 .venv/
 env/
 .env
+backend/.env
 .env*.local
 *.env.local
 !.env.example
@@ -60,6 +61,7 @@ backend/backups/*.bak
 *.log
 backend_logs.txt
 temp_docx/
+backend/uploads/
 
 # Spreadsheets & Office Temporary files
 *.xlsx

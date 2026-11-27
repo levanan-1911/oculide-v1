@@ -3,6 +3,10 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
+import { useExamCountdown } from "@/hooks/exam/useExamCountdown";
+import { useCameraProctoring } from "@/hooks/exam/useCameraProctoring";
+import { useRoomSessionSync } from "@/hooks/exam/useRoomSessionSync";
+import { useAutoSaveDraft } from "@/hooks/exam/useAutoSaveDraft";
 import LiveKitVideoFeed from "@/components/livekit/LiveKitVideoFeed";
 import { fetchWithAuth, getAuthToken } from "@/services/apiClient";
 import { ProctoringClient } from "@/utils/proctorClient";
@@ -88,8 +92,15 @@ interface ExamData {
   problems: ExamProblem[];
 }
 
+function normalizeExamLanguage(language?: string): "cpp" | "python" | "java" {
+  const lang = (language || "").toLowerCase().trim();
+  if (lang === "py" || lang.includes("python")) return "python";
+  if (lang.includes("java") && !lang.includes("script")) return "java";
+  return "cpp";
+}
+
 function getInitialCodeTemplate(language: string): string {
-  const lang = language.toLowerCase();
+  const lang = normalizeExamLanguage(language);
   if (lang === "python") {
     return "# Viết mã nguồn Python của bạn tại đây\nimport sys\n\ndef main():\n    pass\n\nif __name__ == '__main__':\n    main()\n";
   }
@@ -117,16 +128,13 @@ export default function ExamWorkspacePage() {
     (examRoomType === "exam" && proctoringConfig?.requireCamera !== false && proctoringConfig?.webcam_required !== false);
   const isCameraOffAllowed = !isCameraExplicitlyRequired;
 
-  // Tại phòng thực hành / phòng thi: Sinh viên bắt buộc phải chia sẻ màn hình từ đây (cấu hình bắt buộc)
-  const isScreenShareRequired =
-    proctoringConfig?.screenShare !== "disabled" &&
-    proctoringConfig?.requireScreenShare !== false;
+  // Tại phòng thực hành / phòng thi: Bắt buộc ép chia sẻ màn hình & toàn màn hình trong IDE (không cho tắt qua cấu hình)
+  const isScreenShareRequired = true;
 
   // Cấu hình Chặn tab / Thoát phòng từ Giảng viên (tùy cấu hình giảng viên có chặn tab hay không)
   const shouldBlockTabSwitch = Boolean(
     proctoringConfig?.blockTabSwitch === true ||
     proctoringConfig?.allowTabSwitch === false ||
-    proctoringConfig?.lockdownFullscreen === true ||
     (examRoomType === "exam" && proctoringConfig?.allowTabSwitch !== true)
   );
   const [isUserCameraOff, setIsUserCameraOff] = useState<boolean>(false);
@@ -151,8 +159,45 @@ export default function ExamWorkspacePage() {
     details?: string;
   } | null>(null);
 
-  // PIP Camera minimization state
+  // PIP Camera minimization & draggable position state
   const [isCameraExpanded, setIsCameraExpanded] = useState(true);
+  const [cameraOffset, setCameraOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingCamera, setIsDraggingCamera] = useState(false);
+  const cameraDragRef = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isDraggingCamera) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!cameraDragRef.current) return;
+      const dx = e.clientX - cameraDragRef.current.startX;
+      const dy = e.clientY - cameraDragRef.current.startY;
+      const maxLeft = -(window.innerWidth - 190);
+      const maxTop = -(window.innerHeight - 150);
+      const nextX = Math.max(maxLeft, Math.min(16, cameraDragRef.current.originX + dx));
+      const nextY = Math.max(maxTop, Math.min(220, cameraDragRef.current.originY + dy));
+      setCameraOffset({ x: nextX, y: nextY });
+    };
+
+    const handlePointerUp = () => {
+      setIsDraggingCamera(false);
+      cameraDragRef.current = null;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [isDraggingCamera]);
 
   useEffect(() => {
     setMounted(true);
@@ -247,7 +292,7 @@ export default function ExamWorkspacePage() {
             description?: string;
             test_cases?: Array<{ input?: string; inputData?: string; expectedOutput?: string }>;
           }) => {
-            const lang = q.programming_language || "cpp";
+            const lang = normalizeExamLanguage(q.programming_language);
             return {
               id: q.id || String(q.question_id),
               question_id: q.question_id,
@@ -329,9 +374,16 @@ export default function ExamWorkspacePage() {
     };
   }, [activeRoomId]);
 
-  // Tự động kiểm tra và đồng bộ kết quả chấm điểm thực tế từ Docker Sandbox khi kết thúc bài thực hành (Lab)
+  // Tự động kiểm tra và đồng bộ kết quả chấm điểm thực tế từ Docker Sandbox khi bật công bố điểm ngay
+  const isImmediatePublish =
+    proctoringConfig?.autoPublishResults !== undefined
+      ? Boolean(proctoringConfig.autoPublishResults)
+      : proctoringConfig?.results_published !== undefined
+      ? Boolean(proctoringConfig.results_published)
+      : examRoomType === "lab";
+
   useEffect(() => {
-    if (examState !== "completed" || examRoomType !== "lab" || !activeRoomId) return;
+    if (examState !== "completed" || !isImmediatePublish || !activeRoomId) return;
 
     let isSubscribed = true;
     let pollCount = 0;
@@ -409,7 +461,7 @@ export default function ExamWorkspacePage() {
     return () => {
       isSubscribed = false;
     };
-  }, [examState, examRoomType, activeRoomId]);
+  }, [examState, isImmediatePublish, activeRoomId]);
 
   const {
     connectionState: livekitState,
@@ -422,30 +474,22 @@ export default function ExamWorkspacePage() {
   } = useLiveKitRoom({
     roomId: activeRoomId,
     mode: "publish",
-    enabled: Boolean(activeRoomId) && examState === "doing",
+    enabled: Boolean(activeRoomId) && examState !== "completed",
     initialCameraEnabled: isCameraExplicitlyRequired,
   });
 
-  // Luồng camera vật lý trực tiếp
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  // Luồng camera vật lý trực tiếp & LiveKit qua custom hook
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const proctorClientRef = useRef<ProctoringClient | null>(null);
-
-  // Xử lý bật/tắt camera an toàn, đồng bộ cả LiveKit track và webcam dự phòng
-  const handleToggleCamera = useCallback(async (forceEnable?: boolean) => {
-    const target = forceEnable !== undefined ? forceEnable : Boolean(isUserCameraOff || !localVideoTrack);
-    if (!target) {
-      setIsUserCameraOff(true);
-      if (localStream) {
-        localStream.getTracks().forEach((t) => t.stop());
-        setLocalStream(null);
-      }
-      await toggleCamera(false);
-    } else {
-      setIsUserCameraOff(false);
-      await toggleCamera(true);
-    }
-  }, [isUserCameraOff, localVideoTrack, localStream, toggleCamera]);
+  const { localStream, setLocalStream, isCameraOn, handleToggleCamera } = useCameraProctoring({
+    localVideoTrack,
+    localVideoRef,
+    isCameraOffAllowed,
+    isUserCameraOff,
+    setIsUserCameraOff,
+    toggleCamera,
+    reattachKey: isCameraExpanded,
+  });
   const [activeProblemIdx, setActiveProblemIdx] = useState(0);
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [selectedLanguage, setSelectedLanguage] = useState("cpp");
@@ -461,66 +505,14 @@ export default function ExamWorkspacePage() {
     return 60 * 60;
   });
 
-  // Khởi động webcam dự phòng liên tục để phục vụ AI Proctoring và chụp bằng chứng vi phạm
-  useEffect(() => {
-    let stream: MediaStream | null = null;
-    let isCancelled = false;
-
-    async function initCamera() {
-      if (localVideoTrack) return;
-      if (isCameraOffAllowed && isUserCameraOff) return;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false,
-        });
-        if (!isCancelled) {
-          setLocalStream(stream);
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream;
-            localVideoRef.current.play().catch(() => {});
-          }
-        } else {
-          stream.getTracks().forEach((t) => t.stop());
-        }
-      } catch (err) {
-        console.warn("Không thể mở webcam dự phòng:", err);
-      }
-    }
-
-    if (!localVideoTrack && !(isCameraOffAllowed && isUserCameraOff)) {
-      initCamera();
-    }
-
-    return () => {
-      isCancelled = true;
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
-      }
-    };
-  }, [localVideoTrack, isCameraOffAllowed, isUserCameraOff]);
-
-  // Ưu tiên gắn trực tiếp localVideoTrack của LiveKit vào khung hình, tránh xung đột camera
-  useEffect(() => {
-    const videoEl = localVideoRef.current;
-    if (!videoEl) return;
-    if (localVideoTrack) {
-      localVideoTrack.attach(videoEl);
-      return () => {
-        localVideoTrack.detach(videoEl);
-      };
-    } else if (localStream) {
-      videoEl.srcObject = localStream;
-      videoEl.play().catch(() => {});
-    }
-  }, [localVideoTrack, localStream, isCameraExpanded]);
-
-  // Trạng thái yêu cầu chia sẻ màn hình bắt buộc
+  // Trạng thái yêu cầu chia sẻ màn hình bắt buộc (chỉ yêu cầu cấp quyền 1 lần)
   const [showScreenShareModal, setShowScreenShareModal] = useState(false);
   const [isRequestingScreenShare, setIsRequestingScreenShare] = useState(false);
   const [screenShareError, setScreenShareError] = useState<string | null>(null);
+  const hasGrantedScreenShareRef = useRef(false);
 
   const handleTriggerScreenShare = async () => {
+    if (isRequestingScreenShare) return;
     setIsRequestingScreenShare(true);
     setScreenShareError(null);
     try {
@@ -528,6 +520,7 @@ export default function ExamWorkspacePage() {
       if (!ok) {
         setScreenShareError("Vui lòng cấp quyền chia sẻ Toàn bộ màn hình (Entire Screen) để tiếp tục làm bài.");
       } else {
+        hasGrantedScreenShareRef.current = true;
         setShowScreenShareModal(false);
         // Khi được cấp quyền chia sẻ màn hình -> Ép chế độ toàn màn hình (Fullscreen)
         try {
@@ -545,24 +538,37 @@ export default function ExamWorkspacePage() {
     }
   };
 
+  // Khi sinh viên kết thúc / nộp bài: tắt ép chia sẻ màn hình và thoát toàn màn hình ngay
   useEffect(() => {
-    if (livekitState !== "connected" || isScreenSharing) return;
-
-    if (isScreenShareRequired) {
-      setShowScreenShareModal(true);
-      // Tự động kích hoạt yêu cầu chia sẻ màn hình ngay khi kết nối LiveKit
-      void enableScreenShare().then((ok) => {
-        if (ok) {
-          setShowScreenShareModal(false);
-          try {
-            if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-              void document.documentElement.requestFullscreen().catch(() => {});
-            }
-          } catch {}
-        }
-      }).catch(() => {});
+    if (examState !== "completed") return;
+    setShowScreenShareModal(false);
+    setShowFullscreenWarningModal(false);
+    if (isScreenSharing) {
+      disableScreenShare?.().catch(() => {});
     }
-  }, [livekitState, isScreenSharing, isScreenShareRequired, enableScreenShare]);
+    try {
+      localScreenTrack?.stop?.();
+    } catch {}
+    if (typeof document !== "undefined" && document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+    try {
+      (navigator as any).keyboard?.unlock?.();
+    } catch {}
+  }, [examState, isScreenSharing, disableScreenShare, localScreenTrack]);
+
+  useEffect(() => {
+    if (examState !== "doing") return;
+    if (isScreenSharing) {
+      hasGrantedScreenShareRef.current = true;
+      setShowScreenShareModal(false);
+      return;
+    }
+
+    if (isScreenShareRequired && !hasGrantedScreenShareRef.current) {
+      setShowScreenShareModal(true);
+    }
+  }, [examState, isScreenSharing, isScreenShareRequired]);
 
   // ─── CHẶN SINH VIÊN TỰ Ý THOÁT PHÒNG THI KHI ĐANG LÀM BÀI ─────────
   // Tùy cấu hình của giảng viên có chặn tab hay không (shouldBlockTabSwitch)
@@ -619,6 +625,13 @@ export default function ExamWorkspacePage() {
     return Number(localStorage.getItem(`exam_ai_violation_${activeRoomId}`)) || 0;
   });
   const [warningToast, setWarningToast] = useState<string | null>(null);
+  const [instructorNotices, setInstructorNotices] = useState<Array<{
+    id: string;
+    title: string;
+    message: string;
+    noticeType: "info" | "warning" | "time" | "urgent" | "report";
+    timestamp: string;
+  }>>([]);
   const [showFullscreenWarningModal, setShowFullscreenWarningModal] = useState(false);
   const [incomingAnnouncement, setIncomingAnnouncement] = useState<{
     id: number;
@@ -655,16 +668,23 @@ export default function ExamWorkspacePage() {
     } catch {}
   }, [activeRoomId]);
 
-  // Khởi động Engine AI Proctoring Client để chụp định kỳ webcam và gửi về Celery Worker
+  // Khởi động Engine AI Proctoring Client theo đúng cấu hình quy định của phòng
   useEffect(() => {
     if (!activeSessionId || examState !== "doing" || isLocked) return;
     const videoEl = localVideoRef.current;
     if (!videoEl) return;
 
+    const hasActiveCamera = Boolean((localVideoTrack || localStream) && !isUserCameraOff);
+    const hasAiRule =
+      proctoringConfig?.aiFaceDetection !== false ||
+      proctoringConfig?.aiObjectDetection !== false;
+    if (!isCameraExplicitlyRequired && (!hasActiveCamera || !hasAiRule)) {
+      return;
+    }
+
     const token = getAuthToken() || "";
     const client = new ProctoringClient(activeSessionId, window.location.origin, token);
     proctorClientRef.current = client;
-    const hasActiveCamera = Boolean((localVideoTrack || localStream) && !isUserCameraOff);
     client.setCameraActive(hasActiveCamera, isCameraExplicitlyRequired);
     client.start(videoEl);
 
@@ -674,7 +694,7 @@ export default function ExamWorkspacePage() {
         proctorClientRef.current = null;
       }
     };
-  }, [activeSessionId, examState, isLocked, localVideoTrack, localStream, isUserCameraOff, isCameraExplicitlyRequired]);
+  }, [activeSessionId, examState, isLocked, localVideoTrack, localStream, isUserCameraOff, isCameraExplicitlyRequired, proctoringConfig]);
 
   // YOLOv8 AI Proctoring State - Khởi tạo sạch sẽ, không giả lập tĩnh cứng
   const [yoloDetections, setYoloDetections] = useState<{
@@ -700,12 +720,17 @@ export default function ExamWorkspacePage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const currentProblem = examData.problems[activeProblemIdx] ?? examData.problems[0] ?? null;
 
-  // Đồng bộ ngôn ngữ lập trình theo câu hỏi do Giảng viên cấu hình
+  // Đồng bộ ngôn ngữ lập trình & tab console theo câu hỏi do Giảng viên cấu hình
   useEffect(() => {
     if (currentProblem?.language) {
       setSelectedLanguage(currentProblem.language);
     }
-  }, [currentProblem?.id, currentProblem?.language]);
+    if (currentProblem?.testcases && currentProblem.testcases.length > 0) {
+      setActiveTestTab(currentProblem.testcases[0].id);
+    } else {
+      setActiveTestTab("custom");
+    }
+  }, [currentProblem?.id, currentProblem?.language, currentProblem?.testcases]);
 
   const handleLanguageChange = (newLang: string) => {
     setSelectedLanguage(newLang);
@@ -727,15 +752,18 @@ export default function ExamWorkspacePage() {
 
   const isTabSwitchBlocked = shouldBlockTabSwitch;
   const totalViolations = pasteCount + (isTabSwitchBlocked ? tabSwitchCount : 0) + aiViolationCount;
+  const maxViolationsAllowed =
+    proctoringConfig?.maxTabSwitches && Number(proctoringConfig.maxTabSwitches) < 999
+      ? Number(proctoringConfig.maxTabSwitches)
+      : 3;
 
-  // Khóa thi khi quá 3 lần vi phạm - Chỉ tự động khóa bài đối với phòng Thi chính thức (exam) hoặc cấu hình autoLock=true.
-  // Đối với phòng Lab (thực hành tra cứu tài liệu), không tự động khóa máy để tránh cản trở sinh viên.
+  // Khóa bài khi vượt quá số lần vi phạm cấu hình (mặc định 3 lần), trừ khi cấu hình autoLock = false
   useEffect(() => {
-    if (examRoomType !== "exam" && !proctoringConfig?.autoLock) {
+    if (proctoringConfig?.autoLock === false) {
       return;
     }
 
-    if (totalViolations >= 3 && !isLocked && examState === "doing") {
+    if (totalViolations >= maxViolationsAllowed && !isLocked && examState === "doing") {
       setIsLocked(true);
       if (activeRoomId && typeof window !== "undefined") {
         try {
@@ -749,20 +777,23 @@ export default function ExamWorkspacePage() {
           body: JSON.stringify({ status: "locked" }),
         }).catch(() => {});
       }
-      showToast("BÀI THI BỊ KHÓA: Bạn đã ghi nhận 3 lần vi phạm quy chế! Đang chờ Giảng viên phê duyệt mở khóa.");
+      showToast(`BÀI THI BỊ KHÓA: Bạn đã ghi nhận ${totalViolations}/${maxViolationsAllowed} lần vi phạm quy chế! Đang chờ Giảng viên phê duyệt mở khóa.`);
     }
-  }, [totalViolations, isLocked, examState, activeRoomId, activeSessionId, examRoomType, proctoringConfig]);
+  }, [totalViolations, maxViolationsAllowed, isLocked, examState, activeRoomId, activeSessionId, proctoringConfig]);
 
-  // Tự động kích hoạt toàn màn hình nếu ca thi bật ràng buộc Lockdown
+  // Bắt buộc toàn màn hình khi đang làm bài trong IDE (không cho cấu hình tắt)
+  const isFullscreenEnforced = true;
+
+  // Tự động kích hoạt toàn màn hình nếu ca thi bật ràng buộc Lockdown; nếu trình duyệt chặn auto-fullscreen thì bật modal yêu cầu click
   useEffect(() => {
-    const isLockdown = proctoringConfig?.lockdownFullscreen !== false && examRoomType === 'exam';
-    if (!isLockdown) return;
+    if (!isFullscreenEnforced || examState !== "doing" || isLocked) return;
 
     const enterFullscreen = async () => {
       try {
-        if (!document.fullscreenElement && shouldBlockTabSwitch) {
+        if (!document.fullscreenElement) {
           await document.documentElement.requestFullscreen();
           setIsFullscreen(true);
+          setShowFullscreenWarningModal(false);
           if ("keyboard" in navigator && (navigator as any).keyboard?.lock) {
             try {
               await (navigator as any).keyboard.lock(["Escape", "Tab"]);
@@ -770,20 +801,22 @@ export default function ExamWorkspacePage() {
           }
         }
       } catch {
-        // browser restriction: cần tương tác click của người dùng
+        // Trình duyệt yêu cầu thao tác click của người dùng -> ép hiện modal chặn để sinh viên bấm vào toàn màn hình
+        if (!document.fullscreenElement) {
+          setIsFullscreen(false);
+          setShowFullscreenWarningModal(true);
+        }
       }
     };
     enterFullscreen();
-  }, [shouldBlockTabSwitch, proctoringConfig, examRoomType]);
+  }, [isFullscreenEnforced, examState, isLocked]);
 
   // Giám sát trạng thái toàn màn hình khi có ràng buộc Lockdown
   useEffect(() => {
-    const isLockdown = shouldBlockTabSwitch && proctoringConfig?.lockdownFullscreen !== false;
-
     function handleFullscreenChange() {
       if (!document.fullscreenElement && examState === "doing" && !isLocked) {
         setIsFullscreen(false);
-        if (isLockdown) {
+        if (isFullscreenEnforced) {
           setShowFullscreenWarningModal(true);
           showToast("CẢNH BÁO QUY CHẾ: Bạn vừa thoát chế độ toàn màn hình!");
           reportViolationToBackend(
@@ -800,23 +833,31 @@ export default function ExamWorkspacePage() {
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, [shouldBlockTabSwitch, proctoringConfig, examRoomType, examState, isLocked]);
+  }, [isFullscreenEnforced, examState, isLocked]);
 
-  // Đếm ngược thời gian
-  useEffect(() => {
-    if (examState !== "doing" || isLocked) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          setExamState("completed");
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [examState, isLocked]);
+  // Đếm ngược thời gian qua custom hook
+  const handleCountdownTick = useCallback(() => {
+    setTimeLeft((prev) => {
+      if (prev <= 1) {
+        setExamState("completed");
+        return 0;
+      }
+      return prev - 1;
+    });
+  }, []);
+  useExamCountdown({
+    enabled: examState === "doing" && !isLocked,
+    onTick: handleCountdownTick,
+  });
+
+  // Tự động lưu nháp bài làm qua custom hook
+  useAutoSaveDraft({
+    roomId: activeRoomId,
+    questionId: currentProblem?.id,
+    code: currentProblem ? codes[currentProblem.id] || "" : "",
+    language: selectedLanguage,
+    enabled: examState === "doing" && !isLocked,
+  });
 
   useEffect(() => {
     if (!activeRoomId) return;
@@ -911,9 +952,27 @@ export default function ExamWorkspacePage() {
         const token = getAuthToken();
         if (cancelled || !me?.user_id || !token || typeof window === "undefined") return;
 
-        const wsUrl = buildRoomWebSocketUrl(activeRoomId, me.user_id, token);
-        ws = new WebSocket(wsUrl);
-        ws.onmessage = (event) => {
+        const connectWs = () => {
+          if (cancelled) return;
+          const wsUrl = buildRoomWebSocketUrl(activeRoomId, me.user_id, token);
+          ws = new WebSocket(wsUrl);
+          let pingTimer: ReturnType<typeof setInterval> | null = null;
+          ws.onopen = () => {
+            pingTimer = setInterval(() => {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
+              }
+            }, 25000);
+          };
+          ws.onclose = () => {
+            if (pingTimer) clearInterval(pingTimer);
+            if (!cancelled) {
+              setTimeout(() => {
+                if (!cancelled) connectWs();
+              }, 3000);
+            }
+          };
+          ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
             if (
@@ -952,6 +1011,7 @@ export default function ExamWorkspacePage() {
               const myIds = [
                 String(me.user_id),
                 String((me as any).student_id || ""),
+                String((me as any).identifier_code || ""),
                 String((me as any).user_code || ""),
                 String((me as any).username || ""),
               ].filter(Boolean);
@@ -979,6 +1039,7 @@ export default function ExamWorkspacePage() {
               const myIds = [
                 String(me.user_id),
                 String((me as any).student_id || ""),
+                String((me as any).identifier_code || ""),
                 String((me as any).user_code || ""),
                 String((me as any).username || ""),
               ].filter(Boolean);
@@ -1045,9 +1106,38 @@ export default function ExamWorkspacePage() {
                   });
                 }
               }
+            } else if (msg.type === "announcement") {
+              const targetType = msg.target_type || "all";
+              const isForMe =
+                targetType === "all" ||
+                targetType === "group" ||
+                String(msg.target_user_id || "") === String(me.user_id) ||
+                String(msg.target_id || "") === String(me.user_id) ||
+                ((me as any).identifier_code && String(msg.target_id || "") === String((me as any).identifier_code)) ||
+                ((me as any).username && String(msg.target_id || "") === String((me as any).username));
+              if (isForMe && msg.message) {
+                pushInstructorNotice(
+                  msg.notice_type === "urgent" ? "Cảnh báo khẩn từ Giảng viên" : "Thông báo từ Giảng viên",
+                  String(msg.message),
+                  msg.notice_type || "info",
+                  msg.timestamp
+                );
+              }
             } else if (msg.type === "proctor_reminder") {
-              if (String(msg.student_id) === String(me.user_id) && msg.message) {
-                showToast(msg.message);
+              if ((!msg.student_id || String(msg.student_id) === String(me.user_id)) && msg.message) {
+                pushInstructorNotice(
+                  "Nhắc nhở từ Giảng viên",
+                  String(msg.message),
+                  "warning"
+                );
+              }
+            } else if (msg.type === "violation_report_created") {
+              if (String(msg.student_id || "") === String(me.user_id) && msg.review_status === "confirmed") {
+                pushInstructorNotice(
+                  "Biên bản vi phạm đã được lập",
+                  msg.description || `Giảng viên đã xác nhận lập biên bản vi phạm (${msg.violation_type || "quy chế thi"}).`,
+                  "report"
+                );
               }
             } else if (msg.type === "violation_alert") {
               if (!msg.student_id || String(msg.student_id) === String(me.user_id)) {
@@ -1063,13 +1153,26 @@ export default function ExamWorkspacePage() {
                 if (msg.detection) {
                   setYoloDetections(msg.detection);
                 }
-                showToast(`CẢNH BÁO VI PHẠM: ${msg.description || "Hệ thống AI ghi nhận vi phạm quy chế!"}`);
+                const vType = msg.violation_type || msg.violation?.violation_type || "";
+                const vNameMap: Record<string, string> = {
+                  phone_detected: "Phát hiện điện thoại di động",
+                  looking_away: "Quay đầu / Cúi mặt rời màn hình",
+                  camera_blocked: "Camera bị che hoặc tắt",
+                  no_face_detected: "Không phát hiện khuôn mặt",
+                  multiple_faces: "Phát hiện nhiều khuôn mặt",
+                  suspicious_object: "Phát hiện vật thể khả nghi",
+                };
+                const vTitle = vNameMap[vType] || vType || "Vi phạm quy chế";
+                const vDesc = msg.description || msg.violation?.description || vTitle;
+                showToast(`CẢNH BÁO VI PHẠM (${vTitle}): ${vDesc}`);
               }
             }
           } catch {
             // ignore
           }
+          };
         };
+        connectWs();
       } catch {
         // ignore
       }
@@ -1085,25 +1188,16 @@ export default function ExamWorkspacePage() {
   }, [activeRoomId]);
 
   // Polling dự phòng kiểm tra trạng thái phòng thi đã bị đóng bởi Giảng viên
-  useEffect(() => {
-    if (!activeRoomId || examState === "completed") return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetchWithAuth<any>(`/api/v1/rooms/${activeRoomId}/status`);
-        const st = String(res?.status || "").toLowerCase();
-        if (["da_dong", "ended", "completed", "closed", "da_ket_thuc"].includes(st) || res?.is_active === false) {
-          clearInterval(interval);
-          setExamState("completed");
-          setIsLocked(true);
-          showToast("PHÒNG THI ĐÃ KẾT THÚC: Giảng viên đã kết thúc phòng thi. Đang chuyển hướng...");
-          setTimeout(() => {
-            window.location.href = "/student/exams";
-          }, 2500);
-        }
-      } catch {}
-    }, 8000);
-    return () => clearInterval(interval);
-  }, [activeRoomId, examState]);
+  const handleRoomClosedByInstructor = useCallback(() => {
+    setExamState("completed");
+    setIsLocked(true);
+    showToast("PHÒNG THI ĐÃ KẾT THÚC: Giảng viên đã kết thúc phòng thi. Đang chuyển hướng...");
+  }, []);
+  useRoomSessionSync({
+    roomId: activeRoomId,
+    enabled: examState !== "completed",
+    onRoomClosed: handleRoomClosedByInstructor,
+  });
 
   // Hàm chụp ảnh từ webcam của sinh viên làm bằng chứng vi phạm
   const captureWebcamSnapshot = (): string | null => {
@@ -1316,6 +1410,20 @@ export default function ExamWorkspacePage() {
     setTimeout(() => setWarningToast(null), 4000);
   }
 
+  function pushInstructorNotice(
+    title: string,
+    message: string,
+    noticeType: "info" | "warning" | "time" | "urgent" | "report" = "info",
+    timestamp?: string
+  ) {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const timeLabel = timestamp || new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+    setInstructorNotices((prev) => [{ id, title, message, noticeType, timestamp: timeLabel }, ...prev].slice(0, 4));
+    setTimeout(() => {
+      setInstructorNotices((prev) => prev.filter((item) => item.id !== id));
+    }, 10000);
+  }
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -1326,19 +1434,19 @@ export default function ExamWorkspacePage() {
     if (!activeRoomId) return;
     setHelpRequested(true);
     try {
-      await fetchWithAuth(`/api/v1/support/room/${activeRoomId}`, {
+      await fetchWithAuth(`/api/v1/support`, {
         method: "POST",
         body: JSON.stringify({
           room_id: activeRoomId,
-          issue_type: "account",
-          priority: "high",
-          title: "Yêu cầu mở khóa bài thi do vi phạm quy chế",
-          description: `Thí sinh bị tạm khóa bài thi (rời tab: ${tabSwitchCount}, dán: ${pasteCount}, AI: ${aiViolationCount}). Đang yêu cầu Giảng viên mở khóa từ xa.`
+          session_id: activeSessionId || undefined,
+          issue_type: "permission",
+          message: `Yêu cầu mở khóa bài thi do vi phạm quy chế (rời tab: ${tabSwitchCount}, dán: ${pasteCount}, AI: ${aiViolationCount}).`
         })
       });
-      showToast("Đã gửi tín hiệu trợ giúp tới Giảng viên. Vui lòng giữ nguyên màn hình!");
+      showToast("Đã gửi yêu cầu mở khóa tới Giảng viên. Vui lòng giữ nguyên màn hình!");
     } catch {
-      showToast("Đã gửi tín hiệu tới Giảng viên qua hệ thống giám sát.");
+      setHelpRequested(false);
+      showToast("Không thể gửi yêu cầu mở khóa lúc này. Vui lòng thử lại!");
     }
   };
 
@@ -1353,10 +1461,19 @@ export default function ExamWorkspacePage() {
     setTestResults({});
     setCustomRunOutput(null);
 
-    const normalizedLang = (selectedLanguage || "cpp").toLowerCase().replace("c++", "cpp").replace("py", "python");
+    const rawLang = (selectedLanguage || "cpp").toLowerCase().trim();
+    const normalizedLang =
+      rawLang === "c++" || rawLang === "cpp"
+        ? "cpp"
+        : rawLang === "py" || rawLang.includes("python")
+        ? "python"
+        : rawLang.includes("java")
+        ? "java"
+        : rawLang;
 
     try {
-      if (activeTestTab === "custom") {
+      if (activeTestTab === "custom" || currentProblem.testcases.length === 0) {
+        if (activeTestTab !== "custom") setActiveTestTab("custom");
         const data = await fetchWithAuth<{ stdout?: string; error?: string | null; execution_ms?: number }>("/api/v1/submissions/run", {
           method: "POST",
           body: JSON.stringify({
@@ -1503,13 +1620,62 @@ export default function ExamWorkspacePage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-neutral-950 dark:text-slate-300 font-sans flex flex-col select-none relative overflow-hidden transition-colors duration-200">
+    <div className={`${examState === "doing" ? "h-screen overflow-hidden" : "min-h-screen overflow-x-hidden"} bg-slate-50 text-slate-800 dark:bg-neutral-950 dark:text-slate-300 font-sans flex flex-col select-none relative transition-colors duration-200`}>
       
-      {/* Toast Cảnh báo Nổi */}
+      {/* Toast Cảnh báo Nổi ở góc dưới phải màn hình */}
       {warningToast && (
-        <div className="fixed top-18 right-6 z-50 flex items-center gap-3 rounded-md border border-rose-500/50 bg-rose-900 text-white px-4 py-3 text-xs font-semibold shadow-lg backdrop-blur-md">
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-md border border-rose-500/50 bg-rose-900 text-white px-4 py-3 text-xs font-semibold shadow-lg backdrop-blur-md">
           <ShieldAlert size={18} className="shrink-0 text-rose-300" />
           <span>{warningToast}</span>
+        </div>
+      )}
+
+      {/* Thông báo từ Giảng viên / Biên bản vi phạm ở góc dưới phải màn hình */}
+      {instructorNotices.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none">
+          {instructorNotices.map((notice) => {
+            const isUrgentOrReport = notice.noticeType === "urgent" || notice.noticeType === "report";
+            return (
+              <div
+                key={notice.id}
+                className={`pointer-events-auto rounded-lg border px-4 py-3 shadow-2xl backdrop-blur-md transition-all animate-in slide-in-from-right-4 duration-200 ${
+                  isUrgentOrReport
+                    ? "border-rose-500 bg-rose-950/95 text-white"
+                    : notice.noticeType === "warning" || notice.noticeType === "time"
+                    ? "border-amber-400 bg-amber-950/95 text-amber-50"
+                    : "border-slate-700 bg-slate-900/95 text-white"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert
+                      size={16}
+                      className={
+                        isUrgentOrReport
+                          ? "text-rose-400 shrink-0"
+                          : notice.noticeType === "warning" || notice.noticeType === "time"
+                          ? "text-amber-300 shrink-0"
+                          : "text-sky-300 shrink-0"
+                      }
+                    />
+                    <span className="text-xs font-bold">{notice.title}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-mono text-[10px] opacity-70">{notice.timestamp}</span>
+                    <button
+                      type="button"
+                      onClick={() => setInstructorNotices((prev) => prev.filter((item) => item.id !== notice.id))}
+                      className="text-xs opacity-70 hover:opacity-100 cursor-pointer"
+                      aria-label="Đóng thông báo"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+                <p className="mt-1.5 text-xs leading-relaxed opacity-95">{notice.message}</p>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1584,7 +1750,7 @@ export default function ExamWorkspacePage() {
       {/* ------------------------------------------------------------------ */}
       {/* HEADER BÀI THI: GỌN GÀNG, ĐẦY ĐỦ THÔNG TIN THEO CHUẨN UX HỌC THUẬT */}
       {/* ------------------------------------------------------------------ */}
-      <header className="h-16 shrink-0 border-b border-slate-300 bg-white px-4 sm:px-6 flex items-center justify-between dark:border-white/10 dark:bg-neutral-900 transition-colors z-30">
+      <header className="h-14 shrink-0 border-b border-slate-300 bg-white px-4 sm:px-6 flex items-center justify-between dark:border-white/10 dark:bg-neutral-900 transition-colors z-30">
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand text-white font-bold text-xs shadow-sm">
             <Code2 size={20} />
@@ -1607,14 +1773,14 @@ export default function ExamWorkspacePage() {
             <span className="text-[#5a565e] dark:text-[#b0a7aa]">Vi phạm:</span>
             <span
               className={`font-mono font-bold px-2 py-0.5 rounded text-xs ${
-                totalViolations >= 3
+                totalViolations >= maxViolationsAllowed
                   ? "bg-rose-700 text-white"
                   : totalViolations > 0
                   ? "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-300"
                   : "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-400"
               }`}
             >
-              {totalViolations} / 3
+              {totalViolations} / {maxViolationsAllowed}
             </span>
           </div>
 
@@ -1727,10 +1893,10 @@ export default function ExamWorkspacePage() {
             )}
           </div>
         ) : (
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden relative">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden relative">
           
           {/* CỘT TRÁI (5/12): ĐỀ BÀI & ĐIỀU HƯỚNG CÂU HỎI */}
-          <div className="lg:col-span-5 flex flex-col border-r border-slate-300 bg-white dark:border-white/10 dark:bg-neutral-900 overflow-hidden relative transition-colors">
+          <div className="lg:col-span-5 min-h-0 flex flex-col border-r border-slate-300 bg-white dark:border-white/10 dark:bg-neutral-900 overflow-hidden relative transition-colors">
             
             {/* Tabs chọn câu hỏi */}
             <div className="flex items-center gap-1.5 border-b border-slate-300 bg-slate-50 p-2 overflow-x-auto dark:border-white/10 dark:bg-[#18151D]">
@@ -1842,7 +2008,7 @@ export default function ExamWorkspacePage() {
           </div>
 
           {/* CỘT PHẢI (7/12): TRÌNH SOẠN THẢO CODE, TOOLBAR, CONSOLE TEST */}
-          <div className="lg:col-span-7 flex flex-col bg-[#FAF9F9] dark:bg-neutral-950 overflow-hidden relative transition-colors">
+          <div className="lg:col-span-7 min-h-0 flex flex-col bg-[#FAF9F9] dark:bg-neutral-950 overflow-hidden relative transition-colors">
             
             {/* IDE Toolbar */}
             <div className="flex items-center justify-between border-b border-slate-300 bg-white px-4 py-2 shrink-0 dark:border-white/10 dark:bg-neutral-900">
@@ -1850,16 +2016,13 @@ export default function ExamWorkspacePage() {
                 <span className="text-xs font-semibold text-slate-500 dark:text-[#a59fa3] flex items-center gap-1.5">
                   <FileCode size={15} className="text-slate-900 dark:text-[#e5a9b9]" /> Ngôn ngữ:
                 </span>
-                <select
-                  value={selectedLanguage}
-                  disabled={isLocked}
-                  onChange={(e) => handleLanguageChange(e.target.value)}
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 outline-none focus:border-slate-900 dark:border-white/10 dark:bg-[#221e27] dark:text-slate-300"
-                >
-                  <option value="cpp">C++ (GCC 11)</option>
-                  <option value="python">Python 3.10</option>
-                  <option value="java">Java 17</option>
-                </select>
+                <span className="rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-800 dark:border-white/10 dark:bg-[#221e27] dark:text-slate-200">
+                  {selectedLanguage.toLowerCase().includes("py")
+                    ? "Python 3.10"
+                    : selectedLanguage.toLowerCase().includes("java")
+                    ? "Java 17"
+                    : "C++ (GCC 11)"}
+                </span>
 
                 <button
                   type="button"
@@ -1877,19 +2040,17 @@ export default function ExamWorkspacePage() {
                 </button>
               </div>
 
-              {/* Tình trạng AI Vision & Nút bật/thu nhỏ Camera PIP & Nút Chia sẻ Màn hình */}
+              {/* Tình trạng AI Vision & Nút bật/tắt Camera & Trạng thái Chia sẻ Màn hình */}
               <div className="flex items-center gap-2">
                 {isScreenSharing ? (
-                  <button
-                    type="button"
-                    onClick={disableScreenShare}
-                    title="Đang chia sẻ màn hình làm bài - Nhấn để tạm dừng"
-                    className="flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300 transition-colors cursor-pointer"
+                  <div
+                    title="Đang chia sẻ màn hình làm bài cho Giám thị"
+                    className="flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300 select-none"
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     <Monitor size={12} />
                     <span>Đang chia sẻ MH</span>
-                  </button>
+                  </div>
                 ) : (
                   <button
                     type="button"
@@ -1902,25 +2063,40 @@ export default function ExamWorkspacePage() {
                   </button>
                 )}
 
-                {isCameraOffAllowed && (
-                  <button
-                    type="button"
-                    onClick={() => handleToggleCamera()}
-                    title={
-                      localVideoTrack && !isUserCameraOff
-                        ? "Tắt Camera (Được phép khi giảng viên không yêu cầu)"
-                        : "Bật Camera"
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isCameraOn && !isCameraOffAllowed) {
+                      showToast("Phòng thi này bắt buộc bật Camera trong suốt quá trình làm bài.");
+                      return;
                     }
-                    className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
-                      localVideoTrack && !isUserCameraOff
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
-                        : "border-slate-300 bg-slate-100 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
-                    }`}
-                  >
-                    {localVideoTrack && !isUserCameraOff ? <Camera size={12} /> : <CameraOff size={12} />}
-                    <span>{localVideoTrack && !isUserCameraOff ? "Cam Bật" : "Cam Tắt"}</span>
-                  </button>
-                )}
+                    handleToggleCamera();
+                  }}
+                  disabled={isCameraOn && !isCameraOffAllowed}
+                  title={
+                    isCameraOn
+                      ? isCameraOffAllowed
+                        ? "Tắt Camera (Được phép theo cấu hình phòng)"
+                        : "Camera bắt buộc bật theo cấu hình phòng thi"
+                      : "Bật Camera"
+                  }
+                  className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                    isCameraOn && !isCameraOffAllowed
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300 opacity-85 cursor-not-allowed"
+                      : isCameraOn
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300 cursor-pointer"
+                      : "border-slate-300 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 cursor-pointer"
+                  }`}
+                >
+                  {isCameraOn ? <Camera size={12} /> : <CameraOff size={12} />}
+                  <span>
+                    {isCameraOn
+                      ? isCameraOffAllowed
+                        ? "Tắt Cam"
+                        : "Cam Bắt Buộc"
+                      : "Bật Cam"}
+                  </span>
+                </button>
 
                 <div className="rounded-md bg-slate-50 border border-slate-300 px-2.5 py-1 text-[10px] font-mono text-[#5a565e] dark:bg-white/5 dark:border-white/10 dark:text-slate-300 flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
@@ -1941,9 +2117,9 @@ export default function ExamWorkspacePage() {
             </div>
 
             {/* Trình soạn thảo Code (Textarea + Line Numbers) */}
-            <div className="flex-1 relative flex bg-white font-mono text-xs sm:text-sm dark:bg-[#18151D]">
+            <div className="flex-1 min-h-0 relative flex bg-white font-mono text-xs sm:text-sm dark:bg-[#18151D] overflow-hidden">
               {/* Cột số dòng */}
-              <div className="w-11 select-none border-r border-slate-300 bg-slate-50 py-3 text-right pr-2 text-slate-500 space-y-1 font-mono text-xs dark:border-white/5 dark:bg-neutral-950 dark:text-slate-500">
+              <div className="w-11 shrink-0 select-none overflow-hidden border-r border-slate-300 bg-slate-50 py-3 text-right pr-2 text-slate-500 space-y-1 font-mono text-xs dark:border-white/5 dark:bg-neutral-950 dark:text-slate-500">
                 {Array.from({ length: 30 }).map((_, i) => (
                   <div key={i}>{i + 1}</div>
                 ))}
@@ -1974,9 +2150,28 @@ export default function ExamWorkspacePage() {
               />
             </div>
 
-            {/* PIP CAMERA ĐƯỢC ĐẶT GÓC DƯỚI PHẢI NON-OBSTRUCTIVE */}
+            {/* PIP CAMERA CÓ THỂ KÉO DI CHUYỂN TỰ DO TRONG IDE */}
             {isCameraExpanded && (
-              <div className="absolute bottom-58 right-4 z-20 flex flex-col items-end gap-1">
+              <div
+                onPointerDown={(e) => {
+                  if ((e.target as HTMLElement).closest("button")) return;
+                  e.preventDefault();
+                  cameraDragRef.current = {
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    originX: cameraOffset.x,
+                    originY: cameraOffset.y,
+                  };
+                  setIsDraggingCamera(true);
+                }}
+                style={{
+                  transform: `translate3d(${cameraOffset.x}px, ${cameraOffset.y}px, 0)`,
+                }}
+                title="Kéo để di chuyển khung camera"
+                className={`absolute top-14 right-4 z-20 flex flex-col items-end gap-1 select-none touch-none ${
+                  isDraggingCamera ? "cursor-grabbing" : "cursor-grab"
+                }`}
+              >
                 <div className="relative h-28 w-40 overflow-hidden rounded-md border border-slate-300 bg-neutral-950 p-0.5 shadow-md dark:border-white/10">
                   <div className="relative h-full w-full rounded bg-black overflow-hidden flex items-center justify-center">
                     {localVideoTrack && !isUserCameraOff ? (
@@ -1991,6 +2186,7 @@ export default function ExamWorkspacePage() {
                         <span className="text-[9px] font-mono">Camera đang tắt (Giảng viên không yêu cầu)</span>
                         <button
                           type="button"
+                          onPointerDown={(e) => e.stopPropagation()}
                           onClick={() => handleToggleCamera(true)}
                           className="mt-1 rounded bg-stone-800 px-2 py-0.5 text-[9px] font-bold text-white hover:bg-stone-700 transition cursor-pointer"
                         >
@@ -2001,37 +2197,6 @@ export default function ExamWorkspacePage() {
                       <div className="flex flex-col items-center justify-center gap-1 text-slate-500">
                         <Camera size={22} className="animate-pulse" />
                         <span className="text-[9px] font-mono">Đang kết nối camera...</span>
-                      </div>
-                    )}
-
-                    {/* Bounding box AI */}
-                    {yoloDetections.bbox.w > 0 && (
-                      <div
-                        className={`absolute border-2 ${
-                          yoloDetections.status === "ok"
-                            ? "border-emerald-400 bg-emerald-500/10"
-                            : yoloDetections.status === "warning"
-                            ? "border-amber-400 bg-amber-500/20"
-                            : "border-rose-500 bg-rose-500/30"
-                        }`}
-                        style={{
-                          left: `${yoloDetections.bbox.x}%`,
-                          top: `${yoloDetections.bbox.y}%`,
-                          width: `${yoloDetections.bbox.w}%`,
-                          height: `${yoloDetections.bbox.h}%`,
-                        }}
-                      >
-                        <span
-                          className={`absolute -top-3.5 left-0 rounded px-1 text-[8px] font-mono font-bold uppercase text-white ${
-                            yoloDetections.status === "ok"
-                              ? "bg-emerald-600"
-                              : yoloDetections.status === "warning"
-                              ? "bg-amber-600"
-                              : "bg-rose-600"
-                          }`}
-                        >
-                          {yoloDetections.label} {Math.round(yoloDetections.confidence * 100)}%
-                        </span>
                       </div>
                     )}
 
@@ -2054,12 +2219,12 @@ export default function ExamWorkspacePage() {
               autoPlay
               playsInline
               muted
-              style={{ display: "none", position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+              style={{ position: "fixed", left: -9999, top: -9999, width: 320, height: 240, opacity: 0, pointerEvents: "none" }}
               aria-hidden="true"
             />
 
             {/* CONSOLE & TESTCASE RUNNER PANEL */}
-            <div className="h-56 shrink-0 border-t border-slate-300 bg-white flex flex-col dark:border-white/10 dark:bg-neutral-900">
+            <div className="h-44 shrink-0 border-t border-slate-300 bg-white flex flex-col dark:border-white/10 dark:bg-neutral-900">
               {/* Header của Console */}
               <div className="flex items-center justify-between border-b border-slate-300 px-3 py-1.5 text-xs dark:border-white/10 bg-slate-50 dark:bg-[#18151D]">
                 <div className="flex items-center gap-1.5 overflow-x-auto">
@@ -2172,10 +2337,28 @@ export default function ExamWorkspacePage() {
                       className="w-full h-16 rounded-md border border-slate-300 bg-white p-2 text-xs font-mono text-slate-800 outline-none focus:border-slate-900 disabled:opacity-30 dark:border-white/10 dark:bg-[#221e27] dark:text-slate-300"
                     />
                     {customRunOutput && (
-                      <div className="pt-1 space-y-1">
-                        <p className="text-[10px] font-sans font-bold text-slate-500">
-                          Kết quả chạy thử ({customRunOutput.time}):
-                        </p>
+                      <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-sans font-bold text-slate-500">
+                              Kết quả chạy thử ({customRunOutput.time}):
+                            </span>
+                            {customRunOutput.error ? (
+                              <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/40">
+                                <XCircle size={12} /> FAILED (Lỗi thực thi / Biên dịch)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
+                                <CheckCircle2 size={12} /> CHẠY THÀNH CÔNG (OK)
+                              </span>
+                            )}
+                          </div>
+                          {currentProblem.testcases.length === 0 && (
+                            <span className="text-[10px] font-sans text-slate-400">
+                              Đề không có testcase mẫu — PASSED/FAILED theo đáp án được chấm khi bấm Hoàn thành nộp bài
+                            </span>
+                          )}
+                        </div>
                         <pre className={`rounded-md bg-slate-50 p-2 border border-slate-300 dark:bg-[#221e27] dark:border-white/10 font-mono ${customRunOutput.error ? "text-rose-600 dark:text-rose-400" : "text-emerald-700 dark:text-emerald-400"}`}>
                           {customRunOutput.error || customRunOutput.stdout || "(Không có output)"}
                         </pre>
@@ -2357,8 +2540,8 @@ export default function ExamWorkspacePage() {
               </p>
             </div>
 
-            {/* Quy tắc công bố điểm: Thực hành công bố máy chấm ngay; Bài thi phải do GV công bố */}
-            {examRoomType === 'lab' ? (
+            {/* Quy tắc công bố điểm: Theo cấu hình phòng (autoPublishResults) hoặc mặc định Lab công bố ngay */}
+            {isImmediatePublish ? (
               <div className="rounded-md border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5 text-center space-y-2">
                 <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                   Kết quả chấm điểm tự động (Máy chấm test case):
@@ -2439,9 +2622,8 @@ export default function ExamWorkspacePage() {
           <div
             onClick={(e) => {
               e.stopPropagation();
-              if (!isRequestingScreenShare) handleTriggerScreenShare();
             }}
-            className="w-full max-w-lg rounded-2xl border border-rose-500/40 bg-neutral-900/95 p-7 sm:p-8 shadow-2xl text-center space-y-5 text-white"
+            className="w-full max-w-lg rounded-2xl border border-rose-500/40 bg-neutral-900/95 p-7 sm:p-8 shadow-2xl text-center space-y-5 text-white cursor-default"
           >
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse">
               <Monitor size={40} />

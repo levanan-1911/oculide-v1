@@ -37,6 +37,13 @@ def grade_submission_sync(
         return {"status": "failed", "error": "Question not found"}
 
     test_cases = question.get("test_cases", [])
+    q_max_points = float(question.get("max_points") or 10.0)
+    raw_tc_sum = sum(float(tc.get("points") or 0.0) for tc in test_cases)
+    scale_factor = (
+        (q_max_points / raw_tc_sum)
+        if raw_tc_sum > 0
+        else (q_max_points / len(test_cases) if test_cases else 1.0)
+    )
     time_limit_ms = question.get("time_limit_ms") or 2000
     time_limit_per_tc = max(1, min(int(time_limit_ms / 1000) + 1, settings.SANDBOX_TIME_LIMIT_S))
     mem_limit_mb = question.get("memory_limit_mb") or 128
@@ -48,7 +55,8 @@ def grade_submission_sync(
         for tc in test_cases:
             tc_input = tc.get("input_data", "")
             tc_expected = tc.get("expected_output", "")
-            tc_points = float(tc.get("points", 0.0))
+            raw_tc_pts = float(tc.get("points") or 0.0)
+            tc_points = (raw_tc_pts * scale_factor) if raw_tc_sum > 0 else scale_factor
 
             exec_result = sandbox_service.execute_code(
                 code=code_content,
@@ -62,7 +70,7 @@ def grade_submission_sync(
                 exec_result.get("is_passed", False)
                 and sandbox_service.compare_output(exec_result.get("stdout", ""), tc_expected)
             )
-            earned = tc_points if is_match else 0.0
+            earned = round(tc_points, 4) if is_match else 0.0
             total_earned_points += earned
 
             results_list.append(

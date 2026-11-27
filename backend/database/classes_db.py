@@ -946,6 +946,7 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
                 p.passcode,
                 p.proctoring_config AS proctor_config,
                 p.status,
+                p.is_active,
                 (SELECT COUNT(DISTINCT bn.student_id) FROM Submissions bn WHERE bn.room_id = p.room_id) AS submission_count,
                 (SELECT COUNT(1) FROM Questions q WHERE q.room_id = p.room_id) AS question_count
             FROM Rooms p
@@ -955,17 +956,28 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
 
+        from datetime import datetime, timezone, timedelta
+        now_vn = datetime.now(timezone(timedelta(hours=7))).replace(tzinfo=None)
+
         labs = []
         exams = []
 
         for r_raw in rows:
             r = dict(zip(columns, r_raw))
             r_type = (r.get("room_type") or "lab").lower()
-            status_db = r.get("status") or "scheduled"
+            status_db = str(r.get("status") or "scheduled").lower().strip()
+            start_dt = r.get("start_time")
+            end_dt = r.get("end_time")
+            is_active_flag = r.get("is_active")
+            is_expired = bool(end_dt and end_dt.replace(tzinfo=None) <= now_vn)
+            is_closed_live = status_db in ("in_progress", "dang_dien_ra") and (
+                is_expired or is_active_flag is False or is_active_flag == 0
+            )
+            is_finished = status_db in ("completed", "da_dong", "ended", "da_ket_thuc", "closed", "cancelled") or is_closed_live
 
             # Xác định trạng thái thân thiện cho UI
             if r_type == "exam":
-                ui_status = "Đang diễn ra" if status_db in ("in_progress", "dang_dien_ra") else ("Đã kết thúc" if status_db in ("completed", "da_dong") else "Sắp diễn ra")
+                ui_status = "Đã kết thúc" if is_finished else ("Đang diễn ra" if status_db in ("in_progress", "dang_dien_ra") else "Sắp diễn ra")
                 start_dt = r.get("start_time")
                 end_dt = r.get("end_time")
                 sched_str = ""
@@ -998,7 +1010,7 @@ def get_class_rooms(class_id: Any) -> Dict[str, List[Dict[str, Any]]]:
                     "submissionCount": r.get("submission_count") or 0,
                 })
             else:
-                ui_status = "Đang mở" if status_db in ("in_progress", "dang_dien_ra") else ("Đã kết thúc" if status_db in ("completed", "da_dong") else "Chưa mở")
+                ui_status = "Đã kết thúc" if is_finished else ("Đang mở" if status_db in ("in_progress", "dang_dien_ra") else "Chưa mở")
                 start_dt = r.get("start_time")
                 end_dt = r.get("end_time")
 

@@ -285,9 +285,9 @@ class AIProctorDetector:
         is_camera_off = (mean_brightness < 8.0 and std_dev < 4.0)
 
         # Che camera toàn phần (không phụ thuộc độ sáng: tay màu da, giấy trắng, băng dính xám đều có độ tương phản & Laplacian cực thấp)
-        is_uniform_covered = (std_dev < 8.0 and laplacian_var < 15.0)
+        is_uniform_covered = (std_dev < 16.0 and laplacian_var < 25.0)
         # Quá tối đến mức không còn chi tiết hình ảnh (tránh phạt oan phòng tối hợp lệ vẫn rõ chi tiết)
-        is_dark_covered = (mean_brightness < 18.0 and laplacian_var < 25.0)
+        is_dark_covered = (mean_brightness < 24.0 and laplacian_var < 30.0)
 
         # Che một nửa ống kính (trái/phải/trên/dưới bị che mờ phẳng tuyệt đối)
         h, w = gray.shape[:2]
@@ -348,8 +348,8 @@ class AIProctorDetector:
                 ear, eyes_closed = self.calculate_ear(primary_face.landmark, (h, w))
                 
                 # Tiêu chí nhìn màn hình:
-                # 1. Đầu hướng về màn hình (Yaw [-25°, 25°] và Pitch [-22°, 25°])
-                head_on_screen = (abs(yaw) <= 25.0 and -22.0 <= pitch <= 25.0)
+                # 1. Đầu hướng về màn hình (Yaw [-25°, 25°] và Pitch [-14°, 25°])
+                head_on_screen = (abs(yaw) <= 25.0 and -14.0 <= pitch <= 25.0)
                 # 2. Mắt không bị liếc lệch hẳn ra ngoài
                 gaze_on_screen = not gaze["is_deviated"]
                 
@@ -410,9 +410,9 @@ class AIProctorDetector:
         try:
             results = self.yolo_model.predict(
                 frame,
-                conf=0.40,
+                conf=0.22,
                 verbose=False,
-                classes=[67, 73, 63, 62]  # 67: cell phone, 73: book, 63: laptop, 62: tv/monitor
+                classes=[67, 65, 73, 63, 62]  # 67: cell phone, 65: remote, 73: book, 63: laptop, 62: tv/monitor
             )
             for r in results:
                 for box in r.boxes:
@@ -430,6 +430,86 @@ class AIProctorDetector:
             logger.error(f"Lỗi khi chạy YOLOv8 inference: {e}")
             
         return detected_objects
+
+    def detect_people(self, frame: np.ndarray) -> List[Dict[str, Any]]:
+        """Phát hiện người trong khung hình thông qua YOLOv8 (class 0: person) và trả về tọa độ %."""
+        if self.yolo_model is None or frame is None:
+            return []
+
+        h, w = frame.shape[:2]
+        if h <= 0 or w <= 0:
+            return []
+
+        people: List[Dict[str, Any]] = []
+        try:
+            results = self.yolo_model.predict(
+                frame,
+                conf=0.35,
+                imgsz=320,
+                verbose=False,
+                classes=[0],  # 0: person trong COCO
+            )
+            for r in results:
+                for box in r.boxes:
+                    conf = float(box.conf[0].item())
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    px = max(0.0, min(100.0, (x1 / w) * 100.0))
+                    py = max(0.0, min(100.0, (y1 / h) * 100.0))
+                    pw = max(0.0, min(100.0 - px, ((x2 - x1) / w) * 100.0))
+                    ph = max(0.0, min(100.0 - py, ((y2 - y1) / h) * 100.0))
+                    people.append({
+                        "x": round(px, 1),
+                        "y": round(py, 1),
+                        "w": round(pw, 1),
+                        "h": round(ph, 1),
+                        "confidence": round(conf, 3),
+                    })
+        except Exception as e:
+            logger.error(f"Lỗi khi chạy YOLOv8 detect_people: {e}")
+
+        return people
+
+    def verify_face_fast(self, image_input: Union[str, bytes, np.ndarray]) -> Dict[str, Any]:
+        """Kiểm tra nhanh 1 khung hình cho device-check/phòng chờ: giải mã 1 lần, MediaPipe + 1 lượt YOLOv8 person (320px)."""
+        frame = self.decode_image(image_input)
+        if frame is None:
+            return {
+                "success": False,
+                "face_count": 0,
+                "face_detected": False,
+                "person_count": 0,
+                "person_boxes": [],
+                "is_camera_off": False,
+                "is_camera_covered": False,
+                "lighting_ok": False,
+                "error": "Không thể giải mã dữ liệu ảnh",
+            }
+
+        lighting = self.check_illumination_and_quality(frame)
+        if lighting["is_camera_off"] or lighting["is_camera_covered"]:
+            return {
+                "success": True,
+                "face_count": 0,
+                "face_detected": False,
+                "person_count": 0,
+                "person_boxes": [],
+                "is_camera_off": bool(lighting["is_camera_off"]),
+                "is_camera_covered": bool(lighting["is_camera_covered"]),
+                "lighting_ok": bool(lighting.get("lighting_ok", False)),
+            }
+
+        face_res = self.detect_faces(frame)
+        person_boxes = self.detect_people(frame)
+        return {
+            "success": True,
+            "face_count": int(face_res.get("face_count", 0)),
+            "face_detected": bool(face_res.get("face_detected", False)),
+            "person_count": len(person_boxes),
+            "person_boxes": person_boxes,
+            "is_camera_off": False,
+            "is_camera_covered": False,
+            "lighting_ok": bool(lighting.get("lighting_ok", True)),
+        }
 
     def process_frame(self, image_input: Union[str, bytes, np.ndarray]) -> Dict[str, Any]:
         """
@@ -571,5 +651,21 @@ class AIProctorDetector:
             "dhash": frame_dhash
         }
 
-# Singleton Instance
-proctor_detector = AIProctorDetector()
+# Lazy singleton (tránh khởi tạo TFLite/PyTorch trước khi Celery fork gây deadlock mutex)
+_proctor_detector_instance: Optional[AIProctorDetector] = None
+
+
+def get_proctor_detector() -> AIProctorDetector:
+    global _proctor_detector_instance
+    if _proctor_detector_instance is None:
+        _proctor_detector_instance = AIProctorDetector()
+    return _proctor_detector_instance
+
+
+class _LazyProctorDetectorProxy:
+    """Proxy khởi tạo AIProctorDetector theo kiểu lazy để tránh deadlock TFLite/PyTorch khi Celery fork()."""
+    def __getattr__(self, name: str):
+        return getattr(get_proctor_detector(), name)
+
+
+proctor_detector = _LazyProctorDetectorProxy()

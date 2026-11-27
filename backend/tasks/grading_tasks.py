@@ -84,9 +84,15 @@ def grade_submission(
         return {"status": "failed", "error": "Question not found"}
 
     test_cases = question.get("test_cases", [])
-    time_limit_s = question.get("time_limit_minutes") or 5
-    # Nếu đặt time_limit theo phút quá lớn, giới hạn mỗi testcase chạy tối đa 10s
-    time_limit_per_tc = min(time_limit_s * 60, settings.SANDBOX_TIME_LIMIT_S)
+    q_max_points = float(question.get("max_points") or 10.0)
+    raw_tc_sum = sum(float(tc.get("points") or 0.0) for tc in test_cases)
+    scale_factor = (
+        (q_max_points / raw_tc_sum)
+        if raw_tc_sum > 0
+        else (q_max_points / len(test_cases) if test_cases else 1.0)
+    )
+    time_limit_ms = question.get("time_limit_minutes") or 2000
+    time_limit_per_tc = max(1, min(int(time_limit_ms / 1000) + 1, settings.SANDBOX_TIME_LIMIT_S))
     mem_limit_mb = question.get("memory_limit_mb") or 128
 
     results_list = []
@@ -97,7 +103,8 @@ def grade_submission(
         for tc in test_cases:
             tc_input = tc.get("input_data", "")
             tc_expected = tc.get("expected_output", "")
-            tc_points = float(tc.get("points", 0.0))
+            raw_tc_pts = float(tc.get("points") or 0.0)
+            tc_points = (raw_tc_pts * scale_factor) if raw_tc_sum > 0 else scale_factor
 
             exec_result = sandbox_service.execute_code(
                 code=code_content,
@@ -113,8 +120,8 @@ def grade_submission(
                 and sandbox_service.compare_output(exec_result["stdout"], tc_expected)
             )
 
-            if is_match:
-                total_earned_points += tc_points
+            earned = round(tc_points, 4) if is_match else 0.0
+            total_earned_points += earned
 
             results_list.append({
                 "test_case_id": tc["test_case_id"],
@@ -122,7 +129,8 @@ def grade_submission(
                 "actual_output": exec_result.get("stdout", "")[:2000], # Giới hạn lưu tối đa 2000 ký tự
                 "execution_time_ms": exec_result.get("execution_ms", 0.0),
                 "memory_used_mb": exec_result.get("memory_mb", 0.0),
-                "error_message": exec_result.get("error")
+                "error_message": exec_result.get("error"),
+                "points_earned": earned,
             })
 
         # 3. Lưu kết quả nguyên khối vào CSDL

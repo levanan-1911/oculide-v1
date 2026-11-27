@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -58,11 +58,19 @@ const LANGUAGE_META: Record<string, { label: string; color: string }> = {
 const statusStyles: Record<string, string> = {
   "Sắp diễn ra": "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30",
   "Đang diễn ra": "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30",
-  "Đã hoàn thành": "bg-slate-100 text-slate-600 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10",
+  "Đã hoàn thành": "bg-brand-50 text-brand-700 border-brand/20 dark:bg-brand-500/10 dark:text-[#f0c2cf] dark:border-brand-500/30",
 };
 
 export default function StudentDashboardPage() {
   const [activeFilter, setActiveFilter] = useState<FilterStatus>("Tất cả");
+  const examListSectionRef = useRef<HTMLElement | null>(null);
+
+  const handleSelectFilter = (nextFilter: FilterStatus) => {
+    setActiveFilter(nextFilter);
+    setTimeout(() => {
+      examListSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  };
   const [studentName, setStudentName] = useState<string>("sinh viên");
   const [exams, setExams] = useState<StudentExam[]>([]);
   const [submissions, setSubmissions] = useState<ApiStudentSubmission[]>([]);
@@ -134,20 +142,43 @@ export default function StudentDashboardPage() {
     };
   }, []);
 
+  const submittedRoomIds = useMemo(
+    () =>
+      new Set(
+        submissions
+          .map((s) => s.room_id)
+          .filter((id): id is number => typeof id === "number" && id > 0)
+      ),
+    [submissions]
+  );
+
+  const normalizedExams = useMemo(() => {
+    return exams.map((e) => {
+      const rId = Number((e as any).roomId ?? e.id);
+      if (Number.isFinite(rId) && submittedRoomIds.has(rId)) {
+        return { ...e, status: "Đã hoàn thành" as const };
+      }
+      return e;
+    });
+  }, [exams, submittedRoomIds]);
+
   const counts = useMemo(
-    () => ({
-      all: exams.length,
-      upcoming: exams.filter((e) => e.status === "Sắp diễn ra").length,
-      ongoing: exams.filter((e) => e.status === "Đang diễn ra").length,
-      completed: exams.filter((e) => e.status === "Đã hoàn thành").length,
-    }),
-    [exams]
+    () => {
+      const completedRooms = normalizedExams.filter((e) => e.status === "Đã hoàn thành").length;
+      return {
+        all: normalizedExams.length,
+        upcoming: normalizedExams.filter((e) => e.status === "Sắp diễn ra").length,
+        ongoing: normalizedExams.filter((e) => e.status === "Đang diễn ra").length,
+        completed: Math.max(completedRooms, submittedRoomIds.size, submissions.length > 0 ? 1 : 0),
+      };
+    },
+    [normalizedExams, submittedRoomIds.size, submissions.length]
   );
 
   const filteredExams = useMemo(() => {
-    if (activeFilter === "Tất cả") return exams;
-    return exams.filter((exam) => exam.status === activeFilter);
-  }, [activeFilter, exams]);
+    if (activeFilter === "Tất cả") return normalizedExams;
+    return normalizedExams.filter((exam) => exam.status === activeFilter);
+  }, [activeFilter, normalizedExams]);
 
   const scoreHistory = useMemo(() => {
     return submissions.slice(0, 5).reverse().map((sub, idx) => {
@@ -272,7 +303,7 @@ export default function StudentDashboardPage() {
           {/* Thẻ 1: Tất cả */}
           <button
             type="button"
-            onClick={() => setActiveFilter("Tất cả")}
+            onClick={() => handleSelectFilter("Tất cả")}
             className={`flex flex-col justify-between h-full rounded-md border p-5 text-left transition-colors cursor-pointer ${
               activeFilter === "Tất cả"
                 ? "border-brand bg-brand-50 ring-1 ring-brand shadow-sm dark:bg-brand-500/10 dark:border-brand-500/40"
@@ -302,7 +333,7 @@ export default function StudentDashboardPage() {
           {/* Thẻ 2: Sắp diễn ra */}
           <button
             type="button"
-            onClick={() => setActiveFilter("Sắp diễn ra")}
+            onClick={() => handleSelectFilter("Sắp diễn ra")}
             className={`flex flex-col justify-between h-full rounded-md border p-5 text-left transition-colors cursor-pointer ${
               activeFilter === "Sắp diễn ra"
                 ? "border-brand bg-brand-50 ring-1 ring-brand shadow-sm dark:bg-brand-500/10 dark:border-brand-500/40"
@@ -332,7 +363,7 @@ export default function StudentDashboardPage() {
           {/* Thẻ 3: Đang diễn ra */}
           <button
             type="button"
-            onClick={() => setActiveFilter("Đang diễn ra")}
+            onClick={() => handleSelectFilter("Đang diễn ra")}
             className={`flex flex-col justify-between h-full rounded-md border p-5 text-left transition-colors cursor-pointer ${
               activeFilter === "Đang diễn ra"
                 ? "border-brand bg-brand-50 ring-1 ring-brand shadow-sm dark:bg-brand-500/10 dark:border-brand-500/40"
@@ -365,7 +396,7 @@ export default function StudentDashboardPage() {
           {/* Thẻ 4: Đã hoàn thành */}
           <button
             type="button"
-            onClick={() => setActiveFilter("Đã hoàn thành")}
+            onClick={() => handleSelectFilter("Đã hoàn thành")}
             className={`flex flex-col justify-between h-full rounded-md border p-5 text-left transition-colors cursor-pointer ${
               activeFilter === "Đã hoàn thành"
                 ? "border-brand bg-brand-50 ring-1 ring-brand shadow-sm dark:bg-brand-500/10 dark:border-brand-500/40"
@@ -529,7 +560,10 @@ export default function StudentDashboardPage() {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 items-start">
         
         {/* Cột trái (2/3): Bảng bài thi */}
-        <section className="rounded-md border border-slate-300 bg-white p-5 sm:p-6 xl:col-span-2 space-y-4 dark:border-white/10 dark:bg-neutral-900 transition-colors shadow-sm">
+        <section
+          ref={examListSectionRef}
+          className="scroll-mt-4 rounded-md border border-slate-300 bg-white p-5 sm:p-6 xl:col-span-2 space-y-4 dark:border-white/10 dark:bg-neutral-900 transition-colors shadow-sm"
+        >
           <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-300 dark:border-white/10">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-slate-900 dark:text-[#e5a9b9]" />
@@ -608,7 +642,7 @@ export default function StudentDashboardPage() {
                     {exam.status !== "Đã hoàn thành" ? (
                       <Link
                         href={`/student/exams?code=${encodeURIComponent(exam.roomCode)}`}
-                        className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-slate-900 hover:underline dark:text-[#e5a9b9] transition-colors"
+                        className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-brand-700 hover:underline dark:text-[#e5a9b9] transition-colors"
                       >
                         {exam.status === "Đang diễn ra" ? (
                           <>

@@ -5,6 +5,125 @@ from typing import Optional, Dict, List, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
+_lockout_schema_ready = False
+
+
+def ensure_lockout_columns() -> None:
+    global _lockout_schema_ready
+    if _lockout_schema_ready:
+        return
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "IF COL_LENGTH('Users', 'failed_login_attempts') IS NULL "
+                "ALTER TABLE Users ADD failed_login_attempts INT DEFAULT 0 NOT NULL;"
+            )
+            cursor.execute(
+                "IF COL_LENGTH('Users', 'locked_until') IS NULL "
+                "ALTER TABLE Users ADD locked_until DATETIME2 NULL;"
+            )
+            conn.commit()
+            _lockout_schema_ready = True
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        logger.warning(f"Không thể kiểm tra/bổ sung cột lockout trên Users: {e}")
+
+
+def get_user_lockout_state(user_id: int) -> Dict:
+    ensure_lockout_columns()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT COALESCE(failed_login_attempts, 0), locked_until FROM Users WHERE user_id = ?",
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return {"failed_login_attempts": 0, "locked_until": None}
+        return {"failed_login_attempts": int(row[0] or 0), "locked_until": row[1]}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def record_failed_login_attempt(user_id: int) -> Dict:
+    ensure_lockout_columns()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT COALESCE(failed_login_attempts, 0) FROM Users WHERE user_id = ?",
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        prev_attempts = int(row[0] or 0) if row else 0
+        new_attempts = prev_attempts + 1
+        lock_minutes = 0
+        if new_attempts >= 5 and new_attempts % 5 == 0:
+            lock_minutes = 15 if new_attempts >= 10 else 5
+
+        if lock_minutes > 0:
+            cursor.execute(
+                """
+                UPDATE Users
+                SET failed_login_attempts = ?,
+                    locked_until = DATEADD(MINUTE, ?, GETDATE()),
+                    updated_at = GETDATE()
+                OUTPUT inserted.locked_until
+                WHERE user_id = ?
+                """,
+                (new_attempts, lock_minutes, user_id),
+            )
+            out_row = cursor.fetchone()
+            locked_until = out_row[0] if out_row else None
+        else:
+            cursor.execute(
+                """
+                UPDATE Users
+                SET failed_login_attempts = ?,
+                    locked_until = NULL,
+                    updated_at = GETDATE()
+                WHERE user_id = ?
+                """,
+                (new_attempts, user_id),
+            )
+            locked_until = None
+        conn.commit()
+        return {
+            "failed_login_attempts": new_attempts,
+            "locked_until": locked_until,
+            "lock_minutes": lock_minutes,
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def reset_user_lockout(user_id: int) -> bool:
+    ensure_lockout_columns()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE Users
+            SET failed_login_attempts = 0,
+                locked_until = NULL,
+                updated_at = GETDATE()
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
 
 def _parse_user_row(cursor, row) -> Optional[Dict]:
     if not row:
@@ -348,8 +467,17 @@ def update_user_role(user_id: int, role: str) -> bool:
                 updated_at = GETDATE() 
             WHERE user_id = ?
         """, (role, user_id))
+        updated = cursor.rowcount > 0
+        if updated:
+            cursor.execute("DELETE FROM AuthTokens WHERE user_id = ?", (user_id,))
         conn.commit()
-        return cursor.rowcount > 0
+        if updated:
+            try:
+                from services.session_manager import SessionManager
+                SessionManager.clear_session(user_id)
+            except Exception:
+                pass
+        return updated
     finally:
         cursor.close()
         conn.close()

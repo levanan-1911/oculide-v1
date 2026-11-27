@@ -76,7 +76,7 @@ export default function ReviewViolationModal({
 }: ReviewViolationModalProps) {
   const [selectedIncidentIndex, setSelectedIncidentIndex] = useState(0);
   const [decisionAction, setDecisionAction] = useState<'confirm' | 'reject'>('confirm');
-  const [penaltyPoints, setPenaltyPoints] = useState<number>(2.0);
+  const [penaltyPoints, setPenaltyPoints] = useState<number>(0);
   const [resolutionNote, setResolutionNote] = useState<string>('');
   const [activeEvidenceTab, setActiveEvidenceTab] = useState<'webcam' | 'screen'>('webcam');
 
@@ -84,9 +84,11 @@ export default function ReviewViolationModal({
 
   const incidents = record.violations || [];
   const currentIncident = incidents[selectedIncidentIndex] || incidents[0];
+  const isCurrentDecided = Boolean(currentIncident && currentIncident.status !== 'pending');
+  const pendingCount = incidents.filter((i) => i.status === 'pending').length;
 
   const handleApplyDecision = () => {
-    if (!currentIncident) return;
+    if (!currentIncident || currentIncident.status !== 'pending') return;
     const penalty = decisionAction === 'confirm' ? penaltyPoints : 0;
     const note =
       resolutionNote.trim() ||
@@ -167,14 +169,14 @@ export default function ReviewViolationModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {/* Thanh chọn sự cố nếu có nhiều lần bị cảnh báo */}
           {incidents.length > 1 && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              <span className="text-xs font-serif font-bold text-slate-500 dark:text-slate-400 shrink-0">Chọn cảnh báo:</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-serif font-bold text-slate-500 dark:text-slate-400 shrink-0 whitespace-nowrap">Chọn cảnh báo:</span>
               {incidents.map((inc, idx) => (
                 <button
                   key={inc.id}
                   type="button"
                   onClick={() => setSelectedIncidentIndex(idx)}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-serif font-bold transition cursor-pointer shrink-0 ${
+                  className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-serif font-bold transition cursor-pointer shrink-0 ${
                     selectedIncidentIndex === idx
                       ? 'bg-brand text-white shadow-2xs'
                       : inc.status === 'confirmed'
@@ -188,7 +190,7 @@ export default function ReviewViolationModal({
                   {inc.status === 'confirmed' && <span className="text-[10px]">✕ Đã phạt</span>}
                   {inc.status === 'rejected' && <span className="text-[10px]">✓ Bác bỏ</span>}
                   {inc.status === 'pending' && (
-                    <span className="h-2 w-2 rounded-full bg-slate-400" />
+                    <span className="h-2 w-2 rounded-full bg-amber-400" />
                   )}
                 </button>
               ))}
@@ -199,35 +201,35 @@ export default function ReviewViolationModal({
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               {/* CỘT TRÁI (7 Cột): BẰNG CHỨNG ẢNH CHỤP SNAPSHOT (CAMERA & MÀN HÌNH) */}
               <div className="lg:col-span-7 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setActiveEvidenceTab('webcam')}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-serif font-bold transition cursor-pointer ${
+                      className={`inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-md px-3 py-1.5 text-xs font-serif font-bold transition cursor-pointer ${
                         activeEvidenceTab === 'webcam'
                           ? 'bg-brand text-white'
                           : 'bg-slate-100 text-slate-600 hover:text-slate-900 dark:bg-white/5 dark:text-slate-400 dark:hover:text-white'
                       }`}
                     >
-                      <Camera className="h-3.5 w-3.5" />
-                      <span>Ảnh Webcam AI Snapshot</span>
+                      <Camera className="h-3.5 w-3.5 shrink-0" />
+                      <span>Ảnh Webcam AI</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setActiveEvidenceTab('screen')}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-serif font-bold transition cursor-pointer ${
+                      className={`inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 rounded-md px-3 py-1.5 text-xs font-serif font-bold transition cursor-pointer ${
                         activeEvidenceTab === 'screen'
                           ? 'bg-brand text-white'
                           : 'bg-slate-100 text-slate-600 hover:text-slate-900 dark:bg-white/5 dark:text-slate-400 dark:hover:text-white'
                       }`}
                     >
-                      <Monitor className="h-3.5 w-3.5" />
-                      <span>Ảnh Màn hình Code lúc vi phạm</span>
+                      <Monitor className="h-3.5 w-3.5 shrink-0" />
+                      <span>Màn hình Code</span>
                     </button>
                   </div>
 
-                  <span className="font-mono text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                  <span className="font-mono text-xs text-slate-500 dark:text-slate-400 font-semibold whitespace-nowrap shrink-0">
                     Thời điểm: <strong className="text-slate-900 dark:text-white">{currentIncident.timestamp}</strong>
                   </span>
                 </div>
@@ -340,136 +342,177 @@ int main() {
                     Quyết Định Thẩm Định Của Giảng Viên
                   </h3>
 
-                  {/* Lựa chọn XÁC NHẬN VI PHẠM hoặc BÁC BỎ */}
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setDecisionAction('confirm')}
-                      className={`flex flex-col items-center justify-center p-3 rounded-md border text-center transition cursor-pointer ${
-                        decisionAction === 'confirm'
-                          ? 'border-slate-800 bg-slate-200 text-slate-900 font-bold dark:border-white dark:bg-white/20 dark:text-white'
-                          : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      <XCircle className="h-5 w-5 text-slate-700 dark:text-slate-300 mb-1" />
-                      <span className="text-xs font-serif font-bold">Xác nhận vi phạm</span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">Trừ điểm / Ghi biên bản</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setDecisionAction('reject')}
-                      className={`flex flex-col items-center justify-center p-3 rounded-md border text-center transition cursor-pointer ${
-                        decisionAction === 'reject'
-                          ? 'border-slate-800 bg-slate-200 text-slate-900 font-bold dark:border-white dark:bg-white/20 dark:text-white'
-                          : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      <CheckCircle2 className="h-5 w-5 text-slate-700 dark:text-slate-300 mb-1" />
-                      <span className="text-xs font-serif font-bold">Bác bỏ cảnh báo</span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">Giữ nguyên điểm bài làm</span>
-                    </button>
-                  </div>
-
-                  {/* Cấu hình trừ điểm nếu xác nhận vi phạm */}
-                  {decisionAction === 'confirm' ? (
-                    <div className="mt-4 space-y-2 rounded-md bg-white p-3 border border-slate-200 text-xs dark:bg-slate-900 dark:border-white/10">
-                      <label className="font-serif font-bold text-slate-700 dark:text-slate-300 block">
-                        Chọn mức trừ điểm vi phạm:
-                      </label>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {[
-                          { val: 1.0, label: '-1.0đ (Nhẹ)' },
-                          { val: 2.0, label: '-2.0đ (Chuẩn)' },
-                          { val: 5.0, label: '-5.0đ (Nặng)' },
-                        ].map((opt) => (
-                          <button
-                            key={opt.val}
-                            type="button"
-                            onClick={() => setPenaltyPoints(opt.val)}
-                            className={`rounded py-1.5 text-xs font-mono font-bold transition cursor-pointer border ${
-                              penaltyPoints === opt.val
-                                ? 'bg-brand text-white border-brand'
-                                : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10'
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
+                  {isCurrentDecided ? (
+                    <div className="mt-4 space-y-3 rounded-md border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+                      <div className="flex items-center gap-2">
+                        {currentIncident.status === 'confirmed' ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-1 text-xs font-serif font-bold text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/40">
+                            <XCircle className="h-4 w-4 shrink-0" />
+                            <span>Đã xác nhận vi phạm</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-serif font-bold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40">
+                            <CheckCircle2 className="h-4 w-4 shrink-0" />
+                            <span>Đã bác bỏ cảnh báo</span>
+                          </span>
+                        )}
                       </div>
-
-                      <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1 border-t border-slate-200 dark:border-white/10">
-                        <span>Điểm bài thi dự kiến:</span>
-                        <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                          {record.testScore} - {penaltyPoints} ={' '}
-                          <strong className="text-slate-900 dark:text-white text-sm">
-                            {Math.max(0, record.testScore - penaltyPoints).toFixed(1)} / 10
-                          </strong>
-                        </span>
-                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        {currentIncident.resolutionNote ||
+                          (currentIncident.status === 'confirmed'
+                            ? 'Cảnh báo này đã được giảng viên xác nhận lập biên bản.'
+                            : 'Cảnh báo này đã được giảng viên bác bỏ.')}
+                      </p>
+                      <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-white/10">
+                        Quyết định đã được chốt và khóa chỉnh sửa.
+                      </p>
                     </div>
                   ) : (
-                    <div className="mt-4 rounded-md bg-white p-3 border border-slate-200 text-xs space-y-1 dark:bg-slate-900 dark:border-white/10">
-                      <p className="font-serif font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400" />
-                        Chấp nhận giải trình / Bác bỏ lỗi AI
-                      </p>
-                      <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                        Điểm bài thi của thí sinh được giữ nguyên:{' '}
-                        <strong className="text-slate-900 dark:text-white font-mono font-bold">{record.testScore} / 10</strong>.
-                      </p>
-                    </div>
-                  )}
+                    <>
+                      {/* Lựa chọn XÁC NHẬN VI PHẠM hoặc BÁC BỎ */}
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDecisionAction('confirm')}
+                          className={`flex flex-col items-center justify-center p-3 rounded-md border text-center transition cursor-pointer ${
+                            decisionAction === 'confirm'
+                              ? 'border-brand bg-brand/10 text-slate-900 font-bold dark:border-brand dark:bg-brand/20 dark:text-white'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          <XCircle className="h-5 w-5 text-slate-700 dark:text-slate-300 mb-1" />
+                          <span className="text-xs font-serif font-bold whitespace-nowrap">Xác nhận vi phạm</span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400">Trừ điểm / Ghi biên bản</span>
+                        </button>
 
-                  {/* Lý do / Ghi chú phản hồi cho sinh viên */}
-                  <div className="mt-3.5 space-y-1.5">
-                    <label className="text-xs font-serif font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                      <span>Ghi chú của Giảng viên (Hiển thị cho SV xem):</span>
-                      <span className="text-[10px] text-slate-400 font-normal">Tùy chọn</span>
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={resolutionNote}
-                      onChange={(e) => setResolutionNote(e.target.value)}
-                      placeholder={
-                        decisionAction === 'confirm'
-                          ? 'Nhập lý do trừ điểm (VD: Camera phát hiện rõ hình ảnh vi phạm lúc 08:12)...'
-                          : 'Nhập ghi chú bác bỏ (VD: Sinh viên có giải trình hợp lý, không phát hiện vi phạm)...'
-                      }
-                      className="w-full rounded-md border border-slate-200 bg-white p-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-brand-600 focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-white dark:placeholder-slate-500"
-                    />
-                  </div>
+                        <button
+                          type="button"
+                          onClick={() => setDecisionAction('reject')}
+                          className={`flex flex-col items-center justify-center p-3 rounded-md border text-center transition cursor-pointer ${
+                            decisionAction === 'reject'
+                              ? 'border-brand bg-brand/10 text-slate-900 font-bold dark:border-brand dark:bg-brand/20 dark:text-white'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          <CheckCircle2 className="h-5 w-5 text-slate-700 dark:text-slate-300 mb-1" />
+                          <span className="text-xs font-serif font-bold whitespace-nowrap">Bác bỏ cảnh báo</span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400">Giữ nguyên điểm bài làm</span>
+                        </button>
+                      </div>
+
+                      {/* Cấu hình trừ điểm nếu xác nhận vi phạm */}
+                      {decisionAction === 'confirm' ? (
+                        <div className="mt-4 space-y-2 rounded-md bg-white p-3 border border-slate-200 text-xs dark:bg-slate-900 dark:border-white/10">
+                          <label className="font-serif font-bold text-slate-700 dark:text-slate-300 block">
+                            Chọn mức trừ điểm vi phạm:
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { val: 1.0, label: '-1.0đ (Nhẹ)' },
+                              { val: 2.0, label: '-2.0đ (Chuẩn)' },
+                              { val: 5.0, label: '-5.0đ (Nặng)' },
+                            ].map((opt) => (
+                              <button
+                                key={opt.val}
+                                type="button"
+                                onClick={() => setPenaltyPoints(opt.val)}
+                                className={`flex-1 min-w-[95px] whitespace-nowrap rounded px-2 py-1.5 text-[11px] font-mono font-bold transition cursor-pointer border ${
+                                  penaltyPoints === opt.val
+                                    ? 'bg-brand text-white border-brand'
+                                    : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1 border-t border-slate-200 dark:border-white/10">
+                            <span>Điểm bài thi dự kiến:</span>
+                            <span className="font-mono font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                              {record.testScore} - {penaltyPoints} ={' '}
+                              <strong className="text-slate-900 dark:text-white text-sm">
+                                {Math.max(0, record.testScore - penaltyPoints).toFixed(1)} / 10
+                              </strong>
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-4 rounded-md bg-white p-3 border border-slate-200 text-xs space-y-1 dark:bg-slate-900 dark:border-white/10">
+                          <p className="font-serif font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
+                            <span>Chấp nhận giải trình / Bác bỏ lỗi AI</span>
+                          </p>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                            Điểm bài thi của thí sinh được giữ nguyên:{' '}
+                            <strong className="text-slate-900 dark:text-white font-mono font-bold">{record.testScore} / 10</strong>.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Lý do / Ghi chú phản hồi cho sinh viên */}
+                      <div className="mt-3.5 space-y-1.5">
+                        <label className="text-xs font-serif font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between gap-2">
+                          <span>Ghi chú cho sinh viên:</span>
+                          <span className="text-[10px] text-slate-400 font-normal whitespace-nowrap shrink-0">Tùy chọn</span>
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={resolutionNote}
+                          onChange={(e) => setResolutionNote(e.target.value)}
+                          placeholder={
+                            decisionAction === 'confirm'
+                              ? 'Nhập lý do trừ điểm (VD: Camera phát hiện rõ hình ảnh vi phạm)...'
+                              : 'Nhập ghi chú bác bỏ (VD: Sinh viên có giải trình hợp lý)...'
+                          }
+                          className="w-full rounded-md border border-slate-200 bg-white p-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-brand-600 focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-white dark:placeholder-slate-500"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Hàng nút bấm thực thi */}
                 <div className="pt-3 border-t border-slate-200 dark:border-white/10 space-y-2">
-                  <button
-                    type="button"
-                    onClick={handleApplyDecision}
-                    className="system-primary-action w-full rounded-md py-2.5 text-xs font-serif font-bold text-white shadow-2xs transition cursor-pointer flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-800"
-                  >
-                    <span>Lưu Quyết Định Cho Cảnh Báo Này</span>
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                  {isCurrentDecided ? (
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="w-full rounded-md border border-slate-300 bg-white py-2 text-xs font-serif font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+                    >
+                      Đóng
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleApplyDecision}
+                        className="system-primary-action w-full rounded-md py-2.5 text-xs font-serif font-bold text-white shadow-2xs transition cursor-pointer flex items-center justify-center gap-1.5 bg-brand hover:bg-brand/90 whitespace-nowrap"
+                      >
+                        <span>Lưu Quyết Định Cho Cảnh Báo Này</span>
+                        <ChevronRight className="h-4 w-4 shrink-0" />
+                      </button>
 
-                  {/* Thao tác hàng loạt cho toàn bộ cảnh báo của thí sinh này */}
-                  {incidents.length > 1 && onBatchResolveAll && (
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={handleConfirmAll}
-                        className="flex-1 rounded-md border border-slate-200 bg-white py-1.5 text-[10.5px] font-serif font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer text-center dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
-                      >
-                        Phạt tất cả ({incidents.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleRejectAll}
-                        className="flex-1 rounded-md border border-slate-200 bg-white py-1.5 text-[10.5px] font-serif font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer text-center dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
-                      >
-                        Bác bỏ tất cả ({incidents.length})
-                      </button>
-                    </div>
+                      {/* Thao tác hàng loạt cho các cảnh báo chưa duyệt */}
+                      {pendingCount > 1 && onBatchResolveAll && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleConfirmAll}
+                            className="flex-1 whitespace-nowrap rounded-md border border-slate-200 bg-white py-1.5 px-2 text-[11px] font-serif font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer text-center dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                          >
+                            Phạt tất cả chờ duyệt ({pendingCount})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRejectAll}
+                            className="flex-1 whitespace-nowrap rounded-md border border-slate-200 bg-white py-1.5 px-2 text-[11px] font-serif font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer text-center dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                          >
+                            Bác bỏ tất cả ({pendingCount})
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

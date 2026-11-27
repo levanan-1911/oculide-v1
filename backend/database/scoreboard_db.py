@@ -58,7 +58,7 @@ def get_room_scoreboard(room_id: int) -> List[Dict[str, Any]]:
                     MAX(s.submitted_at) AS last_time
                 FROM Submissions s
                 CROSS APPLY (
-                    SELECT COALESCE(SUM(tc.points), 0) AS points_earned
+                    SELECT COALESCE(SUM(COALESCE(gr.score_awarded, tc.points)), 0) AS points_earned
                     FROM GradingResults gr
                     JOIN TestCases tc ON gr.test_case_id = tc.test_case_id
                     WHERE gr.submission_id = s.submission_id AND gr.is_passed = 1

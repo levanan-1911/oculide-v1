@@ -1,17 +1,32 @@
-export type AuditLogCategory = 'LOGIN' | 'PASSWORD' | 'SETTINGS' | 'BACKUP' | 'SECURITY' | 'SYSTEM';
+export type AuditLogCategory = 'LOGIN' | 'PASSWORD' | 'SETTINGS' | 'BACKUP' | 'SECURITY' | 'SYSTEM' | 'AUTH' | 'EXAM' | 'USER';
 
 export interface AuditLogItem {
   id: string;
   timestamp: string;
   actorName: string;
   actorRole: 'admin' | 'instructor' | 'student' | 'system';
+  actorCode?: string;
   action: string;
+  eventCode?: string;
+  actionLabel?: string;
   category: AuditLogCategory;
+  normalizedCategory?: 'AUTH' | 'EXAM' | 'USER' | 'SYSTEM';
   categoryLabel?: string;
   severity: 'INFO' | 'WARNING' | 'CRITICAL' | 'SECURITY';
+  normalizedSeverity?: 'INFO' | 'WARN' | 'CRITICAL';
   ipAddress: string;
   status: 'success' | 'failure' | 'flagged';
+  normalizedStatus?: 'SUCCESS' | 'FAILED';
   details: string;
+  attemptCount?: number;
+  userAgent?: string;
+  sessionId?: string;
+  requestId?: string;
+  errorCode?: string;
+  errorReason?: string;
+  target?: { entityType?: string; entityId?: string | number; label?: string } | null;
+  beforeData?: unknown;
+  afterData?: unknown;
   payload?: Record<string, unknown>;
 }
 
@@ -41,6 +56,10 @@ export interface SystemSettings {
   jwtTokenExpiryMinutes: number;
   maintenanceMode: boolean;
   maintenanceMessage: string;
+  maintenanceDurationMinutes: number;
+  maintenanceEndsAt?: string | null;
+  maintenanceOnBackupSchedule: boolean;
+  maintenanceScheduleTime: string;
   // Cấu hình thời gian & chính sách sao lưu
   backupScheduleEnabled: boolean;
   backupFrequency: 'daily' | 'weekly';

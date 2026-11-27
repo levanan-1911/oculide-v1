@@ -18,6 +18,24 @@ class SystemSettingsModel(BaseModel):
         "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",
         description="Thông báo hiển thị khi bảo trì"
     )
+    maintenance_duration_minutes: int = Field(
+        30,
+        ge=0,
+        le=10080,
+        description="Thời lượng bảo trì dự kiến (phút, 0 = không giới hạn tự động)"
+    )
+    maintenance_ends_at: Optional[str] = Field(
+        None,
+        description="Thời điểm tự động kết thúc chế độ bảo trì (ISO-8601)"
+    )
+    maintenance_on_backup_schedule: bool = Field(
+        False,
+        description="Tự động bật chế độ bảo trì theo khung giờ cấu hình"
+    )
+    maintenance_schedule_time: str = Field(
+        "02:00",
+        description="Khung giờ tự động bật bảo trì hàng ngày (HH:MM)"
+    )
     backup_schedule_enabled: bool = Field(True, description="Bật tự động sao lưu theo lịch")
     backup_frequency: str = Field("daily", description="Tần suất sao lưu định kỳ: daily (hàng ngày), weekly (hàng tuần)")
     backup_time: str = Field("02:00", description="Khung giờ thực hiện sao lưu định kỳ (HH:MM)")
@@ -30,6 +48,7 @@ class SystemSettingsModel(BaseModel):
 class PublicConfigResponse(BaseModel):
     maintenance_mode: bool
     maintenance_message: str
+    maintenance_ends_at: Optional[str] = None
     allowed_email_domain: str
 
 class BackupItemResponse(BaseModel):

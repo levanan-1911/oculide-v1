@@ -55,6 +55,23 @@ async def list_users(
         "total_pages": total_pages
     }
 
+
+@router.get("/users/sessions")
+async def get_active_user_sessions():
+    """Trạng thái phiên hoạt động (Đang online / Ngoại tuyến) của các tài khoản."""
+    from services.session_manager import SessionManager
+    return {"sessions": SessionManager.list_active_sessions()}
+
+
+@router.post("/users/{user_id}/unlock-session")
+async def unlock_user_session_by_admin(user_id: int):
+    """Admin giải phóng phiên đăng nhập đang khóa trên thiết bị cũ & gỡ khóa tạm thời."""
+    from services.session_manager import SessionManager
+    from database.user_db import reset_user_lockout
+    SessionManager.clear_session(user_id)
+    reset_user_lockout(user_id)
+    return {"message": f"Đã mở khóa phiên và gỡ khóa tạm thời cho tài khoản #{user_id}.", "user_id": user_id}
+
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user_by_admin(
     user_data: AdminUserCreateRequest,
@@ -202,6 +219,8 @@ async def update_user_by_admin(user_id: int, user_data: AdminUserUpdateRequest):
     # 6. Cập nhật trạng thái kích hoạt nếu có thay đổi
     if user_data.is_active is not None and user_data.is_active != existing_user.get("is_active"):
         update_user_status(user_id, user_data.is_active)
+        if not user_data.is_active:
+            SessionManager.clear_session(user_id)
 
     updated = get_user_by_id(user_id)
     return updated
@@ -213,6 +232,8 @@ async def toggle_user_status(user_id: int, status_data: AdminUserStatusUpdate):
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
     update_user_status(user_id, status_data.is_active)
+    if not status_data.is_active:
+        SessionManager.clear_session(user_id)
     try:
         act = "kích hoạt" if status_data.is_active else "vô hiệu hóa/khóa"
         create_system_log(
@@ -944,7 +965,24 @@ async def update_system_settings(
     client_ip = extract_client_ip(request)
     admin_name = current_user.get("username", "admin")
     old_settings = SystemSettingsManager.get_settings()
-    updated = SystemSettingsManager.update_settings(settings_data.model_dump(), updated_by=admin_name)
+    payload = settings_data.model_dump()
+    if payload.get("maintenance_mode"):
+        duration = int(payload.get("maintenance_duration_minutes") or 0)
+        if duration > 0:
+            if (
+                not old_settings.maintenance_mode
+                or duration != old_settings.maintenance_duration_minutes
+                or not old_settings.maintenance_ends_at
+            ):
+                payload["maintenance_ends_at"] = (datetime.now() + timedelta(minutes=duration)).isoformat()
+            else:
+                payload["maintenance_ends_at"] = old_settings.maintenance_ends_at
+        else:
+            payload["maintenance_ends_at"] = None
+    else:
+        payload["maintenance_ends_at"] = None
+
+    updated = SystemSettingsManager.update_settings(payload, updated_by=admin_name)
 
     # Nếu Admin vừa kích hoạt Chế độ Bảo trì và có bật tùy chọn backup_on_maintenance -> Tự động sao lưu Snapshot an toàn
     if (not old_settings.maintenance_mode) and updated.maintenance_mode and updated.backup_on_maintenance:
@@ -975,7 +1013,16 @@ async def update_system_settings(
             message=f"Cập nhật tham số hệ thống: Bảo trì={'BẬT' if updated.maintenance_mode else 'TẮT'}, Worker={updated.max_sandbox_workers}, Lưu backup={updated.backup_retention_days} ngày",
             user_id=current_user.get("user_id"),
             ip_address=client_ip,
-            extra_data=updated.model_dump()
+            user_agent=request.headers.get("user-agent", ""),
+            target={"entityType": "SYSTEM_CONFIG", "entityId": "global", "label": "Tham số hạ tầng hệ thống"},
+            extra_data={
+                "eventCode": "CONFIG_UPDATED",
+                "actionLabel": "Cập nhật cấu hình hệ thống",
+                "category": "SYSTEM",
+                "status": "SUCCESS",
+                "before": old_settings.model_dump(),
+                "after": updated.model_dump(),
+            },
         )
     except Exception:
         pass
@@ -1584,6 +1631,7 @@ async def create_final_exam_schedule(
 
     clean_code = "".join(c for c in data.course_code if c.isalnum()).upper() or "EXAM"
     room_code = f"EXAM_FINAL_{clean_code}_{random.randint(100, 999)}"
+    passcode = str(random.randint(100000, 999999))
 
     try:
         dt_start = datetime.strptime(f"{data.exam_date} {data.start_time}", "%Y-%m-%d %H:%M")
@@ -1603,7 +1651,7 @@ async def create_final_exam_schedule(
             OUTPUT inserted.room_id, inserted.room_code, inserted.room_name, inserted.status
             VALUES (?, ?, 'exam', 'FINAL', ?, ?, ?, ?, ?, 'waiting', ?)
         """, (
-            room_code, data.title, inst_id, dt_start, dt_end, data.duration_minutes, data.template_id, str(random.randint(100000, 999999))
+            room_code, data.title, inst_id, dt_start, dt_end, data.duration_minutes, data.template_id, passcode
         ))
         row = cursor.fetchone()
         conn.commit()
@@ -1611,6 +1659,7 @@ async def create_final_exam_schedule(
         return {
             "room_id": row[0],
             "room_code": row[1],
+            "passcode": passcode,
             "title": row[2],
             "courseCode": data.course_code,
             "lecturer": data.lecturer,

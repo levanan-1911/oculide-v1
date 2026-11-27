@@ -10,6 +10,8 @@ import {
   Clock,
   Flag,
   BookOpen,
+  BarChart3,
+  ShieldAlert,
   ChevronLeft,
   ChevronRight,
   GraduationCap,

@@ -84,6 +84,8 @@ export interface TemplateQuestionItem {
   sampleOutput?: string;
   testCases?: (TestCaseItem | TemplateTestCaseItem)[];
   testCasesCount: number;
+  maxPoints?: number;
+  max_points?: number;
 }
 
 export interface QuestionTemplate {
@@ -168,14 +170,15 @@ export function isRoomCurrentlyRunning(
   if (room.is_active === false || room.is_active === 0 || room.is_active === '0' || room.is_active === 'false') {
     return false;
   }
+  if (room.end_time) {
+    const endMs = new Date(String(room.end_time)).getTime();
+    if (Number.isFinite(endMs) && endMs <= now) {
+      return false;
+    }
+  }
 
   return true;
 }
-
-export const INSTRUCTOR_STORAGE_KEY = 'oculide_instructor_classes_mock';
-export const INSTRUCTOR_ROOMS_STORAGE_KEY = 'oculide_instructor_rooms_mock';
-export const INSTRUCTOR_SCHEDULES_STORAGE_KEY = 'oculide_instructor_schedules_mock';
-export const CURRENT_INSTRUCTOR_NAME = 'Thầy Nguyễn Văn Nam';
 
 /**
  * Sinh mã phòng ngẫu nhiên gồm 8 ký tự chữ in hoa và số.
@@ -201,122 +204,14 @@ export function generateRandomAlphanumericPassword(length: number = 6): string {
   return Array.from(randomValues, (value) => chars[value % chars.length]).join('');
 }
 
-export const SAMPLE_QUESTION_TEMPLATES: QuestionTemplate[] = [];
-
-export const INITIAL_INSTRUCTOR_SCHEDULES: ScheduleSessionItem[] = [];
-
-/**
- * Đọc toàn bộ lịch & phiên kiểm tra từ nguồn duy nhất của Giảng viên
- * (kết hợp INSTRUCTOR_SCHEDULES_STORAGE_KEY và INSTRUCTOR_ROOMS_STORAGE_KEY)
- */
-export function getStoredInstructorSchedules(): ScheduleSessionItem[] {
-  if (typeof window === 'undefined') return [];
-
-  let merged: ScheduleSessionItem[] = [];
-
-  try {
-    const rawSched = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-    if (rawSched) {
-      const parsed: ScheduleSessionItem[] = JSON.parse(rawSched);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        merged = parsed;
-      }
-    }
-
-    // Đồng bộ thêm các phòng tạo từ /instructor/room nếu chưa có trong danh sách
-    const rawRooms = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-    if (rawRooms) {
-      const parsedRooms: RoomSession[] = JSON.parse(rawRooms);
-      if (Array.isArray(parsedRooms)) {
-        parsedRooms.forEach((room) => {
-          const code = room.id;
-          if (!code) return;
-          const existingIdx = merged.findIndex(
-            (m) => m.roomCode.toLowerCase() === code.toLowerCase()
-          );
-          const mappedStatus: ScheduleSessionItem['status'] =
-            room.status === 'in_progress'
-              ? 'Đang diễn ra'
-              : room.status === 'ended'
-              ? 'Đã kết thúc'
-              : 'Sắp diễn ra';
-
-          if (existingIdx >= 0) {
-            // Đồng bộ trạng thái và bộ đề mới nhất từ phòng
-            merged[existingIdx] = {
-              ...merged[existingIdx],
-              status: mappedStatus,
-              templateId: room.templateId || merged[existingIdx].templateId,
-              templateTitle: room.templateTitle || merged[existingIdx].templateTitle,
-              durationMinutes: room.durationMinutes || merged[existingIdx].durationMinutes,
-            };
-          } else {
-            merged.unshift({
-              id: `SES-${code}`,
-              classCode: room.classId || 'CS101',
-              className: room.className || 'Nhập môn Lập trình C/C++',
-              title: room.title || `Ca kiểm tra ${room.classId}`,
-              type: room.type === 'lab' ? 'LAB' : 'EXAM',
-              language: room.templateLanguage || 'C++',
-              startTime: room.startTime || '08:00',
-              endTime: room.endTime || '10:00',
-              date: room.scheduledDate || 'Hôm nay',
-              roomCode: code,
-              passcode: room.password || '123456',
-              status: mappedStatus,
-              enrolledStudents: Array.isArray(room.attendees) ? room.attendees.length : 45,
-              attendedStudents: Array.isArray(room.attendees)
-                ? room.attendees.filter((a) => a.status !== 'absent').length
-                : 0,
-              isAiProctored: Boolean(
-                room.proctoringConfig?.aiFaceDetection ||
-                  room.proctoringConfig?.aiObjectDetection ||
-                  room.proctoringConfig?.lockdownFullscreen
-              ),
-              templateId: room.templateId || (room.type === 'lab' ? 'TPL-LAB-01' : 'TPL-EXAM-01'),
-              templateTitle: room.templateTitle || room.title,
-              durationMinutes: room.durationMinutes || (room.type === 'lab' ? 120 : 90),
-              lecturer: CURRENT_INSTRUCTOR_NAME,
-            });
-          }
-        });
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return merged;
-}
-
-export function saveStoredInstructorSchedules(items: ScheduleSessionItem[]): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY, JSON.stringify(items));
-    window.dispatchEvent(new Event('storage'));
-  } catch {
-    // ignore
-  }
-}
-
 export const TEMPLATES_STORAGE_KEY = 'oculide_instructor_templates_v2';
 
 export function getStoredClasses(): ClassRow[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(INSTRUCTOR_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {
-    // ignore
-  }
   return [];
 }
 
 export function getStoredQuestionTemplates(): QuestionTemplate[] {
-  if (typeof window === 'undefined') return SAMPLE_QUESTION_TEMPLATES;
+  if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(TEMPLATES_STORAGE_KEY);
     if (raw) {
@@ -326,7 +221,7 @@ export function getStoredQuestionTemplates(): QuestionTemplate[] {
   } catch {
     // ignore
   }
-  return SAMPLE_QUESTION_TEMPLATES;
+  return [];
 }
 
 export function saveStoredQuestionTemplates(templates: QuestionTemplate[]): void {

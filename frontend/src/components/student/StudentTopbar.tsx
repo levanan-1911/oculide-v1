@@ -252,7 +252,15 @@ export default function StudentTopbar({
     };
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const token = localStorage.getItem("oculide_token");
+    if (token) {
+      await fetch('/api/v1/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        keepalive: true,
+      }).catch(() => {});
+    }
     localStorage.removeItem("oculide_token");
     localStorage.removeItem("oculide_user");
     localStorage.removeItem("oculide_refresh_token");

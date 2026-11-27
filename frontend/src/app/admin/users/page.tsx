@@ -1,6 +1,7 @@
 'use client';
 
 import React, { FormEvent, useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import UserCreateModal from '@/components/admin/users/UserCreateModal';
 import {
   AlertTriangle,
   Check,
@@ -76,29 +77,6 @@ export interface ImportMappingInfo {
   detectedClass?: string;
   detectedDomain?: string;
   autoEmailCount: number;
-}
-
-const STORAGE_KEY_CACHED_USERS = 'oculide_cached_users_list';
-
-const SEED_FALLBACK_USERS: UserRow[] = [];
-
-function getStoredCachedUsers(): UserRow[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_CACHED_USERS);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      // Tự động loại bỏ bất kỳ dữ liệu mock cũ nào còn sót lại trong cache
-      const cleaned = parsed.filter(
-        (u: any) => !['hbdieu', 'pvlong', 'nttuyen', 'student', '29211200333', '30211200555', '28211200777', '29211200888', '29211200999'].includes(u.username)
-      );
-      return cleaned;
-    }
-  } catch {
-    // fallback
-  }
-  return [];
 }
 
 const INITIAL_USERS: UserRow[] = [];
@@ -204,14 +182,6 @@ export default function UserManagerPage() {
   const [roleFilter, setRoleFilter] = useState('Tất cả vai trò');
   const [statusFilter, setStatusFilter] = useState('Tất cả trạng thái');
 
-  // Khôi phục dữ liệu đệm từ LocalStorage khi khởi tạo
-  useEffect(() => {
-    const cached = getStoredCachedUsers();
-    if (cached && cached.length > 0) {
-      setUsers(cached);
-    }
-  }, []);
-
   // Lắng nghe phím ESC để đóng bảng chi tiết tài khoản
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -234,6 +204,8 @@ export default function UserManagerPage() {
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [sentEmailSuccess, setSentEmailSuccess] = useState<string | null>(null);
+  const [userSessions, setUserSessions] = useState<Record<string, { isOnline: boolean; deviceInfo?: string }>>({});
+  const [isUnlockingSession, setIsUnlockingSession] = useState(false);
 
   // Trạng thái Nhập tệp hàng loạt (Excel / CSV Drag & Drop)
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
@@ -285,16 +257,24 @@ export default function UserManagerPage() {
   const fetchUsers = useCallback(async () => {
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
-      let res = await fetch('/api/v1/admin/users?page=1&page_size=100', {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
+      const [res, sessRes] = await Promise.all([
+        fetch('/api/v1/admin/users?page=1&page_size=100', {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }),
+        fetch('/api/v1/admin/users/sessions', {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }).catch(() => null),
+      ]);
 
-      // Nếu gặp lỗi 401 hoặc 403 do token hết hạn hoặc token lưu trong browser là vai trò khác,
-      // tự động gọi lại không kèm token để kích hoạt fallback admin trong môi trường phát triển local
-      if ((res.status === 401 || res.status === 403) && token) {
-        res = await fetch('/api/v1/admin/users?page=1&page_size=100');
+      if (sessRes && sessRes.ok) {
+        const sessData = await sessRes.json().catch(() => ({}));
+        if (sessData?.sessions && typeof sessData.sessions === 'object') {
+          setUserSessions(sessData.sessions);
+        }
       }
 
       if (res.ok) {
@@ -312,7 +292,7 @@ export default function UserManagerPage() {
               if (cachedIp) {
                 resolvedIp = cachedIp;
               } else if (!rawIp) {
-                resolvedIp = u.last_login ? '127.0.0.1' : 'Chưa ghi nhận';
+                resolvedIp = 'Chưa ghi nhận';
               }
             }
 
@@ -334,44 +314,20 @@ export default function UserManagerPage() {
             };
           });
           setUsers(mapped);
-          if (typeof window !== 'undefined') {
-            try {
-              localStorage.setItem(STORAGE_KEY_CACHED_USERS, JSON.stringify(mapped));
-            } catch {
-              // ignore
-            }
-          }
           if (mapped.length > 0) {
             setSelectedUserId((prev) => (prev && mapped.some((m) => m.id === prev) ? prev : null));
           }
         }
       } else {
-        const cached = getStoredCachedUsers();
-        if (cached && cached.length > 0) {
-          setUsers(cached);
-        }
+        setUsers([]);
       }
     } catch (e) {
-      console.warn('Lỗi kết nối API users, nạp dữ liệu lưu đệm:', e);
-      const cached = getStoredCachedUsers();
-      if (cached && cached.length > 0) {
-        setUsers(cached);
-      }
+      console.error('Lỗi kết nối API users:', e);
+      setUsers([]);
     }
   }, []);
 
   useEffect(() => {
-    // Dọn sạch bộ nhớ cache chứa người dùng mock cũ nếu có
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY_CACHED_USERS);
-        if (raw && (raw.includes('hbdieu') || raw.includes('SV2026001') || raw.includes('29211200333'))) {
-          localStorage.removeItem(STORAGE_KEY_CACHED_USERS);
-        }
-      } catch {
-        // ignore
-      }
-    }
     fetchUsers();
   }, [fetchUsers]);
 
@@ -2507,6 +2463,55 @@ export default function UserManagerPage() {
 
                     {/* Nhóm tác vụ quản trị nghiệp vụ & Điều hướng (Phải) */}
                     <div className="flex flex-wrap items-center gap-2.5">
+                      {(() => {
+                        const sess = userSessions[String(selectedUser.id)];
+                        const isOnline = Boolean(sess?.isOnline);
+                        return (
+                          <>
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold ${
+                                isOnline
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+                                  : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400'
+                              }`}
+                              title={sess?.deviceInfo || 'Chưa có phiên hoạt động'}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                              {isOnline ? 'Đang online' : 'Ngoại tuyến'}
+                            </span>
+                            {isOnline && (
+                              <button
+                                type="button"
+                                disabled={isUnlockingSession}
+                                onClick={async () => {
+                                  setIsUnlockingSession(true);
+                                  try {
+                                    const token = localStorage.getItem('oculide_token');
+                                    const res = await fetch(`/api/v1/admin/users/${selectedUser.id}/unlock-session`, {
+                                      method: 'POST',
+                                      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                                    });
+                                    if (res.ok) {
+                                      setUserSessions((prev) => ({
+                                        ...prev,
+                                        [String(selectedUser.id)]: { isOnline: false },
+                                      }));
+                                      showToast(`Đã mở khóa phiên cho tài khoản ${selectedUser.userCode || selectedUser.fullName}.`);
+                                    }
+                                  } finally {
+                                    setIsUnlockingSession(false);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 transition cursor-pointer disabled:opacity-50"
+                              >
+                                <Unlock className="h-3.5 w-3.5" />
+                                <span>{isUnlockingSession ? 'Đang mở khóa...' : 'Mở khóa phiên'}</span>
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
+
                       <button
                         type="button"
                         onClick={() => handleSendCredentialsEmail(selectedUser)}
@@ -2556,183 +2561,14 @@ export default function UserManagerPage() {
       </div>
 
       {/* ── MODAL 1: TẠO TÀI KHOẢN MỚI ── */}
-      {isCreateModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 sm:p-6 pt-10 sm:pt-14 pb-10 sm:pb-14 backdrop-blur-[2px] overflow-y-auto"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setIsCreateModalOpen(false);
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-user-title"
-            className="my-auto w-full max-w-lg rounded-xl overflow-hidden bg-white dark:bg-neutral-900 border border-slate-200 dark:border-white/10 p-6 shadow-2xl transition-colors"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 id="create-user-title" className="text-lg font-bold text-slate-900 dark:text-white">
-                  Tạo tài khoản người dùng mới
-                </h2>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                  Nhập thông tin tài khoản và cấp quyền truy cập ban đầu.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCreateModalOpen(false)}
-                aria-label="Đóng cửa sổ"
-                className="flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/10 dark:hover:text-white transition cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateUser} className="mt-5 space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Mã tài khoản <span className="text-red-500">*</span>
-                  <input
-                    name="userCode"
-                    required
-                    placeholder="VD: GV0035 hoặc SV184810"
-                    className="mt-1.5 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:border-white dark:focus:ring-white/20"
-                  />
-                </label>
-
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Vai trò hệ thống <span className="text-red-500">*</span>
-                  <select
-                    name="role"
-                    required
-                    value={createModalRole}
-                    onChange={(e) => setCreateModalRole(e.target.value as UserRole)}
-                    className="mt-1.5 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:border-white dark:focus:ring-white/20"
-                  >
-                    <option value="student">Sinh viên</option>
-                    <option value="instructor">Giảng viên</option>
-                    <option value="admin">Quản trị viên</option>
-                  </select>
-                </label>
-              </div>
-
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Họ và tên <span className="text-red-500">*</span>
-                <input
-                  name="fullName"
-                  required
-                  placeholder="VD: Nguyễn Văn An"
-                  className="mt-1.5 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:border-white dark:focus:ring-white/20"
-                />
-              </label>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Địa chỉ Email <span className="text-red-500">*</span>
-                  <input
-                    name="email"
-                    type="email"
-                    required
-                    placeholder="VD: an.nv@oclide.edu.vn"
-                    className="mt-1.5 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:border-white dark:focus:ring-white/20"
-                  />
-                </label>
-
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Trạng thái kích hoạt
-                  <select
-                    name="status"
-                    defaultValue="active"
-                    className="mt-1.5 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:border-white dark:focus:ring-white/20"
-                  >
-                    <option value="active">Hoạt động ngay</option>
-                    <option value="locked">Tạm khóa ban đầu</option>
-                  </select>
-                </label>
-              </div>
-
-              {/* Trường đơn vị động theo vai trò: SV có Lớp sinh hoạt & Khoa; GV có Khoa/Bộ môn; Admin có Đơn vị */}
-              {createModalRole === 'student' ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Lớp sinh hoạt <span className="text-red-500">*</span>
-                    <input
-                      name="lopSinhHoat"
-                      required
-                      placeholder="VD: K28-KTPM1 hoặc SE1801"
-                      className="mt-1.5 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:border-white dark:focus:ring-white/20"
-                    />
-                  </label>
-
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Khoa / Viện đào tạo
-                    <input
-                      name="department"
-                      defaultValue="Khoa Công nghệ thông tin"
-                      placeholder="VD: Khoa Công nghệ thông tin"
-                      className="mt-1.5 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:border-white dark:focus:ring-white/20"
-                    />
-                  </label>
-                </div>
-              ) : createModalRole === 'instructor' ? (
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Khoa / Bộ môn giảng dạy <span className="text-red-500">*</span>
-                  <input
-                    name="department"
-                    required
-                    defaultValue="Khoa Công nghệ thông tin"
-                    placeholder="VD: Khoa Công nghệ thông tin hoặc Bộ môn KTPM"
-                    className="mt-1.5 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:border-white dark:focus:ring-white/20"
-                  />
-                </label>
-              ) : (
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Đơn vị / Phòng ban công tác <span className="text-red-500">*</span>
-                  <input
-                    name="department"
-                    required
-                    defaultValue="Phòng Đào tạo & Khảo thí"
-                    placeholder="VD: Phòng Đào tạo & Khảo thí"
-                    className="mt-1.5 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white dark:focus:border-white dark:focus:ring-white/20"
-                  />
-                </label>
-              )}
-
-              <div className="rounded-md border border-brand-200 bg-brand-50/70 p-3.5 text-xs text-brand-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
-                <div className="flex items-center gap-2 font-semibold">
-                  <ShieldCheck className="h-4 w-4 text-brand-600 dark:text-brand-400 shrink-0" />
-                  <span className="text-slate-900 dark:text-white">Bảo mật mật khẩu khởi tạo</span>
-                </div>
-                <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
-                  Mật khẩu khởi tạo được hệ thống tự động sinh ngẫu nhiên an toàn và gửi trực tiếp qua email cho người dùng. Quản trị viên không cần xem hay nhập mật khẩu thủ công.
-                </p>
-              </div>
-
-              {createError && (
-                <p role="alert" className="text-xs font-medium text-red-600 dark:text-red-400">
-                  {createError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="h-9 rounded-md border border-slate-300 bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-white/10 dark:bg-neutral-800 dark:text-slate-300 dark:hover:bg-neutral-700 cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="system-primary-action h-9 rounded-md bg-slate-900 px-4 text-xs font-semibold text-white transition hover:bg-slate-800 dark:bg-brand dark:hover:bg-brand-600 cursor-pointer"
-                >
-                  Xác nhận tạo tài khoản
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
+      <UserCreateModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSubmit={handleCreateUser}
+        createModalRole={createModalRole}
+        setCreateModalRole={setCreateModalRole}
+        createError={createError}
+      />
 
       {/* ── MODAL 2: NHẬP EXCEL / CSV THẬT SỰ TƯƠNG TÁC (DRAG & DROP + PREVIEW) ── */}
       {isBulkImportOpen && (
@@ -3702,7 +3538,7 @@ function SelectFilter({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full appearance-none rounded-md border border-slate-200 bg-white px-3.5 pr-10 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-[#141824] dark:text-slate-200 cursor-pointer"
+        className="h-9 w-full appearance-none rounded-md border border-slate-300 bg-white px-3 pr-9 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200 cursor-pointer"
       >
         {options.map((option) => (
           <option key={option} value={option}>

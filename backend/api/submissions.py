@@ -4,9 +4,9 @@ from typing import Optional, List, Dict, Any
 
 from schemas.submission import (
     SubmissionCreateRequest, CodeRunRequest, CodeRunResponse,
-    SubmissionResponse, GradingResultResponse
+    SubmissionResponse, GradingResultResponse, SubmissionStatusUpdateRequest
 )
-from core.permissions import get_current_user
+from core.permissions import get_current_user, verify_room_access
 from database.room_db import get_room_by_id, is_student_already_submitted
 from database.template_db import is_question_valid_for_room
 from database.question_db import get_question_by_id
@@ -116,20 +116,22 @@ async def run_custom_code(
             execution_ms=result.get("execution_ms", 0)
         )
     except Exception as e:
-        # Fallback simulation nếu chưa bật Docker daemon
-        return CodeRunResponse(
-            stdout=f"[Run Output Simulation]\nExecuted {run_req.language} code successfully.\nInput: {run_req.custom_input}",
-            error=None,
-            execution_ms=45
+        import logging
+        logging.getLogger("oculide.sandbox").error("Docker Sandbox unavailable for custom run: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Hệ thống chấm tự động đang bận hoặc tạm gián đoạn, vui lòng thử lại sau",
         )
 
 @router.get("/my", response_model=List[SubmissionResponse])
 async def get_my_submissions(
     room_id: Optional[int] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Lấy toàn bộ bài nộp của chính sinh viên đang đăng nhập"""
-    return get_submissions_by_student(current_user["user_id"], room_id=room_id)
+    return get_submissions_by_student(current_user["user_id"], room_id=room_id, skip=skip, limit=limit)
 
 @router.get("/{submission_id}", response_model=SubmissionResponse)
 async def get_submission(
@@ -168,6 +170,7 @@ async def check_room_plagiarism_endpoint(
     """Giảng viên kiểm tra độ tương đồng AST/Token giữa các bài nộp trong phòng thi"""
     if current_user["role"] not in ("instructor", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ giảng viên mới được kiểm tra đạo văn")
+    verify_room_access(room_id, current_user)
     subs = get_submissions_by_room(room_id)
     pairs = find_room_plagiarism_pairs(subs, threshold=threshold)
     return {
@@ -217,46 +220,50 @@ async def report_ide_telemetry(
 @router.get("/room/{room_id}", response_model=List[SubmissionResponse])
 async def get_submissions_by_room_endpoint(
     room_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Giảng viên xem toàn bộ bài nộp trong một phòng thi"""
     if current_user["role"] not in ("instructor", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ giảng viên mới được xem toàn bộ bài nộp của phòng")
-    return get_submissions_by_room(room_id)
+    verify_room_access(room_id, current_user)
+    return get_submissions_by_room(room_id, skip=skip, limit=limit)
 
 
 @router.get("/student/{student_id}", response_model=List[SubmissionResponse])
 async def get_submissions_by_student_endpoint(
     student_id: int,
     room_id: Optional[int] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Lấy lịch sử nộp bài của sinh viên"""
     if current_user["role"] == "student" and student_id != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem bài nộp của sinh viên khác")
-    return get_submissions_by_student(student_id, room_id=room_id)
+    return get_submissions_by_student(student_id, room_id=room_id, skip=skip, limit=limit)
 
 @router.get("/question/{question_id}", response_model=List[SubmissionResponse])
 async def get_submissions_by_question_endpoint(
     question_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Giảng viên xem toàn bộ bài nộp cho một câu hỏi"""
     if current_user["role"] not in ("instructor", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ giảng viên mới được xem toàn bộ bài nộp")
-    return get_submissions_by_question(question_id)
+    return get_submissions_by_question(question_id, skip=skip, limit=limit)
 
 @router.patch("/{submission_id}/status")
 async def update_status_endpoint(
     submission_id: int,
-    status_data: Dict[str, str],
+    status_data: SubmissionStatusUpdateRequest,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Cập nhật thủ công trạng thái bài nộp"""
     if current_user["role"] not in ("instructor", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không đủ quyền hạn")
-    new_status = status_data.get("status")
-    if not new_status:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Thiếu trường status")
-    update_submission_status(submission_id, new_status)
+    update_submission_status(submission_id, status_data.status)
     return {"message": "Cập nhật trạng thái thành công"}

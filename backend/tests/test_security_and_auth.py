@@ -50,6 +50,14 @@ def test_rbac_authorization_matrix():
     res_no_token = client.get("/api/v1/admin/users?limit=1")
     assert res_no_token.status_code == 401
 
+    # Tokens without an explicit role must not acquire the admin role.
+    incomplete_token = create_access_token({"user_id": 1, "username": "admin"})
+    res_incomplete_token = client.get(
+        "/api/v1/admin/users?limit=1",
+        headers={"Authorization": f"Bearer {incomplete_token}"}
+    )
+    assert res_incomplete_token.status_code == 401
+
     # 2. Student trying to access Admin APIs -> 403 Forbidden
     res_student_admin = client.get(
         "/api/v1/admin/users?limit=1",

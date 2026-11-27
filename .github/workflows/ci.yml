@@ -60,7 +60,10 @@ jobs:
           REDIS_PORT: 6379
           DATABASE_SERVER: localhost
           DATABASE_NAME: ExamSystem
+          DATABASE_PASSWORD: TestPassword123!
           JWT_SECRET_KEY: test-secret-key-for-continuous-integration-pipeline-32chars
+          LIVEKIT_API_KEY: test-livekit-key
+          LIVEKIT_API_SECRET: test-livekit-secret
         run: |
           cd backend
           pytest tests/ --cov=. --cov-report=xml:coverage.xml --cov-report=term

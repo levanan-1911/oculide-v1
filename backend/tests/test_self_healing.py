@@ -29,7 +29,8 @@ def test_health_readiness_endpoint():
         mock_ping.return_value = {"status": "down", "error": "Connection reset", "latency_ms": 500.0}
         resp = client.get("/health/readiness")
         assert resp.status_code == 503
-        assert resp.json()["status"] == "not_ready"
+        assert resp.json()["status"] == "unhealthy"
+        assert "error" not in resp.json()
 
 def test_health_deep_check_endpoint():
     """Kiểm tra endpoint /health trả về chi tiết các thành phần hệ thống"""

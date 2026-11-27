@@ -463,7 +463,7 @@ async def refresh_access_token(refresh_req: RefreshTokenRequest):
         "email": user["email"],
         "full_name": user["full_name"],
         "must_change_password": user.get("must_change_password", False),
-        "sessionId": new_session["activeSessionId"],
+        "sessionId": payload.get("sessionId"),
     }
     new_access_token = create_access_token(token_data)
     new_refresh_token = create_refresh_token(token_data)

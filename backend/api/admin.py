@@ -220,6 +220,7 @@ async def update_user_by_admin(user_id: int, user_data: AdminUserUpdateRequest):
     if user_data.is_active is not None and user_data.is_active != existing_user.get("is_active"):
         update_user_status(user_id, user_data.is_active)
         if not user_data.is_active:
+            from services.session_manager import SessionManager
             SessionManager.clear_session(user_id)
 
     updated = get_user_by_id(user_id)
@@ -233,6 +234,7 @@ async def toggle_user_status(user_id: int, status_data: AdminUserStatusUpdate):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
     update_user_status(user_id, status_data.is_active)
     if not status_data.is_active:
+        from services.session_manager import SessionManager
         SessionManager.clear_session(user_id)
     try:
         act = "kích hoạt" if status_data.is_active else "vô hiệu hóa/khóa"

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List
 
 
@@ -32,6 +32,14 @@ class TemplateCreateRequest(BaseModel):
     description: Optional[str] = ""
     questions: List[TemplateQuestionSchema] = []
 
+    @model_validator(mode="after")
+    def validate_total_points(self):
+        if self.questions:
+            total = round(sum(float(q.max_points or 0.0) for q in self.questions), 2)
+            if total > 10.0:
+                raise ValueError("Tổng điểm các câu hỏi trong bộ đề không được vượt quá 10 điểm")
+        return self
+
 
 class TemplateUpdateRequest(BaseModel):
     title: Optional[str] = None
@@ -41,3 +49,11 @@ class TemplateUpdateRequest(BaseModel):
     duration_minutes: Optional[int] = Field(default=None, ge=5, le=600)
     description: Optional[str] = None
     questions: Optional[List[TemplateQuestionSchema]] = None
+
+    @model_validator(mode="after")
+    def validate_total_points(self):
+        if self.questions:
+            total = round(sum(float(q.max_points or 0.0) for q in self.questions), 2)
+            if total > 10.0:
+                raise ValueError("Tổng điểm các câu hỏi trong bộ đề không được vượt quá 10 điểm")
+        return self

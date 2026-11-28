@@ -12,11 +12,29 @@ class SystemSettingsModel(BaseModel):
         description="Tên miền email cho phép do Admin cấu hình (để trống nếu cho phép mọi domain hợp lệ, hoặc nhập danh sách cách nhau bởi dấu phẩy e.g. @school.edu.vn, @dtu.edu.vn)"
     )
     max_login_attempts: int = Field(5, ge=3, le=20, description="Số lần đăng nhập sai tối đa trước khi khóa")
-    jwt_token_expiry_minutes: int = Field(30, ge=15, le=1440, description="Thời hạn token phiên làm việc (phút)")
+    jwt_token_expiry_minutes: int = Field(45, ge=15, le=1440, description="Thời hạn token phiên làm việc (phút)")
     maintenance_mode: bool = Field(False, description="Chế độ bảo trì hệ thống")
     maintenance_message: str = Field(
         "Hệ thống Oculide đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.",
         description="Thông báo hiển thị khi bảo trì"
+    )
+    maintenance_duration_minutes: int = Field(
+        30,
+        ge=0,
+        le=10080,
+        description="Thời lượng bảo trì dự kiến (phút, 0 = không giới hạn tự động)"
+    )
+    maintenance_ends_at: Optional[str] = Field(
+        None,
+        description="Thời điểm tự động kết thúc chế độ bảo trì (ISO-8601)"
+    )
+    maintenance_on_backup_schedule: bool = Field(
+        False,
+        description="Tự động bật chế độ bảo trì theo khung giờ cấu hình"
+    )
+    maintenance_schedule_time: str = Field(
+        "02:00",
+        description="Khung giờ tự động bật bảo trì hàng ngày (HH:MM)"
     )
     backup_schedule_enabled: bool = Field(True, description="Bật tự động sao lưu theo lịch")
     backup_frequency: str = Field("daily", description="Tần suất sao lưu định kỳ: daily (hàng ngày), weekly (hàng tuần)")
@@ -30,6 +48,7 @@ class SystemSettingsModel(BaseModel):
 class PublicConfigResponse(BaseModel):
     maintenance_mode: bool
     maintenance_message: str
+    maintenance_ends_at: Optional[str] = None
     allowed_email_domain: str
 
 class BackupItemResponse(BaseModel):

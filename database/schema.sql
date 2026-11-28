@@ -50,6 +50,8 @@ CREATE TABLE Users (
     avatar_url NVARCHAR(500) NULL,
     role_id INT NOT NULL,
     is_active BIT DEFAULT 1 NOT NULL,
+    failed_login_attempts INT DEFAULT 0 NOT NULL,
+    locked_until DATETIME2 NULL,
     must_change_password BIT DEFAULT 0 NOT NULL,
     email_status NVARCHAR(20) DEFAULT 'unsent' NOT NULL,
     last_login DATETIME2 NULL,
@@ -100,6 +102,15 @@ CREATE TABLE SystemAuditLogs (
     message NVARCHAR(MAX) NULL,                     -- log message
     ip_address NVARCHAR(45) NULL,
     details NVARCHAR(MAX) NULL,                     -- JSON metadata
+    event_code NVARCHAR(80) NULL,                   -- e.g. 'AUTH_LOGIN_SUCCESS', 'CONFIG_UPDATED'
+    action_label NVARCHAR(255) NULL,                -- Vietnamese human-readable label
+    category NVARCHAR(32) NULL,                     -- 'AUTH' | 'EXAM' | 'USER' | 'SYSTEM'
+    severity NVARCHAR(16) NULL,                     -- 'INFO' | 'WARN' | 'CRITICAL'
+    status NVARCHAR(16) NULL,                       -- 'SUCCESS' | 'FAILED'
+    actor_json NVARCHAR(MAX) NULL,                  -- JSON snapshot { userId, fullName, code, role }
+    target_json NVARCHAR(MAX) NULL,                 -- JSON target { entityType, entityId, label }
+    user_agent NVARCHAR(512) NULL,                  -- Client User-Agent
+    updated_at DATETIME2 DEFAULT GETDATE() NULL,
     created_at DATETIME2 DEFAULT GETDATE() NOT NULL,
 
     CONSTRAINT FK_SystemAuditLogs_Users FOREIGN KEY (user_id) 
@@ -108,6 +119,20 @@ CREATE TABLE SystemAuditLogs (
 GO
 CREATE INDEX IDX_SystemAuditLogs_CreatedAt ON SystemAuditLogs(created_at DESC);
 CREATE INDEX IDX_SystemAuditLogs_UserId ON SystemAuditLogs(user_id);
+CREATE INDEX IX_SystemAuditLogs_Created_Cat_Sev ON SystemAuditLogs(created_at DESC, category, severity);
+CREATE INDEX IX_SystemAuditLogs_User_Created ON SystemAuditLogs(user_id, created_at DESC);
+GO
+
+-- 4b. Table ExamProctoringLogs (Separated proctoring event log)
+CREATE TABLE ExamProctoringLogs (
+    proctoring_log_id INT IDENTITY(1,1) PRIMARY KEY,
+    room_id INT NULL,
+    student_id INT NULL,
+    event_code NVARCHAR(80) NOT NULL,
+    severity NVARCHAR(16) NOT NULL DEFAULT 'WARN',
+    details NVARCHAR(MAX) NULL,
+    created_at DATETIME2 NOT NULL DEFAULT GETDATE()
+);
 GO
 
 -- ============================================================================
@@ -342,6 +367,7 @@ CREATE TABLE RoomMessages (
 GO
 CREATE INDEX IDX_RoomMessages_RoomId ON RoomMessages(room_id);
 CREATE INDEX IDX_RoomMessages_SenderId ON RoomMessages(sender_id);
+CREATE INDEX IDX_RoomMessages_RoomSentAt ON RoomMessages(room_id, sent_at DESC);
 GO
 
 -- ============================================================================
@@ -372,6 +398,7 @@ GO
 CREATE INDEX IDX_ExamSessions_RoomId ON ExamSessions(room_id);
 CREATE INDEX IDX_ExamSessions_StudentId ON ExamSessions(student_id);
 CREATE INDEX IDX_ExamSessions_Status ON ExamSessions(status);
+CREATE INDEX IDX_ExamSessions_RoomStudentStatus ON ExamSessions(room_id, student_id, status);
 GO
 
 -- 16. Table DeviceChecks
@@ -488,6 +515,7 @@ GO
 CREATE INDEX IDX_Violations_Room_Review ON Violations(room_id, review_status);
 CREATE INDEX IDX_Violations_SessionId ON Violations(session_id);
 CREATE INDEX IDX_Violations_StudentId ON Violations(student_id);
+CREATE INDEX IDX_Violations_RoomReviewDetected ON Violations(room_id, review_status, detected_at DESC);
 GO
 
 -- 21. Table Submissions
@@ -517,6 +545,7 @@ GO
 CREATE INDEX IDX_Submissions_Room_Student ON Submissions(room_id, student_id);
 CREATE INDEX IDX_Submissions_QuestionId ON Submissions(question_id);
 CREATE INDEX IDX_Submissions_GradingStatus ON Submissions(grading_status);
+CREATE INDEX IDX_Submissions_RoomQuestionStudentSubmitted ON Submissions(room_id, question_id, student_id, submitted_at DESC);
 GO
 
 -- 22. Table GradingResults
@@ -666,22 +695,7 @@ IF NOT EXISTS (SELECT 1 FROM Roles WHERE role_name = 'student')
     INSERT INTO Roles (role_name, description) VALUES ('student', N'Sinh viên tham gia thực hành và thi cử');
 GO
 
--- Default core accounts (Admin, Instructor, Student)
--- Password hash for 'admin123': $2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6
-IF NOT EXISTS (SELECT 1 FROM Users WHERE username = 'admin')
-    INSERT INTO Users (username, email, password_hash, full_name, identifier_code, department, role_id, is_active, must_change_password, email_status)
-    VALUES ('admin', 'admin@dtu.edu.vn', '$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6', N'Quản Trị Viên Hệ Thống', 'ADM001', N'Phòng CNTT & Đào Tạo', 1, 1, 0, 'sent');
-GO
-
-IF NOT EXISTS (SELECT 1 FROM Users WHERE username = 'instructor')
-    INSERT INTO Users (username, email, password_hash, full_name, identifier_code, department, role_id, is_active, must_change_password, email_status)
-    VALUES ('instructor', 'instructor@dtu.edu.vn', '$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6', N'Giảng Viên Hướng Dẫn', 'GV001', N'Khoa Công Nghệ Thông Tin', 2, 1, 0, 'sent');
-GO
-
-IF NOT EXISTS (SELECT 1 FROM Users WHERE username = 'student')
-    INSERT INTO Users (username, email, password_hash, full_name, identifier_code, department, role_id, is_active, must_change_password, email_status)
-    VALUES ('student', 'student@dtu.edu.vn', '$2b$12$sB/mUfUZ/jOoujQ8dXsj.eGGb/AvJZg5olAry3orOhKOOkcH31QV6', N'Sinh Viên Nguyễn Văn A', 'SV001', N'K28 - Kỹ Thuật Phần Mềm', 3, 1, 0, 'sent');
-GO
+-- Development accounts have been moved to database/seed_dev.sql (dev-only).
 
 -- Standard Semesters (Chỉ lưu kỳ học hiện tại thời gian thực; các kỳ tiếp theo do hệ thống tự động tính khi đến hạn)
 IF NOT EXISTS (SELECT 1 FROM Semesters WHERE semester_code = 'HK1_2026_2027')

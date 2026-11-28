@@ -55,10 +55,10 @@ export async function getClientPublicIp(): Promise<string | null> {
   const cached = getCachedClientPublicIp();
   if (cached) return cached;
 
-  // 2. Thử lấy từ api.ipify.org
+  // 2. Thử lấy từ api.ipify.org (timeout ngắn 600ms để không làm chậm đăng nhập)
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const timeoutId = setTimeout(() => controller.abort(), 600);
 
     const res = await fetch('https://api.ipify.org?format=json', {
       signal: controller.signal,
@@ -78,29 +78,7 @@ export async function getClientPublicIp(): Promise<string | null> {
     // Dự phòng fallback
   }
 
-  // 3. Dự phòng 2: ipinfo.io
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-    const res = await fetch('https://ipinfo.io/json', {
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.ip && isValidPublicIp(data.ip)) {
-        sessionStorage.setItem(STORAGE_KEY_PUBLIC_IP, data.ip);
-        localStorage.setItem(STORAGE_KEY_PUBLIC_IP, data.ip);
-        return data.ip;
-      }
-    }
-  } catch {
-    // Không kết nối được internet ngoài
-  }
-
-  // 4. Dự phòng 3: lấy từ endpoint backend /api/v1/auth/my-ip (trả về IP card mạng thật của máy)
+  // 3. Dự phòng 2: lấy nhanh từ endpoint backend /api/v1/auth/my-ip (tránh chờ ipinfo.io gây nghẽn)
   try {
     const res = await fetch('/api/v1/auth/my-ip');
     if (res.ok) {
@@ -119,10 +97,17 @@ export async function getClientPublicIp(): Promise<string | null> {
 }
 
 /**
- * Trả về Headers mang theo IP public để gửi kèm request login/API
+ * Trả về Headers mang theo IP public để gửi kèm request login/API (không chặn quá 650ms)
  */
 export async function getClientIpHeader(): Promise<Record<string, string>> {
-  const ip = (await getClientPublicIp()) || getCachedClientPublicIp();
+  const cached = getCachedClientPublicIp();
+  if (cached) {
+    return { 'X-Client-Public-IP': cached };
+  }
+  const ip = await Promise.race<string | null>([
+    getClientPublicIp(),
+    new Promise<string | null>((resolve) => setTimeout(() => resolve(null), 650)),
+  ]);
   if (ip && isValidPublicIp(ip)) {
     return { 'X-Client-Public-IP': ip };
   }

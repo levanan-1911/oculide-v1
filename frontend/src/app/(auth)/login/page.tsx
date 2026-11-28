@@ -31,6 +31,21 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lockoutSeconds, setLockoutSeconds] = useState<number | null>(null);
+  const [isPermanentlyLocked, setIsPermanentlyLocked] = useState(false);
+
+  useEffect(() => {
+    if (lockoutSeconds === null) return;
+    if (lockoutSeconds <= 0) {
+      setLockoutSeconds(null);
+      setErrorMessage(null);
+      return;
+    }
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => (prev !== null && prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
   const [maintenanceInfo, setMaintenanceInfo] = useState<{
     isActive: boolean;
     message: string;
@@ -50,24 +65,7 @@ export default function LoginPage() {
           });
         }
       })
-      .catch(() => {
-        try {
-          const raw = localStorage.getItem('oculide_admin_system_settings');
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed.maintenanceMode) {
-              setMaintenanceInfo({
-                isActive: true,
-                message:
-                  parsed.maintenanceMessage ||
-                  'Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút.',
-              });
-            }
-          }
-        } catch {
-          // ignore
-        }
-      });
+      .catch(() => {});
   }, []);
 
   // Khởi tạo Theme & tiền xử lý IP Public ngầm
@@ -90,10 +88,45 @@ export default function LoginPage() {
     } else if (logoutReason === 'token_expired') {
       setErrorMessage('Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.');
       return;
+    } else if (logoutReason === 'session_revoked') {
+      setErrorMessage('Phiên làm việc đã được mở khóa hoặc kết thúc bởi Quản trị viên / Giám thị. Vui lòng đăng nhập lại.');
+      return;
+    } else if (logoutReason === 'maintenance') {
+      setErrorMessage('Hệ thống đang được bảo trì định kỳ. Chỉ Quản trị viên mới có thể truy cập lúc này.');
+      fetch('/api/v1/auth/maintenance-status', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((m) => {
+          if (m?.maintenance_message) {
+            let msg = m.maintenance_message;
+            if (m.maintenance_ends_at) {
+              const d = new Date(m.maintenance_ends_at);
+              if (!isNaN(d.getTime())) {
+                const hh = String(d.getHours()).padStart(2, '0');
+                const mm = String(d.getMinutes()).padStart(2, '0');
+                msg += ` (Dự kiến hoàn tất lúc ${hh}:${mm})`;
+              }
+            }
+            setErrorMessage(msg);
+          }
+        })
+        .catch(() => {});
+      return;
     }
 
-    // Nếu đã có token hợp lệ còn hạn trong localStorage -> Chuyển hướng về Dashboard
+    // Chỉ tự động chuyển hướng khi session cookie còn tồn tại (trình duyệt chưa bị tắt)
     try {
+      const hasSessionCookie = document.cookie
+        .split(';')
+        .some((c) => c.trim().startsWith('oculide_token='));
+
+      if (!hasSessionCookie) {
+        localStorage.removeItem('oculide_token');
+        localStorage.removeItem('oculide_user');
+        localStorage.removeItem('oculide_refresh_token');
+        localStorage.removeItem('oculide_last_activity');
+        return;
+      }
+
       const token = localStorage.getItem('oculide_token');
       const rawUser = localStorage.getItem('oculide_user');
       const lastActivity = Number(localStorage.getItem('oculide_last_activity') || Date.now());
@@ -172,35 +205,50 @@ export default function LoginPage() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Email/tài khoản hoặc mật khẩu không chính xác.');
-      }
-
-      // Kiểm tra Chế độ Bảo trì
-      if (typeof window !== 'undefined') {
-        try {
-          const rawSettings = localStorage.getItem('oculide_admin_system_settings');
-          if (rawSettings) {
-            const parsed = JSON.parse(rawSettings);
-            if (parsed.maintenanceMode && data.user?.role !== 'admin') {
-              throw new Error(
-                parsed.maintenanceMessage ||
-                'Hệ thống đang trong chế độ bảo trì định kỳ. Cổng đăng nhập tạm thời chỉ dành riêng cho Quản trị viên.'
-              );
-            }
-          }
-        } catch (mErr: any) {
-          if (mErr.message?.includes('bảo trì') || mErr.message?.includes('Quản trị viên')) {
-            throw mErr;
-          }
+        if (response.status === 429) {
+          setIsPermanentlyLocked(false);
+          throw new Error('Bạn đã thao tác quá nhanh hoặc thử đăng nhập quá nhiều lần. Vui lòng đợi 1 phút rồi thử lại.');
         }
+        if (response.status === 423 || data?.errorCode === 'ACCOUNT_TEMP_LOCKED' || data?.detail?.code === 'ACCOUNT_TEMP_LOCKED') {
+          setIsPermanentlyLocked(false);
+          const secs = Number(data?.detail?.retry_after_seconds ?? data?.detail?.remaining_seconds ?? 300);
+          setLockoutSeconds(secs > 0 ? secs : 300);
+          const minsStr = String(Math.floor((secs > 0 ? secs : 300) / 60)).padStart(2, '0');
+          const secsStr = String((secs > 0 ? secs : 300) % 60).padStart(2, '0');
+          throw new Error(
+            data?.detail?.message ||
+              `Tài khoản tạm khóa do nhập sai mật khẩu 5 lần. Hệ thống sẽ tự động mở khóa sau ${minsStr}:${secsStr}, hoặc liên hệ Giám thị phòng thi để được hỗ trợ ngay.`
+          );
+        }
+        if (
+          response.status === 403 &&
+          (data?.errorCode === 'ACCOUNT_PERMANENTLY_LOCKED' || data?.detail?.code === 'ACCOUNT_PERMANENTLY_LOCKED')
+        ) {
+          setLockoutSeconds(null);
+          setIsPermanentlyLocked(true);
+          throw new Error(
+            data?.detail?.message ||
+              data?.message ||
+              'Tài khoản của bạn đã bị khóa vĩnh viễn. Vui lòng liên hệ qua email oculide.system@gmail.com để được hỗ trợ mở khóa.'
+          );
+        }
+        setLockoutSeconds(null);
+        setIsPermanentlyLocked(false);
+        const msg =
+          typeof data?.detail === 'string'
+            ? data.detail
+            : data?.detail?.message || data?.message || 'Email/tài khoản hoặc mật khẩu không chính xác.';
+        throw new Error(msg);
       }
+      setLockoutSeconds(null);
+      setIsPermanentlyLocked(false);
 
       if (data.access_token) {
         localStorage.setItem('oculide_token', data.access_token);
         localStorage.setItem('oculide_user', JSON.stringify(data.user));
         localStorage.setItem('oculide_last_activity', Date.now().toString());
-        document.cookie = `oculide_token=${data.access_token}; path=/; max-age=1800; SameSite=Lax`;
-        document.cookie = `oculide_role=${data.user?.role || ''}; path=/; max-age=1800; SameSite=Lax`;
+        document.cookie = `oculide_token=${data.access_token}; path=/; SameSite=Lax`;
+        document.cookie = `oculide_role=${data.user?.role || ''}; path=/; SameSite=Lax`;
         if (data.refresh_token) {
           localStorage.setItem('oculide_refresh_token', data.refresh_token);
         }
@@ -213,14 +261,25 @@ export default function LoginPage() {
       //   return;
       // }
 
+      const role = (data.user?.role || '').toLowerCase();
       const params = new URLSearchParams(window.location.search);
       const redirectUrl = params.get('redirect');
-      if (redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//')) {
+      const isRedirectAllowedForRole =
+        redirectUrl &&
+        redirectUrl.startsWith('/') &&
+        !redirectUrl.startsWith('//') &&
+        ((redirectUrl.startsWith('/admin') && role === 'admin') ||
+          (redirectUrl.startsWith('/instructor') && (role === 'instructor' || role === 'admin')) ||
+          (redirectUrl.startsWith('/student') && role === 'student') ||
+          (!redirectUrl.startsWith('/admin') &&
+            !redirectUrl.startsWith('/instructor') &&
+            !redirectUrl.startsWith('/student')));
+
+      if (isRedirectAllowedForRole) {
         window.location.href = redirectUrl;
         return;
       }
 
-      const role = data.user?.role;
       if (role === 'admin') {
         window.location.href = '/admin/dashboard';
       } else if (role === 'instructor') {
@@ -397,21 +456,18 @@ export default function LoginPage() {
                     htmlFor="login-email"
                     className="block text-xs font-semibold text-slate-800 dark:text-slate-300"
                   >
-                    Email hoặc Tên đăng nhập
+                    Tên đăng nhập
                   </label>
                   <input
                     id="login-email"
                     type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="VD: sinhvien@school.edu.vn hoặc giangvien"
+                    placeholder="abcd@dtu.edu.vn hoặc abcd"
                     disabled={isLoading}
                     autoComplete="username"
                     className="w-full h-11 rounded-md border border-slate-300 bg-slate-50 px-3.5 text-xs text-slate-800 placeholder-[#7a7376] transition-colors focus:border-brand-600 focus:outline-none focus:ring-1 focus:ring-brand-600 disabled:bg-[#f1edee] disabled:text-[#a59fa3] dark:border-white/15 dark:bg-[#221e27] dark:text-slate-300 dark:placeholder-[#7a7376] dark:focus:border-brand-400 dark:focus:ring-[#7a0308]"
                   />
-                  <p className="text-[11px] text-slate-500 dark:text-[#a59fa3]">
-                    * Nhập Email định danh hoặc Tên đăng nhập hệ thống.
-                  </p>
                 </div>
 
                 {/* Input 2: Mật khẩu */}
@@ -473,17 +529,53 @@ export default function LoginPage() {
                   )}
                 </button>
 
-                {/* Dòng thông báo lỗi nhỏ gọn ngay bên dưới button đăng nhập */}
-                {errorMessage && (
-                  <p className="mt-2 text-xs font-bold text-red-600 dark:text-red-400 text-left">
+                {/* Thông báo khóa vĩnh viễn, khóa tạm thời có đếm ngược hoặc lỗi thông thường */}
+                {isPermanentlyLocked ? (
+                  <div
+                    role="alert"
+                    className="mt-2 rounded-md border border-rose-300 bg-rose-50 p-3.5 text-xs text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+                  >
+                    <p className="font-bold">Tài khoản đã bị khóa vĩnh viễn</p>
+                    <p className="mt-1 leading-relaxed">
+                      Tài khoản của bạn đã bị khóa vĩnh viễn. Vui lòng liên hệ qua email{' '}
+                      <a
+                        href={`https://mail.google.com/mail/?view=cm&fs=1&to=oculide.system@gmail.com&su=${encodeURIComponent('[Oculide] Yêu cầu hỗ trợ mở khóa tài khoản')}&body=${encodeURIComponent(`Kính gửi Ban Quản trị Hệ thống Oculide,\n\nTài khoản của tôi (${email.trim() || 'chưa nhập'}) hiện đang bị khóa vĩnh viễn.\nVui lòng kiểm tra và hỗ trợ mở khóa giúp tôi.\n\nXin cảm ơn.`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold underline hover:text-rose-700 dark:hover:text-rose-100 transition-colors"
+                      >
+                        oculide.system@gmail.com
+                      </a>{' '}
+                      để được hỗ trợ mở khóa.
+                    </p>
+                  </div>
+                ) : lockoutSeconds !== null && lockoutSeconds > 0 ? (
+                  <div
+                    role="alert"
+                    className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                  >
+                    <p className="font-bold">
+                      Tài khoản tạm khóa do nhập sai mật khẩu quá nhiều lần.
+                    </p>
+                    <p className="mt-1 leading-relaxed">
+                      Hệ thống sẽ tự động mở khóa sau{' '}
+                      <span className="font-mono font-extrabold text-amber-700 dark:text-amber-300">
+                        {String(Math.floor(lockoutSeconds / 60)).padStart(2, '0')}:
+                        {String(lockoutSeconds % 60).padStart(2, '0')}
+                      </span>
+                      , Vui lòng đợi hết thời gian trên hoặc chọn Quên mật khẩu để khôi phục quyền truy cập.
+                    </p>
+                  </div>
+                ) : errorMessage ? (
+                  <p role="alert" className="mt-2 text-xs font-bold text-red-600 dark:text-red-400 text-left">
                     {errorMessage}
                   </p>
-                )}
+                ) : null}
 
                 {/* Khối ghi chú phân quyền tự động */}
                 <div className="mt-4 rounded-md border border-slate-300 bg-slate-50 p-3 text-left dark:border-white/10 dark:bg-[#221e27]">
                   <p className="text-xs font-semibold leading-snug text-slate-900 dark:text-[#e5a9b9]">
-                    Phân quyền tự động theo vai trò người dùng
+                    Mẹo nhỏ bảo vệ tài khoản
                   </p>
                   <p className="mt-0.5 text-[11px] font-normal text-slate-500 dark:text-[#a59fa3]">
                     Hệ thống tự nhận diện Sinh viên, Giảng viên hoặc Quản trị viên sau khi đăng nhập.

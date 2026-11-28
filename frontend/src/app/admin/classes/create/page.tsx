@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
+import SearchableLecturerCombobox from '@/components/common/SearchableLecturerCombobox';
 import { fetchWithAuth } from '@/services/apiClient';
 import {
   ClassRow,
@@ -92,12 +93,17 @@ export default function CreateClassPage() {
   const [searchedSystemStudents, setSearchedSystemStudents] = useState<any[]>([]);
   const [isSearchingSystem, setIsSearchingSystem] = useState(false);
   const [isManualNewStudentExpanded, setIsManualNewStudentExpanded] = useState(false);
+  const [isBulkPasteOpen, setIsBulkPasteOpen] = useState(false);
+  const [bulkPasteText, setBulkPasteText] = useState('');
+  const [isBulkLookingUp, setIsBulkLookingUp] = useState(false);
+  const [bulkLookupFeedback, setBulkLookupFeedback] = useState<string | null>(null);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
   // Trạng thái lưu
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Tìm kiếm sinh viên trong hệ thống từ CSDL SQL Server với debounce 250ms
+  // Tìm kiếm sinh viên trong hệ thống từ CSDL SQL Server với debounce 300ms (hỗ trợ không dấu, ưu tiên khớp mã)
   useEffect(() => {
     const kw = systemSearchKeyword.trim();
     if (!kw) {
@@ -109,39 +115,36 @@ export default function CreateClassPage() {
     const timer = setTimeout(async () => {
       try {
         setIsSearchingSystem(true);
-        const token = typeof window !== 'undefined' ? localStorage.getItem('oculide_token') : null;
-        const res = await fetch(`/api/v1/classes/students/search?q=${encodeURIComponent(kw)}&limit=10`, {
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-        if (res.ok) {
-          const list = await res.json();
-          if (Array.isArray(list)) {
-            setSearchedSystemStudents(list);
-          }
+        const data = await fetchWithAuth<{ items?: any[] }>(
+          `/api/v1/users/search?role=STUDENT&q=${encodeURIComponent(kw)}&limit=20&page=1`
+        );
+        if (Array.isArray(data?.items)) {
+          setSearchedSystemStudents(data.items);
+        } else {
+          setSearchedSystemStudents([]);
         }
       } catch (err) {
         console.error('Lỗi tìm kiếm sinh viên:', err);
+        setSearchedSystemStudents([]);
       } finally {
         setIsSearchingSystem(false);
       }
-    }, 250);
+    }, 300);
 
     return () => clearTimeout(timer);
   }, [systemSearchKeyword]);
 
   // Thêm nhanh sinh viên tìm thấy từ hệ thống vào danh sách lớp
   function handleAddSystemStudent(st: any) {
-    const id = (st.student_id || st.username || String(st.user_id)).trim().toUpperCase();
+    const id = (st.code || st.student_id || st.username || String(st.id || st.user_id)).trim().toUpperCase();
     if (students.some((s) => s.id.toUpperCase() === id)) {
       return;
     }
     const newStudent: StudentRow = {
       id,
-      name: st.full_name,
+      name: st.fullName || st.full_name,
       email: st.email || '',
-      homeroomClass: st.lop_sinh_hoat || undefined,
+      homeroomClass: st.subInfo || st.lop_sinh_hoat || undefined,
       department: st.department || undefined,
       phone: st.phone_number || undefined,
       status: 'Đang học',
@@ -149,6 +152,64 @@ export default function CreateClassPage() {
     };
     setStudents((prev) => [...prev, newStudent]);
     setErrorMessage('');
+  }
+
+  // Dán hàng loạt MSSV từ Excel (cách nhau bởi dấu phẩy, khoảng trắng hoặc xuống dòng)
+  async function handleBulkPasteStudents(rawInput?: string) {
+    const text = (rawInput ?? bulkPasteText).trim();
+    if (!text) return;
+    const codes = text
+      .split(/[\s,;|\t\n\r]+/)
+      .map((c) => c.trim().toUpperCase())
+      .filter(Boolean);
+    if (codes.length === 0) return;
+
+    setIsBulkLookingUp(true);
+    setBulkLookupFeedback(null);
+    try {
+      const res = await fetchWithAuth<{ matched: any[]; not_found: string[] }>('/api/v1/users/bulk-lookup', {
+        method: 'POST',
+        body: JSON.stringify({ codes, role: 'STUDENT' }),
+      });
+      const matchedList = Array.isArray(res?.matched) ? res.matched : [];
+      const notFoundList = Array.isArray(res?.not_found) ? res.not_found : [];
+
+      let addedCount = 0;
+      setStudents((prev) => {
+        const existing = new Set(prev.map((s) => s.id.toUpperCase()));
+        const additions: StudentRow[] = [];
+        for (const st of matchedList) {
+          const sid = String(st.code || st.id).trim().toUpperCase();
+          if (!existing.has(sid)) {
+            existing.add(sid);
+            additions.push({
+              id: sid,
+              name: st.fullName,
+              email: st.email || '',
+              homeroomClass: st.subInfo || undefined,
+              department: st.department || undefined,
+              status: 'Đang học',
+              hasAccount: true,
+            });
+          }
+        }
+        addedCount = additions.length;
+        return [...prev, ...additions];
+      });
+
+      const msgParts = [`Đã thêm ${matchedList.length > 0 ? addedCount || matchedList.length : 0} sinh viên hợp lệ vào lớp.`];
+      if (notFoundList.length > 0) {
+        msgParts.push(`Không tìm thấy ${notFoundList.length} MSSV: ${notFoundList.join(', ')}.`);
+      }
+      setBulkLookupFeedback(msgParts.join(' '));
+      if (!rawInput) {
+        setBulkPasteText('');
+      }
+    } catch {
+      setBulkLookupFeedback('Lỗi khi đối chiếu danh sách MSSV với CSDL.');
+    } finally {
+      setIsBulkLookingUp(false);
+    }
   }
 
   // Tự động tra cứu sinh viên theo MSSV từ CSDL SQL Server khi nhập thủ công
@@ -921,28 +982,18 @@ export default function CreateClassPage() {
                         Admin phân công
                       </span>
                     </div>
-                    <select
-                      value={selectedInstructorId ?? ''}
-                      onChange={(e) => {
-                        const id = Number(e.target.value);
-                        setSelectedInstructorId(id);
-                        const inst = instructors.find((i) => i.id === id);
-                        if (inst) setSelectedLecturerName(inst.name);
+                    <SearchableLecturerCombobox
+                      valueId={selectedInstructorId}
+                      valueName={selectedLecturerName}
+                      courseCodeHint={courseCode}
+                      ariaLabel="Giảng viên phụ trách"
+                      placeholder="-- Tìm & chọn giảng viên phụ trách --"
+                      onSelect={(inst) => {
+                        setSelectedInstructorId(inst.id);
+                        setSelectedLecturerName(inst.fullName);
                       }}
-                      className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900/20 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
-                    >
-                      {instructors.length === 0 ? (
-                        <option value="">
-                          {isLoadingInstructors ? 'Đang tải danh sách...' : 'TS. Huỳnh Bá Diệu (Mặc định)'}
-                        </option>
-                      ) : (
-                        instructors.map((inst) => (
-                          <option key={inst.id} value={inst.id}>
-                            {inst.name} ({inst.email})
-                          </option>
-                        ))
-                      )}
-                    </select>
+                      required
+                    />
                   </div>
 
                   {/* Mô tả / Ghi chú */}
@@ -1348,17 +1399,60 @@ export default function CreateClassPage() {
                   <div className="space-y-4 rounded-md border border-slate-300 bg-slate-50/60 p-4 sm:p-5 dark:border-white/10 dark:bg-white/[0.02]">
                     {/* KHU VỰC 1: TÌM KIẾM & THÊM NHANH TỪ CSDL HỆ THỐNG */}
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Search className="h-4 w-4 text-brand-700 dark:text-brand-300" />
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Search className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" />
                           <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
                             Tìm kiếm &amp; thêm sinh viên từ hệ thống
                           </h3>
                         </div>
-                        <span className="text-[11px] font-semibold text-slate-500">
-                          {students.length} sinh viên đã chọn
-                        </span>
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setIsBulkPasteOpen((prev) => !prev)}
+                            className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 cursor-pointer whitespace-nowrap"
+                          >
+                            <Plus className="h-3 w-3" />
+                            <span>Dán hàng loạt MSSV</span>
+                          </button>
+                          <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
+                            {students.length} sinh viên đã chọn
+                          </span>
+                        </div>
                       </div>
+
+                      {isBulkPasteOpen && (
+                        <div className="rounded-md border border-slate-200 bg-white p-3 space-y-2 dark:border-white/10 dark:bg-neutral-900">
+                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                            Dán danh sách MSSV từ Excel (cách nhau bởi dấu phẩy, khoảng trắng hoặc xuống dòng)
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={bulkPasteText}
+                            onChange={(e) => setBulkPasteText(e.target.value)}
+                            placeholder="VD: SV001, SV002, SV003..."
+                            className="w-full rounded border border-slate-300 bg-slate-50 p-2 font-mono text-xs text-slate-900 outline-none focus:border-slate-900 dark:border-white/10 dark:bg-neutral-950 dark:text-white"
+                          />
+                          <div className="flex items-center justify-between gap-2">
+                            {bulkLookupFeedback ? (
+                              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                                {bulkLookupFeedback}
+                              </span>
+                            ) : (
+                              <span />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleBulkPasteStudents()}
+                              disabled={isBulkLookingUp || !bulkPasteText.trim()}
+                              className="system-primary-action inline-flex h-8 items-center gap-1.5 rounded bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 cursor-pointer shrink-0"
+                            >
+                              {isBulkLookingUp ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                              <span>Đối chiếu &amp; thêm</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1387,18 +1481,20 @@ export default function CreateClassPage() {
                             </div>
                           ) : searchedSystemStudents.length > 0 ? (
                             searchedSystemStudents.map((st) => {
-                              const mssv = st.student_id || st.username || String(st.user_id);
+                              const mssv = st.code || st.student_id || st.username || String(st.id || st.user_id);
+                              const fullName = st.fullName || st.full_name;
+                              const subText = st.subInfo || st.lop_sinh_hoat;
                               const isAdded = students.some((s) => s.id.toUpperCase() === mssv.toUpperCase());
 
                               return (
                                 <div
-                                  key={st.user_id || mssv}
+                                  key={st.id || st.user_id || mssv}
                                   className="flex items-center justify-between rounded border border-slate-100 p-2.5 transition hover:bg-slate-50 dark:border-white/5 dark:hover:bg-white/5"
                                 >
                                   <div className="min-w-0 flex-1 pr-3">
                                     <div className="flex items-center gap-2">
                                       <span className="font-bold text-xs text-slate-900 dark:text-white">
-                                        {st.full_name}
+                                        {fullName}
                                       </span>
                                       <span className="rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-500/10 dark:text-brand-200">
                                         {mssv}
@@ -1406,16 +1502,20 @@ export default function CreateClassPage() {
                                     </div>
                                     <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
                                       {st.email}
-                                      {st.lop_sinh_hoat ? ` • ${st.lop_sinh_hoat}` : ''}
+                                      {subText ? ` • ${subText}` : ''}
                                       {st.department ? ` • ${st.department}` : ''}
                                     </p>
                                   </div>
 
                                   {isAdded ? (
-                                    <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 shrink-0">
+                                    <button
+                                      type="button"
+                                      disabled
+                                      className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 shrink-0 cursor-not-allowed opacity-90"
+                                    >
                                       <CheckCircle2 className="h-3.5 w-3.5" />
                                       Đã thêm
-                                    </span>
+                                    </button>
                                   ) : (
                                     <button
                                       type="button"
@@ -1551,13 +1651,43 @@ export default function CreateClassPage() {
                     {/* KHU VỰC 3: DANH SÁCH SINH VIÊN ĐÃ THÊM VÀO LỚP */}
                     {students.length > 0 && (
                       <div className="space-y-2 border-t border-slate-300 dark:border-white/10 pt-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                            Danh sách sinh viên trong lớp ({students.length})
-                          </h4>
-                          <span className="text-[11px] text-slate-400">
-                            Nhấn biểu tượng thùng rác để gỡ
-                          </span>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <label className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={students.length > 0 && selectedStudentIds.length === students.length}
+                              onChange={(e) =>
+                                setSelectedStudentIds(e.target.checked ? students.map((s) => s.id) : [])
+                              }
+                              className="h-3.5 w-3.5 rounded accent-brand cursor-pointer"
+                            />
+                            <span>Danh sách sinh viên trong lớp ({students.length})</span>
+                          </label>
+                          <div className="flex items-center gap-2">
+                            {selectedStudentIds.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const selectedSet = new Set(selectedStudentIds);
+                                  setStudents((prev) => prev.filter((s) => !selectedSet.has(s.id)));
+                                  setSelectedStudentIds([]);
+                                }}
+                                className="rounded border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 cursor-pointer"
+                              >
+                                Xóa đã chọn ({selectedStudentIds.length})
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStudents([]);
+                                setSelectedStudentIds([]);
+                              }}
+                              className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 cursor-pointer"
+                            >
+                              Xóa tất cả
+                            </button>
+                          </div>
                         </div>
 
                         <div className="max-h-64 overflow-y-auto space-y-1.5">
@@ -1567,6 +1697,19 @@ export default function CreateClassPage() {
                               className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-3.5 py-2 text-xs dark:border-white/10 dark:bg-white/5"
                             >
                               <div className="flex items-center gap-2 truncate min-w-0">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Chọn sinh viên ${s.id}`}
+                                  checked={selectedStudentIds.includes(s.id)}
+                                  onChange={(e) => {
+                                    setSelectedStudentIds((prev) =>
+                                      e.target.checked
+                                        ? [...prev, s.id]
+                                        : prev.filter((id) => id !== s.id)
+                                    );
+                                  }}
+                                  className="h-3.5 w-3.5 shrink-0 rounded accent-brand cursor-pointer"
+                                />
                                 <span className="font-bold text-slate-900 dark:text-white shrink-0">
                                   {idx + 1}. {s.id}
                                 </span>

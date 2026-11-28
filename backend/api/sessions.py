@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status, Request
 from typing import Optional, List, Dict, Any
 
 from schemas.session import SessionCreateRequest, SessionStatusUpdate, SessionResponse
-from core.permissions import get_current_user, instructor_or_admin_required
+from core.permissions import get_current_user, instructor_or_admin_required, verify_room_access
 from database.session_db import (
     create_session, get_session_by_id, get_sessions_by_room,
     get_sessions_by_student, update_session_status, end_session
@@ -53,13 +53,16 @@ async def start_session(
         
     client_ip = extract_client_ip(request)
     user_agent = request.headers.get("user-agent")
+    r_status = str(room.get("status") or "").lower()
+    initial_status = "late" if r_status in ("dang_dien_ra", "in_progress") else "active"
     
     return create_session(
         room_id=session_data.room_id,
         student_id=current_user["user_id"],
         ip_address=client_ip,
         user_agent=user_agent,
-        browser_fingerprint=session_data.browser_fingerprint
+        browser_fingerprint=session_data.browser_fingerprint,
+        status=initial_status
     )
 
 @router.get("/room/{room_id}", response_model=List[SessionResponse])
@@ -69,6 +72,7 @@ async def list_room_sessions(
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Lấy danh sách các phiên thi của toàn bộ sinh viên trong phòng"""
+    verify_room_access(room_id, current_user)
     return get_sessions_by_room(room_id, active_only=active_only)
 
 @router.get("/student/{student_id}", response_model=List[SessionResponse])
@@ -132,6 +136,7 @@ async def unlock_student_exam(
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Giảng viên mở khóa bài thi cho sinh viên từ xa qua WebSocket"""
+    verify_room_access(room_id, current_user)
     import json
     from websocket.connection_manager import manager
     await manager.send_personal_message(

@@ -18,6 +18,7 @@ import {
   X,
   Sparkles,
   Layers,
+  Lock,
 } from 'lucide-react';
 import {
   QuestionTemplate,
@@ -268,7 +269,16 @@ export default function InstructorQuestionsManagerView() {
   // Open Edit Modal
   function handleOpenEdit(template: QuestionTemplate) {
     setIsCreatingNew(false);
-    setEditingTemplate(template);
+    const rawLang = (template.language || '').toLowerCase();
+    const normalizedLang = rawLang.includes('python')
+      ? 'Python'
+      : rawLang.includes('java') && !rawLang.includes('script')
+      ? 'Java'
+      : 'C++';
+    setEditingTemplate({
+      ...template,
+      language: normalizedLang,
+    });
 
     setEditQuestions(
       template.questions
@@ -302,7 +312,7 @@ export default function InstructorQuestionsManagerView() {
       title: '',
       type: 'lab',
       category: 'Lập trình căn bản',
-      language: 'JavaScript / Python',
+      language: 'C++',
       questionCount: 1,
       description: 'Mô tả bài thực hành...',
       questions: [initialQuestion],
@@ -334,7 +344,7 @@ export default function InstructorQuestionsManagerView() {
       title: 'Đề thi Kết thúc học phần: ',
       type: 'final',
       category: 'Thi Kết Thúc Học Phần',
-      language: 'C++ / Java / Python',
+      language: 'C++',
       questionCount: 1,
       description: 'Đề thi chính thức kết thúc học phần được niêm phong bảo mật.',
       questions: [initialQuestion],
@@ -342,6 +352,49 @@ export default function InstructorQuestionsManagerView() {
     });
     setEditQuestions([initialQuestion]);
   }
+
+  const getDifficultyPercent = (diff?: string) => {
+    const d = String(diff || '').trim().toLowerCase();
+    if (d === 'khó' || d === 'hard' || d === 'kho') return 30;
+    if (d === 'trung bình' || d === 'medium' || d === 'trung_binh') return 20;
+    return 10;
+  };
+
+  const getDifficultyDefaultPoints = (diff?: string) => {
+    return Number(((getDifficultyPercent(diff) / 100) * 10).toFixed(2));
+  };
+
+  const distributeQuestionsByDifficulty = (items: TemplateQuestionItem[], targetMax = 10): TemplateQuestionItem[] => {
+    if (items.length === 0) return [];
+    const capped = Math.min(10, Math.max(0.5, targetMax));
+    if (items.length === 1) return [{ ...items[0], maxPoints: capped }];
+    const weights = items.map((q) => getDifficultyPercent(q.difficulty));
+    const weightSum = weights.reduce((s, w) => s + w, 0);
+    let running = 0;
+    return items.map((q, idx) => {
+      if (idx === items.length - 1) {
+        return { ...q, maxPoints: Number(Math.max(0.1, capped - running).toFixed(2)) };
+      }
+      const share = Number(((weights[idx] / weightSum) * capped).toFixed(2));
+      running += share;
+      return { ...q, maxPoints: share };
+    });
+  };
+
+  const distributeQuestionsEvenly = (items: TemplateQuestionItem[], targetMax = 10): TemplateQuestionItem[] => {
+    if (items.length === 0) return [];
+    const capped = Math.min(10, Math.max(0.5, targetMax));
+    if (items.length === 1) return [{ ...items[0], maxPoints: capped }];
+    let running = 0;
+    return items.map((q, idx) => {
+      if (idx === items.length - 1) {
+        return { ...q, maxPoints: Number(Math.max(0.1, capped - running).toFixed(2)) };
+      }
+      const share = Number((capped / items.length).toFixed(2));
+      running += share;
+      return { ...q, maxPoints: share };
+    });
+  };
 
   // Add a question inside the edit modal
   function handleAddQuestionToTemplate() {
@@ -356,13 +409,27 @@ export default function InstructorQuestionsManagerView() {
       sampleOutput: '',
       testCases: [createDefaultTestCase(1)],
       testCasesCount: 1,
+      maxPoints: 10,
     };
-    setEditQuestions((prev) => [...prev, newQ]);
+    setEditQuestions((prev) => distributeQuestionsByDifficulty([...prev, newQ], 10));
   }
 
   // Remove a question
   function handleRemoveQuestionFromTemplate(index: number) {
-    setEditQuestions((prev) => prev.filter((_, idx) => idx !== index));
+    setEditQuestions((prev) => distributeQuestionsByDifficulty(prev.filter((_, idx) => idx !== index), 10));
+  }
+
+  function handleUpdateQuestionPoints(index: number, rawValue: string) {
+    const parsed = Math.max(0, Number(rawValue) || 0);
+    setEditQuestions((prev) => {
+      const otherSum = prev.reduce((sum, item, idx) => (idx === index ? sum : sum + Number(item.maxPoints ?? item.max_points ?? 0)), 0);
+      const maxAllowed = Math.max(0, Number((10 - otherSum).toFixed(2)));
+      const clamped = Math.min(parsed, maxAllowed);
+      if (parsed > maxAllowed) {
+        alert('Tổng điểm các câu hỏi trong bộ đề không được vượt quá 10 điểm.');
+      }
+      return prev.map((item, idx) => (idx === index ? { ...item, maxPoints: clamped } : item));
+    });
   }
 
   // Update a question field
@@ -376,9 +443,21 @@ export default function InstructorQuestionsManagerView() {
       const question = copy[index];
       if (!question) return prev;
 
+      const nextFieldValue = value;
+      let nextMaxPoints = question.maxPoints;
+      if (field === 'difficulty') {
+        const otherSum = prev.reduce(
+          (sum, item, idx) => (idx === index ? sum : sum + Number(item.maxPoints ?? item.max_points ?? 0)),
+          0,
+        );
+        const targetPts = getDifficultyDefaultPoints(value);
+        nextMaxPoints = Math.min(targetPts, Math.max(0, Number((10 - otherSum).toFixed(2))));
+      }
+
       copy[index] = {
         ...question,
-        [field]: value,
+        [field]: nextFieldValue,
+        ...(field === 'difficulty' ? { maxPoints: nextMaxPoints } : {}),
         // Số lượng luôn được suy ra từ danh sách Test Case thực tế.
         testCasesCount: question.testCases?.length ?? 0,
       };
@@ -483,18 +562,28 @@ function handleUpdateTestCaseField(
       testCasesCount: question.testCases?.length || 0,
     }));
 
+    const totalTemplatePoints = updatedQuestions.reduce(
+      (sum, q) => sum + Number(q.maxPoints ?? q.max_points ?? 10),
+      0,
+    );
+    if (totalTemplatePoints > 10.01) {
+      alert('Tổng điểm các câu hỏi trong bộ đề không được vượt quá 10 điểm.');
+      return;
+    }
+
     const payload = {
       code: editingTemplate.id,
       title: trimmedTitle,
       type: editingTemplate.type,
+      language: editingTemplate.language || 'C++ / Python',
       duration_minutes: editingTemplate.durationMinutes,
       questions: updatedQuestions.map((q) => ({
         id: q.id,
         title: q.title,
         description: q.description,
         difficulty: q.difficulty,
-        programming_language: ('language' in q && typeof q.language === 'string' && q.language) ? q.language : 'cpp',
-        max_points: ('maxPoints' in q && typeof q.maxPoints === 'number') ? q.maxPoints : 10,
+        programming_language: editingTemplate.language || 'cpp',
+        max_points: Number(q.maxPoints ?? q.max_points ?? 10),
         test_cases: (q.testCases || []).map((tc) => ({
           id: tc.id,
           input_data: tc.inputData,
@@ -731,80 +820,9 @@ function handleUpdateTestCaseField(
       </div>
 
       {/* Filters and Search Bar */}
-      <div className="flex flex-col gap-3 rounded-md border border-slate-300 bg-white p-4 dark:border-white/10 dark:bg-neutral-900 lg:flex-row lg:items-center lg:justify-between">
-        {/* Type tabs */}
-        <div className="inline-flex flex-wrap items-center gap-1 rounded-md border border-slate-300 bg-slate-50 p-1 dark:border-white/10 dark:bg-neutral-950">
-          {isAdminView ? (
-            <span className="inline-flex h-8 items-center rounded border border-brand-300 bg-white px-3.5 font-mono text-xs font-bold text-brand-700 dark:border-brand-500/40 dark:bg-neutral-950 dark:text-brand-200">
-              Đề thi cuối kỳ ({filteredTemplates.length})
-            </span>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => setTypeFilter('all')}
-                className={`inline-flex h-8 items-center rounded px-3 text-xs font-semibold transition cursor-pointer ${
-                  typeFilter === 'all'
-                    ? 'system-selected-module shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-                }`}
-              >
-                Tất cả ({templates.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTypeFilter('lab')}
-                className={`inline-flex h-8 items-center rounded px-3 text-xs font-semibold transition cursor-pointer ${
-                  typeFilter === 'lab'
-                    ? 'system-selected-module shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-                }`}
-              >
-                Đề thực hành ({templates.filter((t) => t.type === 'lab').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTypeFilter('midterm')}
-                className={`inline-flex h-8 items-center rounded px-3 text-xs font-semibold transition cursor-pointer ${
-                  typeFilter === 'midterm'
-                    ? 'system-selected-module shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-                }`}
-              >
-                Thi giữa kỳ ({templates.filter((t) => t.type === 'midterm' || (t.type as any) === 'midterm_exam').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTypeFilter('final')}
-                className={`inline-flex h-8 items-center rounded px-3 text-xs font-semibold transition cursor-pointer ${
-                  typeFilter === 'final'
-                    ? 'system-selected-module shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-                }`}
-              >
-                Thi cuối kỳ ({templates.filter((t) => t.type === 'final' || (t.type as any) === 'final_exam' || t.type === 'exam').length})
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Search and Category select */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 dark:focus:border-white focus:ring-1 focus:ring-slate-900 dark:focus:ring-white/20 cursor-pointer dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200"
-          >
-            <option value="all">Tất cả chuyên mục</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
-
-          <div className="relative min-w-[240px] flex-1">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-md border border-slate-300 bg-white p-4 dark:border-white/10 dark:bg-neutral-900">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
               type="text"
               value={searchTerm}
@@ -821,8 +839,25 @@ function handleUpdateTestCaseField(
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
-          </div>
         </div>
+
+        {!isAdminView && (
+          <select
+            aria-label="Lọc theo loại đề"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+            className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-900 dark:focus:border-white focus:ring-1 focus:ring-slate-900 dark:focus:ring-white/20 cursor-pointer dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200"
+          >
+            <option value="all">Tất cả loại đề ({templates.length})</option>
+            <option value="lab">Đề thực hành ({templates.filter((t) => t.type === 'lab').length})</option>
+            <option value="midterm">
+              Thi giữa kỳ ({templates.filter((t) => t.type === 'midterm' || (t.type as any) === 'midterm_exam').length})
+            </option>
+            <option value="final">
+              Thi cuối kỳ ({templates.filter((t) => t.type === 'final' || (t.type as any) === 'final_exam' || t.type === 'exam').length})
+            </option>
+          </select>
+        )}
       </div>
 
       {/* Templates List */}
@@ -937,37 +972,35 @@ function handleUpdateTestCaseField(
                   </div>
 
                   {/* Actions column */}
-                  <div className="flex flex-row lg:flex-col items-center lg:items-end gap-2 shrink-0 pt-2 lg:pt-0">
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 lg:pt-0">
                     <button
                       type="button"
                       onClick={() => handleOpenEdit(template)}
-                      className="system-primary-action inline-flex h-9 items-center gap-1.5 rounded-md bg-slate-900 px-3.5 text-xs font-semibold text-white transition hover:bg-slate-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#1C1820]"
+                      className="system-primary-action inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md bg-slate-900 px-3.5 text-xs font-semibold text-white transition hover:bg-slate-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#1C1820]"
                     >
-                      <Pencil className="h-3.5 w-3.5" />
-                      Chỉnh sửa đề & câu hỏi
+                      <Pencil className="h-3.5 w-3.5 shrink-0" />
+                      <span>Chỉnh sửa</span>
                     </button>
 
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => toggleExpand(template.id)}
-                        className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-white/[0.08]"
-                      >
-                        {isExpanded ? 'Ẩn câu hỏi' : 'Xem câu hỏi'}
-                        <ChevronDown
-                          className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                        />
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(template.id)}
+                      className="inline-flex h-9 items-center gap-1 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 cursor-pointer dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-white/[0.08]"
+                    >
+                      <span>{isExpanded ? 'Ẩn câu hỏi' : 'Xem câu hỏi'}</span>
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                      />
+                    </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTemplate(template.id)}
-                        title="Xóa bộ đề"
-                        className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 cursor-pointer dark:border-white/10 dark:text-slate-500 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTemplate(template.id)}
+                      title="Xóa bộ đề"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-300 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 cursor-pointer dark:border-white/10 dark:text-slate-500 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
 
@@ -1150,15 +1183,18 @@ function handleUpdateTestCaseField(
                   </label>
                   {isAdminView ? (
                     <div>
-                      <select
-                        value="final"
-                        disabled
-                        className="h-9 w-full rounded-md border border-slate-300 bg-slate-100 px-3 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 cursor-not-allowed"
-                      >
-                        <option value="final">Đề thi cuối kỳ (Khóa: Quyền Ban Đào Tạo)</option>
-                      </select>
-                      <p className="mt-1 text-[10.5px] text-slate-500 font-medium">
-                        * Quản trị viên chỉ có quyền quản lý và chỉnh sửa đề thi cuối kỳ.
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value="Đề thi cuối kỳ"
+                          readOnly
+                          disabled
+                          className="h-9 w-full rounded-md border border-slate-300 bg-slate-100 pl-3 pr-9 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 cursor-not-allowed"
+                        />
+                        <Lock className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                        Mặc định cố định cho phân hệ Quản trị / Ban Đào tạo.
                       </p>
                     </div>
                   ) : (
@@ -1225,13 +1261,9 @@ function handleUpdateTestCaseField(
                     }
                     className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-900 outline-none transition focus:border-slate-900 dark:focus:border-white focus:ring-1 focus:ring-slate-900 dark:focus:ring-white/20 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-100"
                   >
-                    <option value="JavaScript / Python">JavaScript / Python</option>
-                    <option value="JavaScript">JavaScript</option>
-                    <option value="JavaScript / Node.js">JavaScript / Node.js</option>
                     <option value="C++">C++</option>
                     <option value="Java">Java</option>
                     <option value="Python">Python</option>
-                    <option value="SQL">SQL</option>
                   </select>
                 </div>
 
@@ -1272,18 +1304,43 @@ function handleUpdateTestCaseField(
 
               {/* Sub-form: Danh sách câu hỏi */}
               <div className="border-t border-slate-300 pt-3 dark:border-white/10">
-                <div className="mb-2.5 flex items-center justify-between">
-                  <h4 className="font-mono text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-300">
-                    Danh sách câu hỏi & Test Cases ({editQuestions.length} bài)
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={handleAddQuestionToTemplate}
-                    className="inline-flex h-8 items-center gap-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-white px-3 text-xs font-semibold transition cursor-pointer border border-slate-300 dark:border-white/20"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Thêm câu hỏi
-                  </button>
+                <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="font-mono text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-300">
+                      Danh sách câu hỏi &amp; Test Cases ({editQuestions.length} bài)
+                    </h4>
+                    <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      Tổng điểm bộ đề:{' '}
+                      <strong className="font-mono text-slate-900 dark:text-white">
+                        {Number(editQuestions.reduce((s, q) => s + Number(q.maxPoints ?? q.max_points ?? 10), 0).toFixed(2))} / 10 điểm
+                      </strong>{' '}
+                      (Khó: 30% = 3đ · TB: 20% = 2đ · Dễ: 10% = 1đ)
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditQuestions((prev) => distributeQuestionsByDifficulty(prev, 10))}
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-brand/30 bg-brand-50 px-2.5 text-[11px] font-semibold text-brand-700 hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/15 dark:text-brand-200 cursor-pointer"
+                    >
+                      Chia theo độ khó
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditQuestions((prev) => distributeQuestionsEvenly(prev, 10))}
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-white/15 dark:bg-white/5 dark:text-slate-200 cursor-pointer"
+                    >
+                      Chia đều
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddQuestionToTemplate}
+                      className="inline-flex h-8 items-center gap-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-white px-3 text-xs font-semibold transition cursor-pointer border border-slate-300 dark:border-white/20"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Thêm câu hỏi
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-3">
@@ -1313,7 +1370,7 @@ function handleUpdateTestCaseField(
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px_100px] gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_115px_95px_95px] gap-2">
                         <div>
                           <label className="mb-1 block font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                             Tiêu đề câu hỏi
@@ -1340,6 +1397,20 @@ function handleUpdateTestCaseField(
                             <option value="Trung bình">Trung bình</option>
                             <option value="Khó">Khó</option>
                           </select>
+                        </div>
+                        <div>
+                          <label className="mb-1 block font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                            Điểm câu
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={10}
+                            step="any"
+                            value={q.maxPoints ?? q.max_points ?? 10}
+                            onChange={(e) => handleUpdateQuestionPoints(idx, e.target.value)}
+                            className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-mono font-bold text-slate-900 outline-none transition focus:border-brand dark:border-white/10 dark:bg-neutral-950 dark:text-slate-100"
+                          />
                         </div>
                         <div>
                           <label className="mb-1 block font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400">

@@ -27,9 +27,15 @@ interface UseLiveKitRoomOptions {
   roomId?: number | null;
   mode: 'publish' | 'subscribe';
   enabled?: boolean;
+  initialCameraEnabled?: boolean;
 }
 
-export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomOptions) {
+export function useLiveKitRoom({
+  roomId,
+  mode,
+  enabled = true,
+  initialCameraEnabled = true,
+}: UseLiveKitRoomOptions) {
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [localVideoTrack, setLocalVideoTrack] = useState<LocalVideoTrack | null>(null);
@@ -38,40 +44,79 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
   const [remoteTracks, setRemoteTracks] = useState<Record<string, RemoteVideoTrack>>({});
   const [participantTracks, setParticipantTracks] = useState<Record<string, ParticipantTracks>>({});
   const roomRef = useRef<LiveKitRoom | null>(null);
+  const nativeScreenStreamRef = useRef<MediaStream | null>(null);
 
   const enableScreenShare = useCallback(async (): Promise<boolean> => {
-    if (!roomRef.current || connectionState !== 'connected') {
-      return false;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+      throw new Error('Trình duyệt không hỗ trợ chia sẻ màn hình hoặc trang không chạy trên HTTPS/localhost.');
     }
-    try {
-      const { Track } = await import('livekit-client');
-      await roomRef.current.localParticipant.setScreenShareEnabled(true, {
-        audio: false,
-        resolution: { width: 1920, height: 1080, frameRate: 15 },
-      });
-      const pub = roomRef.current.localParticipant.getTrackPublication(Track.Source.ScreenShare);
-      if (pub?.videoTrack) {
-        const vTrack = pub.videoTrack as LocalVideoTrack;
-        setLocalScreenTrack(vTrack);
-        setIsScreenSharing(true);
-        if (vTrack.mediaStreamTrack) {
-          vTrack.mediaStreamTrack.onended = () => {
-            setIsScreenSharing(false);
-            setLocalScreenTrack(null);
-          };
+
+    if (roomRef.current && (roomRef.current.state === 'connected' || connectionState === 'connected')) {
+      try {
+        const { Track } = await import('livekit-client');
+        await roomRef.current.localParticipant.setScreenShareEnabled(true, {
+          audio: false,
+          resolution: { width: 1920, height: 1080, frameRate: 15 },
+        });
+        const pub = roomRef.current.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+        if (pub?.videoTrack) {
+          const vTrack = pub.videoTrack as LocalVideoTrack;
+          setLocalScreenTrack(vTrack);
+          setIsScreenSharing(true);
+          if (vTrack.mediaStreamTrack) {
+            vTrack.mediaStreamTrack.onended = () => {
+              setIsScreenSharing(false);
+              setLocalScreenTrack(null);
+            };
+          }
+          return true;
         }
+        setIsScreenSharing(true);
         return true;
+      } catch (err: any) {
+        console.warn('Lỗi khi kích hoạt chia sẻ màn hình LiveKit:', err);
+        return false;
       }
+    }
+
+    // Fallback khi LiveKit chưa kết nối xong hoặc không khả dụng: vẫn xin quyền chia sẻ màn hình trực tiếp từ trình duyệt
+    try {
+      if (nativeScreenStreamRef.current) {
+        nativeScreenStreamRef.current.getTracks().forEach((t) => t.stop());
+        nativeScreenStreamRef.current = null;
+      }
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) {
+        stream.getTracks().forEach((t) => t.stop());
+        return false;
+      }
+      nativeScreenStreamRef.current = stream;
       setIsScreenSharing(true);
+      videoTrack.onended = () => {
+        setIsScreenSharing(false);
+        nativeScreenStreamRef.current = null;
+      };
       return true;
     } catch (err: any) {
-      console.warn('Lỗi khi kích hoạt chia sẻ màn hình LiveKit:', err);
+      console.warn('Lỗi khi kích hoạt chia sẻ màn hình trình duyệt:', err);
       return false;
     }
   }, [connectionState]);
 
   const disableScreenShare = useCallback(async () => {
-    if (!roomRef.current) return;
+    if (nativeScreenStreamRef.current) {
+      nativeScreenStreamRef.current.getTracks().forEach((t) => t.stop());
+      nativeScreenStreamRef.current = null;
+    }
+    if (!roomRef.current) {
+      setLocalScreenTrack(null);
+      setIsScreenSharing(false);
+      return;
+    }
     try {
       await roomRef.current.localParticipant.setScreenShareEnabled(false);
       setLocalScreenTrack(null);
@@ -226,15 +271,35 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
         setConnectionState('connected');
 
         if (mode === 'publish') {
-          try {
-            await room.localParticipant.setCameraEnabled(true);
-            const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-            if (camPub?.videoTrack) {
-              setLocalVideoTrack(camPub.videoTrack as LocalVideoTrack);
+          if (nativeScreenStreamRef.current) {
+            const existingScreenTrack = nativeScreenStreamRef.current.getVideoTracks()[0];
+            if (existingScreenTrack && existingScreenTrack.readyState === 'live') {
+              try {
+                await room.localParticipant.publishTrack(existingScreenTrack, {
+                  source: Track.Source.ScreenShare,
+                  name: 'screen',
+                });
+                const pub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+                if (pub?.videoTrack) {
+                  setLocalScreenTrack(pub.videoTrack as LocalVideoTrack);
+                  setIsScreenSharing(true);
+                }
+              } catch (pubErr) {
+                console.warn('Không thể publish lại luồng chia sẻ màn hình có sẵn:', pubErr);
+              }
             }
-          } catch (camErr: any) {
-            console.warn('Lỗi bật camera qua LiveKit:', camErr);
-            setErrorMsg('Không thể truy cập Camera trình duyệt (Vui lòng tắt các ứng dụng đang chiếm webcam như Meet/Zoom và cấp quyền).');
+          }
+          if (initialCameraEnabled !== false) {
+            try {
+              await room.localParticipant.setCameraEnabled(true);
+              const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+              if (camPub?.videoTrack) {
+                setLocalVideoTrack(camPub.videoTrack as LocalVideoTrack);
+              }
+            } catch (camErr: any) {
+              console.warn('Lỗi bật camera qua LiveKit:', camErr);
+              setErrorMsg('Không thể truy cập Camera trình duyệt (Vui lòng tắt các ứng dụng đang chiếm webcam như Meet/Zoom và cấp quyền).');
+            }
           }
         } else {
           // Nạp các track video đã có sẵn từ sinh viên đang phát trước đó
@@ -246,7 +311,9 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
             participant.videoTrackPublications.forEach((pub) => {
               if (pub.isSubscribed && pub.videoTrack && pub.videoTrack.kind === Track.Kind.Video) {
                 const vidTrack = pub.videoTrack as RemoteVideoTrack;
-                const isScreen = pub.source === Track.Source.ScreenShare;
+                const isScreen =
+                  pub.source === Track.Source.ScreenShare ||
+                  String(pub.trackName || '').toLowerCase().includes('screen');
                 if (isScreen) {
                   pTrackObj.screen = vidTrack;
                 } else {
@@ -290,7 +357,7 @@ export function useLiveKitRoom({ roomId, mode, enabled = true }: UseLiveKitRoomO
       setParticipantTracks({});
       setConnectionState('idle');
     };
-  }, [roomId, mode, enabled]);
+  }, [roomId, mode, enabled, initialCameraEnabled]);
 
   return {
     connectionState,

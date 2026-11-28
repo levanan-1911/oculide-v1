@@ -16,6 +16,7 @@ from database.classes_db import (
     create_class,
     get_class_by_id,
     get_classes_by_instructor,
+    get_classes_by_student,
     update_class,
     delete_class,
     search_students,
@@ -102,7 +103,8 @@ async def list_classes(
         # Giảng viên xem lớp của chính mình
         return get_classes_by_instructor(current_user["user_id"])
     else:
-        return get_classes_by_instructor(instructor_id)
+        # Sinh viên chỉ xem các lớp mình có ghi danh
+        return get_classes_by_student(current_user["user_id"])
 
 @router.get("/students/search", response_model=List[StudentSearchItem])
 async def search_students_endpoint(

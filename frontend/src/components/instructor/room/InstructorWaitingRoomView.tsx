@@ -34,9 +34,6 @@ import {
 import {
   RoomSession,
   RoomAttendee,
-  INSTRUCTOR_ROOMS_STORAGE_KEY,
-  INSTRUCTOR_SCHEDULES_STORAGE_KEY,
-  ScheduleSessionItem,
 } from '@/components/instructor/classes/types';
 import { fetchWithAuth } from '@/services/apiClient';
 import SendNotificationModal from '@/components/instructor/monitoring/SendNotificationModal';
@@ -75,6 +72,20 @@ export default function InstructorWaitingRoomView({
   const [isNoticeModalOpen, setIsNoticeModalOpen] = useState(false);
   const [isAssignTemplateModalOpen, setIsAssignTemplateModalOpen] = useState(false);
   const [roomStartTime, setRoomStartTime] = useState<string | null>(null);
+  const [numericRoomId, setNumericRoomId] = useState<number | null>(null);
+  const [activeListTab, setActiveListTab] = useState<'attendance' | 'scoreboard'>('attendance');
+  const [scoreboard, setScoreboard] = useState<Array<{
+    student_id: number;
+    student_name: string;
+    student_code?: string;
+    total_score: number;
+    max_room_points?: number;
+    score_scale_10?: number;
+    solved_questions: number;
+    total_submissions: number;
+    last_submission_time?: string | null;
+  }>>([]);
+  const [scoreboardLoading, setScoreboardLoading] = useState(false);
   const [noticeTarget, setNoticeTarget] = useState<{
     type: 'all' | 'group' | 'individual';
     studentId?: string;
@@ -103,17 +114,6 @@ export default function InstructorWaitingRoomView({
     };
     setRoom(updatedRoom);
 
-    try {
-      const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-      if (raw) {
-        const parsed: RoomSession[] = JSON.parse(raw);
-        const nextRooms = parsed.map((r) =>
-          r.id.toLowerCase() === room.id.toLowerCase() ? updatedRoom : r
-        );
-        localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(nextRooms));
-      }
-    } catch {}
-
     showToast(`Đã gán thành công bộ đề: ${newTemplate.title}`);
   };
 
@@ -129,11 +129,22 @@ export default function InstructorWaitingRoomView({
       try {
         const data = await fetchWithAuth<any>(`/api/v1/rooms/lobby/${encodeURIComponent(roomId)}`);
         if (isCancelled || !data) return;
+        if (data.room_id) {
+          setNumericRoomId(Number(data.room_id));
+        }
 
         setLobbyLoadError(null);
         setRawRoomId(data.room_id);
         if (data.start_time) {
           setRoomStartTime(data.start_time);
+        }
+        // Khi giảng viên mở phòng chờ, tự động chuyển từ scheduled/chua_mo -> waiting để SV được phép vào
+        const rawLobbyStatus = String(data.status || '').toLowerCase();
+        if (!silent && data.room_id && (rawLobbyStatus === 'scheduled' || rawLobbyStatus === 'chua_mo')) {
+          fetchWithAuth(`/api/v1/rooms/${data.room_id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'waiting' }),
+          }).catch(() => null);
         }
 
         let parsedConfig = {
@@ -217,6 +228,38 @@ export default function InstructorWaitingRoomView({
     };
   }, [roomId]);
 
+  // Nạp bảng điểm sinh viên trong phòng từ Backend
+  useEffect(() => {
+    if (!numericRoomId) return;
+    let isCancelled = false;
+
+    async function loadScoreboard(silent = false) {
+      if (!silent) setScoreboardLoading(true);
+      try {
+        const rows = await fetchWithAuth<any[]>(`/api/v1/rooms/${numericRoomId}/scoreboard`);
+        if (!isCancelled && Array.isArray(rows)) {
+          setScoreboard(rows);
+        }
+      } catch {
+        // Bỏ qua lỗi polling ngầm
+      } finally {
+        if (!isCancelled && !silent) setScoreboardLoading(false);
+      }
+    }
+
+    loadScoreboard(activeListTab !== 'scoreboard');
+    if (activeListTab !== 'scoreboard') {
+      return () => {
+        isCancelled = true;
+      };
+    }
+    const timer = setInterval(() => loadScoreboard(true), 5000);
+    return () => {
+      isCancelled = true;
+      clearInterval(timer);
+    };
+  }, [numericRoomId, activeListTab]);
+
   // Tự động mở phòng cho phòng thi (giữa kỳ / cuối kỳ) khi đến thời gian thiết lập
   useEffect(() => {
     startRoomHandlerRef.current = handleStartExamAndMonitoring;
@@ -226,22 +269,75 @@ export default function InstructorWaitingRoomView({
     if (
       !room ||
       room.status !== 'waiting' ||
-      !['exam', 'midterm', 'final'].includes(room.type) ||
       !roomStartTime
     ) return;
 
-    const checkAutoStart = () => {
+    const toLocalNaiveIso = (d: Date) => {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    };
+
+    let postponing = false;
+    const postponeBy5Mins = async (toastMsg: string) => {
+      if (postponing) return;
+      postponing = true;
+      const nextStart = new Date(Date.now() + 5 * 60 * 1000);
+      const nextStartIso = toLocalNaiveIso(nextStart);
+      const durationMs = (room.durationMinutes || 60) * 60 * 1000;
+      const nextEndIso = toLocalNaiveIso(new Date(nextStart.getTime() + durationMs));
+      setRoomStartTime(nextStartIso);
+      showToast(toastMsg);
+      if (rawRoomId) {
+        try {
+          await fetchWithAuth(`/api/v1/rooms/${rawRoomId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ start_time: nextStartIso, end_time: nextEndIso }),
+          });
+        } catch {
+          // Giữ thời gian dời trên client nếu cập nhật tạm thời lỗi
+        }
+      }
+      postponing = false;
+    };
+
+    const checkAutoStart = async () => {
       const startMs = new Date(roomStartTime).getTime();
       if (!isNaN(startMs) && Date.now() >= startMs) {
+        if (!room.templateId) {
+          await postponeBy5Mins('Phòng chờ chưa có đề thi: Thời gian tự động bắt đầu được dời thêm 5 phút.');
+          return;
+        }
+
+        if (rawRoomId) {
+          try {
+            await fetchWithAuth(`/api/v1/rooms/${rawRoomId}/status`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status: 'dang_dien_ra', force_close_conflicts: false }),
+            });
+            activateRoomMonitoring(room.id);
+            return;
+          } catch (err: any) {
+            const conflictData = err?.conflict_room || err?.detail?.conflict_room;
+            if (conflictData) {
+              await postponeBy5Mins(
+                `Phòng ${conflictData.room_code || 'khác'} đang được giám sát: Phòng này tự động dời thêm 5 phút.`
+              );
+              return;
+            }
+          }
+        }
+
         showToast('Đến giờ thi theo lịch đã thiết lập: Hệ thống tự động kích hoạt phòng thi!');
         void startRoomHandlerRef.current();
       }
     };
 
-    checkAutoStart();
-    const timer = setInterval(checkAutoStart, 5000);
+    void checkAutoStart();
+    const timer = setInterval(() => {
+      void checkAutoStart();
+    }, 5000);
     return () => clearInterval(timer);
-  }, [room, roomStartTime]);
+  }, [room, roomStartTime, rawRoomId]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -315,20 +411,6 @@ export default function InstructorWaitingRoomView({
 
   // Kích hoạt ca thi và chuyển sang màn hình giám sát trực tiếp
   const activateRoomMonitoring = (targetRoomId: string) => {
-    try {
-      const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-      if (raw) {
-        const list: RoomSession[] = JSON.parse(raw);
-        const updated = list.map((r) =>
-          r.id.toLowerCase() === targetRoomId.toLowerCase()
-            ? { ...r, status: 'in_progress' as const }
-            : r
-        );
-        localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(updated));
-        window.dispatchEvent(new Event('storage'));
-      }
-    } catch {}
-
     showToast('Đang chuyển hướng vào Trung tâm giám sát trực tiếp...');
     setTimeout(() => {
       router.push(`/instructor/monitoring?room=${encodeURIComponent(targetRoomId)}`);
@@ -338,6 +420,11 @@ export default function InstructorWaitingRoomView({
   // Kiểm tra quy định: Được lên lịch trước nhưng KHÔNG được giám sát song song 2 phòng cùng lúc
   const handleStartExamAndMonitoring = async () => {
     if (!room) return;
+
+    if (!room.templateId) {
+      showToast('Không thể bắt đầu: Vui lòng gán bộ đề thi cho phòng trước khi bắt đầu.');
+      return;
+    }
 
     // Quy định: Phòng thực hành không thể mở phòng khi chưa có sinh viên trong phòng chờ
     const isLab = (room.type as string) === 'lab' || (room.type as string) === 'practice';
@@ -421,21 +508,7 @@ export default function InstructorWaitingRoomView({
     if (!room) return;
     setIsActionLoading(true);
 
-    const syncCancelledState = () => {
-      try {
-        const raw = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-        if (raw) {
-          const list: RoomSession[] = JSON.parse(raw);
-          const updated = list.map((r) =>
-            r.id.toLowerCase() === room.id.toLowerCase()
-              ? { ...r, status: 'da_dong' as any }
-              : r
-          );
-          localStorage.setItem(INSTRUCTOR_ROOMS_STORAGE_KEY, JSON.stringify(updated));
-          window.dispatchEvent(new Event('storage'));
-        }
-      } catch {}
-    };
+    const syncCancelledState = () => {};
 
     if (rawRoomId) {
       try {
@@ -669,6 +742,22 @@ export default function InstructorWaitingRoomView({
               <span>Lớp: <strong className="text-slate-900 dark:text-slate-100 font-bold">{room.classId} — {room.className}</strong></span>
               <span>•</span>
               <span>Bộ đề: <strong className="font-semibold text-slate-900 dark:text-slate-100">{room.templateTitle}</strong></span>
+              {(roomStartTime || room.endTime) && (
+                <>
+                  <span>•</span>
+                  <span className="font-mono text-slate-700 dark:text-slate-300">
+                    Thời gian:{' '}
+                    <strong className="text-slate-900 dark:text-white">
+                      {roomStartTime ? new Date(roomStartTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                      {' – '}
+                      {room.endTime ? new Date(room.endTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </strong>
+                    {roomStartTime && (
+                      <> ({new Date(roomStartTime).toLocaleDateString('vi-VN')})</>
+                    )}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -708,19 +797,23 @@ export default function InstructorWaitingRoomView({
 
           {(() => {
             const isLab = (room.type as string) === 'lab' || (room.type as string) === 'practice';
+            const isMissingTemplate = !room.templateId;
             const isLabBlocked = isLab && waitingCount === 0;
+            const isStartBlocked = isMissingTemplate || isLabBlocked;
             return (
               <button
                 type="button"
-                disabled={isActionLoading || isLabBlocked}
+                disabled={isActionLoading || isStartBlocked}
                 onClick={handleStartExamAndMonitoring}
                 title={
-                  isLabBlocked
+                  isMissingTemplate
+                    ? 'Vui lòng gán bộ đề thi trước khi bắt đầu phòng'
+                    : isLabBlocked
                     ? 'Phòng thực hành yêu cầu ít nhất 1 sinh viên vào phòng chờ trước khi bắt đầu'
                     : 'Bắt đầu ca thi / thực hành và chuyển sang giám sát trực tiếp'
                 }
                 className={`h-9 inline-flex items-center gap-2 rounded-md px-4 text-xs font-bold text-white shadow-2xs transition ${
-                  isLabBlocked
+                  isStartBlocked
                     ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60'
                     : 'system-primary-action bg-slate-900 hover:bg-black cursor-pointer dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100'
                 }`}
@@ -905,16 +998,36 @@ export default function InstructorWaitingRoomView({
         </div>
       </div>
 
-      {/* DANH SÁCH SINH VIÊN ĐIỂM DANH THỜI GIAN THỰC */}
+      {/* DANH SÁCH SINH VIÊN ĐIỂM DANH & BẢNG ĐIỂM THỜI GIAN THỰC */}
       <div className="rounded-md border border-slate-300 bg-white p-5 sm:p-6 shadow-2xs space-y-4 transition-colors dark:border-white/10 dark:bg-neutral-900">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-white/10">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-slate-100 text-slate-800 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
-              <Users className="h-3.5 w-3.5" />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-md bg-slate-100 p-1 text-xs font-semibold dark:bg-white/[0.04]">
+              <button
+                type="button"
+                onClick={() => setActiveListTab('attendance')}
+                className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 transition cursor-pointer text-xs font-bold ${
+                  activeListTab === 'attendance'
+                    ? 'system-selected-module shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                }`}
+              >
+                <Users className="h-3.5 w-3.5" />
+                Điểm Danh ({attendees.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveListTab('scoreboard')}
+                className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 transition cursor-pointer text-xs font-bold ${
+                  activeListTab === 'scoreboard'
+                    ? 'system-selected-module shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                }`}
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                Bảng Điểm Sinh Viên ({scoreboard.length})
+              </button>
             </div>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-              Danh Sách Sinh Viên Phòng Chờ ({attendees.length})
-            </h2>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
@@ -973,7 +1086,8 @@ export default function InstructorWaitingRoomView({
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto rounded-md border border-slate-200 shadow-2xs dark:border-white/10">
+        {activeListTab === 'attendance' && (
+          <div className="overflow-x-auto rounded-md border border-slate-200 shadow-2xs dark:border-white/10">
           <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-mono font-bold text-[10.5px] tracking-wider dark:bg-neutral-950 dark:border-white/10">
               <tr>
@@ -981,14 +1095,13 @@ export default function InstructorWaitingRoomView({
                 <th className="px-4 py-3.5">Họ và Tên Sinh Viên</th>
                 <th className="px-4 py-3.5">Email Sinh Viên</th>
                 <th className="px-4 py-3.5 text-center">Trạng Thái Điểm Danh</th>
-                <th className="px-4 py-3.5">Camera</th>
-                <th className="px-4 py-3.5 text-right">Điểm Danh Thủ Công</th>
+                <th className="px-4 py-3.5 text-right">Thao Tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 font-sans dark:divide-white/10">
               {filteredAttendees.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-xs text-slate-500">
+                  <td colSpan={5} className="py-10 text-center text-xs text-slate-500">
                     Không tìm thấy sinh viên nào trong danh sách.
                   </td>
                 </tr>
@@ -1020,31 +1133,16 @@ export default function InstructorWaitingRoomView({
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-[11px]">
-                        <span className={`inline-flex items-center gap-1.5 ${a.cameraReady ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-400'}`}>
-                          <Camera className="h-3 w-3" />
-                          {a.cameraReady ? 'Sẵn sàng' : isPresent ? 'Chưa kiểm tra' : '—'}
-                        </span>
-                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
                             onClick={() => handleOpenNotice({ type: 'individual', studentId: a.studentId, studentName: a.studentName })}
-                            className="rounded p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer dark:hover:text-white dark:hover:bg-white/10"
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer dark:text-slate-300 dark:hover:text-white dark:hover:bg-white/10"
                             title={`Gửi thông báo riêng cho ${a.studentName}`}
                           >
                             <Send className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleAttendance(a.studentId)}
-                            className={`rounded px-2.5 py-1 text-[11px] font-bold transition cursor-pointer ${isPresent
-                                ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 dark:border-white/10 dark:bg-white/10 dark:text-slate-300'
-                                : 'system-primary-action bg-slate-900 text-white hover:bg-black dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100'
-                              }`}
-                          >
-                            {isPresent ? 'Hủy Điểm Danh' : 'Điểm Danh Nhanh'}
+                            <span>Nhắc nhở</span>
                           </button>
                         </div>
                       </td>
@@ -1054,7 +1152,90 @@ export default function InstructorWaitingRoomView({
               )}
             </tbody>
           </table>
-        </div>
+          </div>
+        )}
+        {activeListTab === 'scoreboard' && (
+          <div className="overflow-x-auto">
+            <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
+              <span>Bảng điểm tổng hợp theo bài nộp của từng sinh viên trong phòng</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!numericRoomId) return;
+                  setScoreboardLoading(true);
+                  fetchWithAuth<any[]>(`/api/v1/rooms/${numericRoomId}/scoreboard`)
+                    .then((rows) => { if (Array.isArray(rows)) setScoreboard(rows); })
+                    .catch(() => showToast('Không thể tải bảng điểm phòng.'))
+                    .finally(() => setScoreboardLoading(false));
+                }}
+                className="rounded border border-slate-300 dark:border-white/15 px-2.5 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10"
+              >
+                {scoreboardLoading ? 'Đang tải...' : 'Làm mới bảng điểm'}
+              </button>
+            </div>
+            <table className="w-full min-w-[680px] text-left text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-mono font-bold uppercase text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">#</th>
+                  <th className="px-4 py-3">MSSV</th>
+                  <th className="px-4 py-3">Họ và Tên</th>
+                  <th className="px-4 py-3 text-center">Câu đạt</th>
+                  <th className="px-4 py-3 text-center">Lần nộp</th>
+                  <th className="px-4 py-3 text-right">Điểm bài thi</th>
+                  <th className="px-4 py-3 text-right">Thang 10</th>
+                  <th className="px-4 py-3 text-right">Nộp gần nhất</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-white/10">
+                {scoreboard
+                  .filter((row) => {
+                    const kw = search.trim().toLowerCase();
+                    if (!kw) return true;
+                    return (
+                      (row.student_name || '').toLowerCase().includes(kw) ||
+                      (row.student_code || '').toLowerCase().includes(kw) ||
+                      String(row.student_id).includes(kw)
+                    );
+                  })
+                  .map((row, idx) => (
+                    <tr key={row.student_id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02]">
+                      <td className="px-4 py-3 font-mono text-slate-500">{idx + 1}</td>
+                      <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
+                        {row.student_code || `SV-${row.student_id}`}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200">
+                        {row.student_name}
+                      </td>
+                      <td className="px-4 py-3 text-center font-mono">
+                        {row.solved_questions}
+                      </td>
+                      <td className="px-4 py-3 text-center font-mono">
+                        {row.total_submissions}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-bold text-slate-900 dark:text-white">
+                        {Number(row.total_score ?? 0).toFixed(2)} / {Number(row.max_room_points ?? 10).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-bold text-brand-700 dark:text-brand-300">
+                        {Number(row.score_scale_10 ?? 0).toFixed(1)} / 10
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-[11px] text-slate-500">
+                        {row.last_submission_time
+                          ? new Date(row.last_submission_time).toLocaleString('vi-VN')
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                {scoreboard.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                      {scoreboardLoading ? 'Đang tải bảng điểm...' : 'Chưa có sinh viên nào nộp bài trong phòng này.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ── MODAL 3: PHÁT THÔNG BÁO CHO SINH VIÊN TRONG PHÒNG CHỜ ── */}

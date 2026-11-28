@@ -211,56 +211,46 @@ def get_violations_by_session(session_id: int) -> List[Dict]:
         cursor.close()
         conn.close()
 
-def get_violations_by_student(student_id: int, room_id: Optional[int] = None) -> List[Dict]:
+def get_violations_by_student(student_id: int, room_id: Optional[int] = None, class_id: Optional[int] = None) -> List[Dict]:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        where = ["v.student_id = ?"]
+        params = [student_id]
         if room_id:
-            cursor.execute("""
-                SELECT v.violation_id, 
-                       v.session_id, 
-                       v.student_id, 
-                       COALESCE(v.room_id, s.room_id) AS room_id,
-                       p.room_code,
-                       p.room_name,
-                       v.violation_type, 
-                       v.severity,
-                       v.description, 
-                       v.evidence_url AS snapshot_url, 
-                       v.detected_at, 
-                       v.is_reviewed, 
-                       v.review_status, 
-                       v.reviewed_by, 
-                       v.reviewed_at
-                FROM Violations v
-                LEFT JOIN ExamSessions s ON v.session_id = s.session_id
-                LEFT JOIN Rooms p ON COALESCE(v.room_id, s.room_id) = p.room_id
-                WHERE v.student_id = ? AND (v.room_id = ? OR s.room_id = ?)
-                ORDER BY v.detected_at DESC
-            """, (student_id, room_id, room_id))
-        else:
-            cursor.execute("""
-                SELECT v.violation_id, 
-                       v.session_id, 
-                       v.student_id, 
-                       COALESCE(v.room_id, s.room_id) AS room_id,
-                       p.room_code,
-                       p.room_name,
-                       v.violation_type, 
-                       v.severity,
-                       v.description, 
-                       v.evidence_url AS snapshot_url, 
-                       v.detected_at, 
-                       v.is_reviewed, 
-                       v.review_status, 
-                       v.reviewed_by, 
-                       v.reviewed_at
-                FROM Violations v
-                LEFT JOIN ExamSessions s ON v.session_id = s.session_id
-                LEFT JOIN Rooms p ON COALESCE(v.room_id, s.room_id) = p.room_id
-                WHERE v.student_id = ?
-                ORDER BY v.detected_at DESC
-            """, (student_id,))
+            where.append("(v.room_id = ? OR s.room_id = ?)")
+            params.extend([room_id, room_id])
+        if class_id:
+            where.append("p.class_id = ?")
+            params.append(class_id)
+
+        where_sql = " AND ".join(where)
+        cursor.execute(f"""
+            SELECT v.violation_id, 
+                   v.session_id, 
+                   v.student_id, 
+                   COALESCE(v.room_id, s.room_id) AS room_id,
+                   p.room_code,
+                   p.room_name,
+                   p.class_id,
+                   c.class_code,
+                   c.class_name,
+                   v.violation_type, 
+                   v.severity,
+                   v.description, 
+                   v.evidence_url AS snapshot_url, 
+                   v.detected_at, 
+                   v.is_reviewed, 
+                   v.review_status, 
+                   v.reviewed_by, 
+                   v.reviewed_at
+            FROM Violations v
+            LEFT JOIN ExamSessions s ON v.session_id = s.session_id
+            LEFT JOIN Rooms p ON COALESCE(v.room_id, s.room_id) = p.room_id
+            LEFT JOIN Classes c ON p.class_id = c.class_id
+            WHERE {where_sql}
+            ORDER BY v.detected_at DESC
+        """, tuple(params))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
         results = []
@@ -287,6 +277,12 @@ def get_violations_by_room(room_id: int, review_status: Optional[str] = None) ->
             SELECT v.violation_id, 
                    v.session_id, 
                    v.student_id, 
+                   COALESCE(v.room_id, s.room_id) AS room_id,
+                   p.room_code,
+                   p.room_name,
+                   p.class_id,
+                   c.class_code,
+                   c.class_name,
                    v.violation_type, 
                    v.severity,
                    v.description, 
@@ -300,6 +296,8 @@ def get_violations_by_room(room_id: int, review_status: Optional[str] = None) ->
                    u.identifier_code AS student_code
             FROM Violations v
             JOIN ExamSessions s ON v.session_id = s.session_id
+            LEFT JOIN Rooms p ON COALESCE(v.room_id, s.room_id) = p.room_id
+            LEFT JOIN Classes c ON p.class_id = c.class_id
             JOIN Users u ON v.student_id = u.user_id
             {where_sql}
             ORDER BY v.detected_at DESC
@@ -316,10 +314,76 @@ def get_violations_by_room(room_id: int, review_status: Optional[str] = None) ->
         cursor.close()
         conn.close()
 
+def get_violations_by_class(class_id: int, review_status: Optional[str] = None) -> List[Dict]:
+    """Lấy danh sách toàn bộ vi phạm của sinh viên thuộc một lớp học phần"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        where = ["p.class_id = ?"]
+        params = [class_id]
+        if review_status:
+            where.append("v.review_status = ?")
+            params.append(review_status)
+        where_sql = f"WHERE {' AND '.join(where)}"
+        cursor.execute(f"""
+            SELECT v.violation_id, 
+                   v.session_id, 
+                   v.student_id, 
+                   COALESCE(v.room_id, s.room_id) AS room_id,
+                   p.room_code,
+                   p.room_name,
+                   p.class_id,
+                   c.class_code,
+                   c.class_name,
+                   v.violation_type, 
+                   v.severity,
+                   v.description, 
+                   v.evidence_url AS snapshot_url, 
+                   v.detected_at, 
+                   v.is_reviewed, 
+                   v.review_status, 
+                   v.reviewed_by, 
+                   v.reviewed_at, 
+                   u.full_name AS student_name, 
+                   u.identifier_code AS student_code
+            FROM Violations v
+            JOIN ExamSessions s ON v.session_id = s.session_id
+            JOIN Rooms p ON COALESCE(v.room_id, s.room_id) = p.room_id
+            JOIN Classes c ON p.class_id = c.class_id
+            JOIN Users u ON v.student_id = u.user_id
+            {where_sql}
+            ORDER BY v.detected_at DESC
+        """, tuple(params))
+        rows = cursor.fetchall()
+        columns = [column[0] for column in cursor.description]
+        results = []
+        for row in rows:
+            r = dict(zip(columns, row))
+            r["is_reviewed"] = bool(r["is_reviewed"])
+            results.append(r)
+        return results
+    finally:
+        cursor.close()
+        conn.close()
+        cursor.close()
+        conn.close()
+
 def update_violation_review(violation_id: int, reviewed_by: int, review_status: str = "confirmed") -> Optional[Dict]:
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            "SELECT is_reviewed, review_status FROM Violations WHERE violation_id = ?",
+            (violation_id,),
+        )
+        existing = cursor.fetchone()
+        if not existing:
+            return None
+        existing_reviewed = bool(existing[0])
+        existing_status = str(existing[1] or "").lower()
+        if existing_reviewed or existing_status in ("confirmed", "rejected"):
+            raise ValueError("Cảnh báo này đã được thẩm định trước đó, không thể chỉnh sửa lại quyết định.")
+
         cursor.execute("""
             UPDATE Violations 
             SET is_reviewed = 1, review_status = ?, reviewed_by = ?, reviewed_at = GETDATE()

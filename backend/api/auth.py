@@ -177,15 +177,59 @@ MAX_FAILED_ATTEMPTS = 5      # Khóa tài khoản vĩnh viễn/tạm khóa khi s
 @router.post("/login", response_model=TokenResponse)
 async def login(credentials: LoginRequest, request: Request):
     """Đăng nhập hệ thống bằng username/email và password nhận cặp Access + Refresh JWT token"""
+    from database.user_db import (
+        get_user_lockout_state,
+        record_failed_login_attempt,
+        reset_user_lockout,
+    )
+
     identifier = credentials.username.strip()
     client_ip = extract_client_ip(request)
     track_key = f"{identifier.lower()}_{client_ip}"
     now = datetime.now()
 
     user = get_user_by_username(identifier) or get_user_by_email(identifier)
+
+    # 1. Kiểm tra tài khoản bị Admin vô hiệu hóa (khóa vĩnh viễn)
+    if user and not user.get("is_active", True):
+        try:
+            create_system_log(
+                log_level="warning",
+                module="Từ chối đăng nhập",
+                message=f"Tài khoản '{user['username']}' bị vô hiệu hóa cố gắng đăng nhập",
+                user_id=user["user_id"],
+                ip_address=client_ip,
+            )
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "ACCOUNT_PERMANENTLY_LOCKED",
+                "message": "Tài khoản của bạn đã bị khóa vĩnh viễn. Vui lòng liên hệ qua email oculide.system@gmail.com để được hỗ trợ mở khóa.",
+            },
+        )
+
+    # 2. Kiểm tra khóa tạm thời (Temporary Account Lockout)
+    if user:
+        lock_state = get_user_lockout_state(user["user_id"])
+        locked_until = lock_state.get("locked_until")
+        if locked_until and locked_until > now:
+            remaining_seconds = max(1, int((locked_until - now).total_seconds()))
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail={
+                    "code": "ACCOUNT_TEMP_LOCKED",
+                    "retry_after_seconds": remaining_seconds,
+                    "remaining_seconds": remaining_seconds,
+                    "locked_until": locked_until.isoformat(),
+                    "message": "Tài khoản tạm khóa 5 phút do nhập sai mật khẩu quá số lần quy định.",
+                },
+            )
+
     is_password_valid = verify_password(credentials.password, user["password_hash"]) if user else False
 
-    # 1. Trường hợp sai tài khoản hoặc sai mật khẩu
+    # 3. Trường hợp sai tài khoản hoặc sai mật khẩu (KHÔNG set is_active = False)
     if not user or not is_password_valid:
         info = _FAILED_LOGIN_TRACKER.get(track_key)
         if not info or (now - info["last_failed"]).total_seconds() > FAILED_WINDOW_SECONDS:
@@ -195,70 +239,85 @@ async def login(credentials: LoginRequest, request: Request):
             info["last_failed"] = now
         _FAILED_LOGIN_TRACKER[track_key] = info
 
-        # Khóa tài khoản nếu nhập sai từ MAX_FAILED_ATTEMPTS lần trở lên
-        if user and info["count"] >= MAX_FAILED_ATTEMPTS:
-            from database.user_db import update_user_status
-            update_user_status(user["user_id"], is_active=False)
+        if user:
+            lock_res = record_failed_login_attempt(user["user_id"])
+            attempts = lock_res["failed_login_attempts"]
+            lock_minutes = lock_res["lock_minutes"]
+            locked_until = lock_res["locked_until"]
+
+            if lock_minutes > 0 and locked_until is not None:
+                remaining_seconds = lock_minutes * 60
+                try:
+                    create_system_log(
+                        log_level="warning",
+                        module="Bảo mật / Tạm khóa tài khoản",
+                        message=(
+                            f"Tài khoản '{user['username']}' bị TẠM KHÓA {lock_minutes} phút "
+                            f"do nhập sai mật khẩu {attempts} lần từ IP {client_ip}"
+                        ),
+                        user_id=user["user_id"],
+                        ip_address=client_ip,
+                        extra_data={
+                            "attempt_count": attempts,
+                            "lock_minutes": lock_minutes,
+                            "identifier": identifier,
+                            "ip": client_ip,
+                            "temporary_locked": True,
+                        },
+                    )
+                except Exception:
+                    pass
+                raise HTTPException(
+                    status_code=status.HTTP_423_LOCKED,
+                    detail={
+                        "code": "ACCOUNT_TEMP_LOCKED",
+                        "retry_after_seconds": remaining_seconds,
+                        "remaining_seconds": remaining_seconds,
+                        "locked_until": locked_until.isoformat(),
+                        "lock_minutes": lock_minutes,
+                        "message": f"Tài khoản tạm khóa {lock_minutes} phút do nhập sai mật khẩu quá số lần quy định.",
+                    },
+                )
+
+            attempts_in_cycle = attempts % MAX_FAILED_ATTEMPTS
+            remaining_tries = MAX_FAILED_ATTEMPTS - attempts_in_cycle
+            next_lock_min = 15 if attempts >= MAX_FAILED_ATTEMPTS else 5
             try:
                 create_system_log(
-                    log_level="critical",
-                    module="Bảo mật / Khóa tài khoản",
-                    message=f"Tài khoản '{user['username']}' đã bị tự động KHÓA do đăng nhập sai vượt quá {MAX_FAILED_ATTEMPTS} lần liên tiếp từ IP {client_ip}",
+                    log_level="warning",
+                    module="AUTH_LOGIN_FAILED",
+                    message=f"Tài khoản '{identifier}' nhập sai mật khẩu (lần {attempts}) từ IP {client_ip}",
                     user_id=user["user_id"],
                     ip_address=client_ip,
-                    extra_data={"attempt_count": info["count"], "identifier": identifier, "ip": client_ip, "locked": True}
+                    extra_data={"attempt_count": attempts, "identifier": identifier, "ip": client_ip},
                 )
             except Exception:
                 pass
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Tài khoản '{identifier}' đã bị khóa do nhập sai mật khẩu vượt quá {MAX_FAILED_ATTEMPTS} lần. Vui lòng liên hệ Quản trị viên để mở khóa."
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Sai mật khẩu. Bạn còn {remaining_tries} lần thử trước khi tài khoản tạm khóa {next_lock_min} phút.",
             )
 
-        # Ghi nhận log đăng nhập thất bại vào SystemAuditLogs
+        # Không tìm thấy user
         try:
-            if info["count"] >= FAILED_THRESHOLD:
-                log_msg = f"Cảnh báo dò mật khẩu: Tài khoản '{identifier}' đăng nhập sai {info['count']} lần liên tiếp từ IP {client_ip}"
-                mod = "Cảnh báo an ninh"
-            else:
-                log_msg = f"Tài khoản '{identifier}' đăng nhập thất bại (sai tài khoản hoặc mật khẩu) từ IP {client_ip}"
-                mod = "AUTH_LOGIN_FAILED"
-
             create_system_log(
                 log_level="warning",
-                module=mod,
-                message=log_msg,
-                user_id=user["user_id"] if user else None,
+                module="AUTH_LOGIN_FAILED",
+                message=f"Tài khoản '{identifier}' đăng nhập thất bại (không tồn tại) từ IP {client_ip}",
+                user_id=None,
                 ip_address=client_ip,
-                extra_data={"attempt_count": info["count"], "identifier": identifier, "ip": client_ip}
+                extra_data={"attempt_count": info["count"], "identifier": identifier, "ip": client_ip},
             )
         except Exception:
             pass
-
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Tên đăng nhập hoặc mật khẩu không chính xác"
+            detail="Tên đăng nhập hoặc mật khẩu không chính xác",
         )
 
-    # Đăng nhập thông tin chính xác -> Xóa bộ đếm đăng nhập sai
+    # 4. Đăng nhập thành công -> Reset bộ đếm sai và xóa locked_until
     _FAILED_LOGIN_TRACKER.pop(track_key, None)
-
-    # 2. Kiểm tra tài khoản bị khóa
-    if not user.get("is_active", True):
-        try:
-            create_system_log(
-                log_level="warning",
-                module="Từ chối đăng nhập",
-                message=f"Tài khoản '{user['username']}' bị khóa cố gắng đăng nhập",
-                user_id=user["user_id"],
-                ip_address=client_ip
-            )
-        except Exception:
-            pass
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tài khoản của bạn hiện đang bị khóa. Vui lòng liên hệ quản trị viên."
-        )
+    reset_user_lockout(user["user_id"])
 
     # 3. Kiểm tra chế độ bảo trì hệ thống (Maintenance Mode)
     from services.system_settings_manager import SystemSettingsManager
@@ -270,7 +329,41 @@ async def login(credentials: LoginRequest, request: Request):
             detail=sys_settings.maintenance_message or "Hệ thống đang được bảo trì định kỳ bởi Trung tâm CNTT. Vui lòng quay lại sau ít phút."
         )
 
-    # 4. Phân loại IP mới để đánh dấu mức độ, không dùng điều kiện này để bỏ log đăng nhập thành công.
+    # 4. Kiểm tra Strict Single Active Session (First-In-Wins)
+    from services.session_manager import SessionManager, parse_device_info
+    existing_session = SessionManager.get_session(user["user_id"])
+    if SessionManager.is_session_alive(existing_session):
+        device_label = existing_session.get("deviceInfo") or "thiết bị khác"
+        try:
+            from database.system_log_db import queue_system_log
+            queue_system_log(
+                log_level="warn",
+                module="AUTH_LOGIN",
+                message=f"Từ chối đăng nhập từ IP {client_ip}: tài khoản đang hoạt động trên {device_label}",
+                user_id=user["user_id"],
+                ip_address=client_ip,
+                user_agent=request.headers.get("user-agent", ""),
+                extra_data={
+                    "eventCode": "AUTH_LOGIN_FAILED",
+                    "actionLabel": "Đăng nhập bị chặn (Trùng phiên)",
+                    "category": "AUTH",
+                    "status": "FAILED",
+                    "errorCode": "SESSION_LOCKED_BY_OTHER_DEVICE",
+                    "reason": f"Đang hoạt động trên {device_label}",
+                    "sessionId": existing_session.get("activeSessionId"),
+                },
+            )
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Tài khoản này đang hoạt động trên một thiết bị khác ({device_label}). Vui lòng đăng xuất ở thiết bị cũ hoặc liên hệ Giám thị/Admin để mở khóa phiên."
+        )
+
+    device_info = parse_device_info(request.headers.get("user-agent", ""), client_ip)
+    new_session = SessionManager.create_session(user["user_id"], device_info=device_info)
+
+    # 5. Phân loại IP mới để đánh dấu mức độ, không dùng điều kiện này để bỏ log đăng nhập thành công.
     is_unfamiliar_ip = False
     if client_ip not in ("127.0.0.1", "localhost", "::1", "testclient"):
         if user.get("last_login"):
@@ -295,13 +388,20 @@ async def login(credentials: LoginRequest, request: Request):
                 )
 
     try:
-        create_system_log(
-            log_level="warning" if is_unfamiliar_ip else "info",
+        from database.system_log_db import queue_system_log
+        queue_system_log(
+            log_level="warn" if is_unfamiliar_ip else "info",
             module="AUTH_LOGIN",
             message=f"Tài khoản {user['username']} đăng nhập thành công từ IP {client_ip}",
             user_id=user["user_id"],
             ip_address=client_ip,
+            user_agent=request.headers.get("user-agent", ""),
             extra_data={
+                "eventCode": "AUTH_LOGIN_SUCCESS",
+                "actionLabel": "Đăng nhập thành công",
+                "category": "AUTH",
+                "status": "SUCCESS",
+                "sessionId": new_session["activeSessionId"],
                 "is_new_ip": is_unfamiliar_ip,
                 "ip": client_ip,
                 "username": user["username"],
@@ -324,7 +424,8 @@ async def login(credentials: LoginRequest, request: Request):
         "role": user["role"],
         "email": user["email"],
         "full_name": user["full_name"],
-        "must_change_password": user.get("must_change_password", False)
+        "must_change_password": user.get("must_change_password", False),
+        "sessionId": new_session["activeSessionId"],
     }
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
@@ -361,7 +462,8 @@ async def refresh_access_token(refresh_req: RefreshTokenRequest):
         "role": user["role"],
         "email": user["email"],
         "full_name": user["full_name"],
-        "must_change_password": user.get("must_change_password", False)
+        "must_change_password": user.get("must_change_password", False),
+        "sessionId": payload.get("sessionId"),
     }
     new_access_token = create_access_token(token_data)
     new_refresh_token = create_refresh_token(token_data)
@@ -390,12 +492,15 @@ async def forgot_password(
     email = request_data.email.strip().lower()
     user = get_user_by_email(email)
     if not user:
-        # Không tiết lộ email có tồn tại hay không vì lý do bảo mật
-        return {
-            "message": "Nếu email này tồn tại trong hệ thống, liên kết khôi phục đã được tạo.",
-            "reset_link": None,
-            "token": None
-        }
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Email này chưa được đăng ký trong hệ thống."
+        )
+    if not user.get("is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản của bạn hiện đang bị khóa. Vui lòng liên hệ quản trị viên."
+        )
     
     reset_token = secrets.token_urlsafe(32)
     create_password_reset_token(user["user_id"], reset_token, expires_minutes=15)
@@ -484,4 +589,81 @@ async def change_password(
         pass
         
     return {"message": "Đổi mật khẩu thành công"}
+
+
+@router.get("/maintenance-status")
+async def get_maintenance_status():
+    """Trạng thái bảo trì công khai để các phiên đang mở tự động đăng xuất hoặc cảnh báo trước 5 phút."""
+    from datetime import datetime, timedelta
+    from services.system_settings_manager import SystemSettingsManager
+    sys_settings = SystemSettingsManager.get_settings()
+
+    upcoming_maintenance = False
+    minutes_remaining = None
+    start_time_str = (sys_settings.maintenance_schedule_time or sys_settings.backup_time or "02:00").strip()
+
+    if not sys_settings.maintenance_mode and sys_settings.maintenance_on_backup_schedule:
+        try:
+            hh, mm = [int(x) for x in start_time_str.split(":")[:2]]
+            now = datetime.now()
+            scheduled_dt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            if scheduled_dt < now:
+                scheduled_dt += timedelta(days=1)
+            diff_seconds = (scheduled_dt - now).total_seconds()
+            if 0 < diff_seconds <= 300:
+                upcoming_maintenance = True
+                minutes_remaining = max(1, int((diff_seconds + 59) // 60))
+        except Exception:
+            pass
+
+    return {
+        "maintenance_mode": bool(sys_settings.maintenance_mode),
+        "maintenance_message": sys_settings.maintenance_message or "",
+        "maintenance_ends_at": sys_settings.maintenance_ends_at,
+        "maintenance_duration_minutes": sys_settings.maintenance_duration_minutes,
+        "upcoming_maintenance": upcoming_maintenance,
+        "minutes_remaining": minutes_remaining,
+        "maintenance_start_time": start_time_str,
+    }
+
+
+@router.post("/heartbeat")
+async def session_heartbeat(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Duy trì phiên làm việc duy nhất (mỗi 20 giây) và phát hiện phiên bị mở khóa."""
+    from services.session_manager import SessionManager
+
+    auth_header = request.headers.get("authorization") or ""
+    token = auth_header.replace("Bearer ", "").strip()
+    payload = decode_access_token(token) if token else None
+    session_id = (payload or {}).get("sessionId")
+
+    if session_id:
+        ok = SessionManager.touch_heartbeat(current_user["user_id"], session_id)
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "code": "SESSION_REVOKED",
+                    "message": "Phiên làm việc đã được mở khóa hoặc kết thúc bởi Quản trị viên / Giám thị.",
+                },
+            )
+
+    return {"status": "ok", "activeSessionId": session_id}
+
+
+@router.post("/logout")
+async def logout_session(request: Request):
+    """Đăng xuất chủ động và giải phóng ngay activeSessionId để thiết bị khác đăng nhập được luôn."""
+    from services.session_manager import SessionManager
+
+    auth_header = request.headers.get("authorization") or ""
+    token = auth_header.replace("Bearer ", "").strip()
+    payload = decode_access_token(token) if token else None
+    if payload and payload.get("user_id"):
+        SessionManager.clear_session(int(payload["user_id"]))
+
+    return {"message": "Đã đăng xuất và giải phóng phiên làm việc."}
 

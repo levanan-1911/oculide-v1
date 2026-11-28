@@ -38,8 +38,8 @@ RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
 
 # 2. Cài đặt Python Dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --retries 10 --timeout 120 --upgrade pip && \
+    pip install --no-cache-dir --retries 10 --timeout 120 -r requirements.txt
 
 # 3. Sao chép mã nguồn backend
 COPY . /app

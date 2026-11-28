@@ -56,8 +56,9 @@ def _get_redis_client():
 def _save_snapshot_image(session_id: int, student_id: int, raw_data_b64: str) -> Optional[str]:
     """Lưu trữ file ảnh snapshot webcam lên đĩa cứng và trả về đường dẫn URL phục vụ hiển thị"""
     try:
-        # Đường dẫn thư mục lưu trữ ảnh tĩnh
-        upload_dir = os.path.join(backend_dir, "uploads", "snapshots")
+        # Đường dẫn thư mục lưu trữ ảnh tĩnh (ưu tiên UPLOADS_DIR bên ngoài source code)
+        uploads_root = os.getenv("UPLOADS_DIR") or os.path.join(backend_dir, "uploads")
+        upload_dir = os.path.join(uploads_root, "snapshots")
         os.makedirs(upload_dir, exist_ok=True)
 
         if "," in raw_data_b64:
@@ -98,7 +99,13 @@ def _save_session_state(r, session_id: int, state: Dict[str, Any]):
             pass
     _LOCAL_SESSION_STATE[session_id] = state
 
-@celery_app.task(name="tasks.ai_proctoring_tasks.analyze_frame", bind=True, max_retries=1)
+@celery_app.task(name="tasks.ai_proctoring_tasks.verify_face_frame", time_limit=12, soft_time_limit=10)
+def verify_face_frame(snapshot_data: str) -> Dict[str, Any]:
+    """Kiểm tra nhanh 1 khung hình webcam (YOLOv8 nhận diện người 320px + MediaPipe nhận diện mặt)."""
+    return proctor_detector.verify_face_fast(snapshot_data)
+
+
+@celery_app.task(name="tasks.ai_proctoring_tasks.analyze_frame", bind=True, max_retries=1, time_limit=15, soft_time_limit=12)
 def analyze_frame(
     self,
     room_id: int,
@@ -130,13 +137,13 @@ def analyze_frame(
     if r and not is_priority_event:
         try:
             ratelimit_key = f"ratelimit:ai_frame:{session_id}"
-            # Chỉ cho phép phân tích nếu khóa chưa tồn tại (hạn 2 giây)
-            if not r.set(ratelimit_key, "1", nx=True, ex=2):
+            # Chỉ cho phép phân tích nếu khóa chưa tồn tại (hạn 1 giây)
+            if not r.set(ratelimit_key, "1", nx=True, ex=1):
                 return {"status": "dropped", "reason": "rate_limited_backpressure"}
         except Exception:
             pass
 
-    # 2. Thực thi phân tích thị giác máy tính qua AI Proctor Detector
+    # 2. Thực thi phân tích thị giác máy tính qua AI Proctor Detector (lazy-init sau fork)
     result = proctor_detector.process_frame(snapshot_data)
     if not result.get("success"):
         return {"status": "failed", "error": result.get("error")}
@@ -175,7 +182,7 @@ def analyze_frame(
     ai_object_enabled = cfg.get("aiObjectDetection", True)
     allow_tab_switch = cfg.get("allowTabSwitch", False)
     lockdown_fullscreen = cfg.get("lockdownFullscreen", True)
-    require_camera = cfg.get("requireCamera", True)
+    require_camera = cfg.get("requireCamera", cfg.get("webcam_required", True))
 
     # ─── 0. SỰ KIỆN TỪ PHÍA CLIENT (Chuyển tab, thoát toàn màn hình, tắt camera) ───────────
     if client_event == "tab_switch":
@@ -225,7 +232,10 @@ def analyze_frame(
     # Xác nhận điện thoại qua nhiều khung hình (>= 2/3 frame) hoặc độ tin cậy rất cao (>= 0.70) + cooldown 30s
     if not is_cam_off_or_covered and ai_object_enabled:
         detected_objects = result.get("detected_objects", [])
-        phone_objs = [o for o in detected_objects if "phone" in o.get("class_name", "").lower()]
+        phone_objs = [
+            o for o in detected_objects
+            if "phone" in o.get("class_name", "").lower() or "remote" in o.get("class_name", "").lower()
+        ]
         phone_history = session_state.get("phone_history", [])
         phone_history.append(1 if phone_objs else 0)
         if len(phone_history) > 3:
@@ -235,7 +245,7 @@ def analyze_frame(
         if phone_objs:
             best_phone = max(phone_objs, key=lambda o: float(o.get("confidence", 0.0)))
             best_conf = float(best_phone.get("confidence", 0.0))
-            if best_conf >= 0.70 or sum(phone_history) >= 2:
+            if best_conf >= 0.35 or sum(phone_history) >= 2:
                 if _add_violation_with_cooldown(
                     "phone_detected",
                     "critical",
@@ -304,13 +314,13 @@ def analyze_frame(
         rel_yaw = round(raw_yaw - baseline_yaw, 2)
         yaw_angle = abs(rel_yaw)
         gaze_deviated = bool(result.get("gaze", {}).get("is_deviated", False))
-        head_on_screen = (yaw_angle <= 25.0 and -22.0 <= pitch_angle <= 25.0)
+        head_on_screen = (yaw_angle <= 25.0 and -14.0 <= pitch_angle <= 25.0)
         looking_at_screen = (head_on_screen and not gaze_deviated) if result.get("method") == "mediapipe_facemesh" else looking_at_screen
     else:
         pitch_angle = raw_pitch
         yaw_angle = abs(raw_yaw)
 
-    is_looking_down = (pitch_angle < -15.0 and yaw_angle <= 25.0)
+    is_looking_down = (pitch_angle < -12.0 and yaw_angle <= 25.0)
 
     # Chống giả mạo is_typing=true: chỉ miễn trừ khi cúi nhẹ nhìn bàn phím (-28 <= pitch < -15) và tối đa 15s liên tục
     if is_typing and (-28.0 <= pitch_angle < -15.0) and yaw_angle <= 25.0:
@@ -335,9 +345,9 @@ def analyze_frame(
             else:
                 dwell = now - start_off
 
-            # Ngưỡng Dwell Time phân biệt theo hướng nhìn
-            warning_threshold = 8.0 if is_looking_down else 3.0
-            violation_threshold = 15.0 if is_looking_down else 7.0
+            # Ngưỡng Dwell Time phân biệt theo hướng nhìn (cúi xuống >= 4s -> vi phạm)
+            warning_threshold = 2.0
+            violation_threshold = 4.0
 
             if warning_threshold <= dwell < violation_threshold:
                 attention_status = "warning"
@@ -456,7 +466,7 @@ def analyze_frame(
             session_state["dark_start"] = now
             if not session_state.get("dark_violation_triggered"):
                 session_state["dark_violation_triggered"] = False
-        elif now - start_dark >= 4.0 and not session_state.get("dark_violation_triggered", False):
+        elif now - start_dark >= 2.0 and not session_state.get("dark_violation_triggered", False):
             cam_desc = (
                 "Thí sinh đã tắt camera trong phòng thi"
                 if is_cam_off
@@ -554,13 +564,9 @@ def analyze_frame(
         session_state["frozen_camera_violation_triggered"] = False
 
     # 4. Quản lý lưu trữ ảnh snapshot & tối ưu DB Snapshots:
-    # Chỉ ghi đĩa và ghi bảng Snapshots khi có vi phạm, cảnh báo mềm (warning), hoặc theo chu kỳ mẫu 30s
-    last_saved_time = session_state.get("last_saved_snapshot_time", 0.0)
-    should_save_disk = (
-        len(confirmed_violations) > 0
-        or attention_status == "warning"
-        or (now - last_saved_time >= 30.0)
-    )
+    # Chỉ chụp/lưu ảnh khi thực sự phát sinh vi phạm theo đúng cấu hình quy định của phòng
+    has_ai_or_cam_rule = bool(require_camera or ai_face_enabled or ai_object_enabled)
+    should_save_disk = len(confirmed_violations) > 0 and has_ai_or_cam_rule and not (not require_camera and is_cam_off)
 
     snapshot_url = None
     if should_save_disk:
@@ -569,17 +575,9 @@ def analyze_frame(
             session_state["last_saved_snapshot_time"] = now
             session_state["last_snapshot_url"] = snapshot_url
 
-    if not snapshot_url:
-        snapshot_url = session_state.get("last_snapshot_url") or f"/uploads/snapshots/placeholder_{session_id}_{student_id}.jpg"
-
-    # Chỉ INSERT vào bảng Snapshots khi có sự kiện hoặc chu kỳ 30s (giảm ~85% tải ghi DB)
-    last_db_time = session_state.get("last_db_snapshot_time", 0.0)
-    should_save_db = (
-        len(confirmed_violations) > 0
-        or attention_status == "warning"
-        or (now - last_db_time >= 30.0)
-    )
-    if should_save_db:
+    # Chỉ INSERT vào bảng Snapshots khi có vi phạm đã lưu ảnh
+    should_save_db = len(confirmed_violations) > 0 and bool(snapshot_url)
+    if should_save_db and snapshot_url:
         try:
             create_snapshot(
                 session_id=session_id,
@@ -604,7 +602,7 @@ def analyze_frame(
     # 6. Ghi nhận vi phạm đã xác nhận vào CSDL và phát cảnh báo
     for v in confirmed_violations:
         try:
-            create_violation(
+            created_vio = create_violation(
                 session_id=session_id,
                 student_id=student_id,
                 violation_type=v["type"],
@@ -615,16 +613,29 @@ def analyze_frame(
 
             # Bắn sự kiện vi phạm đến Dashboard Giám thị qua kênh Redis ws_updates
             if r:
+                detected_iso = get_current_vn_time().isoformat()
+                vio_id = (created_vio or {}).get("violation_id") or int(time.time() * 1000)
                 alert_event = {
                     "type": "violation_alert",
                     "room_id": room_id,
                     "student_id": student_id,
                     "session_id": session_id,
+                    "violation_id": vio_id,
                     "violation_type": v["type"],
                     "severity": v.get("severity", "warning"),
                     "description": v.get("description"),
                     "snapshot_url": snapshot_url,
-                    "detected_at": get_current_vn_time().isoformat()
+                    "detected_at": detected_iso,
+                    "violation": {
+                        "violation_id": vio_id,
+                        "session_id": session_id,
+                        "student_id": student_id,
+                        "violation_type": v["type"],
+                        "severity": v.get("severity", "warning"),
+                        "description": v.get("description"),
+                        "snapshot_url": snapshot_url,
+                        "detected_at": detected_iso,
+                    },
                 }
                 r.publish("ws_updates", json.dumps(alert_event))
         except Exception as v_err:

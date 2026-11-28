@@ -58,9 +58,9 @@ function ExamJoinContent() {
 
   // Dữ liệu định danh tài khoản (Tự động lấy từ phiên đăng nhập thật)
   const [studentInfo, setStudentInfo] = useState({
-    mssv: "SV001",
-    fullName: "Sinh viên",
-    email: "student@school.edu.vn",
+    mssv: "",
+    fullName: "",
+    email: "",
   });
 
   const [exams, setExams] = useState<StudentExam[]>([]);
@@ -97,10 +97,10 @@ function ExamJoinContent() {
             parsed.studentId ||
             parsed.userCode ||
             parsed.username ||
-            "SV001",
+            "",
           fullName:
-            parsed.full_name || parsed.fullName || parsed.name || "Sinh viên",
-          email: parsed.email || "student@school.edu.vn",
+            parsed.full_name || parsed.fullName || parsed.name || "",
+          email: parsed.email || "",
         });
       }
     } catch {
@@ -223,12 +223,30 @@ function ExamJoinContent() {
     const trimmedCode = roomCode.trim().toUpperCase();
     const trimmedPass = passcode.trim();
 
+    let isAlreadyJoinedRoom = false;
+    if (typeof window !== "undefined") {
+      try {
+        const joinedRaw = localStorage.getItem("oculide_joined_room_codes");
+        const joinedList: string[] = joinedRaw ? JSON.parse(joinedRaw) : [];
+        if (joinedList.includes(trimmedCode)) isAlreadyJoinedRoom = true;
+        const pendingRaw = sessionStorage.getItem("oculide_student_pending_exam");
+        if (pendingRaw) {
+          const pending = JSON.parse(pendingRaw);
+          if (String(pending?.roomCode || "").toUpperCase() === trimmedCode) {
+            isAlreadyJoinedRoom = true;
+          }
+        }
+      } catch {
+        // ignore storage parse error
+      }
+    }
+
     if (!trimmedCode) {
       setError("Vui lòng nhập Mã phòng thi.");
       return;
     }
 
-    if (!trimmedPass) {
+    if (!trimmedPass && !isAlreadyJoinedRoom) {
       setError("Vui lòng nhập Mật khẩu phòng thi (Passcode).");
       return;
     }
@@ -307,6 +325,16 @@ function ExamJoinContent() {
         "oculide_student_pending_exam",
         JSON.stringify(pendingSession)
       );
+      try {
+        const joinedRaw = localStorage.getItem("oculide_joined_room_codes");
+        const joinedList: string[] = joinedRaw ? JSON.parse(joinedRaw) : [];
+        const codeUpper = String(data.room_code || trimmedCode).toUpperCase();
+        if (!joinedList.includes(codeUpper)) {
+          localStorage.setItem("oculide_joined_room_codes", JSON.stringify([...joinedList, codeUpper]));
+        }
+      } catch {
+        // ignore storage error
+      }
 
       router.push("/student/device-check");
     } catch (err: unknown) {
@@ -433,7 +461,24 @@ function ExamJoinContent() {
                 htmlFor="passcode"
                 className="mb-1.5 block font-mono text-xs font-bold uppercase tracking-wider text-[#2A282D] dark:text-[#E8E6E8]"
               >
-                Mật khẩu phòng (Passcode) <span className="text-slate-800">*</span>
+                Mật khẩu phòng (Passcode){" "}
+                {(() => {
+                  const c = roomCode.trim().toUpperCase();
+                  let joined = false;
+                  if (typeof window !== "undefined" && c) {
+                    try {
+                      const raw = localStorage.getItem("oculide_joined_room_codes");
+                      if (raw && (JSON.parse(raw) as string[]).includes(c)) joined = true;
+                    } catch {}
+                  }
+                  return joined ? (
+                    <span className="text-[10px] font-normal normal-case text-emerald-600 dark:text-emerald-400">
+                      (Đã xác thực trước đó — không cần nhập lại)
+                    </span>
+                  ) : (
+                    <span className="text-slate-800">*</span>
+                  );
+                })()}
               </label>
 
               <div className="relative">
@@ -487,6 +532,7 @@ function ExamJoinContent() {
                       readOnly
                       disabled
                       value={studentInfo.mssv}
+                      placeholder="Đang tải..."
                       className="w-full rounded-md border border-slate-300 bg-stone-200/60 py-2 px-3 text-xs font-mono font-bold text-[#2A282D] cursor-not-allowed select-none dark:border-white/10 dark:bg-white/5 dark:text-stone-300"
                     />
                     <Lock size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -502,6 +548,7 @@ function ExamJoinContent() {
                       readOnly
                       disabled
                       value={studentInfo.fullName}
+                      placeholder="Đang tải..."
                       className="w-full rounded-md border border-slate-300 bg-stone-200/60 py-2 px-3 text-xs font-serif font-bold text-[#2A282D] cursor-not-allowed select-none dark:border-white/10 dark:bg-white/5 dark:text-stone-300"
                     />
                     <Lock size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -518,6 +565,7 @@ function ExamJoinContent() {
                     readOnly
                     disabled
                     value={studentInfo.email}
+                    placeholder="Đang tải..."
                     className="w-full rounded-md border border-slate-300 bg-stone-200/60 py-2 px-3 text-xs font-mono text-[#5A5555] cursor-not-allowed select-none dark:border-white/10 dark:bg-white/5 dark:text-stone-400"
                   />
                   <Lock size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500" />

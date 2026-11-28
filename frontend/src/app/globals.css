@@ -16,6 +16,13 @@ html[data-theme="light"] {
   --system-primary: #91040A;
   --system-primary-hover: #7a0308;
   --system-primary-foreground: #ffffff;
+  --color-success: #059669;
+  --color-warning: #D97706;
+  --color-danger: #E11D48;
+  --color-info: #0284C7;
+  --surface-card: #ffffff;
+  --surface-modal: #ffffff;
+  --border-subtle: #e5e0dd;
 }
 
 html.dark,
@@ -25,6 +32,13 @@ html[data-theme="dark"] {
   --system-primary: #91040A;
   --system-primary-hover: #7a0308;
   --system-primary-foreground: #ffffff;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #F43F5E;
+  --color-info: #38BDF8;
+  --surface-card: #1d1a21;
+  --surface-modal: #221e27;
+  --border-subtle: #2f2a36;
 }
 
 html {
@@ -145,6 +159,20 @@ html.dark tbody tr:hover {
 }
 
 /* Form Inputs & Selects in Dark Mode */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 0.9rem;
+  padding-right: 2.15rem !important;
+}
+
+html.dark select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
 html.dark main input:not([type="checkbox"]):not([type="radio"]),
 html.dark main select,
 html.dark main textarea,
@@ -170,11 +198,13 @@ html.dark thead th {
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
-/* Disable bouncing/flashing animations for classic stability */
-.animate-bounce,
-.animate-ping,
-.animate-pulse {
-  animation: none !important;
+/* Respect OS reduced-motion preference instead of globally disabling animations */
+@media (prefers-reduced-motion: reduce) {
+  .animate-bounce,
+  .animate-ping,
+  .animate-pulse {
+    animation: none !important;
+  }
 }
 
 /* Hide browser default password reveal and clear buttons (prevents duplicate eye icons in Edge/IE/Chrome) */

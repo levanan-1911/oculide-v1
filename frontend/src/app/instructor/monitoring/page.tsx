@@ -30,6 +30,7 @@ import {
   ChevronDown,
   ArrowLeft,
   CameraOff,
+  Bell,
 } from 'lucide-react';
 import {
   RoomSession,
@@ -65,10 +66,11 @@ function InstructorMonitoringContent() {
     setRequireCamera,
     violations,
     announcements,
+    toastNotice,
+    clearToastNotice,
     extendSession,
     sendAnnouncement,
     reviewViolation,
-    simulateViolation,
     registerWsSender,
   } = useMonitoring();
 
@@ -103,21 +105,7 @@ function InstructorMonitoringContent() {
         method: 'PATCH',
         body: JSON.stringify({ status: 'da_dong' }),
       });
-      try {
-        const updateStorageKey = (key: string) => {
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            const list = JSON.parse(raw);
-            const updated = list.map((r: any) =>
-              r.id === activeRoomSession?.id || r.id === roomIdParam ? { ...r, status: 'da_dong' } : r
-            );
-            localStorage.setItem(key, JSON.stringify(updated));
-          }
-        };
-        updateStorageKey('oculide_instructor_rooms_mock');
-        updateStorageKey('oculide_instructor_rooms');
-        window.dispatchEvent(new Event('storage'));
-      } catch {}
+      setActiveRoomSession((prev: any) => (prev ? { ...prev, status: 'da_dong' } : prev));
       setIsEndLabModalOpen(false);
       router.push('/instructor/classes');
     } catch (err: any) {
@@ -172,9 +160,10 @@ function InstructorMonitoringContent() {
           userId: a.user_id,
           name: a.student_name,
           studentClass: data.class_code || 'Lớp học phần',
-          status: (a.status === 'completed' ? 'submitted' : 'normal') as 'normal' | 'warning' | 'critical' | 'submitted',
-          statusText: a.status === 'late' ? 'Điểm danh muộn (Live)' : a.status === 'waiting' ? 'Đang làm bài (Live)' : a.status === 'completed' ? 'Đã nộp bài' : 'Chưa vào phòng',
+          status: (a.status === 'completed' ? 'submitted' : a.status === 'locked' ? 'critical' : 'normal') as 'normal' | 'warning' | 'critical' | 'submitted',
+          statusText: a.status === 'locked' ? 'Đã bị khóa' : a.status === 'late' ? 'Điểm danh muộn (Live)' : a.status === 'waiting' ? 'Đang làm bài (Live)' : a.status === 'completed' ? 'Đã nộp bài' : 'Vắng mặt',
           isLate: a.status === 'late',
+          isLocked: a.status === 'locked',
           violationsCount: 0,
           entryTime: a.joined_at ? new Date(a.joined_at).toLocaleTimeString('vi-VN') : 'Chưa vào phòng',
           fps: (a.status === 'waiting' || a.status === 'late') ? 30 : 0,
@@ -255,11 +244,20 @@ function InstructorMonitoringContent() {
   const [realViolations, setRealViolations] = useState<ViolationAlert[] | null>(null);
   const [previewEvidenceViolation, setPreviewEvidenceViolation] = useState<ViolationAlert | null>(null);
   const [unlockNotice, setUnlockNotice] = useState<string | null>(null);
+  const [unlockRequests, setUnlockRequests] = useState<Array<{
+    request_id: number;
+    student_id: number;
+    student_name?: string;
+    student_code?: string;
+    message: string;
+    created_at?: string;
+  }>>([]);
   const chatRoomCode = activeRoomSession?.id || roomIdParam || session.roomCode;
 
   useEffect(() => {
     if (!realRoomId) {
       setRealViolations(null);
+      setUnlockRequests([]);
       return;
     }
     let cancelled = false;
@@ -295,6 +293,20 @@ function InstructorMonitoringContent() {
           }));
           setRealViolations(mapped);
         }
+
+        const supRows = await fetchWithAuth<Array<{
+          request_id: number;
+          student_id: number;
+          student_name?: string;
+          student_code?: string;
+          issue_type?: string;
+          message: string;
+          status: string;
+          created_at?: string;
+        }>>(`/api/v1/support/room/${realRoomId}?status=open`).catch(() => []);
+        if (!cancelled && Array.isArray(supRows)) {
+          setUnlockRequests(supRows);
+        }
       } catch {
         // Giữ fallback context nếu chưa tải được
       }
@@ -306,39 +318,69 @@ function InstructorMonitoringContent() {
         const wsUrl = buildRoomWebSocketUrl(realRoomId, `proctor_${me.user_id}`, token);
         ws = new WebSocket(wsUrl);
         wsRef.current = ws;
-        registerWsSender?.((data) => {
-          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify(data));
-          }
-        });
+        // Không đăng ký wsSenderRef để tránh gửi trùng 2 lần (handleSendNotice đã gửi trực tiếp qua wsRef.current)
+        registerWsSender?.(null);
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
-            if (msg.type === 'violation_alert' && msg.violation) {
-              const v = msg.violation;
+            if (msg.type === 'violation_alert') {
+              const v = msg.violation || msg;
+              const vType = v.violation_type || msg.violation_type || 'ai_alert';
+              const vStudentId = v.student_id ?? msg.student_id;
+              const violationNameMap: Record<string, string> = {
+                phone_detected: 'Phát hiện điện thoại',
+                looking_away: 'Quay đầu / Cúi mặt rời màn hình',
+                camera_blocked: 'Che hoặc tắt camera',
+                no_face_detected: 'Không thấy khuôn mặt',
+                multiple_faces: 'Nhiều khuôn mặt',
+                tab_switch: 'Chuyển tab / Cửa sổ khác',
+                fullscreen_exit: 'Thoát toàn màn hình',
+                copy_paste: 'Dán mã nguồn (Paste)',
+                suspicious_object: 'Vật thể / Màn hình khả nghi',
+              };
+              const vLabel = violationNameMap[vType] || vType;
               const newAlert: ViolationAlert = {
-                id: String(v.violation_id),
-                studentId: String(v.student_id),
-                studentName: `Sinh viên #${v.student_id}`,
+                id: String(v.violation_id || msg.violation_id || Date.now()),
+                studentId: String(vStudentId),
+                studentName: `Sinh viên #${vStudentId}`,
                 classCode: activeRoomSession?.classId || '',
                 roomCode: chatRoomCode,
-                type: v.violation_type,
-                severity: (v.severity === 'critical' ? 'critical' : v.severity === 'high' ? 'high' : 'medium'),
+                type: vLabel,
+                severity: ((v.severity || msg.severity) === 'critical' ? 'critical' : (v.severity || msg.severity) === 'high' ? 'high' : 'medium'),
                 timestamp: v.detected_at ? new Date(v.detected_at).toLocaleTimeString('vi-VN') : new Date().toLocaleTimeString('vi-VN'),
-                description: v.description || v.violation_type,
+                description: v.description || msg.description || vLabel,
                 status: 'pending',
-                snapshotUrl: v.snapshot_url || null,
+                snapshotUrl: v.snapshot_url || msg.snapshot_url || null,
               };
               setRealViolations((prev) => [newAlert, ...(prev || [])]);
+              setUnlockNotice(`Cảnh báo AI (${newAlert.studentName}): ${vLabel}`);
+              setTimeout(() => setUnlockNotice(null), 4500);
               setRealStudents((prev) =>
                 prev
                   ? prev.map((s) =>
-                      s.userId === Number(v.student_id)
-                        ? { ...s, status: 'warning', statusText: `Cảnh báo: ${v.violation_type}`, violationsCount: (s.violationsCount || 0) + 1 }
+                      s.userId === Number(vStudentId)
+                        ? { ...s, status: 'warning', statusText: `Cảnh báo: ${vLabel}`, violationsCount: (s.violationsCount || 0) + 1 }
                         : s,
                     )
                   : prev,
               );
+            } else if (msg.type === 'support_request_alert' && msg.data) {
+              const req = msg.data;
+              setUnlockRequests((prev) => {
+                if (prev.some((item) => item.request_id === req.request_id)) return prev;
+                return [req, ...prev];
+              });
+              setRealStudents((prev) =>
+                prev
+                  ? prev.map((s) =>
+                      s.userId === Number(req.student_id)
+                        ? { ...s, isLocked: true, status: 'critical', statusText: 'Yêu cầu mở khóa' }
+                        : s,
+                    )
+                  : prev,
+              );
+              setActiveSideTab('violations');
+              setUnlockNotice(`${req.student_name || `Sinh viên #${req.student_id}`} vừa gửi yêu cầu mở khóa bài thi!`);
             }
           } catch {
             // ignore
@@ -368,6 +410,27 @@ function InstructorMonitoringContent() {
       await fetchWithAuth(`/api/v1/sessions/room/${realRoomId}/unlock/${targetUserId}`, {
         method: 'POST',
       });
+      setRealStudents((prev) =>
+        prev
+          ? prev.map((s) =>
+              s.userId === targetUserId
+                ? { ...s, isLocked: false, status: 'normal', statusText: 'Đang làm bài (Live)' }
+                : s,
+            )
+          : prev,
+      );
+      const matchingReqs = unlockRequests.filter((r) => Number(r.student_id) === Number(targetUserId));
+      if (matchingReqs.length > 0) {
+        setUnlockRequests((prev) => prev.filter((r) => Number(r.student_id) !== Number(targetUserId)));
+        await Promise.allSettled(
+          matchingReqs.map((r) =>
+            fetchWithAuth(`/api/v1/support/${r.request_id}/status`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status: 'resolved' }),
+            })
+          )
+        );
+      }
       setUnlockNotice(`Đã gửi lệnh mở khóa bài thi cho ${student.name}.`);
       setTimeout(() => setUnlockNotice(null), 3500);
     } catch {
@@ -760,19 +823,6 @@ function InstructorMonitoringContent() {
               </span>
             )}
 
-            {/* Nếu là buổi Lab: Toggle cho phép GV tùy chỉnh bật/tắt camera */}
-            {session.type === 'LAB' && (
-              <label className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-[#2A282D] dark:border-white/10 dark:bg-neutral-900 dark:text-stone-300 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={session.requireCamera}
-                  onChange={(e) => handleToggleRequireCamera(e.target.checked)}
-                  className="rounded accent-slate-900 dark:accent-white h-3.5 w-3.5"
-                />
-                <span>Yêu cầu Webcam</span>
-              </label>
-            )}
-
             {/* Đồng hồ đếm ngược */}
             <div className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 font-mono text-xs font-bold text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
               <Clock className="h-3.5 w-3.5 text-slate-500" />
@@ -881,7 +931,11 @@ function InstructorMonitoringContent() {
                   ? Object.values(remoteTracks)[0]
                   : undefined);
 
-              const screenTrack = pTracks?.screen;
+              const screenTrack =
+                pTracks?.screen ||
+                (Object.keys(participantTracks).length === 1
+                  ? Object.values(participantTracks)[0]?.screen
+                  : undefined);
               const isLabRoom = session.type === 'LAB' || activeRoomSession?.type === 'lab';
               const isCamAllowedOff = isLabRoom && (activeRoomSession?.proctoringConfig as any)?.requireCamera === false;
 
@@ -1066,11 +1120,19 @@ function InstructorMonitoringContent() {
                         <button
                           type="button"
                           onClick={() => handleUnlockStudent(student)}
-                          className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 transition cursor-pointer"
-                          title="Mở khóa bài thi từ xa cho sinh viên"
+                          className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition cursor-pointer ${
+                            student.isLocked
+                              ? 'border-rose-500 bg-rose-600 text-white hover:bg-rose-700 shadow-xs'
+                              : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200'
+                          }`}
+                          title={
+                            student.isLocked
+                              ? 'Sinh viên đang bị khóa — Bấm để mở khóa bài thi'
+                              : 'Mở khóa bài thi từ xa cho sinh viên'
+                          }
                         >
                           <Unlock className="h-3 w-3" />
-                          Mở khóa
+                          {student.isLocked ? 'Đã bị khóa' : 'Mở khóa'}
                         </button>
                       )}
 
@@ -1087,7 +1149,24 @@ function InstructorMonitoringContent() {
                       {hasAlert ? (
                         <button
                           type="button"
-                          onClick={() => reviewViolation(student.id, 'record')}
+                          onClick={() => {
+                            if (realViolations !== null) {
+                              const pendingVio = realViolations.find(
+                                (v) =>
+                                  v.status === 'pending' &&
+                                  (String(v.studentId) === String(student.userId) ||
+                                    String(v.studentId) === String(student.id) ||
+                                    v.studentName === student.name)
+                              );
+                              if (pendingVio) {
+                                handleReviewViolation(pendingVio.id, 'record');
+                              } else {
+                                setActiveSideTab('violations');
+                              }
+                              return;
+                            }
+                            reviewViolation(student.id, 'record');
+                          }}
                           className="rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-800 dark:border-white/10 dark:bg-white/10 dark:text-slate-200 hover:bg-slate-200 transition cursor-pointer"
                         >
                           Biên bản
@@ -1121,7 +1200,7 @@ function InstructorMonitoringContent() {
                   <button
                     type="button"
                     onClick={() => setStatusFilter('submitted')}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-white dark:text-slate-900 text-white px-3.5 py-1.5 text-xs font-bold transition hover:opacity-90 cursor-pointer"
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-brand hover:bg-brand/90 text-white px-4 py-2 text-xs font-bold shadow-xs transition cursor-pointer"
                   >
                     Xem danh sách đã nộp ({submittedCount})
                   </button>
@@ -1129,7 +1208,7 @@ function InstructorMonitoringContent() {
                   <button
                     type="button"
                     onClick={() => setStatusFilter('active')}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-white dark:text-slate-900 text-white px-3.5 py-1.5 text-xs font-bold transition hover:opacity-90 cursor-pointer"
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-brand hover:bg-brand/90 text-white px-4 py-2 text-xs font-bold shadow-xs transition cursor-pointer"
                   >
                     Về danh sách đang làm bài ({activeCount})
                   </button>
@@ -1200,6 +1279,46 @@ function InstructorMonitoringContent() {
                   {unlockNotice}
                 </div>
               )}
+              {unlockRequests.map((req) => {
+                const matchedStu = camerasSource.find(
+                  (c) => Number(c.userId) === Number(req.student_id) || String(c.id) === String(req.student_id)
+                );
+                return (
+                  <div
+                    key={`unlock-req-${req.request_id}`}
+                    className="rounded-md border border-rose-300 bg-rose-50 p-2.5 text-xs space-y-1.5 dark:border-rose-500/40 dark:bg-rose-500/15"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-serif font-bold text-rose-800 dark:text-rose-200">
+                        Yêu cầu mở khóa: {req.student_name || matchedStu?.name || `SV #${req.student_id}`}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-rose-700 dark:text-rose-300 leading-snug">
+                      {req.message}
+                    </p>
+                    <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (matchedStu) {
+                            void handleUnlockStudent(matchedStu);
+                          } else {
+                            void handleUnlockStudent({
+                              id: String(req.student_id),
+                              userId: req.student_id,
+                              name: req.student_name || `Sinh viên #${req.student_id}`,
+                            } as StudentDetailInfo);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 rounded bg-rose-700 px-2.5 py-1 text-[10.5px] font-bold text-white hover:bg-rose-800 transition cursor-pointer"
+                      >
+                        <Unlock className="h-3 w-3" />
+                        Mở khóa ngay
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
               {displayViolations.length === 0 ? (
                 <div className="p-4 text-center text-xs text-stone-500 dark:text-stone-400">
                   <ShieldCheck className="mx-auto h-6 w-6 text-slate-500 dark:text-slate-400" />
@@ -1264,16 +1383,16 @@ function InstructorMonitoringContent() {
                         <span className="truncate">{vio.type}</span>
                       </div>
 
-                      {/* Dòng 3: Nút bấm mini gọn gàng */}
-                      <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-300 dark:border-white/10">
-                        <div className="flex items-center gap-1.5">
+                      {/* Dòng 3: Nút bấm gọn gàng, không rớt dòng */}
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-slate-200 dark:border-white/10">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => matchedStudent && setFocusedStudent(matchedStudent)}
-                            className="text-[10px] font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-0.5 cursor-pointer"
+                            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 transition cursor-pointer"
                             title="Phóng to màn hình & webcam SV"
                           >
-                            <Eye className="h-2.5 w-2.5 text-slate-600 dark:text-slate-300" />
+                            <Eye className="h-3 w-3 shrink-0" />
                             <span>Xem</span>
                           </button>
 
@@ -1281,32 +1400,32 @@ function InstructorMonitoringContent() {
                             <button
                               type="button"
                               onClick={() => setPreviewEvidenceViolation(vio)}
-                              className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 hover:underline inline-flex items-center gap-0.5 cursor-pointer bg-rose-50 dark:bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-500/20"
+                              className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20 transition cursor-pointer"
                               title="Xem ảnh bằng chứng snapshot vi phạm"
                             >
-                              <Video className="h-2.5 w-2.5 text-rose-600 dark:text-rose-400" />
+                              <Video className="h-3 w-3 shrink-0" />
                               <span>Bằng chứng</span>
                             </button>
                           )}
-                        </div>
 
-                        <div className="flex items-center gap-1">
                           <button
                             type="button"
                             onClick={() => handleOpenIndividualNotice(vio.studentId, vio.studentName)}
-                            className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer inline-flex items-center gap-0.5"
+                            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 transition cursor-pointer"
                             title="Nhắc nhở riêng"
                           >
-                            <Send className="h-2.5 w-2.5" />
+                            <Send className="h-3 w-3 shrink-0" />
                             <span>Nhắc</span>
                           </button>
+                        </div>
 
+                        <div className="flex items-center gap-1.5 shrink-0">
                           {vio.status === 'pending' ? (
                             <>
                               <button
                                 type="button"
                                 onClick={() => handleReviewViolation(vio.id, 'record')}
-                                className="system-primary-action rounded bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-slate-800 cursor-pointer"
+                                className="inline-flex items-center whitespace-nowrap shrink-0 rounded-md bg-brand px-2.5 py-1 text-[11px] font-bold text-white hover:bg-brand/90 transition cursor-pointer shadow-xs"
                                 title="Lập biên bản vi phạm"
                               >
                                 Lập BB
@@ -1314,14 +1433,20 @@ function InstructorMonitoringContent() {
                               <button
                                 type="button"
                                 onClick={() => handleReviewViolation(vio.id, 'dismiss')}
-                                className="rounded border border-slate-300 dark:border-white/10 bg-white dark:bg-stone-800 px-1.5 py-0.5 text-[10px] text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
+                                className="inline-flex items-center justify-center shrink-0 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-stone-800 px-2 py-1 text-[11px] text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:hover:text-stone-200 transition cursor-pointer"
                                 title="Bỏ qua cảnh báo"
                               >
                                 ✕
                               </button>
                             </>
                           ) : (
-                            <span className="text-[10px] font-mono font-medium text-stone-500">
+                            <span
+                              className={`inline-flex items-center whitespace-nowrap shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold border ${
+                                vio.status === 'recorded'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-stone-400 dark:border-white/10'
+                              }`}
+                            >
                               {vio.status === 'recorded' ? '✓ Đã lập BB' : 'Đã bỏ qua'}
                             </span>
                           )}
@@ -1606,6 +1731,24 @@ function InstructorMonitoringContent() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+      {/* Thông báo nổi góc dưới phải màn hình Giám sát của Giảng viên */}
+      {(unlockNotice || toastNotice) && (
+        <div className="fixed bottom-6 right-6 z-50 flex max-w-sm items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-900/95 px-4 py-3 text-xs font-semibold text-white shadow-2xl backdrop-blur-md">
+          <Bell className="h-4 w-4 shrink-0 text-amber-300" />
+          <span className="leading-snug">{unlockNotice || toastNotice}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setUnlockNotice(null);
+              clearToastNotice?.();
+            }}
+            className="ml-1 text-slate-400 hover:text-white cursor-pointer"
+            aria-label="Đóng thông báo"
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>

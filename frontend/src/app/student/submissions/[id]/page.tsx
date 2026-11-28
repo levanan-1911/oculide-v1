@@ -15,7 +15,6 @@ import {
   Cpu,
   HardDrive,
   FileCode2,
-  RotateCcw,
   Download,
   AlertTriangle,
   ChevronDown,
@@ -51,6 +50,10 @@ export interface SubmissionDetail {
   authorName: string;
   authorUsername: string;
   authorMssv: string;
+  roomName?: string;
+  roomCode?: string;
+  className?: string;
+  courseName?: string;
   submittedAt: string;
   language: string;
   compiler: string;
@@ -85,6 +88,11 @@ export default function SubmissionDetailPage() {
       try {
         const data = await fetchWithAuth<{
           submission_id: number;
+          room_id?: number;
+          room_code?: string;
+          room_name?: string;
+          class_name?: string;
+          course_name?: string;
           question_id: number;
           question_title?: string;
           student_name?: string;
@@ -131,6 +139,10 @@ export default function SubmissionDetailPage() {
           authorName: data.student_name || "Sinh viên",
           authorUsername: data.student_code || "",
           authorMssv: data.student_code || "",
+          roomName: data.room_name,
+          roomCode: data.room_code,
+          className: data.class_name,
+          courseName: data.course_name,
           submittedAt: new Date(data.submitted_at).toLocaleString("vi-VN"),
           language: data.language,
           compiler: data.language.toUpperCase(),
@@ -356,7 +368,7 @@ export default function SubmissionDetailPage() {
               <span className="font-mono">MSSV: {submission.authorMssv}</span>
               <span>•</span>
               <span className="rounded-md border border-brand-300 bg-brand-50 px-2 py-0.5 font-semibold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
-                Lập trình C++ Nâng cao
+                {submission.courseName || submission.className || submission.roomName || "Bài thực hành trực tuyến"}
               </span>
             </div>
           </div>
@@ -413,15 +425,10 @@ export default function SubmissionDetailPage() {
             )}
 
             <span className="text-slate-300 dark:text-slate-700">•</span>
-
-            {/* Nút Nộp lại dẫn về trang phòng thi hoặc làm lại */}
-            <Link
-              href="/student/exam-room"
-              className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-brand-700 dark:hover:text-brand-200 transition"
-            >
-              <RotateCcw size={14} />
-              <span>Nộp lại</span>
-            </Link>
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 size={13} />
+              <span>Đã hoàn thành nộp bài</span>
+            </span>
           </div>
 
           {/* Các nút công cụ bổ trợ (Tải về / Sao chép mã) */}

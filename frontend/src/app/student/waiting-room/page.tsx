@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -9,6 +9,7 @@ import {
   BookOpen,
   Calendar,
   Camera,
+  CameraOff,
   CheckCircle2,
   Clock,
   Code2,
@@ -22,6 +23,8 @@ import {
   Volume2,
 } from "lucide-react";
 import { fetchWithAuth } from "@/services/apiClient";
+import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
+import LiveKitVideoFeed from "@/components/livekit/LiveKitVideoFeed";
 
 interface PendingExamSession {
   roomId?: number;
@@ -29,9 +32,13 @@ interface PendingExamSession {
   examTitle?: string;
   subject?: string;
   duration?: number;
+  startTime?: string;
+  endTime?: string;
+  roomType?: string;
   status?: string;
   isLate?: boolean;
   attendanceStatus?: string;
+  proctoringConfig?: any;
 }
 
 export default function StudentWaitingRoomPage() {
@@ -48,8 +55,99 @@ export default function StudentWaitingRoomPage() {
   const [isLateEntry, setIsLateEntry] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [isEntering, setIsEntering] = useState(false);
+  const [hasTemplate, setHasTemplate] = useState(true);
 
-  // Đọc dữ liệu phòng từ Session Storage & thông tin thí sinh từ Local Storage
+  // Xác định giảng viên có yêu cầu bắt buộc camera hay không
+  const isCameraExplicitlyRequired =
+    session?.proctoringConfig?.requireCamera === true ||
+    session?.proctoringConfig?.webcam_required === true ||
+    (session?.roomType === "exam" && session?.proctoringConfig?.requireCamera !== false && session?.proctoringConfig?.webcam_required !== false);
+  const isCameraOffAllowed = !isCameraExplicitlyRequired;
+  const [isWaitingCamOff, setIsWaitingCamOff] = useState<boolean>(false);
+  const waitingCamContainerRef = useRef<HTMLDivElement | null>(null);
+  const [waitingPersonBoxes, setWaitingPersonBoxes] = useState<
+    Array<{ x: number; y: number; w: number; h: number; confidence: number }>
+  >([]);
+  const [waitingPersonCount, setWaitingPersonCount] = useState<number>(0);
+
+  // Kết nối LiveKit sớm ngay tại phòng chờ để đảm bảo luồng WebRTC trơn tru
+  const {
+    connectionState: livekitState,
+    localVideoTrack,
+    toggleCamera,
+    errorMsg: livekitError,
+  } = useLiveKitRoom({
+    roomId: session?.roomId,
+    mode: "publish",
+    enabled: Boolean(session?.roomId),
+    initialCameraEnabled: isCameraExplicitlyRequired,
+  });
+
+  const handleToggleWaitingCam = async () => {
+    if (!isCameraOffAllowed) return;
+    const nextState = !isWaitingCamOff;
+    setIsWaitingCamOff(nextState);
+    await toggleCamera(!nextState);
+  };
+
+  // Quét YOLOv8 nhận diện người tại phòng chờ khi camera đang bật
+  useEffect(() => {
+    if (isWaitingCamOff || !localVideoTrack) {
+      setWaitingPersonBoxes([]);
+      setWaitingPersonCount(0);
+      return;
+    }
+    let cancelled = false;
+    let inFlight = false;
+
+    const scanWaitingPerson = async () => {
+      if (cancelled || inFlight) return;
+      const videoEl = waitingCamContainerRef.current?.querySelector("video") as HTMLVideoElement | null;
+      if (!videoEl || videoEl.readyState < 2 || videoEl.videoWidth === 0) return;
+
+      const scale = Math.min(1, 480 / videoEl.videoWidth);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(videoEl.videoWidth * scale);
+      canvas.height = Math.round(videoEl.videoHeight * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+      const b64 = canvas.toDataURL("image/jpeg", 0.65);
+
+      inFlight = true;
+      try {
+        const res = await fetchWithAuth<{
+          person_count?: number;
+          person_boxes?: Array<{ x: number; y: number; w: number; h: number; confidence: number }>;
+        }>("/api/v1/violations/verify-face", {
+          method: "POST",
+          body: JSON.stringify({ snapshot_data: b64 }),
+        });
+        if (!cancelled && res) {
+          setWaitingPersonBoxes(Array.isArray(res.person_boxes) ? res.person_boxes : []);
+          setWaitingPersonCount(typeof res.person_count === "number" ? res.person_count : 0);
+        }
+      } catch {
+        // Bỏ qua lỗi tạm thời khi polling nền
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const initialTimer = setTimeout(scanWaitingPerson, 1000);
+    const interval = setInterval(scanWaitingPerson, 3000);
+    return () => {
+      cancelled = true;
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [isWaitingCamOff, localVideoTrack]);
+
+  const [scheduleWindow, setScheduleWindow] = useState<{
+    startTime?: string;
+    endTime?: string;
+    durationMinutes?: number;
+  }>({});
   useEffect(() => {
     try {
       const savedData = sessionStorage.getItem("oculide_student_pending_exam");
@@ -134,13 +232,21 @@ export default function StudentWaitingRoomPage() {
           status: string;
           is_active: boolean;
           duration_minutes: number;
+          start_time?: string;
           end_time: string;
           has_submitted?: boolean;
           is_late?: boolean;
           attendance_status?: string;
+          has_template?: boolean;
         }>(`/api/v1/rooms/${encodeURIComponent(session.roomCode!)}/student-status`);
 
         if (isCancelled) return;
+        setHasTemplate(res.has_template !== false);
+        setScheduleWindow({
+          startTime: res.start_time,
+          endTime: res.end_time,
+          durationMinutes: res.duration_minutes,
+        });
         if (res.has_submitted) {
           setHasSubmitted(true);
           setIsRoomClosed(true);
@@ -247,12 +353,30 @@ export default function StudentWaitingRoomPage() {
               </div>
               <div>
                 <h2 className="font-serif text-base font-bold text-[#2A282D] dark:text-white">
-                  {session?.examTitle || "Kiểm tra Lập trình C++ & Thuật toán Cơ bản"}
+                  {session?.examTitle || "Phòng thi & thực hành trực tuyến"}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-[#9F9690]">
-                  Môn học: <span className="font-semibold text-[#2A282D] dark:text-stone-300">{session?.subject || "PRJ301"}</span>
-                  {!isRoomClosed && <> · Mã phòng: <span className="font-mono font-bold text-slate-900 dark:text-[#f0c2cf]">{session?.roomCode || "OCL-C001"}</span></>}
+                  Môn học: <span className="font-semibold text-[#2A282D] dark:text-stone-300">{session?.subject || "Học phần thực hành"}</span>
+                  {!isRoomClosed && <> · Mã phòng: <span className="font-mono font-bold text-slate-900 dark:text-[#f0c2cf]">{session?.roomCode || "—"}</span></>}
                 </p>
+                {(scheduleWindow.startTime || scheduleWindow.endTime || session?.endTime) && (
+                  <p className="mt-1 text-xs text-slate-500 dark:text-[#9F9690] font-mono">
+                    Thời gian:{" "}
+                    <strong className="text-[#2A282D] dark:text-white">
+                      {scheduleWindow.startTime
+                        ? new Date(scheduleWindow.startTime).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+                        : "—"}
+                      {" – "}
+                      {(scheduleWindow.endTime || session?.endTime)
+                        ? new Date((scheduleWindow.endTime || session?.endTime)!).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+                        : "—"}
+                    </strong>
+                    {scheduleWindow.startTime && (
+                      <> ({new Date(scheduleWindow.startTime).toLocaleDateString("vi-VN")})</>
+                    )}
+                    {scheduleWindow.durationMinutes ? <> · {scheduleWindow.durationMinutes} phút</> : null}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -398,7 +522,11 @@ export default function StudentWaitingRoomPage() {
               ) : !isLecturerUnlocked ? (
                 <>
                   <Lock size={18} />
-                  <span>Vui lòng chờ Giảng viên mở phòng thi...</span>
+                  <span>
+                    {!hasTemplate
+                      ? "Đã điểm danh · Chờ Giảng viên gán đề & mở phòng..."
+                      : "Vui lòng chờ Giảng viên mở phòng thi..."}
+                  </span>
                 </>
               ) : (
                 <>
@@ -407,6 +535,15 @@ export default function StudentWaitingRoomPage() {
                 </>
               )}
             </button>
+
+            {!hasTemplate && !isLecturerUnlocked && !isRoomClosed && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 flex items-start gap-2">
+                <Info size={15} className="shrink-0 mt-0.5" />
+                <span>
+                  Bạn đã được điểm danh. Giảng viên đang hoàn tất gán đề thi cho phòng chờ này — vui lòng giữ nguyên màn hình, hệ thống sẽ tự mở khi sẵn sàng.
+                </span>
+              </div>
+            )}
 
             <p className="text-center font-mono text-[11px] text-slate-500">
               Nhấn vào nút trên để vào giao diện IDE lập trình và bắt đầu tính giờ làm bài.
@@ -448,6 +585,96 @@ export default function StudentWaitingRoomPage() {
                 <p className="font-mono font-bold text-[#2A282D] dark:text-white">{session?.duration || 60} phút</p>
               </div>
             </div>
+          </div>
+
+          {/* LiveKit Video Feed Preview kết nối sớm tại phòng chờ */}
+          <div className="rounded-md border border-slate-300 bg-white p-4 space-y-3 dark:border-white/10 dark:bg-neutral-900">
+            <div className="flex items-center justify-between border-b border-slate-300 dark:border-white/10 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${
+                  livekitState === 'connected' ? 'bg-emerald-500 animate-pulse' : livekitState === 'connecting' ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'
+                }`} />
+                <h3 className="font-serif text-xs font-bold text-[#2A282D] dark:text-white">
+                  Luồng truyền hình LiveKit WebRTC
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10">
+                  {livekitState === 'connected' ? 'Đã kết nối' : livekitState === 'connecting' ? 'Đang kết nối...' : 'Chờ phòng'}
+                </span>
+                {isCameraOffAllowed && (
+                  <button
+                    type="button"
+                    onClick={handleToggleWaitingCam}
+                    className={`flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-semibold transition border cursor-pointer ${
+                      !isWaitingCamOff && localVideoTrack
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
+                        : "border-slate-300 bg-slate-100 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+                    }`}
+                    title={!isWaitingCamOff ? "Tắt Camera (Giảng viên không bắt buộc)" : "Bật Camera"}
+                  >
+                    {!isWaitingCamOff && localVideoTrack ? <Camera size={12} /> : <CameraOff size={12} />}
+                    <span>{!isWaitingCamOff && localVideoTrack ? "Tắt Cam" : "Bật Cam"}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div
+              ref={waitingCamContainerRef}
+              className="relative h-44 w-full overflow-hidden rounded-md border border-slate-300 bg-neutral-950 dark:border-white/10 flex items-center justify-center"
+            >
+              {!isWaitingCamOff && localVideoTrack ? (
+                <>
+                  <LiveKitVideoFeed track={localVideoTrack} muted className="h-full w-full object-cover" />
+                  {/* Trạng thái nhận diện người YOLOv8 tại phòng chờ */}
+                  <div className="pointer-events-none absolute inset-0">
+                    <div className="absolute top-2 left-2 rounded bg-black/70 px-2 py-0.5 text-[9px] font-mono font-bold text-white">
+                      {waitingPersonCount > 1 ? (
+                        <span className="text-rose-400">YOLO: {waitingPersonCount} người (Cảnh báo)</span>
+                      ) : waitingPersonCount === 1 ? (
+                        <span className="text-emerald-400">YOLO: 1 người · Hợp lệ</span>
+                      ) : (
+                        <span className="text-amber-300">YOLO: Đang quét...</span>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : isWaitingCamOff || isCameraOffAllowed ? (
+                <div className="flex flex-col items-center justify-center gap-1.5 text-slate-400 p-4 text-center">
+                  <CameraOff size={24} className="text-slate-500" />
+                  <p className="text-xs font-serif font-bold text-slate-300">Camera đang tắt</p>
+                  <p className="text-[10px] text-slate-500">Giảng viên không yêu cầu bắt buộc bật camera</p>
+                  {isCameraOffAllowed && (
+                    <button
+                      type="button"
+                      onClick={handleToggleWaitingCam}
+                      className="mt-1 rounded bg-stone-800 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-stone-700 transition cursor-pointer"
+                    >
+                      Bật Camera
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-2 text-slate-400 p-4 text-center">
+                  <LoaderCircle size={24} className="animate-spin text-brand-500" />
+                  <p className="text-xs font-mono">Đang khởi tạo kết nối LiveKit...</p>
+                  {livekitError && <p className="text-[10px] text-rose-400">{livekitError}</p>}
+                </div>
+              )}
+
+              {/* Tag trạng thái góc dưới */}
+              <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[9px] font-mono text-white">
+                <Radio size={10} className={livekitState === 'connected' ? 'text-emerald-400' : 'text-amber-400'} />
+                <span>SFU: {livekitState === 'connected' ? 'Sẵn sàng' : 'Khởi tạo'}</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-[#9F9690] leading-relaxed">
+              {isCameraOffAllowed
+                ? "💡 Phòng thi này không bắt buộc bật Camera. Bạn có thể chủ động tắt hoặc bật camera theo nhu cầu."
+                : "💡 LiveKit được kết nối trước ngay tại phòng chờ để đảm bảo hình ảnh mượt mà, không bị gián đoạn khi bắt đầu thi."}
+            </p>
           </div>
 
           {/* Quy chế thi quan trọng */}

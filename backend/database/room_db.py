@@ -213,6 +213,8 @@ def get_room_by_code(room_code: str) -> Optional[Dict]:
         conn.close()
 
 def get_rooms_by_instructor(instructor_id: int, skip: int = 0, limit: int = 100, room_type: Optional[str] = None) -> List[Dict]:
+    skip = max(0, int(skip))
+    limit = max(1, min(int(limit), 100))
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -285,6 +287,8 @@ def get_rooms_by_instructor(instructor_id: int, skip: int = 0, limit: int = 100,
         conn.close()
 
 def get_all_rooms(skip: int = 0, limit: int = 100, room_type: Optional[str] = None) -> List[Dict]:
+    skip = max(0, int(skip))
+    limit = max(1, min(int(limit), 100))
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -352,19 +356,20 @@ def get_all_rooms(skip: int = 0, limit: int = 100, room_type: Optional[str] = No
         conn.close()
 
 def get_rooms_for_student(student_id: int, skip: int = 0, limit: int = 100, room_type: Optional[str] = None) -> List[Dict]:
+    skip = max(0, int(skip))
+    limit = max(1, min(int(limit), 100))
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         where_clauses = [
             """(
-                p.class_id IS NULL
-                OR EXISTS (SELECT 1 FROM ClassEnrollments svl WHERE svl.class_id = p.class_id AND svl.student_id = ?)
+                EXISTS (SELECT 1 FROM ClassEnrollments svl WHERE svl.class_id = p.class_id AND svl.student_id = ?)
+                OR EXISTS (SELECT 1 FROM ClassEnrollments svl_room WHERE svl_room.room_id = p.room_id AND svl_room.student_id = ?)
                 OR EXISTS (SELECT 1 FROM ExamSessions pl WHERE pl.room_id = p.room_id AND pl.student_id = ?)
                 OR EXISTS (SELECT 1 FROM Submissions bn WHERE bn.room_id = p.room_id AND bn.student_id = ?)
-                OR NOT EXISTS (SELECT 1 FROM ClassEnrollments svl_any WHERE svl_any.student_id = ?)
             )"""
         ]
-        params: List[Any] = [student_id, student_id, student_id, student_id, student_id, student_id]
+        params: List[Any] = [student_id, student_id, student_id, student_id]
         if room_type:
             where_clauses.append("p.room_type = ?")
             params.append(room_type)
@@ -429,7 +434,7 @@ def get_rooms_for_student(student_id: int, skip: int = 0, limit: int = 100, room
             {where_sql}
             ORDER BY p.start_time DESC, p.created_at DESC
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        """, tuple(params + [skip, limit]))
+        """, tuple([student_id, student_id] + params + [skip, limit]))
         rows = cursor.fetchall()
         columns = [column[0] for column in cursor.description]
         results = []
@@ -441,6 +446,90 @@ def get_rooms_for_student(student_id: int, skip: int = 0, limit: int = 100, room
     finally:
         cursor.close()
         conn.close()
+
+def _difficulty_weight(difficulty: Optional[str]) -> float:
+    d = str(difficulty or "").strip().lower()
+    if d in ("hard", "kho", "khó"):
+        return 3.0
+    if d in ("medium", "trung_binh", "trung bình", "normal"):
+        return 2.0
+    return 1.0
+
+
+def _apply_template_point_overrides(
+    cursor,
+    template_id: int,
+    total_points: Optional[float],
+    question_points: Optional[List[Dict[str, Any]]],
+) -> None:
+    """Cập nhật điểm từng câu hỏi (theo độ khó hoặc tùy chỉnh, tối đa 10đ) khi tạo phòng."""
+    if total_points is None and not question_points:
+        return
+
+    cursor.execute(
+        """
+        SELECT ct.question_id,
+               COALESCE(ct.points, ch.max_points, 10.0) AS current_points,
+               ch.difficulty
+        FROM TemplateQuestions ct
+        JOIN Questions ch ON ct.question_id = ch.question_id
+        WHERE ct.template_id = ?
+        ORDER BY ct.question_order ASC, ct.question_id ASC
+        """,
+        (template_id,),
+    )
+    q_rows = cursor.fetchall()
+    if not q_rows:
+        return
+
+    override_map: Dict[int, float] = {}
+    if question_points:
+        for item in question_points:
+            qid = item.get("question_id")
+            pts = item.get("points")
+            if qid is not None and pts is not None and float(pts) > 0:
+                override_map[int(qid)] = round(float(pts), 2)
+
+    new_points_by_qid: Dict[int, float] = {}
+    if override_map:
+        for qid, cur_pts, _diff in q_rows:
+            new_points_by_qid[qid] = override_map.get(qid, float(cur_pts or 10.0))
+        if sum(new_points_by_qid.values()) > 10.0:
+            raise ValueError("Tổng điểm các câu hỏi không được vượt quá 10 điểm")
+    elif total_points is not None and float(total_points) > 0:
+        target_total = round(min(10.0, float(total_points)), 2)
+        if len(q_rows) == 1:
+            new_points_by_qid[q_rows[0][0]] = target_total
+        else:
+            weights = [_difficulty_weight(r[2]) for r in q_rows]
+            weight_sum = sum(weights)
+            running = 0.0
+            for idx, (qid, _cur_pts, _diff) in enumerate(q_rows):
+                if idx == len(q_rows) - 1:
+                    val = round(max(0.1, target_total - running), 2)
+                else:
+                    val = round((weights[idx] / weight_sum) * target_total, 2)
+                new_points_by_qid[qid] = val
+                running += val
+    else:
+        return
+
+    computed_total = round(sum(new_points_by_qid.values()), 2)
+    cursor.execute(
+        "UPDATE ExamTemplates SET total_points = ? WHERE template_id = ?",
+        (computed_total, template_id),
+    )
+
+    for qid, q_pts in new_points_by_qid.items():
+        cursor.execute(
+            "UPDATE TemplateQuestions SET points = ? WHERE template_id = ? AND question_id = ?",
+            (q_pts, template_id, qid),
+        )
+        cursor.execute(
+            "UPDATE Questions SET max_points = ?, updated_at = GETDATE() WHERE question_id = ?",
+            (q_pts, qid),
+        )
+
 
 def create_room(
     room_code: str,
@@ -459,6 +548,8 @@ def create_room(
     proctoring_config: Optional[str] = None,
     status: str = 'scheduled',
     session_type: Optional[str] = None,
+    total_points: Optional[float] = None,
+    question_points: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict:
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -469,6 +560,11 @@ def create_room(
         real_session_type = _resolve_session_type(
             cursor, session_type, room_type, room_name, real_template_id
         )
+
+        if real_template_id:
+            _apply_template_point_overrides(
+                cursor, real_template_id, total_points, question_points
+            )
 
         cursor.execute("""
             INSERT INTO Rooms (
@@ -756,7 +852,7 @@ def update_room_status(
 ) -> Dict:
     """Cập nhật trạng thái phòng (scheduled, in_progress, completed, cancelled)"""
     status_map = {
-        "waiting": "scheduled",
+        "waiting": "waiting",
         "in_progress": "in_progress",
         "ended": "completed",
         "closed": "completed",

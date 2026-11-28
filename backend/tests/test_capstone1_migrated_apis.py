@@ -3,6 +3,9 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from main import app
 from core.security import create_access_token
+from tests.conftest import is_db_available
+
+pytestmark = pytest.mark.skipif(not is_db_available(), reason="Requires live SQL Server instance")
 
 client = TestClient(app)
 

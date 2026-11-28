@@ -40,7 +40,11 @@ class BackupService:
         timestamp_str = now.strftime("%Y%m%d_%H%M%S")
         filename = f"oculide_db_{backup_type}_{timestamp_str}.bak"
         target_path = BACKUPS_DIR / filename
-        abs_target_path = str(target_path.resolve()).replace("\\", "/")
+        sql_backup_dir = os.getenv("SQLSERVER_BACKUP_DIR", "").strip()
+        if sql_backup_dir:
+            abs_target_path = f"{sql_backup_dir.rstrip('/')}/{filename}"
+        else:
+            abs_target_path = str(target_path.resolve()).replace("\\", "/")
 
         conn_str = _build_connection_string(settings.DATABASE_SERVER)
         try:

@@ -21,7 +21,6 @@ import {
   Video,
 } from 'lucide-react';
 import ExtendSessionModal from '@/components/instructor/monitoring/ExtendSessionModal';
-import { INSTRUCTOR_SCHEDULES_STORAGE_KEY } from '@/components/instructor/classes/types';
 import { fetchWithAuth } from '@/services/apiClient';
 
 interface InstructorSession {
@@ -39,14 +38,12 @@ interface InstructorSession {
   dateKey?: string;
   roomCode: string;
   passcode: string;
+  durationMinutes: number;
   status: 'Đang diễn ra' | 'Sắp diễn ra' | 'Đã kết thúc';
   enrolledStudents: number;
   attendedStudents: number;
   isAiProctored: boolean;
 
-  // Chỉ dùng để minh họa giao diện frontend.
-  demoProgress?: number;
-  demoRemainingMinutes?: number;
 }
 
 type DateFilter = 'ALL' | 'TODAY' | 'TOMORROW' | 'NEXT_7_DAYS' | 'PAST_7_DAYS' | 'CUSTOM';
@@ -108,21 +105,17 @@ const getSessionProgress = (session: InstructorSession, now: Date) => {
   const sessionDateKey = getSessionDateKey(session);
   const todayKey = getLocalDateKey(now);
 
-  if (sessionDateKey !== todayKey && typeof session.demoProgress === 'number') {
-    return session.demoProgress;
-  }
-
   const start = timeToMinutes(session.startTime);
   const end = timeToMinutes(session.endTime);
   const current = now.getHours() * 60 + now.getMinutes();
 
-  if (end <= start) return session.demoProgress ?? 50;
+  if (end <= start) return 0;
 
   if (current >= start && current <= end) {
     return Math.round(((current - start) / (end - start)) * 100);
   }
 
-  return session.demoProgress ?? 0;
+  return 0;
 };
 
 const formatDuration = (totalMinutes: number) => {
@@ -173,7 +166,7 @@ const getRemainingMinutes = (session: InstructorSession, now: Date) => {
     }
   }
 
-  return session.demoRemainingMinutes ?? 0;
+  return 0;
 };
 
 const getLateStudents = (session: InstructorSession) => {
@@ -279,6 +272,7 @@ function mapBackendRoomToScheduleSession(room: any): InstructorSession {
     dateKey,
     roomCode: room.room_code,
     passcode: room.passcode || '------',
+    durationMinutes: Number(room.duration_minutes) || 0,
     status,
     enrolledStudents: room.total_students || 0,
     attendedStudents: room.attended_students || 0,
@@ -524,7 +518,9 @@ export default function InstructorSchedulesPage() {
   const [sessions, setSessions] = useState<InstructorSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [listTab, setListTab] = useState<'current' | 'history'>('current');
-  const [filterType, setFilterType] = useState<'ALL' | 'LAB' | 'EXAM' | 'active' | 'upcoming'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'LAB' | 'EXAM' | 'active' | 'upcoming' | 'completed'>('ALL');
+  const [roomKindFilter, setRoomKindFilter] = useState<'ALL' | 'LAB' | 'EXAM'>('ALL');
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL');
   const [dateFilter, setDateFilter] = useState<DateFilter>('ALL');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
@@ -549,18 +545,7 @@ export default function InstructorSchedulesPage() {
         setSessions(mapped);
       }
     } catch {
-      // Fallback localStorage nếu mất mạng
-      try {
-        const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-        if (raw) {
-          const parsed: unknown = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setSessions(parsed.map(mapBackendRoomToScheduleSession));
-          }
-        }
-      } catch {
-        // ignore
-      }
+      setSessions([]);
     } finally {
       setLoading(false);
     }
@@ -614,13 +599,7 @@ export default function InstructorSchedulesPage() {
         body: JSON.stringify({ status: 'dang_dien_ra' }),
       });
 
-      setSessions((prev) =>
-        prev.map((session) =>
-          session.id === sessionId
-            ? { ...session, status: 'Đang diễn ra', demoProgress: 10, demoRemainingMinutes: 60 }
-            : session
-        )
-      );
+      await loadSessions();
 
       showToast(`Đã mở phòng ${targetSession.roomCode}. Sinh viên có thể tham gia!`);
     } catch (err: any) {
@@ -636,37 +615,23 @@ export default function InstructorSchedulesPage() {
   const handleConfirmExtend = async (minutes: number, reason: string, notify: boolean) => {
     if (!sessionToExtend) return;
 
-    if (sessionToExtend.roomId) {
-      try {
-        await fetchWithAuth(`/api/v1/rooms/${sessionToExtend.roomId}`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            duration_minutes: (sessionToExtend as any).durationMinutes
-              ? (sessionToExtend as any).durationMinutes + minutes
-              : undefined,
-          }),
-        }).catch(() => null);
-      } catch {
-        // ignore
-      }
+    if (!sessionToExtend.roomId) {
+      showToast('Không tìm thấy ID phòng hợp lệ.');
+      return;
     }
 
-    setSessions((prev) =>
-      prev.map((s) => {
-        if (s.id !== sessionToExtend.id) return s;
-
-        const oldEnd = timeToMinutes(s.endTime);
-        const newEndMinutes = oldEnd + minutes;
-        const newHour = Math.floor(newEndMinutes / 60) % 24;
-        const newMinute = newEndMinutes % 60;
-
-        return {
-          ...s,
-          endTime: `${String(newHour).padStart(2, '0')}:${String(newMinute).padStart(2, '0')}`,
-          demoRemainingMinutes: (s.demoRemainingMinutes ?? 0) + minutes,
-        };
-      })
-    );
+    try {
+      await fetchWithAuth(`/api/v1/rooms/${sessionToExtend.roomId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          duration_minutes: sessionToExtend.durationMinutes + minutes,
+        }),
+      });
+      await loadSessions();
+    } catch (err: any) {
+      showToast(err?.message || 'Không thể gia hạn phòng.');
+      return;
+    }
 
     showToast(
       `Đã gia hạn +${minutes} phút cho ${sessionToExtend.roomCode}${
@@ -694,15 +659,6 @@ export default function InstructorSchedulesPage() {
       }
 
       setSessions((prev) => prev.filter((s) => s.roomCode.toLowerCase() !== sessionItem.roomCode.toLowerCase()));
-
-      try {
-        const raw = localStorage.getItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY);
-        if (raw) {
-          const list = JSON.parse(raw);
-          const filtered = list.filter((s: any) => s.roomCode?.toLowerCase() !== sessionItem.roomCode.toLowerCase());
-          localStorage.setItem(INSTRUCTOR_SCHEDULES_STORAGE_KEY, JSON.stringify(filtered));
-        }
-      } catch {}
 
       if (selectedSession && selectedSession.roomCode.toLowerCase() === sessionItem.roomCode.toLowerCase()) {
         setSelectedSession(null);
@@ -784,7 +740,11 @@ export default function InstructorSchedulesPage() {
 
     return sessions.filter((session) => {
       const isHistorySession = session.status === 'Đã kết thúc';
-      if (listTab === 'history' ? !isHistorySession : isHistorySession) return false;
+      if (filterType === 'completed') {
+        if (!isHistorySession) return false;
+      } else if (listTab === 'history' ? !isHistorySession : isHistorySession) {
+        return false;
+      }
 
       const query = search.trim().toLowerCase();
 
@@ -797,10 +757,13 @@ export default function InstructorSchedulesPage() {
 
       if (!matchSearch) return false;
 
+      if (roomKindFilter === 'LAB' && session.type !== 'LAB') return false;
+      if (roomKindFilter === 'EXAM' && session.type !== 'EXAM') return false;
       if (filterType === 'LAB' && session.type !== 'LAB') return false;
       if (filterType === 'EXAM' && session.type !== 'EXAM') return false;
       if (filterType === 'active' && session.status !== 'Đang diễn ra') return false;
       if (filterType === 'upcoming' && session.status !== 'Sắp diễn ra') return false;
+      if (selectedClassFilter !== 'ALL' && session.classCode !== selectedClassFilter) return false;
 
       const sessionDate = listTab === 'history'
         ? getLocalDateKey(new Date(session.sortTimestamp))
@@ -845,6 +808,8 @@ export default function InstructorSchedulesPage() {
     listTab,
     search,
     filterType,
+    roomKindFilter,
+    selectedClassFilter,
     dateFilter,
     customStartDate,
     customEndDate,
@@ -1052,39 +1017,46 @@ export default function InstructorSchedulesPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {[
-              {
-                id: 'ALL' as const,
-                label: listTab === 'history'
-                  ? `Tất cả lịch sử (${stats.completed})`
-                  : `Tất cả (${stats.active + stats.upcoming})`,
-              },
-              ...(listTab === 'current'
-                ? [
-                    { id: 'active' as const, label: `Đang diễn ra (${stats.active})` },
-                    { id: 'upcoming' as const, label: `Sắp diễn ra (${stats.upcoming})` },
-                  ]
-                : []),
-              { id: 'LAB' as const, label: 'Thực hành Lab' },
-              { id: 'EXAM' as const, label: 'Kiểm tra' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setFilterType(tab.id as typeof filterType);
-                }}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  filterType === tab.id
-                    ? 'system-selected-module shadow-2xs'
-                    : 'text-slate-600 hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white'
-                }`}
+            {listTab === 'current' && (
+              <select
+                aria-label="Lọc theo trạng thái"
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value as typeof filterType)}
+                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-slate-600 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 cursor-pointer"
               >
-                {tab.label}
-              </button>
-            ))}
+                <option value="ALL">Tất cả trạng thái ({stats.active + stats.upcoming})</option>
+                <option value="active">Đang diễn ra ({stats.active})</option>
+                <option value="upcoming">Sắp diễn ra ({stats.upcoming})</option>
+                <option value="completed">Đã diễn ra ({stats.completed})</option>
+              </select>
+            )}
+
+            <select
+              aria-label="Lọc theo loại phòng"
+              value={roomKindFilter}
+              onChange={(e) => setRoomKindFilter(e.target.value as typeof roomKindFilter)}
+              className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-slate-600 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 cursor-pointer"
+            >
+              <option value="ALL">Tất cả loại phòng</option>
+              <option value="LAB">Thực hành Lab</option>
+              <option value="EXAM">Kiểm tra</option>
+            </select>
 
             <div className="mx-1 hidden h-6 w-px bg-slate-200 dark:bg-white/10 sm:block" />
+
+            <select
+              value={selectedClassFilter}
+              onChange={(e) => setSelectedClassFilter(e.target.value)}
+              className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-slate-600 dark:border-white/10 dark:bg-neutral-950 dark:text-slate-200"
+              aria-label="Lọc theo lớp học phần"
+            >
+              <option value="ALL">Tất cả lớp học phần</option>
+              {Array.from(new Set(sessions.map((s) => s.classCode).filter(Boolean))).map((code) => (
+                <option key={code} value={code}>
+                  Lớp {code}
+                </option>
+              ))}
+            </select>
 
             <div className="relative flex items-center gap-2">
               <CalendarDays className="h-4 w-4 text-slate-500" />
@@ -1375,23 +1347,27 @@ export default function InstructorSchedulesPage() {
                               </>
                             ) : session.status === 'Sắp diễn ra' ? (
                               <>
-                                <Link
-                                  href={`/instructor/room/${encodeURIComponent(
-                                    session.roomCode
-                                  )}?returnTo=schedules`}
-                                  className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
-                                >
-                                  <Users className="h-3.5 w-3.5" />
-                                  Vào phòng chờ
-                                </Link>
-
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenRoomEarly(session.id)}
-                                  className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-slate-800"
+                                  onClick={async () => {
+                                    if (session.roomId) {
+                                      try {
+                                        await fetchWithAuth(`/api/v1/rooms/${session.roomId}/status`, {
+                                          method: 'PATCH',
+                                          body: JSON.stringify({ status: 'waiting' }),
+                                        });
+                                      } catch {
+                                        // fallback: InstructorWaitingRoomView cũng mở khi vào phòng
+                                      }
+                                    }
+                                    window.location.href = `/instructor/room/${encodeURIComponent(
+                                      session.roomCode
+                                    )}?returnTo=schedules`;
+                                  }}
+                                  className="system-primary-action inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800 cursor-pointer"
                                 >
-                                  <Play className="h-3.5 w-3.5" />
-                                  Mở phòng sớm
+                                  <Users className="h-3.5 w-3.5" />
+                                  Mở phòng
                                 </button>
                               </>
                             ) : (

@@ -28,9 +28,7 @@ import {
 } from 'lucide-react';
 import { useMonitoring } from '@/components/instructor/monitoring/MonitoringContext';
 import {
-  INSTRUCTOR_ROOMS_STORAGE_KEY,
   isRoomCurrentlyRunning,
-  RoomSession,
 } from '@/components/instructor/classes/types';
 import { fetchWithAuth } from '@/services/apiClient';
 import {
@@ -55,7 +53,6 @@ interface TodaySessionItem {
   unattendedCount: number;
   isAiProctored: boolean;
   pendingViolationsCount?: number;
-  isSample?: boolean;
   hasClass: boolean;
 }
 
@@ -127,7 +124,6 @@ function mapBackendRoomToDashboardSession(room: any, trustRunningStatus = true):
     unattendedCount: Math.max(0, (room.total_students || 0) - (room.attended_students || 0)),
     isAiProctored,
     pendingViolationsCount: room.pending_violations || 0,
-    isSample: false,
     hasClass: room.class_id != null || Boolean(room.class_code || room.classId),
   };
 }
@@ -137,6 +133,9 @@ export default function InstructorDashboardPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toastText, setToastText] = useState<string | null>(null);
   const [sessions, setSessions] = useState<TodaySessionItem[]>([]);
+  const [assignedClassCount, setAssignedClassCount] = useState(0);
+  const [totalAssignedStudents, setTotalAssignedStudents] = useState(0);
+  const [questionBankStats, setQuestionBankStats] = useState({ total: 0, lab: 0, exam: 0 });
   const [loading, setLoading] = useState(true);
   const { violations } = useMonitoring();
 
@@ -162,14 +161,6 @@ export default function InstructorDashboardPage() {
   const activeSession = activeSessions.find((session) => session.hasClass);
   const hasActiveSessionConflict = activeSessions.length > 1;
 
-  const totalStudents = sessions.reduce((total, session) => total + session.totalStudents, 0);
-  const attendedStudents = sessions.reduce(
-    (total, session) => total + session.attendedStudents,
-    0
-  );
-  const attendanceRate =
-    totalStudents > 0 ? Math.round((attendedStudents / totalStudents) * 1000) / 10 : 0;
-
   const showToast = useCallback((message: string) => {
     setToastText(message);
     window.setTimeout(() => setToastText(null), 3500);
@@ -178,7 +169,22 @@ export default function InstructorDashboardPage() {
   const loadRooms = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
-      const data = await fetchWithAuth<any[]>('/api/v1/rooms');
+      const [data, classList, templateList] = await Promise.all([
+        fetchWithAuth<any[]>('/api/v1/rooms'),
+        fetchWithAuth<any[]>('/api/v1/classes').catch(() => []),
+        fetchWithAuth<any[]>('/api/v1/templates').catch(() => null),
+      ]);
+      if (Array.isArray(classList)) {
+        setAssignedClassCount(classList.length);
+        setTotalAssignedStudents(
+          classList.reduce((sum, cls) => sum + Number(cls.student_count || 0), 0)
+        );
+      }
+      if (Array.isArray(templateList)) {
+        const total = templateList.length;
+        const lab = templateList.filter((t) => t?.type === 'lab').length;
+        setQuestionBankStats({ total, lab, exam: total - lab });
+      }
       if (Array.isArray(data)) {
         const mapped = data.map((room) => mapBackendRoomToDashboardSession(room));
         const statusPriority: Record<TodaySessionItem['status'], number> = {
@@ -191,18 +197,7 @@ export default function InstructorDashboardPage() {
         setSessions(mapped);
       }
     } catch {
-      // Fallback localStorage nếu mất mạng
-      try {
-        const storedRooms = localStorage.getItem(INSTRUCTOR_ROOMS_STORAGE_KEY);
-        if (storedRooms) {
-          const parsed = JSON.parse(storedRooms);
-          if (Array.isArray(parsed)) {
-            setSessions(parsed.map((room: RoomSession) => mapBackendRoomToDashboardSession(room, false)));
-          }
-        }
-      } catch {
-        // ignore
-      }
+      setSessions([]);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -365,9 +360,9 @@ export default function InstructorDashboardPage() {
           </div>
         </section>
       ) : (
-        <section className="flex flex-col gap-3 rounded-md border border-slate-900/30 bg-slate-900/5 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 dark:border-slate-900/40 dark:bg-slate-900/15">
+        <section className="flex flex-col gap-3 rounded-md border border-brand/25 bg-brand-50/40 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 dark:border-brand-500/30 dark:bg-brand-500/10">
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-200">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand text-white dark:bg-brand-500/20 dark:text-brand-200">
               <Radio className="h-5 w-5" />
             </div>
             <div>
@@ -377,37 +372,30 @@ export default function InstructorDashboardPage() {
               </p>
             </div>
           </div>
-          <Link
-            href="/instructor/room"
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3.5 text-xs font-serif font-semibold text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Chuẩn bị phòng
-          </Link>
         </section>
       )}
 
       {/* KPI cards - Chuẩn hóa đồng bộ 100% với phong cách cổ điển học thuật */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 items-stretch" aria-label="Tổng quan số liệu">
-        {/* Card 1: Ca giảng dạy */}
+        {/* Card 1: Ngân hàng đề & câu hỏi */}
         <Link
-          href="/instructor/schedules"
+          href="/instructor/questions"
           className="flex flex-col justify-between h-full rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-all hover:border-slate-900 dark:border-white/10 dark:bg-neutral-900"
         >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
-              <CalendarDays className="h-4 w-4" />
+              <BookOpen className="h-4 w-4" />
             </div>
             <span className="text-xs font-serif font-semibold text-stone-500 dark:text-stone-400">
-              Ca giảng dạy
+              Ngân hàng đề &amp; câu hỏi
             </span>
           </div>
           <div className="mt-4 flex items-baseline gap-3">
             <span className="text-[30px] font-extrabold leading-none tracking-tight text-stone-900 dark:text-white font-mono">
-              {sessions.length}
+              {questionBankStats.total}
             </span>
             <span className="text-xs font-serif font-semibold text-slate-900 dark:text-rose-300">
-              Trong danh sách hiện tại
+              {questionBankStats.lab} đề thực hành · {questionBankStats.exam} đề thi
             </span>
           </div>
         </Link>
@@ -458,27 +446,71 @@ export default function InstructorDashboardPage() {
           </div>
         </Link>
 
-        {/* Card 4: Tỷ lệ điểm danh */}
+        {/* Card 4: Lớp học phần phụ trách */}
         <Link
           href="/instructor/classes"
           className="flex flex-col justify-between h-full rounded-md border border-slate-300 bg-white p-5 shadow-2xs transition-all hover:border-slate-900/40 dark:border-white/10 dark:bg-neutral-900"
         >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-700 dark:bg-white/5 dark:text-slate-300 border border-slate-300 dark:border-white/10">
-              <UserCheck className="h-4 w-4" />
+              <Table2 className="h-4 w-4" />
             </div>
             <span className="text-xs font-serif font-semibold text-stone-500 dark:text-stone-400">
-              Tỷ lệ điểm danh
+              Lớp học phần phụ trách
             </span>
           </div>
           <div className="mt-4 flex items-baseline gap-3">
             <span className="text-[30px] font-extrabold leading-none tracking-tight text-stone-900 dark:text-white font-mono">
-              {attendanceRate.toFixed(1)}%
+              {assignedClassCount}
             </span>
             <span className="text-xs font-serif font-semibold text-slate-600 dark:text-slate-400">
-              {attendedStudents}/{totalStudents} sinh viên đã vào
+              {totalAssignedStudents} sinh viên đang theo học
             </span>
           </div>
+        </Link>
+      </section>
+
+      {/* Truy cập nhanh - Đặt nổi bật ngay dưới hàng KPI */}
+      <section aria-label="Truy cập nhanh" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Link
+          href="/instructor/classes"
+          className="group flex items-center justify-between gap-3 rounded-md border border-slate-300 bg-white px-4 py-3 text-xs font-semibold text-slate-700 shadow-2xs transition hover:border-brand/40 hover:bg-brand-50/40 hover:text-brand-700 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
+        >
+          <span className="flex min-w-0 items-center gap-2.5">
+            <Table2 className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" />
+            <span className="truncate">Lớp &amp; sinh viên</span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-brand-700 dark:group-hover:text-brand-200" />
+        </Link>
+        <Link
+          href="/instructor/questions"
+          className="group flex items-center justify-between gap-3 rounded-md border border-slate-300 bg-white px-4 py-3 text-xs font-semibold text-slate-700 shadow-2xs transition hover:border-brand/40 hover:bg-brand-50/40 hover:text-brand-700 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
+        >
+          <span className="flex min-w-0 items-center gap-2.5">
+            <FileCode2 className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" />
+            <span className="truncate">Đề &amp; câu hỏi</span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-brand-700 dark:group-hover:text-brand-200" />
+        </Link>
+        <Link
+          href="/instructor/schedules"
+          className="group flex items-center justify-between gap-3 rounded-md border border-slate-300 bg-white px-4 py-3 text-xs font-semibold text-slate-700 shadow-2xs transition hover:border-brand/40 hover:bg-brand-50/40 hover:text-brand-700 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
+        >
+          <span className="flex min-w-0 items-center gap-2.5">
+            <Clock3 className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" />
+            <span className="truncate">Lịch &amp; phiên kiểm tra</span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-brand-700 dark:group-hover:text-brand-200" />
+        </Link>
+        <Link
+          href="/instructor/reports"
+          className="group flex items-center justify-between gap-3 rounded-md border border-slate-300 bg-white px-4 py-3 text-xs font-semibold text-slate-700 shadow-2xs transition hover:border-brand/40 hover:bg-brand-50/40 hover:text-brand-700 dark:border-white/10 dark:bg-neutral-900 dark:text-slate-200 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
+        >
+          <span className="flex min-w-0 items-center gap-2.5">
+            <BookOpen className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" />
+            <span className="truncate">Kết quả &amp; báo cáo</span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-brand-700 dark:group-hover:text-brand-200" />
         </Link>
       </section>
 
@@ -539,11 +571,6 @@ export default function InstructorDashboardPage() {
                             <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:bg-white/10 dark:text-slate-300">
                               {item.type === 'EXAM' ? 'Kiểm tra' : 'Thực hành Lab'}
                             </span>
-                            {item.isSample && (
-                              <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 dark:bg-white/10 dark:text-slate-300">
-                                Lịch minh họa
-                              </span>
-                            )}
                             <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-bold ${statusClass}`}>
                               <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
                               {isCurrentActive ? 'Đang giám sát' : isDuplicateActive ? 'Trùng trạng thái giám sát' : isWaiting ? 'Đang chờ điểm danh' : isCompleted ? 'Đã kết thúc' : 'Chưa mở'}
@@ -611,48 +638,111 @@ export default function InstructorDashboardPage() {
         </div>
 
         <div className="space-y-5">
-          <section className={`${panelClass} p-5 sm:p-6`}>
-            <div className="flex items-center justify-between gap-2 border-b border-slate-300 pb-3 dark:border-white/10">
-              <div>
-                <h2 className="flex items-center gap-2 font-serif text-[16px] font-bold text-slate-900 dark:text-white">
-                  <BellRing className="h-4 w-4 text-slate-800 dark:text-[#b4687d]" />
-                  Việc cần xử lý
-                </h2>
-                <p className="mt-0.5 text-xs text-slate-500">Các đầu việc cần giảng viên chú ý</p>
-              </div>
-              <span className="rounded border border-slate-800/20 bg-slate-800/10 px-2 py-0.5 font-mono text-[11px] font-bold tabular-nums text-slate-800 dark:text-slate-500">3 việc</span>
-            </div>
-            <div className="space-y-3 pt-3">
-              <div className="rounded-md border border-slate-300 border-l-2 border-l-[#7a0308] bg-slate-50/50 p-3 dark:border-white/10 dark:border-l-[#7a0308] dark:bg-white/[0.02]">
-                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className={`text-xs font-bold ${primaryTextClass}`}>Thẩm định cảnh báo AI</h3><span className="rounded border border-slate-800/20 bg-slate-800/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-800 dark:text-slate-500">Ưu tiên cao</span></div>
-                <p className={`mt-1 text-xs leading-relaxed ${mutedTextClass}`}>{pendingViolations.length} cảnh báo đang chờ giảng viên xem xét và xử lý.</p>
-                <Link href="/instructor/reports" className="mt-2 inline-flex h-8 items-center gap-1 text-xs font-bold text-slate-900 hover:underline dark:text-slate-500">Xem cảnh báo <ArrowRight className="h-3.5 w-3.5" /></Link>
-              </div>
-              <div className="rounded-md border border-slate-300 border-l-2 border-l-[#7D7571] bg-slate-50/50 p-3 dark:border-white/10 dark:border-l-[#7D7571] dark:bg-white/[0.02]">
-                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className={`text-xs font-bold ${primaryTextClass}`}>Kiểm tra kết quả bài làm</h3><span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">Chờ xử lý</span></div>
-                <p className={`mt-1 text-xs leading-relaxed ${mutedTextClass}`}>Kiểm tra kết quả chấm và trạng thái công bố điểm của các ca đã hoàn thành.</p>
-                <Link href="/instructor/reports" className="mt-2 inline-flex h-8 items-center gap-1 text-xs font-bold text-slate-900 hover:underline dark:text-slate-500">Mở báo cáo <ArrowRight className="h-3.5 w-3.5" /></Link>
-              </div>
-              <div className="rounded-md border border-slate-300 border-l-2 border-l-slate-400 bg-slate-50/50 p-3 dark:border-white/10 dark:border-l-white/20 dark:bg-white/[0.02]">
-                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className={`text-xs font-bold ${primaryTextClass}`}>Rà soát đề và test case</h3><span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">Chuẩn bị</span></div>
-                <p className={`mt-1 text-xs leading-relaxed ${mutedTextClass}`}>Kiểm tra câu hỏi, test case công khai và test case ẩn trước khi mở ca.</p>
-                <Link href="/instructor/questions" className="mt-2 inline-flex h-8 items-center gap-1 text-xs font-bold text-slate-900 hover:underline dark:text-slate-500">Mở ngân hàng câu hỏi <ArrowRight className="h-3.5 w-3.5" /></Link>
-              </div>
-            </div>
-          </section>
+          {(() => {
+            const waitingSessions = sessions.filter((s) => s.status === 'waiting');
+            const realTasks: Array<{
+              key: string;
+              title: string;
+              desc: string;
+              badge: string;
+              href: string;
+              cta: string;
+              tone: 'brand' | 'amber' | 'emerald';
+            }> = [];
 
-          <section className={`${panelClass} p-4 sm:p-5`}>
-            <div className="border-b border-slate-300 pb-3 dark:border-white/10">
-              <h2 className={`font-serif text-sm font-bold ${primaryTextClass}`}>Truy cập nhanh</h2>
-              <p className={`mt-0.5 text-[11px] ${mutedTextClass}`}>Đi đến các khu vực thường dùng</p>
-            </div>
-            <div className="space-y-1.5 pt-3">
-              <Link href="/instructor/classes" className="group flex min-h-10 items-center justify-between gap-3 rounded-md px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-brand-50 hover:text-brand-700 dark:text-slate-300 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"><span className="flex min-w-0 items-center gap-2.5"><Table2 className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" /><span className="truncate">Lớp học và điểm danh</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></Link>
-              <Link href="/instructor/questions" className="group flex min-h-10 items-center justify-between gap-3 rounded-md px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-brand-50 hover:text-brand-700 dark:text-slate-300 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"><span className="flex min-w-0 items-center gap-2.5"><FileCode2 className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" /><span className="truncate">Ngân hàng câu hỏi</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></Link>
-              <Link href="/instructor/schedules" className="group flex min-h-10 items-center justify-between gap-3 rounded-md px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-brand-50 hover:text-brand-700 dark:text-slate-300 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"><span className="flex min-w-0 items-center gap-2.5"><Clock3 className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" /><span className="truncate">Lịch và phiên kiểm tra</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></Link>
-              <Link href="/instructor/reports" className="group flex min-h-10 items-center justify-between gap-3 rounded-md px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-brand-50 hover:text-brand-700 dark:text-slate-300 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"><span className="flex min-w-0 items-center gap-2.5"><BookOpen className="h-4 w-4 shrink-0 text-brand-700 dark:text-brand-300" /><span className="truncate">Kết quả và báo cáo</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-500" /></Link>
-            </div>
-          </section>
+            if (activeSession) {
+              realTasks.push({
+                key: 'active-room',
+                title: `Đang giám sát phòng ${activeSession.roomCode}`,
+                desc: `${activeSession.attendedStudents}/${activeSession.totalStudents} sinh viên đã vào phòng ${activeSession.classCode}.`,
+                badge: 'Đang Live',
+                href: `/instructor/monitoring?room=${encodeURIComponent(activeSession.roomCode)}`,
+                cta: 'Vào giám sát',
+                tone: 'emerald',
+              });
+            }
+            if (totalPendingViolations > 0) {
+              realTasks.push({
+                key: 'pending-violations',
+                title: 'Thẩm định cảnh báo AI',
+                desc: `Có ${totalPendingViolations} cảnh báo vi phạm đang chờ giảng viên xem xét và lập biên bản.`,
+                badge: 'Ưu tiên cao',
+                href: '/instructor/reports',
+                cta: 'Xem cảnh báo',
+                tone: 'brand',
+              });
+            }
+            if (waitingSessions.length > 0) {
+              realTasks.push({
+                key: 'waiting-rooms',
+                title: 'Phòng chờ đang mở điểm danh',
+                desc: `Có ${waitingSessions.length} phòng đang ở trạng thái phòng chờ (${waitingSessions[0].roomCode}).`,
+                badge: 'Sẵn sàng',
+                href: `/instructor/room/${encodeURIComponent(waitingSessions[0].roomCode)}`,
+                cta: 'Vào phòng chờ',
+                tone: 'amber',
+              });
+            }
+
+            return (
+              <section className={`${panelClass} p-5 sm:p-6`}>
+                <div className="flex items-center justify-between gap-2 border-b border-slate-300 pb-3 dark:border-white/10">
+                  <div>
+                    <h2 className="flex items-center gap-2 font-serif text-[16px] font-bold text-slate-900 dark:text-white">
+                      <BellRing className="h-4 w-4 text-brand-700 dark:text-[#b4687d]" />
+                      Việc cần xử lý
+                    </h2>
+                    <p className="mt-0.5 text-xs text-slate-500">Tổng hợp tự động từ phòng thi &amp; cảnh báo AI</p>
+                  </div>
+                  <span className="rounded border border-brand/25 bg-brand-50 px-2 py-0.5 font-mono text-[11px] font-bold tabular-nums text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+                    {realTasks.length} việc
+                  </span>
+                </div>
+                <div className="space-y-3 pt-3">
+                  {realTasks.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-slate-300 p-5 text-center text-xs text-slate-500 dark:border-white/10 dark:text-slate-400">
+                      Không có công việc tồn đọng. Mọi ca thi và cảnh báo AI đã được xử lý.
+                    </div>
+                  ) : (
+                    realTasks.map((t) => (
+                      <div
+                        key={t.key}
+                        className={`rounded-md border border-slate-300 border-l-2 p-3 dark:border-white/10 ${
+                          t.tone === 'brand'
+                            ? 'border-l-brand bg-brand-50/30 dark:border-l-brand dark:bg-brand-500/5'
+                            : t.tone === 'amber'
+                            ? 'border-l-amber-500 bg-amber-50/30 dark:border-l-amber-400 dark:bg-amber-500/5'
+                            : 'border-l-emerald-500 bg-emerald-50/30 dark:border-l-emerald-400 dark:bg-emerald-500/5'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h3 className={`text-xs font-bold ${primaryTextClass}`}>{t.title}</h3>
+                          <span
+                            className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                              t.tone === 'brand'
+                                ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300'
+                                : t.tone === 'amber'
+                                ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300'
+                                : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300'
+                            }`}
+                          >
+                            {t.badge}
+                          </span>
+                        </div>
+                        <p className={`mt-1 text-xs leading-relaxed ${mutedTextClass}`}>{t.desc}</p>
+                        <Link
+                          href={t.href}
+                          className="mt-2 inline-flex h-8 items-center gap-1 text-xs font-bold text-brand-700 hover:underline dark:text-[#e5a9b9]"
+                        >
+                          {t.cta} <ArrowRight className="h-3.5 w-3.5" />
+                        </Link>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            );
+          })()}
         </div>
       </section>
     </div>

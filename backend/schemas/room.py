@@ -1,6 +1,10 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices, model_validator
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
+
+class QuestionPointConfig(BaseModel):
+    question_id: int
+    points: float = Field(..., gt=0)
 
 class RoomCreateRequest(BaseModel):
     room_code: str = Field(..., min_length=3, max_length=8)
@@ -17,6 +21,18 @@ class RoomCreateRequest(BaseModel):
     passcode: Optional[str] = Field(None, max_length=8)
     proctoring_config: Optional[Union[Dict[str, Any], str]] = None
     status: Optional[str] = "chua_mo"
+    total_points: Optional[float] = Field(None, gt=0, le=10)
+    question_points: Optional[List[QuestionPointConfig]] = None
+
+    @model_validator(mode="after")
+    def validate_points_cap(self):
+        if self.end_time <= self.start_time:
+            raise ValueError("Thời gian kết thúc phải sau thời gian bắt đầu")
+        if self.question_points:
+            total_q = round(sum(qp.points for qp in self.question_points), 2)
+            if total_q > 10.0:
+                raise ValueError("Tổng điểm các câu hỏi không được vượt quá 10 điểm")
+        return self
 
 class RoomUpdateRequest(BaseModel):
     room_name: Optional[str] = None
@@ -33,6 +49,43 @@ class RoomUpdateRequest(BaseModel):
     passcode: Optional[str] = Field(None, max_length=8)
     proctoring_config: Optional[Union[Dict[str, Any], str]] = None
     status: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValueError("Thời gian kết thúc phải sau thời gian bắt đầu")
+        return self
+
+class RoomTemplateAssignRequest(BaseModel):
+    template_id: Optional[int] = Field(
+        None,
+        ge=1,
+        validation_alias=AliasChoices("template_id", "templateId"),
+    )
+
+class RoomPublishStateUpdateRequest(BaseModel):
+    results_published: Optional[bool] = Field(
+        None,
+        validation_alias=AliasChoices("results_published", "resultsPublished"),
+    )
+    student_id: Optional[Union[int, str]] = Field(
+        None,
+        validation_alias=AliasChoices("student_id", "studentId"),
+    )
+    is_published: Optional[bool] = Field(
+        None,
+        validation_alias=AliasChoices("is_published", "isPublished"),
+    )
+
+    @model_validator(mode="after")
+    def validate_publish_payload(self):
+        if self.student_id is not None and self.is_published is None:
+            raise ValueError("Thiếu trường is_published khi cập nhật theo student_id")
+        if self.is_published is not None and self.student_id is None:
+            raise ValueError("Thiếu trường student_id khi cập nhật is_published")
+        if self.results_published is None and self.student_id is None:
+            raise ValueError("Phải cung cấp results_published hoặc cặp student_id/is_published")
+        return self
 
 class RoomResponse(BaseModel):
     room_id: int
@@ -179,4 +232,5 @@ class StudentRoomStatusResponse(BaseModel):
     has_submitted: Optional[bool] = False
     is_late: Optional[bool] = False
     attendance_status: Optional[str] = "co_mat"
+    has_template: Optional[bool] = True
 

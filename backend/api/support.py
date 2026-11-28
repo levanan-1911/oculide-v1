@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status as http_status
 from typing import Dict, Any, List, Optional
 
 from schemas.support import SupportRequestCreate, SupportStatusUpdate, SupportRequestResponse
-from core.permissions import get_current_user, instructor_or_admin_required
+from core.permissions import get_current_user, instructor_or_admin_required, verify_room_access
 from database.support_db import (
     create_support_request,
     get_support_request_by_id,
@@ -61,11 +61,7 @@ async def list_room_support_requests(
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Giám thị / Giảng viên xem các yêu cầu cứu hộ trong phòng thi"""
-    room = get_room_by_id(room_id)
-    if not room:
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
-    if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
-        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="Không có quyền xem yêu cầu hỗ trợ của phòng này")
+    verify_room_access(room_id, current_user)
     return get_support_requests_by_room(room_id, status_filter=status)
 
 @router.patch("/{request_id}/status", response_model=SupportRequestResponse)

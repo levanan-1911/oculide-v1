@@ -17,7 +17,7 @@ export default function StudentLayout({
 
   if (isExamRoom) {
     return (
-      <AuthGuard allowedRoles={["student", "admin", "instructor"]}>
+      <AuthGuard allowedRoles={["student"]}>
         <div className="min-h-screen w-full bg-slate-900 text-slate-100 overflow-hidden">
           {children}
         </div>
@@ -41,7 +41,7 @@ export default function StudentLayout({
 
   // Giao diện Dashboard chuẩn có Sidebar & Topbar đồng bộ với Admin và Giảng viên
   return (
-    <AuthGuard allowedRoles={["student", "admin", "instructor"]}>
+    <AuthGuard allowedRoles={["student"]}>
       <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-neutral-950 font-sans text-[#2A282D] dark:text-[#E8E6E8] transition-colors">
         <StudentSidebar />
         <div className="flex flex-1 flex-col overflow-hidden">

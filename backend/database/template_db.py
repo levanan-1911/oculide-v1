@@ -448,6 +448,17 @@ def update_template_full(identifier: Union[int, str], instructor_id: int, data: 
                 questions=data["questions"],
             )
             cursor.execute("UPDATE ExamTemplates SET total_points = ? WHERE template_id = ?", (total_points, template_pk))
+            if data.get("language"):
+                cursor.execute(
+                    """
+                    UPDATE q
+                    SET q.allowed_languages = ?
+                    FROM Questions q
+                    INNER JOIN TemplateQuestions tq ON q.question_id = tq.question_id
+                    WHERE tq.template_id = ?
+                    """,
+                    (data.get("language"), template_pk),
+                )
 
         conn.commit()
     finally:

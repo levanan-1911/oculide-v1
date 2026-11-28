@@ -7,14 +7,15 @@ from schemas.violation import (
     ViolationCreateRequest, AIViolationHookRequest, SnapshotAnalyzeRequest,
     ViolationResponse, ViolationStatsItem, ViolationReviewRequest
 )
-from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
+from core.permissions import get_current_user, instructor_or_admin_required, instructor_required, verify_room_access
 from database.violation_db import (
     create_violation, get_violations_by_session, get_violations_by_student,
-    get_violations_by_room, update_violation_review, get_student_violation_stats,
-    get_session_risk_score, get_ai_precision_metrics
+    get_violations_by_room, get_violations_by_class, update_violation_review,
+    get_student_violation_stats, get_session_risk_score, get_ai_precision_metrics
 )
 from database.session_db import get_session_by_id, get_sessions_by_student
 from database.room_db import get_room_by_id
+from database.classes_db import get_class_by_id
 from database.system_log_db import create_system_log
 from websocket.connection_manager import manager
 
@@ -125,6 +126,95 @@ async def ingest_ai_violation_event(
         pass
     return created
 
+from pydantic import BaseModel
+
+
+class VerifyFaceRequest(BaseModel):
+    snapshot_data: str
+
+
+@router.post("/verify-face")
+async def verify_student_face(
+    payload: VerifyFaceRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Xác thực khuôn mặt thật qua AI Proctoring worker trước khi cho phép vào phòng thi."""
+    if not payload.snapshot_data or len(payload.snapshot_data) < 50:
+        return {"verified": False, "face_count": 0, "message": "Không nhận được khung hình từ camera."}
+    try:
+        from celery_app import celery_app
+        task = celery_app.send_task(
+            "tasks.ai_proctoring_tasks.verify_face_frame",
+            args=[payload.snapshot_data],
+            queue="proctoring",
+        )
+        res = task.get(timeout=8)
+    except Exception as e:
+        return {
+            "verified": False,
+            "face_count": 0,
+            "message": f"Không thể kết nối dịch vụ AI xác thực khuôn mặt ({e}). Vui lòng thử lại.",
+        }
+
+    if not res or not res.get("success"):
+        return {
+            "verified": False,
+            "face_count": 0,
+            "message": (res or {}).get("error") or "Không đọc được hình ảnh từ camera.",
+        }
+
+    if res.get("is_camera_off") or res.get("is_camera_covered"):
+        return {
+            "verified": False,
+            "face_count": 0,
+            "person_count": 0,
+            "person_boxes": [],
+            "message": "Camera đang bị che hoặc quá tối. Vui lòng mở nắp và đảm bảo đủ ánh sáng.",
+        }
+
+    face_count = int(res.get("face_count", 0))
+    person_boxes = res.get("person_boxes") or []
+    person_count = int(res.get("person_count", len(person_boxes)))
+
+    if person_count > 1:
+        return {
+            "verified": False,
+            "face_count": face_count,
+            "person_count": person_count,
+            "person_boxes": person_boxes,
+            "message": f"Phát hiện {person_count} người trong khung hình (YOLOv8). Vui lòng chỉ có 1 thí sinh trước camera.",
+        }
+    if face_count > 1:
+        return {
+            "verified": False,
+            "face_count": face_count,
+            "person_count": person_count,
+            "person_boxes": person_boxes,
+            "message": f"Phát hiện {face_count} khuôn mặt. Vui lòng chỉ có 1 thí sinh trước camera.",
+        }
+    if face_count == 0:
+        msg = (
+            "Đã nhận diện người (YOLOv8), nhưng chưa thấy rõ khuôn mặt. Vui lòng nhìn thẳng vào camera."
+            if person_count == 1
+            else "Không phát hiện người hoặc khuôn mặt trong khung hình. Vui lòng ngồi vào giữa camera."
+        )
+        return {
+            "verified": False,
+            "face_count": 0,
+            "person_count": person_count,
+            "person_boxes": person_boxes,
+            "message": msg,
+        }
+
+    return {
+        "verified": True,
+        "face_count": 1,
+        "person_count": max(1, person_count),
+        "person_boxes": person_boxes,
+        "message": "Khuôn mặt & thí sinh hợp lệ - Đã xác thực qua AI YOLO.",
+    }
+
+
 @router.post("/analyze", status_code=status.HTTP_202_ACCEPTED)
 async def analyze_webcam_snapshot(
     data: SnapshotAnalyzeRequest,
@@ -211,16 +301,40 @@ async def get_session_violations(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem vi phạm của phiên thi khác")
     return get_violations_by_session(session_id)
 
+@router.get("/my", response_model=List[ViolationResponse])
+async def get_my_violations(
+    room_id: Optional[int] = None,
+    class_id: Optional[int] = Query(None, description="Lọc danh sách vi phạm theo lớp học phần"),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lấy toàn bộ danh sách vi phạm của chính sinh viên đang đăng nhập"""
+    return get_violations_by_student(current_user["user_id"], room_id=room_id, class_id=class_id)
+
 @router.get("/student/{student_id}", response_model=List[ViolationResponse])
 async def get_student_violations(
     student_id: int,
     room_id: Optional[int] = None,
+    class_id: Optional[int] = Query(None, description="Lọc danh sách vi phạm theo lớp học phần"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    """Lấy các vi phạm của một sinh viên (Chống IDOR)"""
+    """Lấy các vi phạm của một sinh viên, có thể lọc theo room_id hoặc class_id (Chống IDOR)"""
     if current_user["role"] == "student" and student_id != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem vi phạm của sinh viên khác")
-    return get_violations_by_student(student_id, room_id=room_id)
+    return get_violations_by_student(student_id, room_id=room_id, class_id=class_id)
+
+@router.get("/class/{class_id}", response_model=List[ViolationResponse])
+async def get_class_violations(
+    class_id: int,
+    review_status: Optional[str] = Query(None, pattern="^(pending|confirmed|rejected)$"),
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Giảng viên / Admin lấy toàn bộ danh sách vi phạm AI thuộc một lớp học phần, có thể lọc theo review_status"""
+    cls = get_class_by_id(class_id)
+    if not cls:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy lớp học phần")
+    if current_user["role"] != "admin" and cls.get("instructor_id") != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền xem vi phạm của lớp học phần này")
+    return get_violations_by_class(class_id, review_status=review_status)
 
 @router.get("/room/{room_id}", response_model=List[ViolationResponse])
 async def get_room_violations(
@@ -244,12 +358,40 @@ async def review_violation(
     current_user: Dict[str, Any] = Depends(instructor_required)
 ):
     """Giảng viên duyệt / phúc khảo sự kiện vi phạm (confirmed hoặc rejected)"""
+    from core.database import get_db_cursor
+    with get_db_cursor(commit=False) as cursor:
+        cursor.execute("SELECT room_id FROM Violations WHERE violation_id = ?", (violation_id,))
+        v_row = cursor.fetchone()
+    if not v_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bản ghi vi phạm")
+    if v_row[0] is not None:
+        verify_room_access(int(v_row[0]), current_user)
+
     status_val = (review_data.review_status if review_data else None) or review_status or "confirmed"
     if status_val not in ["confirmed", "rejected"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Trạng thái duyệt phải là confirmed hoặc rejected")
-    updated = update_violation_review(violation_id, reviewed_by=current_user["user_id"], review_status=status_val)
+    try:
+        updated = update_violation_review(violation_id, reviewed_by=current_user["user_id"], review_status=status_val)
+    except ValueError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bản ghi vi phạm")
+
+    if updated.get("room_id"):
+        try:
+            await manager.broadcast_json(
+                int(updated["room_id"]),
+                {
+                    "type": "violation_report_created",
+                    "violation_id": violation_id,
+                    "student_id": updated.get("student_id"),
+                    "review_status": status_val,
+                    "violation_type": updated.get("violation_type"),
+                    "description": updated.get("description"),
+                },
+            )
+        except Exception:
+            pass
     
     try:
         from database.system_log_db import create_system_log
@@ -273,6 +415,7 @@ async def get_room_violation_statistics(
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Thống kê chi tiết các vi phạm theo loại và mức độ cảnh báo qua Stored Procedure"""
+    verify_room_access(room_id, current_user)
     return get_student_violation_stats(room_id, student_id)
 
 
@@ -296,4 +439,5 @@ async def get_room_ai_precision_metrics(
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Thống kê vòng phản hồi (Precision) từ kết quả giám thị xác nhận/bác bỏ cảnh báo AI"""
+    verify_room_access(room_id, current_user)
     return get_ai_precision_metrics(room_id)

@@ -198,8 +198,8 @@ def test_temporal_dwell_time_state_machine():
             assert mock_create_violation.call_count == 0
             assert res1["attention_status"] == "normal"
 
-        # 2. Khung hình tại t = 104.0 (dwell = 4.0s: 3s <= dwell < 7s): Cảnh báo mềm (warning), VẪN CHƯA PHẠT
-        with patch("time.time", return_value=104.0):
+        # 2. Khung hình tại t = 102.5 (dwell = 2.5s: 2s <= dwell < 4s): Cảnh báo mềm (warning), VẪN CHƯA PHẠT
+        with patch("time.time", return_value=102.5):
             res2 = analyze_frame(room_id=1, student_id=10, session_id=999, snapshot_data="fake_b64")
             assert res2["violations_count"] == 0
             assert mock_create_violation.call_count == 0

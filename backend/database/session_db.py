@@ -93,7 +93,8 @@ def create_session(
     student_id: int,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
-    browser_fingerprint: Optional[str] = None
+    browser_fingerprint: Optional[str] = None,
+    status: str = "active"
 ) -> Dict:
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -103,8 +104,8 @@ def create_session(
             OUTPUT inserted.session_id, inserted.room_id, inserted.student_id, 
                    inserted.start_time, inserted.end_time, inserted.ip_address, 
                    inserted.user_agent, inserted.browser_fingerprint, inserted.status
-            VALUES (?, ?, ?, ?, ?, 'active')
-        """, (room_id, student_id, ip_address, user_agent, browser_fingerprint))
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (room_id, student_id, ip_address, user_agent, browser_fingerprint, status))
         row = cursor.fetchone()
         conn.commit()
         if row:

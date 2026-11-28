@@ -25,6 +25,7 @@ def test_public_config_endpoint():
     assert "maintenance_message" in data
     assert "allowed_email_domain" in data
 
+@db_required
 def test_admin_settings_flow():
     admin_token = create_access_token({"user_id": 1, "role": "admin", "username": "admin"})
 
@@ -167,6 +168,7 @@ def test_system_audit_logging_and_areas():
     # Phải có log đăng nhập thất bại vừa tạo
     assert any("nonexistent_user_xyz" in (item.get("message") or "") for item in items)
 
+@db_required
 def test_backup_schedule_and_cleanup_settings_flow():
     admin_token = create_access_token({"user_id": 1, "role": "admin", "username": "admin"})
 

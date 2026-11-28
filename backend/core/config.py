@@ -32,14 +32,14 @@ try:
         DATABASE_SERVER: str = "localhost"
         DATABASE_NAME: str = "ExamSystem"
         DATABASE_USERNAME: str = "sa"
-        DATABASE_PASSWORD: str = "YourStrong@Passw0rd"
+        DATABASE_PASSWORD: str = ""
         DATABASE_ENCRYPT: str = "yes"
         DATABASE_TRUST_SERVER: str = "yes"
         DATABASE_CONNECTION_TIMEOUT: int = 30
 
-        JWT_SECRET_KEY: str = "oculide-secret-key-change-in-production-2026"
+        JWT_SECRET_KEY: str = ""
         JWT_ALGORITHM: str = "HS256"
-        JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+        JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 45
 
         REDIS_HOST: str = "localhost"
         REDIS_PORT: int = 6379
@@ -47,10 +47,11 @@ try:
         REDIS_DB: int = 0
 
         LIVEKIT_URL: str = "wss://oculide-exam-4eu7af2s.livekit.cloud"
-        LIVEKIT_API_KEY: str = "devkey"
-        LIVEKIT_API_SECRET: str = "secret"
+        LIVEKIT_API_KEY: str = ""
+        LIVEKIT_API_SECRET: str = ""
 
         CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,http://localhost:5173,https://oculide.id.vn,https://api.oculide.id.vn"
+        TRUSTED_HOSTS: str = "localhost,127.0.0.1,backend,exam-backend,oculide.id.vn,api.oculide.id.vn,*.devtunnels.ms,testserver"
 
         GOOGLE_CLIENT_ID: str = ""
         GOOGLE_CLIENT_SECRET: str = ""
@@ -87,14 +88,14 @@ except ImportError:
         DATABASE_SERVER: str = os.getenv("DATABASE_SERVER", "localhost")
         DATABASE_NAME: str = os.getenv("DATABASE_NAME", "ExamSystem")
         DATABASE_USERNAME: str = os.getenv("DATABASE_USERNAME", "sa")
-        DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "YourStrong@Passw0rd")
+        DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "")
         DATABASE_ENCRYPT: str = os.getenv("DATABASE_ENCRYPT", "yes")
         DATABASE_TRUST_SERVER: str = os.getenv("DATABASE_TRUST_SERVER", "yes")
         DATABASE_CONNECTION_TIMEOUT: int = int(os.getenv("DATABASE_CONNECTION_TIMEOUT", "30"))
 
-        JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "oculide-secret-key-change-in-production-2026")
+        JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
         JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-        JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+        JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "45"))
 
         REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
         REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
@@ -102,10 +103,11 @@ except ImportError:
         REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
 
         LIVEKIT_URL: str = os.getenv("LIVEKIT_URL", "wss://oculide-exam-4eu7af2s.livekit.cloud")
-        LIVEKIT_API_KEY: str = os.getenv("LIVEKIT_API_KEY", "devkey")
-        LIVEKIT_API_SECRET: str = os.getenv("LIVEKIT_API_SECRET", "secret")
+        LIVEKIT_API_KEY: str = os.getenv("LIVEKIT_API_KEY", "")
+        LIVEKIT_API_SECRET: str = os.getenv("LIVEKIT_API_SECRET", "")
 
         CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:5173,https://oculide.id.vn,https://api.oculide.id.vn")
+        TRUSTED_HOSTS: str = os.getenv("TRUSTED_HOSTS", "localhost,127.0.0.1,backend,exam-backend,oculide.id.vn,api.oculide.id.vn,*.devtunnels.ms,testserver")
 
         GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
         GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
@@ -128,8 +130,20 @@ except ImportError:
 
 settings = Settings()
 
+_REQUIRED_SECRETS = ("DATABASE_PASSWORD", "JWT_SECRET_KEY", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
+_missing = [key for key in _REQUIRED_SECRETS if not str(getattr(settings, key, "") or "").strip()]
+if _missing:
+    raise RuntimeError(
+        f"Thiếu biến môi trường bảo mật bắt buộc: {', '.join(_missing)}. "
+        "Vui lòng cấu hình đầy đủ trong backend/.env trước khi khởi động."
+    )
+
 def get_cors_origins() -> List[str]:
     return [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+
+def get_trusted_hosts() -> List[str]:
+    hosts = [h.strip() for h in settings.TRUSTED_HOSTS.split(",") if h.strip()]
+    return hosts or ["localhost", "127.0.0.1"]
 
 def get_db_connection():
     """

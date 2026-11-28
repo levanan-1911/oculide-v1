@@ -11,6 +11,13 @@ module.exports = {
       colors: {
         background: 'var(--background)',
         foreground: 'var(--foreground)',
+        success: 'var(--color-success)',
+        warning: 'var(--color-warning)',
+        danger: 'var(--color-danger)',
+        info: 'var(--color-info)',
+        'surface-card': 'var(--surface-card)',
+        'surface-modal': 'var(--surface-modal)',
+        'border-subtle': 'var(--border-subtle)',
         brand: {
           DEFAULT: '#91040A',
           50: '#fdf2f2',

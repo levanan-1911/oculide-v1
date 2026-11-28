@@ -6,10 +6,11 @@ from schemas.room import (
     RoomCreateRequest, RoomUpdateRequest, RoomResponse, PublicRoomResponse,
     RoomDashboardResponse, RoomDashboardStudentItem, RoomEnrollmentRequest,
     RoomStatusUpdateRequest, RoomLobbyResponse, RoomManualAttendanceRequest,
-    StudentJoinRoomResponse, DeviceCheckRequest, StudentRoomStatusResponse
+    StudentJoinRoomResponse, DeviceCheckRequest, StudentRoomStatusResponse,
+    RoomTemplateAssignRequest, RoomPublishStateUpdateRequest
 )
 from schemas.auth import JoinRoomRequest
-from core.permissions import get_current_user, instructor_or_admin_required, instructor_required
+from core.permissions import get_current_user, instructor_or_admin_required, instructor_required, verify_room_access
 from database.room_db import (
     create_room, get_room_by_id, get_room_by_code, get_rooms_by_instructor,
     get_all_rooms, get_rooms_for_student, update_room, delete_room, get_room_dashboard_data,
@@ -157,6 +158,14 @@ async def change_room_status(
     # Kiểm tra xung đột nếu chuyển sang dang_dien_ra / in_progress
     target_status = status_data.status.lower()
     if target_status in ("dang_dien_ra", "in_progress"):
+        if not room.get("template_id"):
+            existing_questions = get_exam_content_for_room(room_id)
+            if not existing_questions:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Không thể bắt đầu phòng khi chưa gán bộ đề thi / câu hỏi."
+                )
+
         active_conflict = check_instructor_active_room(current_user["user_id"], room_id)
         if active_conflict and not status_data.force_close_conflicts:
             raise HTTPException(
@@ -282,6 +291,8 @@ async def create_new_room(
         proctoring_config=cfg_str,
         status=room_data.status or "chua_mo",
         session_type=room_data.session_type,
+        total_points=room_data.total_points,
+        question_points=[qp.model_dump() for qp in room_data.question_points] if room_data.question_points else None,
     )
 
     return new_room
@@ -308,7 +319,8 @@ async def join_room_authenticated(
             status_code=status.HTTP_410_GONE,
             detail="Phòng học/thi đã kết thúc hoặc bị hủy; mã phòng và mật khẩu đã hết hiệu lực."
         )
-    if room.get("passcode"):
+    existing_session = get_student_exam_session(room["room_id"], current_user["user_id"])
+    if room.get("passcode") and not existing_session:
         provided_passcode = (join_data.passcode or "").strip()
         if not provided_passcode:
             raise HTTPException(
@@ -323,9 +335,14 @@ async def join_room_authenticated(
 
     lobby_open_time = _room_lobby_opens_at(room)
     room_status = str(room.get("status") or "").lower()
+    if current_user.get("role") == "student" and room_status in ("scheduled", "chua_mo"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Phòng chưa được giảng viên mở. Vui lòng chờ giảng viên nhấn Mở phòng trên lịch học."
+        )
     if (
         current_user.get("role") == "student"
-        and room_status not in ("dang_dien_ra", "in_progress", "active")
+        and room_status not in ("dang_dien_ra", "in_progress", "active", "waiting")
         and lobby_open_time
         and _is_before_lobby_open(lobby_open_time)
     ):
@@ -366,15 +383,8 @@ async def join_room_authenticated(
         except Exception:
             pass
 
-    client_ip = extract_client_ip(request)
-    user_agent = request.headers.get("user-agent")
-    session_id = upsert_student_lobby_session(
-        room_id=room["room_id"],
-        student_id=student_id,
-        ip_address=client_ip,
-        user_agent=user_agent,
-        is_late=is_late_entry,
-    )
+    existing_sess = get_student_exam_session(room["room_id"], student_id)
+    session_id = existing_sess["session_id"] if existing_sess else None
 
     return {
         **room,
@@ -394,13 +404,13 @@ async def save_device_check_endpoint(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    """Lưu kết quả kiểm tra Camera/Mic của sinh viên vào bảng KiemTraThietBi"""
+    """Lưu kết quả kiểm tra Camera/Mic của sinh viên vào bảng KiemTraThietBi và chỉ điểm danh khi SV hoàn tất bước này để vào phòng chờ/phòng thi"""
     room = get_room_by_id(room_id)
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
 
     browser_info = payload.browser_info or request.headers.get("user-agent")
-    return save_student_device_check(
+    device_res = save_student_device_check(
         room_id=room_id,
         student_id=current_user["user_id"],
         camera_ready=payload.camera_ready,
@@ -409,6 +419,24 @@ async def save_device_check_endpoint(
         os_info=payload.os_info,
         browser_info=browser_info,
     )
+
+    session_id = None
+    if current_user.get("role") == "student":
+        r_status = str(room.get("status") or "").lower()
+        # Sinh viên đi đúng giờ (vào phòng chờ) mới điểm danh tại bước vào phòng chờ;
+        # sinh viên đi trễ (phòng đã đang diễn ra, bỏ qua phòng chờ) chỉ điểm danh khi vào tới IDE (/api/v1/sessions).
+        if r_status not in ("dang_dien_ra", "in_progress"):
+            session_id = upsert_student_lobby_session(
+                room_id=room_id,
+                student_id=current_user["user_id"],
+                ip_address=extract_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+                is_late=False,
+            )
+
+    if isinstance(device_res, dict):
+        return {**device_res, "session_id": session_id}
+    return {"status": "ok", "session_id": session_id}
 
 
 @router.get("/{room_code}/student-status", response_model=StudentRoomStatusResponse)
@@ -421,6 +449,23 @@ async def get_student_room_status(
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
     is_expired = _is_room_expired(room)
+
+    # Tự động chuyển trạng thái phòng sang 'dang_dien_ra' khi đã đến start_time
+    r_status_lower = str(room.get("status") or "").lower()
+    if not is_expired and r_status_lower in ("chua_mo", "waiting", "scheduled"):
+        raw_start = room.get("start_time")
+        start_dt = None
+        if isinstance(raw_start, str):
+            try:
+                start_dt = datetime.fromisoformat(raw_start.replace("Z", "+00:00"))
+            except ValueError:
+                start_dt = None
+        elif isinstance(raw_start, datetime):
+            start_dt = raw_start
+        if start_dt and _get_current_time(start_dt.tzinfo) >= start_dt:
+            update_room_status(room["room_id"], "dang_dien_ra")
+            room["status"] = "dang_dien_ra"
+
     has_sub = False
     is_late = False
     att_status = "co_mat"
@@ -453,13 +498,14 @@ async def get_student_room_status(
         "has_submitted": has_sub,
         "is_late": is_late,
         "attendance_status": att_status,
+        "has_template": bool(room.get("template_id")),
     }
 
 @router.get("", response_model=List[RoomResponse])
 async def list_rooms(
     room_type: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Lấy danh sách các phòng khả dụng"""
@@ -559,7 +605,7 @@ async def update_room_details(
 @router.patch("/{room_id}/template")
 async def assign_room_template(
     room_id: int,
-    payload: Dict[str, Any] = Body(...),
+    payload: RoomTemplateAssignRequest,
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Gán hoặc đổi đề thi cho phòng thi / phòng chờ theo ID"""
@@ -569,8 +615,7 @@ async def assign_room_template(
     if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa phòng này")
 
-    template_id = payload.get("template_id") or payload.get("templateId")
-    updated = update_room(room_id, template_id=template_id)
+    updated = update_room(room_id, template_id=payload.template_id)
     return {
         "success": True,
         "message": "Đã cập nhật bộ đề thành công cho phòng",
@@ -580,7 +625,7 @@ async def assign_room_template(
 @router.patch("/by-code/{room_code}/template")
 async def assign_room_template_by_code(
     room_code: str,
-    payload: Dict[str, Any] = Body(...),
+    payload: RoomTemplateAssignRequest,
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Gán hoặc đổi đề thi cho phòng thi / phòng chờ theo room_code"""
@@ -590,12 +635,90 @@ async def assign_room_template_by_code(
     if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền chỉnh sửa phòng này")
 
-    template_id = payload.get("template_id") or payload.get("templateId")
-    updated = update_room(room["room_id"], template_id=template_id)
+    updated = update_room(room["room_id"], template_id=payload.template_id)
     return {
         "success": True,
         "message": "Đã cập nhật bộ đề thành công cho phòng",
         "room": updated
+    }
+
+
+@router.get("/{room_id}/publish")
+async def get_room_publish_state(
+    room_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lấy trạng thái công bố điểm của phòng thi / thực hành"""
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    import json
+    cfg = {}
+    raw_cfg = room.get("proctoring_config")
+    if isinstance(raw_cfg, dict):
+        cfg = dict(raw_cfg)
+    elif isinstance(raw_cfg, str) and raw_cfg.strip():
+        try:
+            cfg = json.loads(raw_cfg)
+        except Exception:
+            cfg = {}
+    default_published = cfg.get("autoPublishResults", str(room.get("room_type") or "").lower() != "exam")
+    return {
+        "room_id": room_id,
+        "results_published": cfg.get("results_published", default_published),
+        "published_student_ids": cfg.get("published_student_ids") or [],
+        "hidden_student_ids": cfg.get("hidden_student_ids") or [],
+    }
+
+
+@router.patch("/{room_id}/publish")
+async def update_room_publish_state(
+    room_id: int,
+    payload: RoomPublishStateUpdateRequest,
+    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+):
+    """Lưu trạng thái công bố điểm toàn phòng hoặc từng sinh viên vào SQL Server"""
+    room = get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    if current_user["role"] != "admin" and room["instructor_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền cập nhật công bố điểm của phòng này")
+
+    import json
+    cfg = {}
+    raw_cfg = room.get("proctoring_config")
+    if isinstance(raw_cfg, dict):
+        cfg = dict(raw_cfg)
+    elif isinstance(raw_cfg, str) and raw_cfg.strip():
+        try:
+            cfg = json.loads(raw_cfg)
+        except Exception:
+            cfg = {}
+
+    if payload.results_published is not None:
+        cfg["results_published"] = bool(payload.results_published)
+        cfg["published_student_ids"] = []
+        cfg["hidden_student_ids"] = []
+    if payload.student_id is not None and payload.is_published is not None:
+        sid = str(payload.student_id)
+        pub_ids = set(str(x) for x in (cfg.get("published_student_ids") or []))
+        hid_ids = set(str(x) for x in (cfg.get("hidden_student_ids") or []))
+        if payload.is_published:
+            pub_ids.add(sid)
+            hid_ids.discard(sid)
+        else:
+            hid_ids.add(sid)
+            pub_ids.discard(sid)
+        cfg["published_student_ids"] = list(pub_ids)
+        cfg["hidden_student_ids"] = list(hid_ids)
+
+    update_room(room_id, proctoring_config=json.dumps(cfg, ensure_ascii=False))
+    return {
+        "success": True,
+        "room_id": room_id,
+        "results_published": cfg.get("results_published", str(room.get("room_type") or "").lower() != "exam"),
+        "published_student_ids": cfg.get("published_student_ids") or [],
+        "hidden_student_ids": cfg.get("hidden_student_ids") or [],
     }
 
 
@@ -639,9 +762,7 @@ async def get_room_dashboard(
     current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
 ):
     """Dữ liệu Panoptic Grid View tổng hợp giám sát phòng thi thời gian thực (Zero N+1 query)"""
-    room = get_room_by_id(room_id)
-    if not room:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
+    room = verify_room_access(room_id, current_user)
         
     dashboard_data = get_room_dashboard_data(room_id)
     students_list = [
@@ -719,7 +840,53 @@ async def submit_exam_endpoint(
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phòng")
 
+    # Quy chế khảo thí: Không cho phép nộp bài lại nếu thí sinh đã hoàn thành phiên nộp bài
+    if is_student_already_submitted(room_id, current_user["user_id"]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bạn đã hoàn thành và nộp bài thi cho phòng này rồi. Không thể nộp lại."
+        )
+
     finalize_student_submission(room_id, current_user["user_id"])
+
+    # Máy chấm lại 1 lần cho bài nộp mới nhất của từng câu hỏi sau khi sinh viên xác nhận nộp bài
+    regraded_count = 0
+    if room.get("room_type") != "classroom":
+        try:
+            from database.submission_db import get_submissions_by_student
+            from services.grading_service import grade_submission_sync
+
+            student_subs = get_submissions_by_student(current_user["user_id"], room_id=room_id)
+            latest_by_question = {}
+            for sub in student_subs:
+                qid = sub.get("question_id")
+                if qid is not None and qid not in latest_by_question:
+                    latest_by_question[qid] = sub
+
+            for sub in latest_by_question.values():
+                try:
+                    from celery_app import celery_app
+                    celery_app.send_task(
+                        "tasks.grading_tasks.grade_submission",
+                        args=[
+                            sub["submission_id"],
+                            sub["question_id"],
+                            sub["code_content"],
+                            sub["language"],
+                        ],
+                        queue="grading",
+                    )
+                    regraded_count += 1
+                except Exception:
+                    grade_submission_sync(
+                        sub["submission_id"],
+                        sub["question_id"],
+                        sub["code_content"],
+                        sub["language"],
+                    )
+                    regraded_count += 1
+        except Exception:
+            pass
 
     # Broadcast thông báo sinh viên đã nộp bài qua WebSocket để Giảng viên giám sát cập nhật ngay
     try:
@@ -737,7 +904,8 @@ async def submit_exam_endpoint(
         "success": True,
         "message": "Bài thi đã được nộp thành công. Phiên làm bài kết thúc.",
         "room_id": room_id,
-        "student_id": current_user["user_id"]
+        "student_id": current_user["user_id"],
+        "regraded_submissions": regraded_count,
     }
 
 

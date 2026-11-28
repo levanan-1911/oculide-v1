@@ -26,9 +26,11 @@ type SubmissionStatus = "accepted" | "failed" | "pending";
 
 type Submission = {
   id: string;
+  questionId: number;
   problem: string;
   exam: string;
   roomId?: number;
+  roomType?: string;
   classId?: number;
   classCode?: string;
   className?: string;
@@ -37,82 +39,11 @@ type Submission = {
   submittedAt: string;
   status: SubmissionStatus;
   score: number | null;
+  totalPoints: number | null;
+  maxPoints: number;
   runtime: string;
   memory: string;
 };
-
-const sampleSubmissions: Submission[] = [
-  {
-    id: "cb_111",
-    problem: "Tính tổng các số trong chuỗi",
-    exam: "Lab 04 - Xử lý chuỗi nâng cao",
-    classCode: "INT202",
-    className: "Lập trình Python",
-    courseName: "INT202 - Lập trình Python (D21CQCN01-B)",
-    language: "Python 3.10",
-    submittedAt: "2026-10-31T20:51:00",
-    status: "accepted",
-    score: 100,
-    runtime: "0.004s",
-    memory: "1.82 MB",
-  },
-  {
-    id: "SUB-1001",
-    problem: "Tìm phần tử lớn nhất",
-    exam: "Lab 01 - Cấu trúc dữ liệu cơ bản",
-    classCode: "CS101",
-    className: "Cấu trúc dữ liệu & Giải thuật",
-    courseName: "CS101 - Cấu trúc dữ liệu & Giải thuật (D21CQCN02)",
-    language: "C++",
-    submittedAt: "2026-10-27T09:30:00",
-    status: "accepted",
-    score: 100,
-    runtime: "0.12s",
-    memory: "12 MB",
-  },
-  {
-    id: "SUB-1002",
-    problem: "Sắp xếp mảng QuickSort",
-    exam: "Lab 01 - Cấu trúc dữ liệu cơ bản",
-    classCode: "CS101",
-    className: "Cấu trúc dữ liệu & Giải thuật",
-    courseName: "CS101 - Cấu trúc dữ liệu & Giải thuật (D21CQCN02)",
-    language: "C++",
-    submittedAt: "2026-10-27T10:15:00",
-    status: "failed",
-    score: 50,
-    runtime: "0.45s",
-    memory: "14 MB",
-  },
-  {
-    id: "SUB-1003",
-    problem: "Tính tổng dãy số Fibonacci",
-    exam: "Thi Giữa Kỳ - Thuật toán đệ quy",
-    classCode: "CS101",
-    className: "Cấu trúc dữ liệu & Giải thuật",
-    courseName: "CS101 - Cấu trúc dữ liệu & Giải thuật (D21CQCN02)",
-    language: "C++",
-    submittedAt: "2026-10-26T14:20:00",
-    status: "accepted",
-    score: 100,
-    runtime: "0.18s",
-    memory: "18 MB",
-  },
-  {
-    id: "SUB-1004",
-    problem: "Kiểm tra số nguyên tố",
-    exam: "Lab 02 - Hàm & Module",
-    classCode: "INT202",
-    className: "Lập trình Python",
-    courseName: "INT202 - Lập trình Python (D21CQCN01-B)",
-    language: "Python 3.10",
-    submittedAt: "2026-10-25T08:45:00",
-    status: "accepted",
-    score: 100,
-    runtime: "0.09s",
-    memory: "10 MB",
-  },
-];
 
 const statusConfig: Record<
   SubmissionStatus,
@@ -161,8 +92,10 @@ export default function StudentSubmissionsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | SubmissionStatus>("all");
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>("all");
+  const [sessionTypeFilter, setSessionTypeFilter] = useState<"all" | "lab" | "exam">("all");
+  const [selectedSessionFilter, setSelectedSessionFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"grouped" | "table">("grouped");
-  const [submissions, setSubmissions] = useState<Submission[]>(sampleSubmissions);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -175,6 +108,7 @@ export default function StudentSubmissionsPage() {
           room_id: number;
           room_code?: string;
           room_name?: string;
+          room_type?: string;
           class_id?: number;
           class_code?: string;
           class_name?: string;
@@ -184,6 +118,8 @@ export default function StudentSubmissionsPage() {
           language: string;
           submitted_at: string;
           status: string;
+          total_points?: number;
+          max_points?: number;
           score_percentage?: number;
         }> | null = null;
 
@@ -198,40 +134,42 @@ export default function StudentSubmissionsPage() {
 
         if (cancelled || !Array.isArray(rows)) return;
 
-        if (rows.length > 0) {
-          const mapped: Submission[] = rows.map((s) => {
-            const pct = s.score_percentage ?? 0;
-            const mappedStatus: SubmissionStatus =
-              s.status === "completed"
-                ? pct >= 100
-                  ? "accepted"
-                  : "failed"
-                : s.status === "failed"
-                ? "failed"
-                : "pending";
+        const mapped: Submission[] = rows.map((s) => {
+          const pct = s.score_percentage ?? 0;
+          const mappedStatus: SubmissionStatus =
+            s.status === "completed"
+              ? pct >= 100
+                ? "accepted"
+                : "failed"
+              : s.status === "failed"
+              ? "failed"
+              : "pending";
 
-            const courseLabel = s.course_name || s.class_name || "Học phần thực hành";
-            const classLabel = s.class_name || s.class_code || "Lớp học phần";
+          const courseLabel = s.course_name || s.class_name || "Học phần thực hành";
+          const classLabel = s.class_name || s.class_code || "Lớp học phần";
 
-            return {
-              id: String(s.submission_id),
-              problem: s.question_title || `Câu hỏi #${s.question_id}`,
-              exam: s.room_name || s.room_code || `Phiên #${s.room_id}`,
-              roomId: s.room_id,
-              classId: s.class_id,
-              classCode: s.class_code || "CHUNG",
-              className: classLabel,
-              courseName: courseLabel,
-              language: s.language,
-              submittedAt: s.submitted_at,
-              status: mappedStatus,
-              score: s.status === "completed" ? Math.round(pct) : null,
-              runtime: "—",
-              memory: "—",
-            };
-          });
-          setSubmissions(mapped);
-        }
+          return {
+            id: String(s.submission_id),
+            questionId: s.question_id,
+            problem: s.question_title || `Câu hỏi #${s.question_id}`,
+            exam: s.room_name || s.room_code || `Phiên #${s.room_id}`,
+            roomId: s.room_id,
+            roomType: s.room_type || "lab",
+            classId: s.class_id,
+            classCode: s.class_code || "CHUNG",
+            className: classLabel,
+            courseName: courseLabel,
+            language: s.language,
+            submittedAt: s.submitted_at,
+            status: mappedStatus,
+            score: s.status === "completed" ? Math.round(pct) : null,
+            totalPoints: s.status === "completed" ? Number((s.total_points ?? 0).toFixed(2)) : null,
+            maxPoints: Number((s.max_points ?? 10).toFixed(2)),
+            runtime: "—",
+            memory: "—",
+          };
+        });
+        setSubmissions(mapped);
       } catch (err) {
         console.error("Lỗi khi tải lịch sử bài nộp:", err);
       } finally {
@@ -257,6 +195,22 @@ export default function StudentSubmissionsPage() {
     return Array.from(set.entries()).map(([code, name]) => ({ code, name }));
   }, [submissions]);
 
+  // Danh sách các Buổi học / Ca thi duy nhất để lọc theo buổi
+  const availableSessions = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; roomType: string }>();
+    submissions.forEach((s) => {
+      if (selectedClassFilter !== "all" && (s.classCode || "CHUNG") !== selectedClassFilter) return;
+      const isExam = s.roomType === "exam";
+      if (sessionTypeFilter === "exam" && !isExam) return;
+      if (sessionTypeFilter === "lab" && isExam) return;
+      const key = s.roomId ? String(s.roomId) : s.exam;
+      if (!map.has(key)) {
+        map.set(key, { key, label: s.exam, roomType: isExam ? "exam" : "lab" });
+      }
+    });
+    return Array.from(map.values());
+  }, [submissions, selectedClassFilter, sessionTypeFilter]);
+
   const filteredSubmissions = useMemo(() => {
     const keyword = search.trim().toLowerCase();
 
@@ -276,9 +230,19 @@ export default function StudentSubmissionsPage() {
       const matchesClass =
         selectedClassFilter === "all" || (submission.classCode || "CHUNG") === selectedClassFilter;
 
-      return matchesSearch && matchesStatus && matchesClass;
+      const isExam = submission.roomType === "exam";
+      const matchesSessionType =
+        sessionTypeFilter === "all" ||
+        (sessionTypeFilter === "exam" && isExam) ||
+        (sessionTypeFilter === "lab" && !isExam);
+
+      const sessionKey = submission.roomId ? String(submission.roomId) : submission.exam;
+      const matchesSession =
+        selectedSessionFilter === "all" || sessionKey === selectedSessionFilter;
+
+      return matchesSearch && matchesStatus && matchesClass && matchesSessionType && matchesSession;
     });
-  }, [search, statusFilter, selectedClassFilter, submissions]);
+  }, [search, statusFilter, selectedClassFilter, sessionTypeFilter, selectedSessionFilter, submissions]);
 
   // Gom nhóm: Lớp học phần -> Phiên thi (Session)
   const groupedData = useMemo(() => {
@@ -293,9 +257,12 @@ export default function StudentSubmissionsPage() {
           {
             examName: string;
             roomCode: string;
+            roomType: string;
             submittedAt: string;
             submissions: Submission[];
             sessionAvg: number;
+            sessionTotalPoints: number;
+            sessionMaxPoints: number;
           }
         >;
       }
@@ -312,30 +279,64 @@ export default function StudentSubmissionsPage() {
         };
       }
 
-      const sKey = sub.exam || "Phiên thi chung";
+      const sKey = sub.roomId ? `room_${sub.roomId}` : (sub.exam || "Phiên thi chung");
       if (!classMap[cKey].sessions[sKey]) {
         classMap[cKey].sessions[sKey] = {
           examName: sub.exam,
           roomCode: sub.exam,
+          roomType: sub.roomType === "exam" ? "exam" : "lab",
           submittedAt: sub.submittedAt,
           submissions: [],
           sessionAvg: 0,
+          sessionTotalPoints: 0,
+          sessionMaxPoints: 0,
         };
       }
 
+      if (new Date(sub.submittedAt).getTime() > new Date(classMap[cKey].sessions[sKey].submittedAt).getTime()) {
+        classMap[cKey].sessions[sKey].submittedAt = sub.submittedAt;
+      }
       classMap[cKey].sessions[sKey].submissions.push(sub);
     });
 
-    // Tính điểm trung bình cho từng Phiên thi
+    // Tính điểm tổng kết phiên thi (lấy điểm cao nhất mỗi câu hỏi trong phiên) và sắp xếp mới nhất lên trước
     Object.values(classMap).forEach((cls) => {
-      Object.values(cls.sessions).forEach((sess) => {
-        const scored = sess.submissions.filter((s) => s.score !== null);
-        const sum = scored.reduce((acc, cur) => acc + (cur.score ?? 0), 0);
-        sess.sessionAvg = scored.length ? Math.round(sum / scored.length) : 0;
+      const sortedEntries = Object.entries(cls.sessions).sort(
+        ([, a], [, b]) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
+      );
+      const sortedSessions: typeof cls.sessions = {};
+      sortedEntries.forEach(([key, sess]) => {
+        sess.submissions.sort(
+          (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
+        );
+        const bestByQuestion = new Map<number, { earned: number; max: number }>();
+        sess.submissions.forEach((s) => {
+          const cur = bestByQuestion.get(s.questionId);
+          const earned = s.totalPoints ?? 0;
+          const max = s.maxPoints || 10;
+          if (!cur || earned > cur.earned) {
+            bestByQuestion.set(s.questionId, { earned, max });
+          }
+        });
+        let totalEarned = 0;
+        let totalMax = 0;
+        bestByQuestion.forEach((v) => {
+          totalEarned += v.earned;
+          totalMax += v.max;
+        });
+        sess.sessionTotalPoints = Number(totalEarned.toFixed(2));
+        sess.sessionMaxPoints = Number(totalMax.toFixed(2));
+        sess.sessionAvg = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
+        sortedSessions[key] = sess;
       });
+      cls.sessions = sortedSessions;
     });
 
-    return Object.values(classMap);
+    return Object.values(classMap).sort((a, b) => {
+      const aLatest = Math.max(0, ...Object.values(a.sessions).map((s) => new Date(s.submittedAt).getTime()));
+      const bLatest = Math.max(0, ...Object.values(b.sessions).map((s) => new Date(s.submittedAt).getTime()));
+      return bLatest - aLatest;
+    });
   }, [filteredSubmissions]);
 
   const counts = useMemo(
@@ -348,11 +349,9 @@ export default function StudentSubmissionsPage() {
     [submissions]
   );
 
-  const averageScore = useMemo(() => {
-    const scoredSubmissions = submissions.filter((item) => item.score !== null);
-    if (!scoredSubmissions.length) return "—";
-    const total = scoredSubmissions.reduce((sum, item) => sum + (item.score ?? 0), 0);
-    return (total / scoredSubmissions.length).toFixed(1);
+  const distinctSessionsCount = useMemo(() => {
+    const keys = new Set(submissions.map((item) => (item.roomId ? String(item.roomId) : item.exam)));
+    return keys.size;
   }, [submissions]);
 
   return (
@@ -394,28 +393,28 @@ export default function StudentSubmissionsPage() {
             value: counts.all,
             sub: "Lịch sử đã nộp",
             icon: FileCode2,
-            color: "bg-slate-900/10 text-slate-900 dark:bg-slate-900/20 dark:text-[#f0c2cf]",
+            color: "bg-brand-50 text-brand-700 border border-brand/15 dark:bg-brand-500/15 dark:text-[#f0c2cf]",
           },
           {
             label: "Bài đạt (Accepted)",
             value: counts.accepted,
             sub: "Số bài hoàn thành",
             icon: CheckCircle2,
-            color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+            color: "bg-emerald-50 text-emerald-700 border border-emerald-200/70 dark:bg-emerald-950/40 dark:text-emerald-400",
           },
           {
             label: "Bài chưa đạt",
             value: counts.failed,
             sub: "Cần tối ưu lại",
             icon: XCircle,
-            color: "bg-slate-800/15 text-slate-800 dark:bg-slate-800/30 dark:text-[#e5a9b9]",
+            color: "bg-rose-50 text-rose-700 border border-rose-200/70 dark:bg-rose-950/40 dark:text-rose-400",
           },
           {
-            label: "Điểm trung bình",
-            value: `${averageScore}${averageScore !== "—" ? "/100" : ""}`,
-            sub: "Tỉ lệ hoàn thành",
-            icon: TrendingUp,
-            color: "bg-stone-100 text-[#5A5555] dark:bg-white/10 dark:text-stone-300",
+            label: "Số buổi đã tham gia",
+            value: distinctSessionsCount,
+            sub: "Buổi học / Ca thi có bài nộp",
+            icon: Layers,
+            color: "bg-amber-50 text-amber-700 border border-amber-200/70 dark:bg-amber-950/40 dark:text-amber-300",
           },
         ].map((stat) => {
           const Icon = stat.icon;
@@ -506,7 +505,7 @@ export default function StudentSubmissionsPage() {
               onClick={() => setSelectedClassFilter("all")}
               className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
                 selectedClassFilter === "all"
-                  ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                  ? "bg-brand text-white shadow-2xs"
                   : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-white/5 dark:text-stone-300"
               }`}
             >
@@ -519,7 +518,7 @@ export default function StudentSubmissionsPage() {
                 onClick={() => setSelectedClassFilter(cls.code)}
                 className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
                   selectedClassFilter === cls.code
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                    ? "bg-brand text-white shadow-2xs"
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-white/5 dark:text-stone-300"
                 }`}
               >
@@ -545,6 +544,51 @@ export default function StudentSubmissionsPage() {
                 {option.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Bộ lọc theo Loại buổi & Buổi học / Ca thi cụ thể */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-white/10">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Layers size={15} className="text-slate-500 shrink-0" />
+            <span className="text-xs font-semibold text-slate-500">Loại buổi:</span>
+            {[
+              { id: "all", label: "Tất cả buổi" },
+              { id: "lab", label: "Buổi học (Lab)" },
+              { id: "exam", label: "Buổi thi" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  setSessionTypeFilter(opt.id as "all" | "lab" | "exam");
+                  setSelectedSessionFilter("all");
+                }}
+                className={`rounded px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
+                  sessionTypeFilter === opt.id
+                    ? "bg-brand text-white shadow-2xs"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-white/5 dark:text-stone-300"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 shrink-0">Buổi học / Ca thi:</span>
+            <select
+              value={selectedSessionFilter}
+              onChange={(e) => setSelectedSessionFilter(e.target.value)}
+              className="h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-800 outline-none dark:border-white/10 dark:bg-neutral-950 dark:text-white"
+            >
+              <option value="all">Tất cả buổi ({availableSessions.length})</option>
+              {availableSessions.map((sess) => (
+                <option key={sess.key} value={sess.key}>
+                  [{sess.roomType === "exam" ? "BUỔI THI" : "BUỔI HỌC"}] {sess.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </section>
@@ -604,15 +648,16 @@ export default function StudentSubmissionsPage() {
 
                         {/* Điểm tổng kết phiên thi */}
                         <div className="flex items-center gap-2 self-start sm:self-auto">
-                          <span className="text-xs font-semibold text-slate-500">Điểm phiên:</span>
-                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded font-mono font-bold text-xs border ${
+                          <span className="text-xs font-semibold text-slate-500">Điểm bài thi:</span>
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded font-mono font-bold text-xs border ${
                             sess.sessionAvg >= 80
                               ? "bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30"
                               : sess.sessionAvg >= 50
                               ? "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30"
                               : "bg-rose-50 text-rose-800 border-rose-300 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/30"
                           }`}>
-                            {sess.sessionAvg} / 100
+                            {sess.sessionTotalPoints} / {sess.sessionMaxPoints} điểm
+                            <span className="opacity-75">({sess.sessionAvg}%)</span>
                           </span>
                         </div>
                       </div>
@@ -649,7 +694,7 @@ export default function StudentSubmissionsPage() {
                                     </span>
                                   </td>
                                   <td className="px-3 py-2.5 font-mono font-bold text-slate-900 dark:text-white">
-                                    {sub.score === null ? "—" : `${sub.score}/100`}
+                                    {sub.totalPoints === null ? "—" : `${sub.totalPoints} / ${sub.maxPoints} điểm`}
                                   </td>
                                   <td className="px-3 py-2.5 text-right">
                                     <Link
@@ -757,9 +802,9 @@ export default function StudentSubmissionsPage() {
                         </td>
                         <td className="px-5 py-4">
                           <span className="font-mono font-bold text-[#2A282D] dark:text-white text-sm">
-                            {submission.score === null
+                            {submission.totalPoints === null
                               ? "—"
-                              : `${submission.score}/100`}
+                              : `${submission.totalPoints} / ${submission.maxPoints} điểm`}
                           </span>
                         </td>
                         <td className="px-5 py-4 text-right">

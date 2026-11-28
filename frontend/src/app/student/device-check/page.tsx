@@ -21,6 +21,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { fetchWithAuth } from "@/services/apiClient";
+import { captureAndCompressFrame } from "@/utils/proctorClient";
 
 interface PendingSession {
   roomId?: number;
@@ -38,16 +39,21 @@ export default function StudentDeviceCheckPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Trạng thái kiểm tra thiết bị (Đã bỏ hoàn toàn Microphone theo yêu cầu)
-  const [camStatus, setCamStatus] = useState<"testing" | "success" | "error">("testing");
+  // Trạng thái kiểm tra thiết bị (Chủ yếu kiểm tra Camera & AI Face ID trước khi vào phòng chờ)
+  const [camStatus, setCamStatus] = useState<"idle" | "testing" | "success" | "error">("testing");
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [screenStatus, setScreenStatus] = useState<"idle" | "testing" | "success">("success");
   const [networkStatus, setNetworkStatus] = useState<"testing" | "success">("testing");
+  const [networkPing, setNetworkPing] = useState<number | null>(null);
 
-  // Xác thực AI Face ID
+  // Xác thực AI Face ID & YOLOv8 nhận diện người
   const [isVerifyingFace, setIsVerifyingFace] = useState(false);
   const [faceVerified, setFaceVerified] = useState(false);
-  const [faceScore, setFaceScore] = useState<number | null>(null);
+  const [faceError, setFaceError] = useState<string | null>(null);
+  const [personBoxes, setPersonBoxes] = useState<
+    Array<{ x: number; y: number; w: number; h: number; confidence: number }>
+  >([]);
+  const [personCount, setPersonCount] = useState<number>(0);
 
   // Khởi động Camera vật lý thật (không xin mic, hỗ trợ fallback tự động)
   const startCamera = async () => {
@@ -95,19 +101,58 @@ export default function StudentDeviceCheckPage() {
     }
   };
 
-  // Đọc dữ liệu phòng thi từ sessionStorage và kết nối Camera
+  // Tắt Camera khi phòng không yêu cầu và sinh viên chỉ bật thử để kiểm tra
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCamStatus("idle");
+    setCameraError(null);
+    setFaceVerified(false);
+    setFaceError(null);
+    setPersonBoxes([]);
+    setPersonCount(0);
+  };
+
+  // Đọc dữ liệu phòng thi từ sessionStorage và kết nối Camera (chỉ tự động mở khi phòng yêu cầu Camera)
   useEffect(() => {
+    let shouldRequireCam = true;
     try {
       const saved = sessionStorage.getItem("oculide_student_pending_exam");
       if (saved) {
-        setSessionInfo(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setSessionInfo(parsed);
+        shouldRequireCam =
+          parsed?.proctoringConfig?.requireCamera === true ||
+          parsed?.proctoringConfig?.webcam_required === true ||
+          (parsed?.roomType !== "lab" &&
+            parsed?.proctoringConfig?.requireCamera !== false &&
+            parsed?.proctoringConfig?.webcam_required !== false);
       }
     } catch {
       // Bỏ qua nếu không đọc được
     }
 
-    startCamera();
-    setNetworkStatus("success");
+    if (shouldRequireCam) {
+      startCamera();
+    } else {
+      setCamStatus("idle");
+    }
+
+    const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
+    fetch("/api/health")
+      .then(() => {
+        const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
+        setNetworkPing(Math.max(1, Math.round(t1 - t0)));
+        setNetworkStatus("success");
+      })
+      .catch(() => {
+        setNetworkStatus("success");
+      });
 
     return () => {
       if (streamRef.current) {
@@ -116,16 +161,96 @@ export default function StudentDeviceCheckPage() {
     };
   }, []);
 
-  // Xử lý xác thực khuôn mặt AI
-  const handleVerifyFace = () => {
+  // Quét YOLOv8 nhận diện người theo thời gian thực khi camera sẵn sàng
+  useEffect(() => {
+    if (camStatus !== "success") {
+      setPersonBoxes([]);
+      setPersonCount(0);
+      return;
+    }
+    let cancelled = false;
+    let inFlight = false;
+
+    const scanPerson = async () => {
+      if (cancelled || inFlight || isVerifyingFace) return;
+      const videoEl = videoRef.current;
+      const b64 = videoEl ? captureAndCompressFrame(videoEl, 320, 0.6) : null;
+      if (!b64) return;
+      inFlight = true;
+      try {
+        const res = await fetchWithAuth<{
+          person_count?: number;
+          person_boxes?: Array<{ x: number; y: number; w: number; h: number; confidence: number }>;
+        }>("/api/v1/violations/verify-face", {
+          method: "POST",
+          body: JSON.stringify({ snapshot_data: b64 }),
+        });
+        if (!cancelled && res) {
+          setPersonBoxes(Array.isArray(res.person_boxes) ? res.person_boxes : []);
+          setPersonCount(typeof res.person_count === "number" ? res.person_count : 0);
+        }
+      } catch {
+        // Bỏ qua lỗi tạm thời khi polling nền
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const initialTimer = setTimeout(scanPerson, 500);
+    const interval = setInterval(scanPerson, 4000);
+    return () => {
+      cancelled = true;
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [camStatus, isVerifyingFace]);
+
+  // Xử lý xác thực khuôn mặt AI thật qua backend AI Proctoring
+  const handleVerifyFace = async () => {
     setIsVerifyingFace(true);
     setFaceVerified(false);
+    setFaceError(null);
 
-    setTimeout(() => {
+    try {
+      const videoEl = videoRef.current;
+      const b64 = videoEl ? captureAndCompressFrame(videoEl, 640, 0.7) : null;
+      if (!b64) {
+        setFaceError("Chưa thu được khung hình từ camera. Vui lòng chờ camera khởi động và thử lại.");
+        return;
+      }
+
+      const res = await fetchWithAuth<{
+        verified: boolean;
+        face_count: number;
+        person_count?: number;
+        person_boxes?: Array<{ x: number; y: number; w: number; h: number; confidence: number }>;
+        message: string;
+      }>(
+        "/api/v1/violations/verify-face",
+        {
+          method: "POST",
+          body: JSON.stringify({ snapshot_data: b64 }),
+        }
+      );
+
+      if (res) {
+        setPersonBoxes(Array.isArray(res.person_boxes) ? res.person_boxes : []);
+        setPersonCount(typeof res.person_count === "number" ? res.person_count : 0);
+      }
+
+      if (res?.verified) {
+        setFaceVerified(true);
+        setFaceError(null);
+      } else {
+        setFaceVerified(false);
+        setFaceError(res?.message || "Không phát hiện khuôn mặt hợp lệ trong khung hình.");
+      }
+    } catch (err) {
+      setFaceVerified(false);
+      setFaceError(err instanceof Error ? err.message : "Lỗi xác thực khuôn mặt AI. Vui lòng thử lại.");
+    } finally {
       setIsVerifyingFace(false);
-      setFaceVerified(true);
-      setFaceScore(99.4);
-    }, 1500);
+    }
   };
 
   // Xin quyền Chia sẻ màn hình thật
@@ -158,6 +283,10 @@ export default function StudentDeviceCheckPage() {
       streamRef.current = null;
     }
 
+    let roomAlreadyStarted =
+      ["in_progress", "dang_dien_ra"].includes(String((sessionInfo as any)?.status || "").toLowerCase()) ||
+      Boolean((sessionInfo as any)?.isLate);
+
     if (sessionInfo?.roomId) {
       setIsSavingCheck(true);
       try {
@@ -172,21 +301,61 @@ export default function StudentDeviceCheckPage() {
             browser_info: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 120) : "Browser",
           }),
         });
+
+        try {
+          const statusRes = await fetchWithAuth<{
+            status?: string;
+            is_late?: boolean;
+            attendance_status?: string;
+          }>(`/api/v1/rooms/${sessionInfo.roomId}/student-status`);
+          const liveStatus = String(statusRes?.status || "").toLowerCase();
+          if (liveStatus === "in_progress" || liveStatus === "dang_dien_ra" || statusRes?.is_late) {
+            roomAlreadyStarted = true;
+            try {
+              const raw = sessionStorage.getItem("oculide_student_pending_exam");
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                sessionStorage.setItem(
+                  "oculide_student_pending_exam",
+                  JSON.stringify({
+                    ...parsed,
+                    status: statusRes?.status || "in_progress",
+                    isLate: true,
+                    attendanceStatus: statusRes?.attendance_status || "muon",
+                  })
+                );
+              }
+            } catch {
+              // ignore storage error
+            }
+          }
+        } catch {
+          // fallback to existing sessionInfo
+        }
       } catch (err) {
         console.error("Không thể lưu trạng thái kiểm tra thiết bị:", err);
       } finally {
         setIsSavingCheck(false);
       }
     }
+
+    if (roomAlreadyStarted && sessionInfo?.roomId) {
+      router.push(`/student/exam-room?roomId=${sessionInfo.roomId}`);
+      return;
+    }
     router.push(sessionInfo?.roomId ? `/student/waiting-room?roomId=${sessionInfo.roomId}` : "/student/waiting-room");
   };
 
-  const isCameraRequired = (sessionInfo as any)?.proctoringConfig?.requireCamera !== false && (sessionInfo as any)?.roomType !== 'lab';
+  const isCameraRequired =
+    (sessionInfo as any)?.proctoringConfig?.requireCamera === true ||
+    (sessionInfo as any)?.proctoringConfig?.webcam_required === true ||
+    ((sessionInfo as any)?.roomType !== 'lab' &&
+      (sessionInfo as any)?.proctoringConfig?.requireCamera !== false &&
+      (sessionInfo as any)?.proctoringConfig?.webcam_required !== false);
   const isCamReady = !isCameraRequired || (camStatus === "success" && faceVerified);
 
   const isAllReady =
     isCamReady &&
-    screenStatus === "success" &&
     !isSavingCheck;
 
   return (
@@ -212,7 +381,7 @@ export default function StudentDeviceCheckPage() {
 
         <div className="inline-flex items-center gap-2 rounded-md border border-brand-300 bg-brand-50 px-3.5 py-2 text-xs font-serif font-semibold text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-[#f0c2cf]">
           <ShieldCheck size={16} className="text-slate-900 dark:text-[#f0c2cf]" />
-          Mã phòng: <b className="font-mono text-sm">{sessionInfo?.roomCode || "OCL-C001"}</b>
+          Mã phòng: <b className="font-mono text-sm">{sessionInfo?.roomCode || "—"}</b>
         </div>
       </header>
 
@@ -235,10 +404,21 @@ export default function StudentDeviceCheckPage() {
               </div>
             </div>
 
-            <span className="inline-flex items-center gap-1.5 rounded bg-emerald-50 px-3 py-1 font-mono text-xs font-semibold text-emerald-700 border border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Live Feed 30 FPS
-            </span>
+            <div className="flex items-center gap-2">
+              {!isCameraRequired && camStatus === "success" && (
+                <button
+                  type="button"
+                  onClick={stopCamera}
+                  className="inline-flex items-center gap-1.5 rounded bg-stone-800 px-3 py-1 text-xs font-semibold text-stone-200 border border-stone-700 hover:bg-stone-700 transition cursor-pointer"
+                >
+                  Tắt Camera
+                </button>
+              )}
+              <span className="inline-flex items-center gap-1.5 rounded bg-emerald-50 px-3 py-1 font-mono text-xs font-semibold text-emerald-700 border border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Live Feed 30 FPS
+              </span>
+            </div>
           </div>
 
           {/* Khung Xem trước Camera thật (Live Feed) */}
@@ -251,6 +431,28 @@ export default function StudentDeviceCheckPage() {
               muted
               className={`absolute inset-0 h-full w-full object-cover z-0 transition-opacity duration-300 ${camStatus === 'success' ? 'opacity-100' : 'opacity-0'}`}
             />
+
+            {/* Trạng thái phòng không yêu cầu Camera */}
+            {camStatus === "idle" && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-stone-950 text-center space-y-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <p className="text-xs sm:text-sm font-semibold text-stone-100">
+                  Phòng học này không yêu cầu bật Camera
+                </p>
+                <p className="text-[11px] text-stone-400 max-w-md">
+                  Bạn có thể bấm &quot;Tiếp tục&quot; ngay bên phải, hoặc bật thử camera nếu muốn kiểm tra thêm.
+                </p>
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="rounded-md border border-stone-700 bg-stone-800 px-3.5 py-2 text-xs font-semibold text-stone-200 hover:bg-stone-700 transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Camera size={14} /> Bật thử Camera (Tùy chọn)
+                </button>
+              </div>
+            )}
 
             {/* Trạng thái đang kết nối Webcam */}
             {camStatus === "testing" && (
@@ -278,43 +480,32 @@ export default function StudentDeviceCheckPage() {
               </div>
             )}
 
-            {/* Khung ngắm khuôn mặt AI HUD (Viewfinder mỏng trong suốt, KHÔNG che mặt) */}
+            {/* Badge trạng thái AI Face ID */}
             {camStatus === "success" && (
-              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10">
-                <div
-                  className={`relative h-48 w-44 sm:h-56 sm:w-52 rounded-3xl border-2 transition-all duration-300 ${
-                    faceVerified
-                      ? 'border-emerald-400 bg-emerald-500/10 shadow-[0_0_20px_rgba(52,211,153,0.3)]'
-                      : isVerifyingFace
-                      ? 'border-cyan-400 bg-cyan-500/10 shadow-[0_0_20px_rgba(34,211,238,0.3)]'
-                      : 'border-dashed border-white/60 bg-black/5'
-                  }`}
-                >
-                  {/* Đường laser quét khuôn mặt khi bấm xác thực */}
-                  {isVerifyingFace && (
-                    <div className="absolute inset-x-2 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#22d3ee] animate-pulse" />
-                  )}
-
-                  {/* 4 góc ngắm camera HUD */}
-                  <span className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-2 border-l-2 border-white rounded-tl" />
-                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 border-t-2 border-r-2 border-white rounded-tr" />
-                  <span className="absolute -bottom-1 -left-1 w-3.5 h-3.5 border-b-2 border-l-2 border-white rounded-bl" />
-                  <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 border-b-2 border-r-2 border-white rounded-br" />
-                </div>
-
+              <div className="absolute inset-0 pointer-events-none z-10">
                 {/* Badge trạng thái AI Face ID */}
-                <div className="mt-3 px-3 py-1 rounded-full bg-black/75 backdrop-blur-xs text-xs font-mono font-bold text-white border border-white/20">
+                <div className="absolute bottom-14 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/75 backdrop-blur-xs text-xs font-mono font-bold text-white border border-white/20 whitespace-nowrap max-w-[92%] truncate">
                   {isVerifyingFace ? (
                     <span className="text-cyan-300 flex items-center gap-1.5">
-                      <LoaderCircle size={13} className="animate-spin" /> Đang đối soát AI Face ID...
+                      <LoaderCircle size={13} className="animate-spin" /> Đang đối soát YOLOv8 &amp; Face ID...
                     </span>
                   ) : faceVerified ? (
                     <span className="text-emerald-400 flex items-center gap-1.5">
-                      <CheckCircle2 size={13} /> Khuôn mặt hợp lệ ({faceScore}%) - Đã khớp thẻ
+                      <CheckCircle2 size={13} /> Khuôn mặt hợp lệ - Đã xác thực qua YOLO
+                    </span>
+                  ) : faceError ? (
+                    <span className="text-rose-400 flex items-center gap-1.5">
+                      <AlertCircle size={13} /> {faceError}
+                    </span>
+                  ) : personCount > 1 ? (
+                    <span className="text-rose-400 flex items-center gap-1.5">
+                      <AlertCircle size={13} /> Phát hiện {personCount} người trong khung hình!
                     </span>
                   ) : (
                     <span className="text-stone-300">
-                      Giữ khuôn mặt ở giữa khung hình và nhấn &quot;Xác thực khuôn mặt AI&quot;
+                      {personCount === 1
+                        ? 'YOLOv8 đã nhận diện 1 người — Nhấn "Xác thực khuôn mặt AI"'
+                        : 'Ngồi vào giữa khung hình và nhấn "Xác thực khuôn mặt AI"'}
                     </span>
                   )}
                 </div>
@@ -386,6 +577,10 @@ export default function StudentDeviceCheckPage() {
                   <span className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
                     <CheckCircle2 size={13} /> Sẵn sàng
                   </span>
+                ) : !isCameraRequired ? (
+                  <span className="flex items-center gap-1 font-mono font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded border border-slate-200 dark:bg-white/10 dark:text-slate-300 dark:border-white/10">
+                    Không bắt buộc
+                  </span>
                 ) : camStatus === "error" ? (
                   <button
                     type="button"
@@ -406,24 +601,16 @@ export default function StudentDeviceCheckPage() {
                     <Monitor size={18} />
                   </div>
                   <div>
-                    <p className="font-serif font-bold text-[#2A282D] dark:text-white">Chia sẻ toàn màn hình</p>
-                    <p className="text-[11px] text-slate-500">Giám sát chống chuyển Tab</p>
+                    <p className="font-serif font-bold text-[#2A282D] dark:text-white">
+                      Chia sẻ toàn màn hình
+                    </p>
+                    <p className="text-[11px] text-slate-500">Sẽ kích hoạt bắt buộc khi vào phòng làm bài</p>
                   </div>
                 </div>
 
-                {screenStatus === "success" ? (
-                  <span className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
-                    <CheckCircle2 size={13} /> Sẵn sàng
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleRequestScreenShare}
-                    className="system-primary-action rounded bg-slate-900 px-3 py-1.5 font-serif text-[11px] font-bold text-white hover:bg-slate-800 transition cursor-pointer"
-                  >
-                    {screenStatus === "testing" ? "Đang cấp quyền..." : "Cấp quyền"}
-                  </button>
-                )}
+                <span className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
+                  <CheckCircle2 size={13} /> Sẵn sàng
+                </span>
               </div>
 
               {/* ITEM 3: ĐƯỜNG TRUYỀN MẠNG */}
@@ -434,7 +621,9 @@ export default function StudentDeviceCheckPage() {
                   </div>
                   <div>
                     <p className="font-serif font-bold text-[#2A282D] dark:text-white">Kết nối Internet</p>
-                    <p className="text-[11px] text-slate-500">Ping: 12ms · Tốc độ cao</p>
+                    <p className="text-[11px] text-slate-500">
+                      {networkPing !== null ? `Độ trễ: ${networkPing}ms · Kết nối ổn định` : "Đang kiểm tra kết nối..."}
+                    </p>
                   </div>
                 </div>
                 <span className="flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40">
@@ -445,23 +634,44 @@ export default function StudentDeviceCheckPage() {
           </div>
 
           {/* Thẻ Cảnh báo & Hướng dẫn */}
-          <div className="rounded-md border border-slate-300 bg-slate-900/5 p-4 flex items-start gap-3 dark:border-white/10 dark:bg-slate-900/15">
-            <Info size={18} className="text-slate-900 dark:text-[#f0c2cf] shrink-0 mt-0.5" />
-            <p className="text-xs text-[#2A282D] dark:text-[#E8E6E8] leading-relaxed">
-              Bạn cần hoàn thành đủ 3 mục kiểm tra trên (bao gồm Xác thực khuôn mặt) trước khi hệ thống cho phép vào <strong>Phòng chờ thi</strong>.
-            </p>
-          </div>
+          {(() => {
+            const isAlreadyStarted =
+              ["in_progress", "dang_dien_ra"].includes(String((sessionInfo as any)?.status || "").toLowerCase()) ||
+              Boolean((sessionInfo as any)?.isLate);
+            return (
+              <>
+                <div className="rounded-md border border-slate-300 bg-slate-900/5 p-4 flex items-start gap-3 dark:border-white/10 dark:bg-slate-900/15">
+                  <Info size={18} className="text-slate-900 dark:text-[#f0c2cf] shrink-0 mt-0.5" />
+                  <p className="text-xs text-[#2A282D] dark:text-[#E8E6E8] leading-relaxed">
+                    {isAlreadyStarted ? (
+                      <>
+                        Phòng thi đã bắt đầu (ghi nhận <strong>đi muộn</strong>). Sau khi hoàn tất kiểm tra thiết bị{isCameraRequired ? " & khuôn mặt" : ""}, hệ thống sẽ đưa bạn vào thẳng <strong>phòng làm bài (IDE)</strong>.
+                      </>
+                    ) : !isCameraRequired ? (
+                      <>
+                        Phòng học này không yêu cầu Camera. Bạn có thể bấm <strong>Tiếp tục</strong> để vào phòng chờ (hoặc vào thẳng phòng làm bài nếu đã bắt đầu).
+                      </>
+                    ) : (
+                      <>
+                        Bạn cần hoàn thành kiểm tra thiết bị và Xác thực khuôn mặt AI trước khi bấm <strong>Tiếp tục</strong>.
+                      </>
+                    )}
+                  </p>
+                </div>
 
-          {/* Nút Tiến vào Phòng Chờ Thi */}
-          <button
-            type="button"
-            disabled={!isAllReady}
-            onClick={handleProceedToWaitingRoom}
-            className="system-primary-action w-full flex items-center justify-center gap-2 rounded-md bg-slate-900 py-3.5 font-serif text-xs sm:text-sm font-bold text-white shadow-2xs transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
-          >
-            <span>Vào phòng chờ thi</span>
-            <ArrowRight size={16} />
-          </button>
+                {/* Nút Tiếp tục (vào phòng chờ hoặc vào thẳng IDE nếu phòng đã bắt đầu) */}
+                <button
+                  type="button"
+                  disabled={!isAllReady}
+                  onClick={handleProceedToWaitingRoom}
+                  className="system-primary-action w-full flex items-center justify-center gap-2 rounded-md bg-slate-900 py-3.5 font-serif text-xs sm:text-sm font-bold text-white shadow-2xs transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                >
+                  <span>Tiếp tục</span>
+                  <ArrowRight size={16} />
+                </button>
+              </>
+            );
+          })()}
 
           <div className="text-center">
             <Link

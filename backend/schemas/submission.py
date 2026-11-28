@@ -28,6 +28,14 @@ class SubmissionCreateRequest(BaseModel):
     def validate_lang(cls, v):
         return _clean_language(v)
 
+class SubmissionStatusUpdateRequest(BaseModel):
+    status: str = Field(
+        ...,
+        min_length=1,
+        max_length=30,
+        pattern="^(pending|grading|completed|failed|saved|system_error|SYSTEM_ERROR)$",
+    )
+
 class CodeRunRequest(BaseModel):
     code_content: str = Field(..., min_length=1)
     language: str = Field(default="cpp")
@@ -37,6 +45,14 @@ class CodeRunRequest(BaseModel):
     @classmethod
     def validate_lang(cls, v):
         return _clean_language(v)
+
+class SubmissionStatusUpdateRequest(BaseModel):
+    status: str = Field(
+        ...,
+        min_length=1,
+        max_length=30,
+        pattern="^(pending|grading|completed|failed|saved|system_error|SYSTEM_ERROR)$",
+    )
 
 class CodeRunResponse(BaseModel):
     stdout: str

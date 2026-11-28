@@ -61,6 +61,7 @@ jobs:
           DATABASE_SERVER: localhost
           DATABASE_NAME: ExamSystem
           DATABASE_PASSWORD: TestPassword123!
+          DATABASE_CONNECTION_TIMEOUT: "2"
           JWT_SECRET_KEY: test-secret-key-for-continuous-integration-pipeline-32chars
           LIVEKIT_API_KEY: test-livekit-key
           LIVEKIT_API_SECRET: test-livekit-secret

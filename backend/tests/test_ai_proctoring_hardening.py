@@ -405,8 +405,8 @@ def test_personal_calibration_and_snapshot_db_throttling():
         assert out["calibrated"] is True
         assert out["looking_at_screen"] is True
         assert len(recorded) == 0
-        # Tối ưu DB Snapshots: 5 frame bình thường trong 16s chỉ ghi DB 1 lần (chu kỳ 30s)
-        assert len(snap_calls) == 1
+        # Chỉ lưu snapshot DB khi có vi phạm được xác nhận
+        assert len(snap_calls) == 0
 
 
 def test_ide_telemetry_and_ast_plagiarism():

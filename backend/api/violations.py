@@ -355,7 +355,7 @@ async def review_violation(
     violation_id: int,
     review_data: Optional[ViolationReviewRequest] = Body(None),
     review_status: Optional[str] = Query(None),
-    current_user: Dict[str, Any] = Depends(instructor_or_admin_required)
+    current_user: Dict[str, Any] = Depends(instructor_required)
 ):
     """Giảng viên duyệt / phúc khảo sự kiện vi phạm (confirmed hoặc rejected)"""
     from core.database import get_db_cursor

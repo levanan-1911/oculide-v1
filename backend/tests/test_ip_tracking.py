@@ -20,10 +20,13 @@ def test_login_records_client_public_ip_and_audit_log():
         "last_login_ip": None
     }
 
+    from services.session_manager import SessionManager
+    SessionManager.clear_session(1)
+
     with patch("api.auth.get_user_by_username", return_value=mock_user), \
          patch("api.auth.verify_password", return_value=True), \
          patch("api.auth.update_last_login") as mock_update_ip, \
-         patch("api.auth.create_system_log") as mock_audit_log:
+         patch("database.system_log_db.queue_system_log") as mock_audit_log:
         response = client.post(
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin123"},
@@ -37,6 +40,7 @@ def test_login_records_client_public_ip_and_audit_log():
         mock_audit_log.assert_called_once()
         assert mock_audit_log.call_args.kwargs["module"] == "AUTH_LOGIN"
         assert mock_audit_log.call_args.kwargs["ip_address"] == test_ip
+    SessionManager.clear_session(1)
 
 
 def test_login_is_logged_even_when_ip_was_seen_before():
@@ -57,10 +61,13 @@ def test_login_is_logged_even_when_ip_was_seen_before():
     mock_cursor = MagicMock()
     mock_cursor.fetchone.return_value = (1,)
 
+    from services.session_manager import SessionManager
+    SessionManager.clear_session(1)
+
     with patch("api.auth.get_user_by_username", return_value=mock_user), \
          patch("api.auth.verify_password", return_value=True), \
          patch("api.auth.update_last_login"), \
-         patch("api.auth.create_system_log") as mock_audit_log, \
+         patch("database.system_log_db.queue_system_log") as mock_audit_log, \
          patch("core.database.get_db_cursor") as mock_get_db_cursor:
         mock_get_db_cursor.return_value.__enter__.return_value = mock_cursor
         response = client.post(
@@ -68,6 +75,7 @@ def test_login_is_logged_even_when_ip_was_seen_before():
             json={"username": "admin", "password": "admin123"},
             headers={"X-Client-Public-IP": test_ip},
         )
+    SessionManager.clear_session(1)
 
     assert response.status_code == 200
     mock_audit_log.assert_called_once()

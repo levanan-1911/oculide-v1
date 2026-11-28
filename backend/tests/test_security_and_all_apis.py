@@ -332,7 +332,8 @@ def test_all_api_modules_functional_contracts():
              "browser_info": "Chrome", "is_passed": True, "checked_at": now,
          }), \
          patch("api.snapshots.get_session_by_id", return_value=sample_session), \
-         patch("api.snapshots.get_snapshots_by_session", return_value=[]):
+         patch("api.snapshots.get_snapshots_by_session", return_value=[]), \
+         patch("database.room_db.get_room_by_id", return_value=sample_room):
         assert client.get("/api/v1/submissions/my", headers=STUDENT_HDR).status_code == 200
         assert client.get("/api/v1/submissions/room/10/plagiarism", headers=INSTRUCTOR_HDR).status_code == 200
         assert client.get("/api/v1/grading-results/submission/1", headers=STUDENT_HDR).status_code == 200

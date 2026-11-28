@@ -184,7 +184,7 @@ def test_system_logs_api_and_audit_trail(monkeypatch):
     def mock_get_system_logs(skip=0, limit=50, **kwargs):
         return (logs_storage[skip:skip+limit], len(logs_storage))
 
-    def mock_create_system_log(log_level, module, message, user_id=None, extra_data=None, ip_address=None):
+    def mock_create_system_log(log_level, module, message, user_id=None, extra_data=None, ip_address=None, **kwargs):
         record = {
             "log_id": len(logs_storage) + 1,
             "log_level": log_level,
